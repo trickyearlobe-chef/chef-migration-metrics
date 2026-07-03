@@ -3,7 +3,7 @@ import { createExport, fetchExportStatus, downloadExportUrl } from "../api";
 import type {
   ExportType,
   ExportFormat,
-  ExportFilters,
+  ExportParams,
   ExportJobResponse,
 } from "../types";
 
@@ -17,17 +17,18 @@ import type {
 // ---------------------------------------------------------------------------
 
 export interface ExportButtonProps {
-  /** The type of data to export. */
+  /** The list view to export (nodes, cookbooks, roles, git_repos). */
   exportType: ExportType;
 
   /** Available formats for this export type. Defaults to ["csv", "json"]. */
   formats?: ExportFormat[];
 
-  /** Target Chef version — required for ready_nodes and blocked_nodes. */
-  targetChefVersion?: string;
-
-  /** Active filters to pass through to the export. */
-  filters?: ExportFilters;
+  /**
+   * The list view's current query object (the same one passed to its list
+   * fetch). Sent verbatim as query params so the export matches what the list
+   * is showing. Pagination keys are ignored server-side and client-side.
+   */
+  params?: ExportParams;
 
   /** Optional CSS class name for the wrapper. */
   className?: string;
@@ -56,8 +57,7 @@ const FORMAT_LABELS: Record<ExportFormat, string> = {
 export function ExportButton({
   exportType,
   formats = ["csv", "json"],
-  targetChefVersion,
-  filters = {},
+  params = {},
   className = "",
   label = "Export",
 }: ExportButtonProps) {
@@ -140,12 +140,7 @@ export function ExportButton({
       setError(null);
 
       try {
-        const result = await createExport({
-          export_type: exportType,
-          format,
-          target_chef_version: targetChefVersion,
-          filters,
-        });
+        const result = await createExport(exportType, format, params);
 
         if (result === null) {
           // Synchronous — file already downloading.
@@ -161,7 +156,7 @@ export function ExportButton({
         setPhase("error");
       }
     },
-    [exportType, targetChefVersion, filters, startPolling],
+    [exportType, params, startPolling],
   );
 
   const handleButtonClick = () => {

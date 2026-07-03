@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useSort } from "../hooks/useSort";
@@ -7,7 +7,13 @@ import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { FilterInput } from "../components/FilterInputs";
 import { FilterMultiCheckbox } from "../components/FilterMultiCheckbox";
 import { fetchGitRepos } from "../api";
-import type { GitRepoListItem, Pagination as PaginationType } from "../types";
+import type { GitRepoFilterQuery } from "../api/client";
+import type {
+  GitRepoListItem,
+  Pagination as PaginationType,
+  ExportParams,
+} from "../types";
+import { ExportButton } from "../components/ExportButton";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CookStyleStatusBadge } from "../components/StatusBadge";
@@ -121,44 +127,20 @@ export function GitReposPage() {
     }
   }, []); // run once on mount
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-
-    const filters: {
-      name?: string;
-      cookstyle_status?: string;
-      tk_status?: string;
-      clone_status?: string;
-      has_test_suite?: string;
-      target_chef_version?: string;
-      sort?: string;
-      order?: string;
-      page?: number;
-      per_page?: number;
-    } = {
-      page,
-      per_page: perPage,
-    };
-    if (nameFilter) filters.name = nameFilter;
+  // The active list filter/sort without pagination — shared by the list fetch
+  // and the Export button so an export matches the visible list.
+  const listQuery = useMemo<GitRepoFilterQuery>(() => {
+    const q: GitRepoFilterQuery = {};
+    if (nameFilter) q.name = nameFilter;
     if (cookstyleStatus.length > 0)
-      filters.cookstyle_status = cookstyleStatus.join(",");
-    if (tkStatus.length > 0) filters.tk_status = tkStatus.join(",");
-    if (cloneStatus.length > 0) filters.clone_status = cloneStatus.join(",");
-    if (kitchenFilter.length > 0)
-      filters.has_test_suite = kitchenFilter.join(",");
-    if (selectedTargetVersion)
-      filters.target_chef_version = selectedTargetVersion;
-    if (sortField) filters.sort = sortField;
-    if (sortOrder) filters.order = sortOrder;
-
-    fetchGitRepos(filters)
-      .then((res) => {
-        setRepos(res.data ?? []);
-        setPagination(res.pagination);
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      q.cookstyle_status = cookstyleStatus.join(",");
+    if (tkStatus.length > 0) q.tk_status = tkStatus.join(",");
+    if (cloneStatus.length > 0) q.clone_status = cloneStatus.join(",");
+    if (kitchenFilter.length > 0) q.has_test_suite = kitchenFilter.join(",");
+    if (selectedTargetVersion) q.target_chef_version = selectedTargetVersion;
+    if (sortField) q.sort = sortField;
+    if (sortOrder) q.order = sortOrder;
+    return q;
   }, [
     nameFilter,
     cookstyleStatus,
@@ -166,10 +148,22 @@ export function GitReposPage() {
     cloneStatus,
     kitchenFilter,
     selectedTargetVersion,
-    page,
     sortField,
     sortOrder,
   ]);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+
+    fetchGitRepos({ ...listQuery, page, per_page: perPage })
+      .then((res) => {
+        setRepos(res.data ?? []);
+        setPagination(res.pagination);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [listQuery, page, perPage]);
 
   useEffect(() => {
     load();
@@ -206,7 +200,14 @@ export function GitReposPage() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800">Git Repos</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-xl font-bold text-gray-800">Git Repos</h2>
+        <ExportButton
+          exportType="git_repos"
+          params={listQuery as ExportParams}
+          label="Export"
+        />
+      </div>
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">

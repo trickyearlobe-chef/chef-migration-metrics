@@ -4,8 +4,8 @@
 package webapi
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,20 +14,15 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
 )
 
 // ---------------------------------------------------------------------------
-// Export endpoints — data export generation, job tracking, and file download.
+// Export endpoints — stream the current filtered list of a list-view entity
+// (nodes, cookbooks, roles, git_repos), track async jobs, and serve downloads.
+// The export carries the SAME query params as the corresponding list endpoint
+// and runs the SAME datastore query, so it reproduces the filtered list exactly.
+// See specifications/web-api-exports.md.
 // ---------------------------------------------------------------------------
-
-// exportRequest is the JSON body for POST /api/v1/exports.
-type exportRequest struct {
-	ExportType        string         `json:"export_type"`
-	Format            string         `json:"format"`
-	TargetChefVersion string         `json:"target_chef_version,omitempty"`
-	Filters           export.Filters `json:"filters"`
-}
 
 // exportJobResponse is the JSON envelope returned for export job status.
 type exportJobResponse struct {
@@ -45,7 +40,8 @@ type exportJobResponse struct {
 	Message       string `json:"message,omitempty"`
 }
 
-// handleExports dispatches POST /api/v1/exports — create a new export.
+// handleExports dispatches POST /api/v1/exports — create a new export. The
+// request carries the list view's query params plus export_type and format.
 func (r *Router) handleExports(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
@@ -53,94 +49,69 @@ func (r *Router) handleExports(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var body exportRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, fmt.Sprintf("Invalid JSON request body: %v", err))
-		return
-	}
+	exportType := req.URL.Query().Get("export_type")
+	format := req.URL.Query().Get("format")
 
-	// Validate export_type.
-	if !datastore.ValidExportType(body.ExportType) {
+	spec, ok := r.exportRegistry()[exportType]
+	if !ok {
 		WriteBadRequest(w, fmt.Sprintf(
-			"Invalid export_type %q. Must be one of: ready_nodes, blocked_nodes, cookbook_remediation.",
-			body.ExportType))
+			"Invalid export_type %q. Must be one of: nodes, cookbooks, roles, git_repos.",
+			exportType))
 		return
 	}
-
-	// Validate format.
-	if !datastore.ValidExportFormat(body.Format) {
+	if !datastore.ValidExportFormat(format) {
 		WriteBadRequest(w, fmt.Sprintf(
-			"Invalid format %q. Must be one of: csv, json, chef_search_query.",
-			body.Format))
+			"Invalid format %q. Must be one of: csv, json, chef_search_query.", format))
+		return
+	}
+	if format == datastore.ExportFormatChefSearchQuery && !spec.SupportsChefSearch {
+		WriteBadRequest(w, "chef_search_query format is only supported for the nodes export.")
 		return
 	}
 
-	// chef_search_query is only valid for ready_nodes.
-	if body.Format == datastore.ExportFormatChefSearchQuery && body.ExportType != datastore.ExportTypeReadyNodes {
-		WriteBadRequest(w, "chef_search_query format is only supported for ready_nodes export type.")
+	estimatedRows, err := spec.Count(req.Context(), r, req)
+	if err != nil {
+		r.logf("ERROR", "estimating export rows for %s: %v", exportType, err)
+		WriteInternalError(w, "Failed to prepare export.")
 		return
 	}
-
-	// Node exports require a target_chef_version.
-	if body.TargetChefVersion == "" && (body.ExportType == datastore.ExportTypeReadyNodes || body.ExportType == datastore.ExportTypeBlockedNodes) {
-		// Default to the first configured target version.
-		if v := r.defaultTargetVersion(); v != "" {
-			body.TargetChefVersion = v
-		} else {
-			WriteBadRequest(w, "target_chef_version is required for node exports and none is configured.")
-			return
-		}
-	}
-
-	// Propagate the target version into the filters for consistency.
-	if body.TargetChefVersion != "" {
-		body.Filters.TargetChefVersion = body.TargetChefVersion
-	}
-
-	// Estimate row count using CountNodeReadiness or a simple heuristic.
-	estimatedRows := r.estimateExportRows(req, body)
 
 	asyncThreshold := r.liveConfig().Exports.AsyncThreshold
 	if asyncThreshold <= 0 {
 		asyncThreshold = 10000
 	}
 
-	maxRows := r.liveConfig().Exports.MaxRows
-	if maxRows <= 0 {
-		maxRows = 100000
-	}
-
 	if estimatedRows > asyncThreshold {
-		// Asynchronous export — create a job, return 202.
-		r.handleAsyncExport(w, req, body, maxRows)
+		r.handleAsyncExport(w, req, spec, exportType, format)
 	} else {
-		// Synchronous export — generate inline, stream response.
-		r.handleSyncExport(w, req, body, maxRows)
+		r.handleSyncExport(w, req, spec, exportType, format)
 	}
 }
 
-// handleSyncExport generates a small export inline and streams the response.
-func (r *Router) handleSyncExport(w http.ResponseWriter, req *http.Request, body exportRequest, maxRows int) {
-	ctx := req.Context()
-
-	result, err := r.generateExport(ctx, body, maxRows, "")
+// handleSyncExport streams a small export into a buffer and returns it inline.
+// Sync exports are below the async threshold, so buffering is bounded and lets
+// us report the exact row count in a header.
+func (r *Router) handleSyncExport(w http.ResponseWriter, req *http.Request, spec exportSpec, exportType, format string) {
+	var buf bytes.Buffer
+	rowCount, err := r.streamExportTo(req.Context(), &buf, spec, req, format)
 	if err != nil {
 		r.logf("ERROR", "generating synchronous export: %v", err)
 		WriteInternalError(w, "Failed to generate export.")
 		return
 	}
 
-	// Set response headers for file download.
-	w.Header().Set("Content-Type", result.ContentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, result.Filename))
-	w.Header().Set("X-Export-Row-Count", fmt.Sprintf("%d", result.RowCount))
+	w.Header().Set("Content-Type", contentTypeForFormat(format))
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf(`attachment; filename="%s"`, downloadFilename(exportType, format, time.Now().UTC())))
+	w.Header().Set("X-Export-Row-Count", fmt.Sprintf("%d", rowCount))
 	w.WriteHeader(http.StatusOK)
-	w.Write(result.Data)
+	w.Write(buf.Bytes())
 }
 
-// handleAsyncExport creates an export job, launches background generation,
-// and returns 202 with the job ID.
-func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, body exportRequest, maxRows int) {
+// handleAsyncExport creates an export job (persisting the raw query so the
+// background goroutine reconstructs the same filter), launches generation, and
+// returns 202.
+func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, spec exportSpec, exportType, format string) {
 	ctx := req.Context()
 
 	retentionHours := r.liveConfig().Exports.RetentionHours
@@ -148,16 +119,16 @@ func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, bod
 		retentionHours = 24
 	}
 
-	filtersJSON, err := body.Filters.MarshalToJSON()
+	filtersJSON, err := marshalExportQuery(req)
 	if err != nil {
-		r.logf("ERROR", "marshalling export filters: %v", err)
+		r.logf("ERROR", "marshalling export query: %v", err)
 		WriteInternalError(w, "Failed to create export job.")
 		return
 	}
 
 	job, err := r.db.InsertExportJob(ctx, datastore.InsertExportJobParams{
-		ExportType:  body.ExportType,
-		Format:      body.Format,
+		ExportType:  exportType,
+		Format:      format,
 		Filters:     filtersJSON,
 		RequestedBy: "", // TODO: set from auth context when auth is implemented
 		ExpiresAt:   time.Now().UTC().Add(time.Duration(retentionHours) * time.Hour),
@@ -168,15 +139,13 @@ func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, bod
 		return
 	}
 
-	// Launch background generation goroutine.
-	go r.runAsyncExport(job.ID, body, maxRows)
+	go r.runAsyncExport(job.ID, spec, exportType, format, filtersJSON)
 
-	// Broadcast event via WebSocket.
 	if r.hub != nil {
 		r.hub.Broadcast(NewEvent(EventExportStarted, map[string]any{
 			"job_id":      job.ID,
-			"export_type": body.ExportType,
-			"format":      body.Format,
+			"export_type": exportType,
+			"format":      format,
 		}))
 	}
 
@@ -190,60 +159,74 @@ func (r *Router) handleAsyncExport(w http.ResponseWriter, req *http.Request, bod
 	})
 }
 
-// runAsyncExport is launched as a goroutine to generate an export file in
-// the background. It updates the export_jobs table with progress and results.
-func (r *Router) runAsyncExport(jobID string, body exportRequest, maxRows int) {
+// runAsyncExport streams an export file to disk in the background, updating the
+// export_jobs row with progress and results. It reconstructs the original
+// request from the persisted query so it reproduces the same filtered list.
+func (r *Router) runAsyncExport(jobID string, spec exportSpec, exportType, format string, filtersJSON []byte) {
 	ctx, cancel := context.WithTimeout(r.asyncContext(), 1*time.Hour)
 	defer cancel()
 
-	// Update status to processing.
+	fail := func(err error) {
+		r.logf("ERROR", "async export %s failed: %v", jobID, err)
+		if uErr := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusFailed, 0, "", 0, err.Error()); uErr != nil {
+			r.logf("ERROR", "updating export job %s to failed: %v", jobID, uErr)
+		}
+		if r.hub != nil {
+			r.hub.Broadcast(NewEvent(EventExportFailed, map[string]any{"job_id": jobID, "error": err.Error()}))
+		}
+	}
+
 	if err := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusProcessing, 0, "", 0, ""); err != nil {
 		r.logf("ERROR", "updating export job %s to processing: %v", jobID, err)
 		return
 	}
 
-	// Determine output path.
+	req, err := reconstructExportRequest(ctx, filtersJSON)
+	if err != nil {
+		fail(fmt.Errorf("reconstructing export request: %w", err))
+		return
+	}
+
 	outputDir := r.liveConfig().Exports.OutputDirectory
 	if outputDir == "" {
 		outputDir = "/var/lib/chef-migration-metrics/exports"
 	}
-
-	ext := body.Format
-	if ext == "chef_search_query" {
+	ext := format
+	if ext == datastore.ExportFormatChefSearchQuery {
 		ext = "txt"
 	}
 	outputPath := filepath.Join(outputDir, fmt.Sprintf("%s.%s", jobID, ext))
 
-	// Generate the export.
-	result, err := r.generateExport(ctx, body, maxRows, outputPath)
+	f, err := os.Create(outputPath) //nolint:gosec // path is server-controlled (jobID + configured dir)
 	if err != nil {
-		r.logf("ERROR", "async export generation failed for job %s: %v", jobID, err)
-		if updateErr := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusFailed, 0, "", 0, err.Error()); updateErr != nil {
-			r.logf("ERROR", "updating export job %s to failed: %v", jobID, updateErr)
-		}
-		if r.hub != nil {
-			r.hub.Broadcast(NewEvent(EventExportFailed, map[string]any{
-				"job_id": jobID,
-				"error":  err.Error(),
-			}))
-		}
+		fail(fmt.Errorf("creating export file: %w", err))
+		return
+	}
+	cw := &countingWriter{w: f}
+	rowCount, streamErr := r.streamExportTo(ctx, cw, spec, req, format)
+	closeErr := f.Close()
+	if streamErr != nil {
+		fail(streamErr)
+		return
+	}
+	if closeErr != nil {
+		fail(fmt.Errorf("closing export file: %w", closeErr))
 		return
 	}
 
-	// Update status to completed.
 	if err := r.db.UpdateExportJobStatus(ctx, jobID, datastore.ExportStatusCompleted,
-		result.RowCount, result.FilePath, result.FileSizeBytes, ""); err != nil {
+		rowCount, outputPath, cw.n, ""); err != nil {
 		r.logf("ERROR", "updating export job %s to completed: %v", jobID, err)
 		return
 	}
 
-	r.logf("INFO", "export job %s completed: %d rows, %d bytes", jobID, result.RowCount, result.FileSizeBytes)
+	r.logf("INFO", "export job %s completed: %d rows, %d bytes", jobID, rowCount, cw.n)
 
 	if r.hub != nil {
 		r.hub.Broadcast(NewEvent(EventExportComplete, map[string]any{
 			"job_id":    jobID,
-			"row_count": result.RowCount,
-			"file_size": result.FileSizeBytes,
+			"row_count": rowCount,
+			"file_size": cw.n,
 		}))
 	}
 }
@@ -379,92 +362,6 @@ func (r *Router) handleExportDownload(w http.ResponseWriter, req *http.Request, 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// generateExport dispatches to the appropriate export generator based on the
-// export type. If outputPath is non-empty, the result is written to disk
-// (async mode); otherwise the data is returned in-memory (sync mode).
-func (r *Router) generateExport(ctx context.Context, body exportRequest, maxRows int, outputPath string) (*export.ExportResult, error) {
-	switch body.ExportType {
-	case datastore.ExportTypeReadyNodes:
-		mappings, _ := r.loadPlatformDisplayNames(ctx)
-		return export.GenerateReadyNodeExport(ctx, r.db, export.ReadyNodeExportParams{
-			TargetChefVersion:       body.TargetChefVersion,
-			Format:                  body.Format,
-			Filters:                 body.Filters,
-			MaxRows:                 maxRows,
-			OutputPath:              outputPath,
-			PlatformDisplayMappings: mappings,
-		})
-
-	case datastore.ExportTypeBlockedNodes:
-		mappings, _ := r.loadPlatformDisplayNames(ctx)
-		return export.GenerateBlockedNodeExport(ctx, r.db, export.BlockedNodeExportParams{
-			TargetChefVersion:       body.TargetChefVersion,
-			Format:                  body.Format,
-			Filters:                 body.Filters,
-			MaxRows:                 maxRows,
-			OutputPath:              outputPath,
-			PlatformDisplayMappings: mappings,
-		})
-
-	case datastore.ExportTypeCookbookRemediation:
-		return export.GenerateCookbookRemediationExport(ctx, r.db, export.CookbookRemediationExportParams{
-			Format:     body.Format,
-			Filters:    body.Filters,
-			MaxRows:    maxRows,
-			OutputPath: outputPath,
-		})
-
-	default:
-		return nil, fmt.Errorf("unsupported export type: %s", body.ExportType)
-	}
-}
-
-// estimateExportRows returns a rough count of rows the export will produce.
-// This is used to decide between synchronous and asynchronous export modes.
-// It uses quick count queries where available, falling back to a conservative
-// default.
-func (r *Router) estimateExportRows(req *http.Request, body exportRequest) int {
-	ctx := req.Context()
-
-	switch body.ExportType {
-	case datastore.ExportTypeReadyNodes, datastore.ExportTypeBlockedNodes:
-		orgs, err := r.db.ListOrganisations(ctx)
-		if err != nil {
-			return 0 // treat as small — will generate sync
-		}
-		orgs = export.FilterOrganisations(orgs, body.Filters.Organisation)
-
-		totalEstimate := 0
-		for _, org := range orgs {
-			total, _, _, err := r.db.CountNodeReadiness(ctx, org.Name, body.TargetChefVersion)
-			if err != nil {
-				continue
-			}
-			totalEstimate += total
-		}
-		return totalEstimate
-
-	case datastore.ExportTypeCookbookRemediation:
-		orgs, err := r.db.ListOrganisations(ctx)
-		if err != nil {
-			return 0
-		}
-		orgs = export.FilterOrganisations(orgs, body.Filters.Organisation)
-
-		totalEstimate := 0
-		for _, org := range orgs {
-			cbs, err := r.db.ListServerCookbooksByOrganisation(ctx, org.Name)
-			if err != nil {
-				continue
-			}
-			totalEstimate += len(cbs)
-		}
-		return totalEstimate
-	}
-
-	return 0
-}
 
 // asyncContext returns a background context for async export goroutines.
 // The request context cannot be used because it is cancelled when the HTTP

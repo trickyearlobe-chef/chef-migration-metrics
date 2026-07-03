@@ -69,508 +69,245 @@ func TestHandleExports_MethodNotAllowed_ContentType(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/exports — request body validation
+// POST /api/v1/exports — validation (query-param API)
 // ---------------------------------------------------------------------------
 
-func TestHandleExports_InvalidJSON(t *testing.T) {
-	store := &mockStore{}
-	r := newTestRouterWithMock(store)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{bad json`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	assertBodyContains(t, w, "Invalid JSON")
-}
-
 func TestHandleExports_InvalidExportType(t *testing.T) {
-	store := &mockStore{}
-	r := newTestRouterWithMock(store)
+	r := newTestRouterWithMock(&mockStore{})
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"invalid_type","format":"csv"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=bogus&format=csv", nil)
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
-	assertBodyContains(t, w, "Invalid export_type")
+	assertBodyContains(t, w, "nodes, cookbooks, roles, git_repos")
 }
 
 func TestHandleExports_InvalidFormat(t *testing.T) {
-	store := &mockStore{}
-	r := newTestRouterWithMock(store)
+	r := newTestRouterWithMock(&mockStore{})
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"xml"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=nodes&format=xml", nil)
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+		t.Fatalf("status = %d, want 400", w.Code)
 	}
 	assertBodyContains(t, w, "Invalid format")
 }
 
-func TestHandleExports_ChefSearchQueryOnBlockedNodes(t *testing.T) {
-	store := &mockStore{}
-	r := newTestRouterWithMock(store)
+func TestHandleExports_ChefSearchQueryNonNodes(t *testing.T) {
+	// chef_search_query is nodes-only; the guard fires before any store call.
+	r := newTestRouterWithMockAndConfig(&mockStore{}, exportTestConfig())
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"blocked_nodes","format":"chef_search_query","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=cookbooks&format=chef_search_query", nil)
 	r.ServeHTTP(w, req)
-
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
-	assertBodyContains(t, w, "chef_search_query format is only supported for ready_nodes")
+	assertBodyContains(t, w, "only supported for the nodes export")
 }
 
-func TestHandleExports_ChefSearchQueryOnCookbookRemediation(t *testing.T) {
-	store := &mockStore{}
-	r := newTestRouterWithMock(store)
-	w := httptest.NewRecorder()
+// ---------------------------------------------------------------------------
+// POST /api/v1/exports — synchronous streaming per list view
+// ---------------------------------------------------------------------------
 
-	body := strings.NewReader(`{"export_type":"cookbook_remediation","format":"chef_search_query"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	assertBodyContains(t, w, "chef_search_query format is only supported for ready_nodes")
-}
-
-func TestHandleExports_MissingTargetVersionForReadyNodes_NoConfig(t *testing.T) {
-	store := &mockStore{}
-	cfg := &config.Config{}
-	wsEnabled := true
-	cfg.Server.WebSocket.Enabled = &wsEnabled
-	// No TargetChefVersions configured.
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"csv"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	assertBodyContains(t, w, "target_chef_version is required")
-}
-
-func TestHandleExports_MissingTargetVersionForBlockedNodes_NoConfig(t *testing.T) {
-	store := &mockStore{}
-	cfg := &config.Config{}
-	wsEnabled := true
-	cfg.Server.WebSocket.Enabled = &wsEnabled
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"blocked_nodes","format":"json"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	assertBodyContains(t, w, "target_chef_version is required")
-}
-
-func TestHandleExports_MissingTargetVersionDefaultsFromConfig(t *testing.T) {
-	// When target_chef_version is omitted but the config has a target version,
-	// the handler defaults to it and proceeds successfully.
-	store := &mockStore{
+func oneOrgStore() *mockStore {
+	return &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return nil, nil // no orgs → zero rows estimate → sync path → empty export
+			return []datastore.Organisation{{Name: "production"}}, nil
 		},
 	}
-	cfg := &config.Config{}
-	wsEnabled := true
-	cfg.Server.WebSocket.Enabled = &wsEnabled
-	cfg.TargetChefVersion = "18.0.0"
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"csv"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	// Should not be 400 — the handler defaulted the target version from config.
-	if w.Code == http.StatusBadRequest {
-		t.Errorf("expected non-400 when a target Chef version is configured, got %d: %s",
-			w.Code, w.Body.String())
-	}
 }
 
-func TestHandleExports_CookbookRemediationNoTargetVersionOK(t *testing.T) {
-	// cookbook_remediation does not require a target_chef_version.
-	store := &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+func TestHandleExports_Sync_NodesCSV(t *testing.T) {
+	free := 5000
+	store := oneOrgStore()
+	store.CountNodeSnapshotsFilteredFn = func(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error) { return 1, nil }
+	store.ListNodeSnapshotsForExportFn = func(ctx context.Context, f datastore.NodeSnapshotFilter, after datastore.NodeSnapshotCursor, limit int) ([]datastore.NodeSnapshot, error) {
+		if after.Valid {
 			return nil, nil
-		},
+		}
+		return []datastore.NodeSnapshot{
+			{OrganisationName: "production", NodeName: "web1", ChefEnvironment: "prod", ChefVersion: "17.10.0", Platform: "ubuntu", PlatformVersion: "22.04", AvailableDiskMB: &free, OhaiTime: 1719400000, CollectedAt: time.Now().UTC()},
+		}, nil
 	}
-	cfg := &config.Config{}
-	wsEnabled := true
-	cfg.Server.WebSocket.Enabled = &wsEnabled
 
-	r := newTestRouterWithMockAndConfig(store, cfg)
+	r := newTestRouterWithMockAndConfig(store, exportTestConfig())
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"cookbook_remediation","format":"csv"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	// Should succeed (200 with empty data) or at least not be a 400.
-	if w.Code == http.StatusBadRequest {
-		t.Errorf("cookbook_remediation should not require target_chef_version, got 400: %s",
-			w.Body.String())
-	}
-}
-
-// ---------------------------------------------------------------------------
-// POST /api/v1/exports — synchronous export (small result set)
-// ---------------------------------------------------------------------------
-
-func TestHandleExports_Sync_ReadyNodesCSV(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"csv","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=nodes&format=csv", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
-
-	ct := w.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/csv") {
-		t.Errorf("Content-Type = %q, want text/csv prefix", ct)
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Errorf("Content-Type = %q, want text/csv", ct)
 	}
-
-	cd := w.Header().Get("Content-Disposition")
-	if !strings.Contains(cd, "attachment") {
-		t.Errorf("Content-Disposition = %q, want attachment", cd)
+	if rc := w.Header().Get("X-Export-Row-Count"); rc != "1" {
+		t.Errorf("X-Export-Row-Count = %q, want 1", rc)
 	}
-	if !strings.Contains(cd, "ready_nodes") {
-		t.Errorf("Content-Disposition = %q, want filename containing ready_nodes", cd)
+	body := w.Body.String()
+	// ohai_time renders as a datetime (like collected_at), not a unix epoch.
+	wantOhai := time.Unix(1719400000, 0).UTC().Format("2006-01-02T15:04:05Z")
+	for _, want := range []string{"node_name", "web1", "available_disk_mb", "5000", "install_path", "ohai_time", wantOhai} {
+		if !strings.Contains(body, want) {
+			t.Errorf("CSV missing %q:\n%s", want, body)
+		}
 	}
-
-	// Verify we got CSV content with a header row and at least one data row.
-	lines := strings.Split(strings.TrimSpace(w.Body.String()), "\n")
-	if len(lines) < 2 {
-		t.Errorf("expected at least 2 CSV lines (header + data), got %d", len(lines))
+	if strings.Contains(body, "1719400000") {
+		t.Errorf("CSV should not contain the raw ohai epoch:\n%s", body)
 	}
 }
 
-func TestHandleExports_Sync_ReadyNodesJSON(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
+func TestHandleExports_Sync_NodesChefSearchQuery(t *testing.T) {
+	store := oneOrgStore()
+	store.CountNodeSnapshotsFilteredFn = func(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error) { return 2, nil }
+	store.ListNodeSnapshotsForExportFn = func(ctx context.Context, f datastore.NodeSnapshotFilter, after datastore.NodeSnapshotCursor, limit int) ([]datastore.NodeSnapshot, error) {
+		if after.Valid {
+			return nil, nil
+		}
+		return []datastore.NodeSnapshot{
+			{OrganisationName: "production", NodeName: "web1", CollectedAt: time.Now().UTC()},
+			{OrganisationName: "production", NodeName: "db1", CollectedAt: time.Now().UTC()},
+		}, nil
+	}
 
-	r := newTestRouterWithMockAndConfig(store, cfg)
+	r := newTestRouterWithMockAndConfig(store, exportTestConfig())
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"json","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=nodes&format=chef_search_query", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
-
-	ct := w.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "application/json") {
-		t.Errorf("Content-Type = %q, want application/json prefix", ct)
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain", ct)
 	}
-
-	// Verify the body is valid JSON.
-	if !json.Valid(w.Body.Bytes()) {
-		t.Errorf("response body is not valid JSON: %s", w.Body.String())
+	if got := strings.TrimSpace(w.Body.String()); got != "name:web1 OR name:db1" {
+		t.Errorf("chef search = %q, want %q", got, "name:web1 OR name:db1")
 	}
 }
 
-func TestHandleExports_Sync_ReadyNodesChefSearchQuery(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
+func TestHandleExports_Sync_Cookbooks(t *testing.T) {
+	store := oneOrgStore()
+	store.ListCookbooksFilteredFn = func(ctx context.Context, f datastore.CookbookFilter) ([]datastore.CookbookFilterRow, int, error) {
+		return []datastore.CookbookFilterRow{
+			{OrganisationName: "production", Name: "apt", Version: "7.4.0", CookstyleStatus: "ready", License: "Apache-2.0"},
+		}, 1, nil
+	}
+	r := newTestRouterWithMockAndConfig(store, exportTestConfig())
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"chef_search_query","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=cookbooks&format=csv", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
-
-	ct := w.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/plain") {
-		t.Errorf("Content-Type = %q, want text/plain prefix", ct)
+	body := w.Body.String()
+	for _, want := range []string{"cookstyle_status", "apt", "license", "Apache-2.0"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("cookbook CSV missing %q:\n%s", want, body)
+		}
 	}
 }
 
-func TestHandleExports_Sync_BlockedNodesCSV(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
+func TestHandleExports_Sync_Roles(t *testing.T) {
+	store := oneOrgStore()
+	store.ListRolesFilteredFn = func(ctx context.Context, f datastore.RoleFilter) ([]datastore.RoleFilterRow, int, datastore.RoleFilterSummary, error) {
+		return []datastore.RoleFilterRow{
+			{RoleName: "base", Organisations: []string{"production"}, CompatibilityStatus: "compatible"},
+		}, 1, datastore.RoleFilterSummary{}, nil
+	}
+	r := newTestRouterWithMockAndConfig(store, exportTestConfig())
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"blocked_nodes","format":"csv","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=roles&format=csv", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
-
-	ct := w.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/csv") {
-		t.Errorf("Content-Type = %q, want text/csv prefix", ct)
-	}
-}
-
-func TestHandleExports_Sync_BlockedNodesJSON(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"blocked_nodes","format":"json","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "application/json") {
-		t.Errorf("Content-Type = %q, want application/json prefix", ct)
+	body := w.Body.String()
+	for _, want := range []string{"role_name", "base", "compatibility_status", "compatible"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("role CSV missing %q:\n%s", want, body)
+		}
 	}
 }
 
-func TestHandleExports_Sync_CookbookRemediationCSV(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"cookbook_remediation","format":"csv","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "text/csv") {
-		t.Errorf("Content-Type = %q, want text/csv prefix", ct)
-	}
-}
-
-func TestHandleExports_Sync_CookbookRemediationJSON(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"cookbook_remediation","format":"json","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if !strings.HasPrefix(ct, "application/json") {
-		t.Errorf("Content-Type = %q, want application/json prefix", ct)
-	}
-}
-
-func TestHandleExports_Sync_EmptyOrgs(t *testing.T) {
+func TestHandleExports_Sync_GitRepos(t *testing.T) {
 	store := &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return nil, nil // no organisations
+		ListGitReposFilteredFn: func(ctx context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			return []datastore.GitRepo{
+				{Name: "cookbook-apt", CloneStatus: "ok", CookstyleStatus: "ready", TKStatus: "passed"},
+			}, 1, nil
 		},
 	}
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
+	r := newTestRouterWithMockAndConfig(store, exportTestConfig())
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"csv","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=git_repos&format=csv", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
 	}
-
-	// Should still have a header line at minimum.
-	lines := strings.Split(strings.TrimSpace(w.Body.String()), "\n")
-	if len(lines) < 1 {
-		t.Error("expected at least 1 CSV line (header), got 0")
-	}
-}
-
-func TestHandleExports_Sync_RowCountHeader(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"csv","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	rc := w.Header().Get("X-Export-Row-Count")
-	if rc == "" {
-		t.Error("expected X-Export-Row-Count header to be set")
-	}
-}
-
-func TestHandleExports_Sync_WithFilters(t *testing.T) {
-	store := newExportMockStore()
-	cfg := exportTestConfig()
-
-	r := newTestRouterWithMockAndConfig(store, cfg)
-	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{
-		"export_type":"ready_nodes",
-		"format":"csv",
-		"target_chef_version":"18.0.0",
-		"filters":{"environment":"prod","platform":"ubuntu"}
-	}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
-	r.ServeHTTP(w, req)
-
-	// Should succeed — filters are applied during generation.
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	body := w.Body.String()
+	for _, want := range []string{"name", "cookbook-apt", "cookstyle_status", "tk_status"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("git repo CSV missing %q:\n%s", want, body)
+		}
 	}
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/exports — asynchronous export (large result set)
+// POST /api/v1/exports — async dispatch
 // ---------------------------------------------------------------------------
 
 func TestHandleExports_Async_LargeEstimate(t *testing.T) {
-	// Set up a store that reports a large number of nodes to trigger async mode.
 	insertCalled := false
-	store := &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{
-				{Name: "production"},
-			}, nil
-		},
-		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
-			// Return a count well above the async threshold.
-			return 50000, 30000, 20000, nil
-		},
-		InsertExportJobFn: func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
-			insertCalled = true
-			if p.ExportType != "ready_nodes" {
-				t.Errorf("InsertExportJob export_type = %q, want ready_nodes", p.ExportType)
-			}
-			if p.Format != "csv" {
-				t.Errorf("InsertExportJob format = %q, want csv", p.Format)
-			}
-			return &datastore.ExportJob{
-				ID:          "job-async-001",
-				ExportType:  p.ExportType,
-				Format:      p.Format,
-				Status:      datastore.ExportStatusPending,
-				RequestedAt: time.Now().UTC(),
-			}, nil
-		},
-		// The async goroutine will call these but we don't need to verify
-		// them in this test — just prevent panics.
-		UpdateExportJobStatusFn: func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error {
-			return nil
-		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
-			return nil, nil
-		},
-		ListNodeReadinessForSnapshotFn: func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
-			return nil, nil
-		},
+	store := oneOrgStore()
+	store.CountNodeSnapshotsFilteredFn = func(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error) { return 50000, nil }
+	store.InsertExportJobFn = func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
+		insertCalled = true
+		if p.ExportType != "nodes" {
+			t.Errorf("InsertExportJob export_type = %q, want nodes", p.ExportType)
+		}
+		return &datastore.ExportJob{ID: "job-async-001", ExportType: p.ExportType, Format: p.Format, Status: datastore.ExportStatusPending, RequestedAt: time.Now().UTC()}, nil
+	}
+	store.UpdateExportJobStatusFn = func(ctx context.Context, id, status string, rowCount int, filePath string, fileSizeBytes int64, errorMessage string) error {
+		return nil
+	}
+	store.ListNodeSnapshotsForExportFn = func(ctx context.Context, f datastore.NodeSnapshotFilter, after datastore.NodeSnapshotCursor, limit int) ([]datastore.NodeSnapshot, error) {
+		return nil, nil
 	}
 
 	cfg := exportTestConfig()
-	cfg.Exports.AsyncThreshold = 100 // low threshold to trigger async
+	cfg.Exports.AsyncThreshold = 100
+	cfg.Exports.OutputDirectory = t.TempDir()
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"csv","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=nodes&format=csv", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+		t.Fatalf("status = %d, want 202; body: %s", w.Code, w.Body.String())
 	}
-
 	if !insertCalled {
 		t.Error("InsertExportJob was not called for async export")
 	}
-
-	// Verify the response contains a job ID.
 	var resp exportJobResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
+		t.Fatalf("decode response: %v", err)
 	}
-
 	if resp.JobID != "job-async-001" {
-		t.Errorf("job_id = %q, want %q", resp.JobID, "job-async-001")
-	}
-	if resp.Status != datastore.ExportStatusPending {
-		t.Errorf("status = %q, want %q", resp.Status, datastore.ExportStatusPending)
-	}
-	if resp.Message == "" {
-		t.Error("expected a message with poll instructions")
+		t.Errorf("job_id = %q, want job-async-001", resp.JobID)
 	}
 }
 
 func TestHandleExports_Async_InsertJobError(t *testing.T) {
-	store := &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{
-				{Name: "production"},
-			}, nil
-		},
-		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
-			return 50000, 30000, 20000, nil
-		},
-		InsertExportJobFn: func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
-			return nil, fmt.Errorf("database connection lost")
-		},
+	store := oneOrgStore()
+	store.CountNodeSnapshotsFilteredFn = func(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error) { return 50000, nil }
+	store.InsertExportJobFn = func(ctx context.Context, p datastore.InsertExportJobParams) (*datastore.ExportJob, error) {
+		return nil, fmt.Errorf("database connection lost")
 	}
 
 	cfg := exportTestConfig()
@@ -578,13 +315,11 @@ func TestHandleExports_Async_InsertJobError(t *testing.T) {
 
 	r := newTestRouterWithMockAndConfig(store, cfg)
 	w := httptest.NewRecorder()
-
-	body := strings.NewReader(`{"export_type":"ready_nodes","format":"csv","target_chef_version":"18.0.0"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/exports?export_type=nodes&format=csv", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+		t.Errorf("status = %d, want 500", w.Code)
 	}
 }
 
@@ -1231,127 +966,6 @@ func exportTestConfig() *config.Config {
 	cfg.Exports.AsyncThreshold = 100000 // high threshold → sync by default
 	cfg.Exports.RetentionHours = 24
 	return cfg
-}
-
-// newExportMockStore creates a mockStore pre-populated with data suitable for
-// sync export tests. It provides one organisation with two nodes (one ready,
-// one blocked) and two cookbooks with complexity records.
-func newExportMockStore() *mockStore {
-	org := datastore.Organisation{Name: "production"}
-
-	nodes := []datastore.NodeSnapshot{
-		{
-			OrganisationName: "production",
-			NodeName:         "web1",
-			ChefEnvironment:  "prod",
-			ChefVersion:      "17.10.0",
-			Platform:         "ubuntu",
-			PlatformVersion:  "22.04",
-			PolicyName:       "webserver",
-			PolicyGroup:      "prod",
-			IsStale:          false,
-			Cookbooks:        json.RawMessage(`{"apt":{"version":"7.4.0"}}`),
-			Roles:            json.RawMessage(`["base","webserver"]`),
-			CollectedAt:      time.Now().UTC(),
-		},
-		{
-			OrganisationName: "production",
-			NodeName:         "db1",
-			ChefEnvironment:  "prod",
-			ChefVersion:      "16.0.0",
-			Platform:         "centos",
-			PlatformVersion:  "7.9",
-			PolicyName:       "",
-			PolicyGroup:      "",
-			IsStale:          false,
-			Cookbooks:        json.RawMessage(`{"mysql":{"version":"8.0.0"}}`),
-			Roles:            json.RawMessage(`["base","database"]`),
-			CollectedAt:      time.Now().UTC(),
-		},
-	}
-
-	readiness := map[string][]datastore.NodeReadiness{
-		"production/web1": {
-			{
-				OrganisationName:  "production",
-				NodeName:          "web1",
-				TargetChefVersion: "18.0.0",
-				IsReady:           true,
-			},
-		},
-		"production/db1": {
-			{
-				OrganisationName:  "production",
-				NodeName:          "db1",
-				TargetChefVersion: "18.0.0",
-				IsReady:           false,
-				BlockingCookbooks: json.RawMessage(`["mysql"]`),
-			},
-		},
-	}
-
-	cookbooks := []datastore.ServerCookbook{
-		{
-			OrganisationName: "production",
-			Name:             "apt",
-			Version:          "7.4.0",
-		},
-		{
-			OrganisationName: "production",
-			Name:             "mysql",
-			Version:          "8.0.0",
-		},
-	}
-
-	complexities := []datastore.ServerCookbookComplexity{
-		{
-			OrganisationName:  "production",
-			CookbookName:      "apt",
-			CookbookVersion:   "7.4.0",
-			TargetChefVersion: "18.0.0",
-			ComplexityScore:   5,
-			ComplexityLabel:   "trivial",
-		},
-		{
-			OrganisationName:  "production",
-			CookbookName:      "mysql",
-			CookbookVersion:   "8.0.0",
-			TargetChefVersion: "18.0.0",
-			ComplexityScore:   42,
-			ComplexityLabel:   "moderate",
-		},
-	}
-
-	return &mockStore{
-		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
-			return []datastore.Organisation{org}, nil
-		},
-		ListNodeSnapshotsByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error) {
-			if organisationID == "production" {
-				return nodes, nil
-			}
-			return nil, nil
-		},
-		ListNodeReadinessByNodeNameFn: func(ctx context.Context, orgName, nodeName string) ([]datastore.NodeReadiness, error) {
-			return readiness[orgName+"/"+nodeName], nil
-		},
-		CountNodeReadinessFn: func(ctx context.Context, organisationID, targetChefVersion string) (int, int, int, error) {
-			// 2 total, 1 ready, 1 blocked
-			return 2, 1, 1, nil
-		},
-		ListServerCookbooksByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbook, error) {
-			if organisationID == "production" {
-				return cookbooks, nil
-			}
-			return nil, nil
-		},
-		ListServerCookbookComplexitiesByOrganisationFn: func(ctx context.Context, organisationID string) ([]datastore.ServerCookbookComplexity, error) {
-			if organisationID == "production" {
-				return complexities, nil
-			}
-			return nil, nil
-		},
-	}
 }
 
 // assertBodyContains is a test helper that checks the response body contains

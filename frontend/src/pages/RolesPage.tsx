@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
@@ -12,10 +12,12 @@ import type {
   RoleListItem,
   RoleSummary,
   Pagination as PaginationType,
+  ExportParams,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { CookStyleBadge, TKBadge } from "../components/StatusBadge";
+import { ExportButton } from "../components/ExportButton";
 import type { RoleFilterQuery } from "../api/roles";
 
 function SummaryBar({
@@ -136,25 +138,34 @@ export function RolesPage() {
     }
   }, []);
 
+  // The active list filter/sort without pagination — shared by the list fetch
+  // and the Export button so an export matches the visible list.
+  const listQuery = useMemo<RoleFilterQuery>(() => {
+    const q: RoleFilterQuery = {};
+    if (selectedOrg) q.organisation = selectedOrg;
+    if (nameFilter) q.name = nameFilter;
+    if (compatibility.length > 0)
+      q.compatibility_status = compatibility.join(",");
+    if (tkStatus.length > 0) q.tk_status = tkStatus.join(",");
+    if (selectedTargetVersion) q.target_chef_version = selectedTargetVersion;
+    if (sortField) q.sort = sortField;
+    if (sortOrder) q.order = sortOrder;
+    return q;
+  }, [
+    selectedOrg,
+    nameFilter,
+    compatibility,
+    tkStatus,
+    selectedTargetVersion,
+    sortField,
+    sortOrder,
+  ]);
+
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
 
-    const filters: RoleFilterQuery = {
-      page,
-      per_page: perPage,
-    };
-    if (selectedOrg) filters.organisation = selectedOrg;
-    if (nameFilter) filters.name = nameFilter;
-    if (compatibility.length > 0)
-      filters.compatibility_status = compatibility.join(",");
-    if (tkStatus.length > 0) filters.tk_status = tkStatus.join(",");
-    if (selectedTargetVersion)
-      filters.target_chef_version = selectedTargetVersion;
-    if (sortField) filters.sort = sortField;
-    if (sortOrder) filters.order = sortOrder;
-
-    fetchRoles(filters)
+    fetchRoles({ ...listQuery, page, per_page: perPage })
       .then((res) => {
         setRoles(res.data ?? []);
         setSummary(res.summary ?? null);
@@ -162,16 +173,7 @@ export function RolesPage() {
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [
-    selectedOrg,
-    nameFilter,
-    compatibility,
-    tkStatus,
-    selectedTargetVersion,
-    page,
-    sortField,
-    sortOrder,
-  ]);
+  }, [listQuery, page, perPage]);
 
   useEffect(() => {
     load();
@@ -202,7 +204,14 @@ export function RolesPage() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-gray-800">Roles</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-xl font-bold text-gray-800">Roles</h2>
+        <ExportButton
+          exportType="roles"
+          params={listQuery as ExportParams}
+          label="Export"
+        />
+      </div>
 
       <SummaryBar
         summary={summary}

@@ -18,13 +18,15 @@ func TestValidExportType(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"ready_nodes", true},
-		{"blocked_nodes", true},
-		{"cookbook_remediation", true},
+		{"nodes", true},
+		{"cookbooks", true},
+		{"roles", true},
+		{"git_repos", true},
+		{"ready_nodes", false},
 		{"", false},
 		{"invalid", false},
-		{"READY_NODES", false},
-		{"ready-nodes", false},
+		{"NODES", false},
+		{"git-repos", false},
 	}
 
 	for _, tt := range tests {
@@ -86,14 +88,17 @@ func TestExportStatusConstants(t *testing.T) {
 }
 
 func TestExportTypeConstants(t *testing.T) {
-	if ExportTypeReadyNodes != "ready_nodes" {
-		t.Errorf("ExportTypeReadyNodes = %q, want %q", ExportTypeReadyNodes, "ready_nodes")
+	if ExportTypeNodes != "nodes" {
+		t.Errorf("ExportTypeNodes = %q, want %q", ExportTypeNodes, "nodes")
 	}
-	if ExportTypeBlockedNodes != "blocked_nodes" {
-		t.Errorf("ExportTypeBlockedNodes = %q, want %q", ExportTypeBlockedNodes, "blocked_nodes")
+	if ExportTypeCookbooks != "cookbooks" {
+		t.Errorf("ExportTypeCookbooks = %q, want %q", ExportTypeCookbooks, "cookbooks")
 	}
-	if ExportTypeCookbookRemediation != "cookbook_remediation" {
-		t.Errorf("ExportTypeCookbookRemediation = %q, want %q", ExportTypeCookbookRemediation, "cookbook_remediation")
+	if ExportTypeRoles != "roles" {
+		t.Errorf("ExportTypeRoles = %q, want %q", ExportTypeRoles, "roles")
+	}
+	if ExportTypeGitRepos != "git_repos" {
+		t.Errorf("ExportTypeGitRepos = %q, want %q", ExportTypeGitRepos, "git_repos")
 	}
 }
 
@@ -118,7 +123,7 @@ func TestExportJob_MarshalJSON(t *testing.T) {
 
 	job := ExportJob{
 		ID:            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-		ExportType:    ExportTypeReadyNodes,
+		ExportType:    ExportTypeNodes,
 		Format:        ExportFormatCSV,
 		Filters:       json.RawMessage(`{"organisation":"prod"}`),
 		Status:        ExportStatusCompleted,
@@ -146,8 +151,8 @@ func TestExportJob_MarshalJSON(t *testing.T) {
 	if m["id"] != job.ID {
 		t.Errorf("id = %v, want %v", m["id"], job.ID)
 	}
-	if m["export_type"] != ExportTypeReadyNodes {
-		t.Errorf("export_type = %v, want %v", m["export_type"], ExportTypeReadyNodes)
+	if m["export_type"] != ExportTypeNodes {
+		t.Errorf("export_type = %v, want %v", m["export_type"], ExportTypeNodes)
 	}
 	if m["format"] != ExportFormatCSV {
 		t.Errorf("format = %v, want %v", m["format"], ExportFormatCSV)
@@ -185,7 +190,7 @@ func TestExportJob_MarshalJSON(t *testing.T) {
 func TestExportJob_MarshalJSON_EmptyOptionalFields(t *testing.T) {
 	job := ExportJob{
 		ID:          "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-		ExportType:  ExportTypeBlockedNodes,
+		ExportType:  ExportTypeCookbooks,
 		Format:      ExportFormatJSON,
 		Status:      ExportStatusPending,
 		RequestedAt: time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC),
@@ -215,7 +220,7 @@ func TestExportJob_MarshalJSON_EmptyOptionalFields(t *testing.T) {
 func TestExportJob_MarshalJSON_NilFilters(t *testing.T) {
 	job := ExportJob{
 		ID:          "test-id",
-		ExportType:  ExportTypeReadyNodes,
+		ExportType:  ExportTypeNodes,
 		Format:      ExportFormatCSV,
 		Filters:     nil,
 		Status:      ExportStatusPending,
@@ -253,7 +258,7 @@ func TestInsertExportJobParams_RequiredFields(t *testing.T) {
 	// structured for the callers.
 
 	p := InsertExportJobParams{
-		ExportType: ExportTypeReadyNodes,
+		ExportType: ExportTypeNodes,
 		Format:     ExportFormatCSV,
 	}
 
@@ -277,15 +282,15 @@ func TestInsertExportJobParams_WithFilters(t *testing.T) {
 	filters := json.RawMessage(`{"organisation":"prod","environment":"staging"}`)
 
 	p := InsertExportJobParams{
-		ExportType:  ExportTypeBlockedNodes,
+		ExportType:  ExportTypeCookbooks,
 		Format:      ExportFormatJSON,
 		Filters:     filters,
 		RequestedBy: "admin@example.com",
 		ExpiresAt:   time.Now().Add(24 * time.Hour),
 	}
 
-	if p.ExportType != ExportTypeBlockedNodes {
-		t.Errorf("ExportType = %q, want %q", p.ExportType, ExportTypeBlockedNodes)
+	if p.ExportType != ExportTypeCookbooks {
+		t.Errorf("ExportType = %q, want %q", p.ExportType, ExportTypeCookbooks)
 	}
 	if p.Format != ExportFormatJSON {
 		t.Errorf("Format = %q, want %q", p.Format, ExportFormatJSON)
@@ -340,9 +345,10 @@ func TestExportJob_StatusLifecycle(t *testing.T) {
 
 func TestValidExportType_AllTypes(t *testing.T) {
 	allTypes := []string{
-		ExportTypeReadyNodes,
-		ExportTypeBlockedNodes,
-		ExportTypeCookbookRemediation,
+		ExportTypeNodes,
+		ExportTypeCookbooks,
+		ExportTypeRoles,
+		ExportTypeGitRepos,
 	}
 
 	for _, et := range allTypes {

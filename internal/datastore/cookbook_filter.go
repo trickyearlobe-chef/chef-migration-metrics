@@ -6,8 +6,10 @@ package datastore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -74,6 +76,18 @@ type CookbookFilterRow struct {
 	Compatibility    string `json:"compatibility"`    // "compatible", "incompatible", "scan_error", "untested"
 	CookstyleStatus  string `json:"cookstyle_status"` // "ready", "needs_review", "blocked", "untested" (SoT rollup)
 	TKStatus         string `json:"tk_status"`        // "passed", "failed", "partial", "untested", "no_repo"
+
+	// Migration metadata — carried for exports (see specifications/web-api-exports.md).
+	// These live on the same server_cookbooks row and are selected unconditionally;
+	// the list response omits them.
+	IsFrozen      bool            `json:"is_frozen"`
+	Maintainer    string          `json:"maintainer,omitempty"`
+	Description   string          `json:"description,omitempty"`
+	License       string          `json:"license,omitempty"`
+	Platforms     json.RawMessage `json:"platforms,omitempty"`
+	Dependencies  json.RawMessage `json:"dependencies,omitempty"`
+	FirstSeenAt   time.Time       `json:"first_seen_at,omitempty"`
+	LastFetchedAt time.Time       `json:"last_fetched_at,omitempty"`
 }
 
 // buildCookbookFilterQuery constructs the SQL query and args for
@@ -103,6 +117,14 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 	sb.WriteString("    sc.is_stale_cookbook,\n")
 	sb.WriteString("    sc.download_status,\n")
 	sb.WriteString("    sc.download_error,\n")
+	sb.WriteString("    sc.is_frozen,\n")
+	sb.WriteString("    sc.maintainer,\n")
+	sb.WriteString("    sc.description,\n")
+	sb.WriteString("    sc.license,\n")
+	sb.WriteString("    sc.platforms,\n")
+	sb.WriteString("    sc.dependencies,\n")
+	sb.WriteString("    sc.first_seen_at,\n")
+	sb.WriteString("    sc.last_fetched_at,\n")
 
 	if f.TargetChefVersion != "" {
 		sb.WriteString("    CASE\n")
@@ -171,6 +193,8 @@ func buildCookbookFilterQuery(f CookbookFilter) (string, []interface{}) {
 	sb.WriteString("       cb.is_active, cb.is_stale_cookbook, cb.download_status,\n")
 	sb.WriteString("       cb.download_error, cb.compatibility, cb.cookstyle_status,\n")
 	sb.WriteString("       COALESCE(tk.tk_status, 'no_repo') AS tk_status,\n")
+	sb.WriteString("       cb.is_frozen, cb.maintainer, cb.description, cb.license,\n")
+	sb.WriteString("       cb.platforms, cb.dependencies, cb.first_seen_at, cb.last_fetched_at,\n")
 	sb.WriteString("       COUNT(*) OVER() AS total_count\n")
 	sb.WriteString("  FROM cb\n")
 	sb.WriteString("  LEFT JOIN tk ON tk.name = cb.name\n")
@@ -250,7 +274,9 @@ func (db *DB) ListCookbooksFiltered(ctx context.Context, f CookbookFilter) ([]Co
 
 	for rows.Next() {
 		var r CookbookFilterRow
-		var downloadError sql.NullString
+		var downloadError, maintainer, description, license sql.NullString
+		var platforms, dependencies []byte
+		var firstSeenAt, lastFetchedAt sql.NullTime
 		var rowTotal int
 
 		if err := rows.Scan(
@@ -264,12 +290,31 @@ func (db *DB) ListCookbooksFiltered(ctx context.Context, f CookbookFilter) ([]Co
 			&r.Compatibility,
 			&r.CookstyleStatus,
 			&r.TKStatus,
+			&r.IsFrozen,
+			&maintainer,
+			&description,
+			&license,
+			&platforms,
+			&dependencies,
+			&firstSeenAt,
+			&lastFetchedAt,
 			&rowTotal,
 		); err != nil {
 			return nil, 0, fmt.Errorf("datastore: scanning filtered cookbook row: %w", err)
 		}
 
 		r.DownloadError = stringFromNull(downloadError)
+		r.Maintainer = stringFromNull(maintainer)
+		r.Description = stringFromNull(description)
+		r.License = stringFromNull(license)
+		r.Platforms = jsonFromNullBytes(platforms)
+		r.Dependencies = jsonFromNullBytes(dependencies)
+		if firstSeenAt.Valid {
+			r.FirstSeenAt = firstSeenAt.Time
+		}
+		if lastFetchedAt.Valid {
+			r.LastFetchedAt = lastFetchedAt.Time
+		}
 		totalCount = rowTotal
 		results = append(results, r)
 	}

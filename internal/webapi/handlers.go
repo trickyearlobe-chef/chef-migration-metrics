@@ -5,6 +5,7 @@ package webapi
 
 import (
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 )
@@ -73,7 +74,14 @@ func requirePOST(w http.ResponseWriter, req *http.Request) bool {
 // queryString returns the value of a query parameter, or the default if the
 // parameter is missing or empty.
 func queryString(req *http.Request, name, defaultValue string) string {
-	v := req.URL.Query().Get(name)
+	return valueOr(req.URL.Query(), name, defaultValue)
+}
+
+// valueOr returns q.Get(name), or the default if the parameter is missing or
+// empty. It operates on url.Values so the list handlers and the export path can
+// share one filter-building path.
+func valueOr(q url.Values, name, defaultValue string) string {
+	v := q.Get(name)
 	if v == "" {
 		return defaultValue
 	}

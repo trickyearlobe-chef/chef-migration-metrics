@@ -285,38 +285,39 @@ The log viewer allows operators to diagnose failures without requiring access to
 
 ## Data Exports
 
-The dashboard must support exporting data for use in external upgrade automation workflows. This bridges the gap between "knowing what's ready" and "performing the upgrade."
+Each list view (Nodes, Cookbooks, Roles, Git Repos) has a single **Export** control
+that exports **the current filtered list** — the exact rows the list is showing,
+with the same filters applied (or the full list when unfiltered). The purpose is to
+hand the migration engineer a clean, complete dataset to explore in external tools
+(pivot tables, spreadsheets, ticketing imports), bridging "knowing what's ready" and
+"performing the upgrade."
 
-### Ready Node Export
+### Invariants
 
-- Export a list of nodes that are ready to upgrade for a given target Chef Client version.
-- Export formats: **CSV**, **JSON**, and **Chef search query string**.
-- The Chef search query string can be used directly with `knife ssh` or similar tools to target ready nodes for upgrade.
-- The export must respect all currently active filters (organisation, environment, role, platform, policy name, policy group).
-- The export must include the following fields per node: node name, organisation, environment, platform, platform version, current Chef version, policy name (if applicable), policy group (if applicable).
+- **Filter parity.** The export MUST return exactly the set of entities the list
+  view currently shows for the active filters. This is guaranteed by construction:
+  the export reuses the same query parameters and the same datastore query as the
+  list endpoint (see [web-api-exports.md](web-api-exports.md)). No filter may be
+  honoured by the list but silently dropped by the export.
+- **One control per list view.** No separate "ready" vs "blocked" buttons — readiness
+  is a column and a list filter, so a user narrows the list first, then exports what
+  they see.
+- **Column scope.** Every export carries the list's columns plus the migration-useful
+  fields: the three-state CookStyle rollup and readiness `status` (Ready / Needs
+  review / Blocked / Untested), Test Kitchen status, and — for nodes — the disk
+  detail (`available_disk_mb` free at the install path, `required_disk_mb`,
+  `sufficient_disk_space`, `install_path`). Disk figures let the engineer judge
+  whether tuning the required-space threshold would move nodes out of the blocked
+  state. Heavy per-node JSONB (raw filesystem / cookbook maps / attributes) is out of
+  scope.
+- **Formats.** **CSV** and **JSON** for all four list views. **Chef search query
+  string** is additionally available on the **Nodes** export only: it emits
+  `name:<node> OR …` for the node names in the current filtered set, for use with
+  `knife ssh` / search to target exactly those nodes.
 
-### Blocked Node Export
-
-- Export a list of nodes in the **blocked** (and optionally **needs_review**)
-  readiness state with their blocking / review reasons.
-- Export formats: **CSV**, **JSON**.
-- Include blocking cookbook names, versions, **classification-weighted** complexity
-  scores, and disk space status.
-- Useful for creating tickets or work items in project management tools.
-
-### Cookbook Remediation Export
-
-- Export the full remediation report for all cookbooks not in the **Ready** state
-  (Blocked / Needs review).
-- Export formats: **CSV**, **JSON**.
-- Include cookbook name, version, CookStyle rollup status, **classification-weighted**
-  complexity score, blast radius, auto-correctable offense count, manual fix count,
-  and top deprecation cops with their classification.
-- Useful for generating work items or sprint planning.
-
-See [web-api-exports.md](web-api-exports.md) and [data-export.md](data-export.md)
-for the canonical export vocabulary and the back-compat `passed`/`ready` boolean
-retention.
+The CookStyle vocabulary and the back-compat `passed`/`ready` boolean are canonical
+from [cop-classification.md](cop-classification.md); row shapes are owned by the
+export Go types. See [web-api-exports.md](web-api-exports.md) for the HTTP contract.
 
 ---
 

@@ -145,6 +145,36 @@ type NodeSnapshotFilter struct {
 	ReadyToActivate *bool
 }
 
+// nodeSnapshotLightCols is the list-view projection (no heavy JSONB). The scan
+// order in scanFilteredNodeSnapshots must match this column order.
+const nodeSnapshotLightCols = `cn.collection_run_org, cn.organisation_name, cn.node_name,
+	       cn.chef_environment, cn.chef_version,
+	       cn.platform, cn.platform_version, cn.platform_family,
+	       cn.platform_caption,
+	       cn.run_list, cn.roles,
+	       cn.policy_name, cn.policy_group,
+	       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at,
+	       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
+	       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
+	       cn.target_converge_status,
+	       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
+
+// nodeSnapshotHeavyCols additionally includes filesystem, cookbooks, and
+// custom_attributes JSONB. The scan order in scanFilteredNodeSnapshots (heavy
+// branch) must match this column order.
+const nodeSnapshotHeavyCols = `cn.collection_run_org, cn.organisation_name, cn.node_name,
+	       cn.chef_environment, cn.chef_version,
+	       cn.platform, cn.platform_version, cn.platform_family,
+	       cn.platform_caption,
+	       cn.filesystem, cn.cookbooks, cn.run_list, cn.roles,
+	       cn.policy_name, cn.policy_group,
+	       cn.ohai_time, cn.custom_attributes,
+	       cn.is_stale, cn.collected_at, cn.created_at,
+	       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
+	       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
+	       cn.target_converge_status,
+	       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
+
 // buildNodeSnapshotFilterQuery constructs the SQL query and args for
 // ListNodeSnapshotsFiltered. It is extracted as a standalone function
 // to enable unit testing of the WHERE clause builder without a database.
@@ -154,34 +184,9 @@ type NodeSnapshotFilter struct {
 //   - args: the positional parameter values
 func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, args []interface{}) {
 	// Determine column list based on whether heavy JSON is requested.
-	lightCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
-		       cn.chef_environment, cn.chef_version,
-		       cn.platform, cn.platform_version, cn.platform_family,
-		       cn.platform_caption,
-		       cn.run_list, cn.roles,
-		       cn.policy_name, cn.policy_group,
-		       cn.ohai_time, cn.is_stale, cn.collected_at, cn.created_at,
-		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
-		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
-		       cn.target_converge_status,
-		       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
-
-	heavyCols := `cn.collection_run_org, cn.organisation_name, cn.node_name,
-		       cn.chef_environment, cn.chef_version,
-		       cn.platform, cn.platform_version, cn.platform_family,
-		       cn.platform_caption,
-		       cn.filesystem, cn.cookbooks, cn.run_list, cn.roles,
-		       cn.policy_name, cn.policy_group,
-		       cn.ohai_time, cn.custom_attributes,
-		       cn.is_stale, cn.collected_at, cn.created_at,
-		       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
-		       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
-		       cn.target_converge_status,
-		       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
-
-	cols := lightCols
+	cols := nodeSnapshotLightCols
 	if f.IncludeHeavyJSON {
-		cols = heavyCols
+		cols = nodeSnapshotHeavyCols
 	}
 
 	// Reuse the shared CTE + JOIN + WHERE clause builder.
