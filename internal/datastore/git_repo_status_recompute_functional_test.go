@@ -160,3 +160,66 @@ func reconGroupCount(t *testing.T, db *DB, query string, args ...any) map[string
 	}
 	return out
 }
+
+// TestFunctional_GitRepoCloneFailed_ForcesUntested verifies the clone-failure
+// invariant: a repo we can't clone can't be verified, so its materialised
+// cookstyle/compatibility status is forced to 'untested' on clone failure and
+// stays untested even when a later rescore-driven recompute runs against a stale
+// result (a Missing repo must never show a ready/needs_review/blocked verdict).
+func TestFunctional_GitRepoCloneFailed_ForcesUntested(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	const (
+		name   = "func-clonefail-cookbook"
+		url    = "git@example.com:org-a/func-clonefail-cookbook"
+		target = "19.3.15"
+	)
+	cleanupTestData(t, db,
+		"DELETE FROM git_repo_cookstyle_results WHERE git_repo_name = '"+name+"'",
+		"DELETE FROM git_repos WHERE name = '"+name+"'",
+	)
+
+	// Repo cloned OK and scanned needs_review.
+	if _, err := db.UpsertGitRepo(ctx, UpsertGitRepoParams{Name: name, GitRepoURL: url, LastFetchedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("upsert repo: %v", err)
+	}
+	if _, err := db.UpsertGitRepoCookstyleResult(ctx, UpsertGitRepoCookstyleResultParams{
+		GitRepoName: name, GitRepoURL: url, TargetChefVersion: target,
+		Passed: true, CookstyleStatus: "needs_review", DurationSeconds: 1, ScannedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert result: %v", err)
+	}
+	if err := db.RecomputeGitRepoCompatibilityStatus(ctx, name, url, target); err != nil {
+		t.Fatalf("recompute: %v", err)
+	}
+	repos, err := db.ListGitReposByName(ctx, name)
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("list: %v (n=%d)", err, len(repos))
+	}
+	if repos[0].CookstyleStatus != "needs_review" {
+		t.Fatalf("precondition: cookstyle_status = %q, want needs_review", repos[0].CookstyleStatus)
+	}
+
+	// Clone now fails — must reset both materialised verdicts to untested.
+	if _, err := db.MarkGitRepoCloneFailed(ctx, name, url, "Repository not found"); err != nil {
+		t.Fatalf("mark clone failed: %v", err)
+	}
+	repos, _ = db.ListGitReposByName(ctx, name)
+	if repos[0].CookstyleStatus != "untested" {
+		t.Errorf("after clone failure: cookstyle_status = %q, want untested", repos[0].CookstyleStatus)
+	}
+	if repos[0].CompatibilityStatus != "untested" {
+		t.Errorf("after clone failure: compatibility_status = %q, want untested", repos[0].CompatibilityStatus)
+	}
+
+	// A later rescore-driven bulk recompute must NOT resurrect the stale verdict:
+	// the result still says needs_review, but clone_status='failed' forces untested.
+	if err := db.RecomputeAllGitRepoCookstyleStatus(ctx, target); err != nil {
+		t.Fatalf("recompute all: %v", err)
+	}
+	repos, _ = db.ListGitReposByName(ctx, name)
+	if repos[0].CookstyleStatus != "untested" {
+		t.Errorf("after rescore recompute: cookstyle_status = %q, want untested (clone still failed)", repos[0].CookstyleStatus)
+	}
+}

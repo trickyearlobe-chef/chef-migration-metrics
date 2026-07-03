@@ -16,9 +16,12 @@ import (
 //
 // Call this after upserting or deleting a cookstyle result.
 func (db *DB) RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) error {
+	// A repo whose clone failed can't be verified — force 'untested' regardless of
+	// any stale result, so a Missing repo never shows a ready/needs_review/blocked
+	// verdict.
 	const query = `
 		UPDATE git_repos
-		SET compatibility_status = COALESCE((
+		SET compatibility_status = CASE WHEN clone_status = 'failed' THEN 'untested' ELSE COALESCE((
 			SELECT CASE
 				WHEN cs.error_message != '' THEN 'error'
 				WHEN cs.passed = true THEN 'compatible'
@@ -30,8 +33,8 @@ func (db *DB) RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoNa
 			  AND cs.target_chef_version = $3
 			ORDER BY cs.scanned_at DESC
 			LIMIT 1
-		), 'untested'),
-		    cookstyle_status = COALESCE((
+		), 'untested') END,
+		    cookstyle_status = CASE WHEN clone_status = 'failed' THEN 'untested' ELSE COALESCE((
 			SELECT CASE
 				WHEN cs.error_message != '' THEN 'untested'
 				ELSE NULLIF(cs.cookstyle_status, '')
@@ -42,7 +45,7 @@ func (db *DB) RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoNa
 			  AND cs.target_chef_version = $3
 			ORDER BY cs.scanned_at DESC
 			LIMIT 1
-		), 'untested'),
+		), 'untested') END,
 		    updated_at = now()
 		WHERE name = $1 AND git_repo_url = $2`
 
@@ -64,9 +67,11 @@ func (db *DB) RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoNa
 // ResetAllGitRepoStatuses) would otherwise never be corrected — leaving the Git
 // Repos list disagreeing with the dashboard summary (which reads results direct).
 func (db *DB) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error {
+	// clone_status = 'failed' forces 'untested' (a Missing repo can't be verified),
+	// matching RecomputeGitRepoCompatibilityStatus and the clone-failure write path.
 	const query = `
 		UPDATE git_repos gr
-		SET compatibility_status = COALESCE((
+		SET compatibility_status = CASE WHEN gr.clone_status = 'failed' THEN 'untested' ELSE COALESCE((
 			SELECT CASE
 				WHEN cs.error_message != '' THEN 'error'
 				WHEN cs.passed = true THEN 'compatible'
@@ -78,8 +83,8 @@ func (db *DB) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChef
 			  AND cs.target_chef_version = $1
 			ORDER BY cs.scanned_at DESC
 			LIMIT 1
-		), 'untested'),
-		    cookstyle_status = COALESCE((
+		), 'untested') END,
+		    cookstyle_status = CASE WHEN gr.clone_status = 'failed' THEN 'untested' ELSE COALESCE((
 			SELECT CASE
 				WHEN cs.error_message != '' THEN 'untested'
 				ELSE NULLIF(cs.cookstyle_status, '')
@@ -90,7 +95,7 @@ func (db *DB) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChef
 			  AND cs.target_chef_version = $1
 			ORDER BY cs.scanned_at DESC
 			LIMIT 1
-		), 'untested'),
+		), 'untested') END,
 		    updated_at = now()`
 
 	_, err := db.q().ExecContext(ctx, query, targetChefVersion)

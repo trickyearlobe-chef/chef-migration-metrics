@@ -909,6 +909,62 @@ func TestHandleDashboardGitRepoCompatibility_HappyPath(t *testing.T) {
 	}
 }
 
+func TestHandleDashboardGitRepoCompatibility_CloneFailedIsUntested(t *testing.T) {
+	// A repo whose clone failed but still carries a stale needs_review result must
+	// count as untested (clone-failed), not needs_review — a Missing repo can't be
+	// verified. Guards the summary against the "Missing repo shows needs_review" bug.
+	store := &mockStore{
+		ListGitReposFn: func(ctx context.Context) ([]datastore.GitRepo, error) {
+			return []datastore.GitRepo{
+				{Name: "good-cb", CloneStatus: "ok"},
+				{Name: "missing-cb", CloneStatus: "failed"},
+			}, nil
+		},
+		ListAllGitRepoCookstyleResultsFn: func(ctx context.Context) ([]datastore.GitRepoCookstyleResult, error) {
+			return []datastore.GitRepoCookstyleResult{
+				{GitRepoName: "good-cb", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "ready"},
+				// Stale verdict from a prior successful scan, before the remote vanished.
+				{GitRepoName: "missing-cb", TargetChefVersion: "18.0.0", Passed: true, CookstyleStatus: "needs_review"},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersion = "18.0.0"
+	r := newTestRouterWithMockAndConfig(store, cfg)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/git-repo-compatibility", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	var body struct {
+		Data []struct {
+			TotalRepos        int `json:"total_repos"`
+			ReadyRepos        int `json:"ready_repos"`
+			NeedsReviewRepos  int `json:"needs_review_repos"`
+			UntestedRepos     int `json:"untested_repos"`
+			UntestedCloneFail int `json:"untested_clone_failed_repos"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	d := body.Data[0]
+	if d.NeedsReviewRepos != 0 {
+		t.Errorf("needs_review = %d, want 0 (the needs_review repo is clone-failed → untested)", d.NeedsReviewRepos)
+	}
+	if d.ReadyRepos != 1 {
+		t.Errorf("ready = %d, want 1", d.ReadyRepos)
+	}
+	if d.UntestedRepos != 1 || d.UntestedCloneFail != 1 {
+		t.Errorf("untested = %d (clone-failed %d), want 1 (1)", d.UntestedRepos, d.UntestedCloneFail)
+	}
+	if d.TotalRepos != 2 {
+		t.Errorf("total = %d, want 2", d.TotalRepos)
+	}
+}
+
 func TestHandleDashboardCookbookCompatibility_DBError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {

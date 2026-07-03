@@ -1,0 +1,3 @@
+-- No structural change to revert: 0047 is a one-time data repair that resets
+-- clone-failed repos' materialised status to 'untested'. The prior (stale) values
+-- are not recoverable and not worth restoring, so the down migration is a no-op.
