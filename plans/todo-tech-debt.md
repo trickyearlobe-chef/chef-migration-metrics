@@ -330,6 +330,12 @@ Recorded 2026-07-03 (cookstyle-reliability Phase 2, scope decision).
 
 - [ ] **`target_chef_version` columns remain on the stored-results schema.** Phase 2 took the *contained* scope: config is now scalar (`TargetChefVersion`), `cop_classifications` is keyed by `cop_name` only, the resolver dropped its target param, and the config-target loops were collapsed. But `target_chef_version` still exists as a column on `server_cookbook_cookstyle_results`, `git_repo_cookstyle_results`, `node_kitchen_runs`, and `cookstyle_offence_fingerprints`, and the dashboard compatibility/readiness/trends/recompute handlers still group and filter by it — now always the single active target. This is harmless (the column holds one value) but is the residual "per-target dimension." **Strategic fix (full teardown):** drop those columns via migration and remove the target grouping from `handle_dashboard_compatibility.go`, `handle_dashboard_readiness.go`, `handle_dashboard_trends.go`, `handle_dashboard_cookstyle_recompute.go`, the fingerprint code, and their tests. Deferred as a schema-wide migration the approved spec does not require.
 
+## Export — Streamed Exports Have No Hard Row Ceiling
+
+Recorded 2026-07-03 (export "current filtered list" rework).
+
+- [ ] **Streamed exports ignore `exports.max_rows`.** The per-list-view exports (nodes/cookbooks/roles/git_repos) stream the entire filtered set to disk/response so a full 120k-node export is complete, not capped. `exports.max_rows` (default 100000) is therefore no longer enforced on the streamed path — only `exports.async_threshold` (sync vs async) still applies. This is intentional (the feature is "the full list"), but there is no configurable safety ceiling and no truncation flag. **Strategic fix (if needed):** add a high, configurable streaming ceiling that, when hit, still writes the rows and sets an `X-Export-Truncated` header / job warning — never a silent truncation.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
