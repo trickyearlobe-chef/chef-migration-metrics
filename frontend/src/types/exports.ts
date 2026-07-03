@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-export type ExportType =
-  | "ready_nodes"
-  | "blocked_nodes"
-  | "cookbook_remediation";
+export type ExportType = "nodes" | "cookbooks" | "roles" | "git_repos";
 export type ExportFormat = "csv" | "json" | "chef_search_query";
 export type ExportJobStatus =
   | "pending"
@@ -12,26 +9,13 @@ export type ExportJobStatus =
   | "failed"
   | "expired";
 
-export interface ExportFilters {
-  organisation?: string;
-  node_name?: string;
-  environment?: string;
-  platform?: string;
-  chef_version?: string;
-  policy_name?: string;
-  policy_group?: string;
-  role?: string;
-  stale?: string;
-  target_chef_version?: string;
-  complexity_label?: string;
-}
-
-export interface ExportRequest {
-  export_type: ExportType;
-  format: ExportFormat;
-  target_chef_version?: string;
-  filters: ExportFilters;
-}
+// ExportParams is the list view's own query object (the same shape passed to the
+// list fetch, e.g. NodeFilterQuery). The export sends these verbatim as query
+// params so it reproduces the current filtered list exactly.
+export type ExportParams = Record<
+  string,
+  string | number | boolean | null | undefined
+>;
 
 export interface ExportJobResponse {
   job_id: string;

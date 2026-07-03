@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { Link, useSearchParams } from "react-router-dom";
 import { useOrg } from "../context/OrgContext";
@@ -20,7 +20,7 @@ import {
 import type {
   NodeListItem,
   Pagination as PaginationType,
-  ExportFilters,
+  ExportParams,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
@@ -210,47 +210,34 @@ export function NodesPage() {
       .catch(() => setPlatformOptions([]));
   }, [selectedOrg]);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-
-    const filters: NodeFilterQuery = {
-      page,
-      per_page: perPage,
-    };
-    if (selectedOrg) filters.organisation = selectedOrg;
-    if (nodeName) filters.node_name = nodeName;
-    if (environments.length > 0) filters.environment = environments.join(",");
-    if (platforms.length > 0) filters.platform = platforms.join(",");
-    if (chefVersion) filters.chef_version = chefVersion;
-    if (roles.length > 0) filters.role = roles.join(",");
-    if (policyNames.length > 0) filters.policy_name = policyNames.join(",");
-    if (policyGroups.length > 0) filters.policy_group = policyGroups.join(",");
-    if (staleTiers.length > 0) filters.stale = staleTiers.join(",");
-    if (sortField) filters.sort = sortField;
-    if (sortOrder) filters.order = sortOrder;
-    if (selectedTargetVersion)
-      filters.target_chef_version = selectedTargetVersion;
+  // The active list filter/sort as a query object, without pagination. Shared by
+  // the list fetch and the Export button so an export matches the visible list.
+  const listQuery = useMemo<NodeFilterQuery>(() => {
+    const q: NodeFilterQuery = {};
+    if (selectedOrg) q.organisation = selectedOrg;
+    if (nodeName) q.node_name = nodeName;
+    if (environments.length > 0) q.environment = environments.join(",");
+    if (platforms.length > 0) q.platform = platforms.join(",");
+    if (chefVersion) q.chef_version = chefVersion;
+    if (roles.length > 0) q.role = roles.join(",");
+    if (policyNames.length > 0) q.policy_name = policyNames.join(",");
+    if (policyGroups.length > 0) q.policy_group = policyGroups.join(",");
+    if (staleTiers.length > 0) q.stale = staleTiers.join(",");
+    if (sortField) q.sort = sortField;
+    if (sortOrder) q.order = sortOrder;
+    if (selectedTargetVersion) q.target_chef_version = selectedTargetVersion;
     if (readinessFilter.length > 0)
-      filters.readiness_filter = readinessFilter.join(",");
+      q.readiness_filter = readinessFilter.join(",");
     if (cookstyleFilter.length > 0)
-      filters.cookstyle_status = cookstyleFilter.join(",");
-    if (kitchenFilter.length > 0)
-      filters.kitchen_status = kitchenFilter.join(",");
+      q.cookstyle_status = cookstyleFilter.join(",");
+    if (kitchenFilter.length > 0) q.kitchen_status = kitchenFilter.join(",");
     if (deploymentStateFilter.length > 0)
-      filters.migration_state = deploymentStateFilter.join(",");
+      q.migration_state = deploymentStateFilter.join(",");
     if (convergeStatusFilter.length > 0)
-      filters.target_converge_status = convergeStatusFilter.join(",");
+      q.target_converge_status = convergeStatusFilter.join(",");
     if (targetVersionFilter.length > 0)
-      filters.target_version = targetVersionFilter.join(",");
-
-    fetchNodes(filters)
-      .then((res) => {
-        setNodes(res.data ?? []);
-        setPagination(res.pagination);
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      q.target_version = targetVersionFilter.join(",");
+    return q;
   }, [
     selectedOrg,
     nodeName,
@@ -261,17 +248,29 @@ export function NodesPage() {
     policyNames,
     policyGroups,
     staleTiers,
+    sortField,
+    sortOrder,
+    selectedTargetVersion,
     readinessFilter,
     cookstyleFilter,
     kitchenFilter,
     deploymentStateFilter,
     convergeStatusFilter,
     targetVersionFilter,
-    selectedTargetVersion,
-    page,
-    sortField,
-    sortOrder,
   ]);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+
+    fetchNodes({ ...listQuery, page, per_page: perPage })
+      .then((res) => {
+        setNodes(res.data ?? []);
+        setPagination(res.pagination);
+      })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [listQuery, page, perPage]);
 
   useEffect(() => {
     load();
@@ -336,37 +335,16 @@ export function NodesPage() {
   // target_chef_version query params. No client-side post-filtering needed.
   const displayNodes = nodes;
 
-  // Build the current filter set for export buttons.
-  const exportFilters: ExportFilters = {};
-  if (selectedOrg) exportFilters.organisation = selectedOrg;
-  if (nodeName) exportFilters.node_name = nodeName;
-  if (environments.length > 0)
-    exportFilters.environment = environments.join(",");
-  if (platforms.length > 0) exportFilters.platform = platforms.join(",");
-  if (chefVersion) exportFilters.chef_version = chefVersion;
-  if (roles.length > 0) exportFilters.role = roles.join(",");
-  if (policyNames.length > 0) exportFilters.policy_name = policyNames.join(",");
-  if (policyGroups.length > 0)
-    exportFilters.policy_group = policyGroups.join(",");
-  if (staleTiers.length > 0) exportFilters.stale = staleTiers.join(",");
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold text-gray-800">Nodes</h2>
         <div className="flex items-center gap-3">
           <ExportButton
-            exportType="ready_nodes"
-            targetChefVersion={selectedTargetVersion || undefined}
-            filters={exportFilters}
-            label="Export Ready"
+            exportType="nodes"
+            params={listQuery as ExportParams}
+            label="Export"
             formats={["csv", "json", "chef_search_query"]}
-          />
-          <ExportButton
-            exportType="blocked_nodes"
-            targetChefVersion={selectedTargetVersion || undefined}
-            filters={exportFilters}
-            label="Export Blocked"
           />
         </div>
       </div>

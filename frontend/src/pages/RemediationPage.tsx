@@ -14,12 +14,10 @@ import type {
   RemediationPriorityResponse,
   RemediationPriorityItem,
   Pagination as PaginationType,
-  ExportFilters,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { ComplexityBadge } from "../components/StatusBadge";
-import { ExportButton } from "../components/ExportButton";
 import { CopAnalysisTab } from "./CopAnalysisTab";
 
 // ---------------------------------------------------------------------------
@@ -255,23 +253,6 @@ function RemediationPriorityContent() {
             </div>
           )}
 
-          {/* Export cookbook remediation data */}
-          <ExportButton
-            exportType="cookbook_remediation"
-            targetChefVersion={selectedVersion || undefined}
-            filters={
-              {
-                ...(org ? { organisation: org } : {}),
-                ...(selectedVersion
-                  ? { target_chef_version: selectedVersion }
-                  : {}),
-                ...(selectedComplexity
-                  ? { complexity_label: selectedComplexity }
-                  : {}),
-              } as ExportFilters
-            }
-            label="Export"
-          />
         </div>
       </div>
 
