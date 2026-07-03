@@ -430,10 +430,14 @@ func TestHandleCookstyleCopClassification_Put(t *testing.T) {
 	}
 }
 
-func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *testing.T) {
+func TestHandleCookstyleCopClassification_Put_SavesAuditsAndEnqueues(t *testing.T) {
+	// The save is synchronous (persist + audit + 200); the heavy reassessment is
+	// enqueued for the async coalescing worker (see runReclassification below).
 	var auditAction, auditCop string
+	var upserted bool
 	store := &mockStore{
 		UpsertCopClassificationFn: func(_ context.Context, copName, class, reason, _ string) error {
+			upserted = true
 			return nil
 		},
 		InsertCookstyleAuditEntryFn: func(_ context.Context, p datastore.InsertCookstyleAuditParams) error {
@@ -446,8 +450,33 @@ func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *tes
 	cfg := testConfigWithTargetVersions("18")
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
-	// Wire a propagator over a mock closure: one server cookbook carries the cop
-	// and is currently passing; reclassifying to blocker must flip + re-score.
+	w := httptest.NewRecorder()
+	body := `{"classification":"blocker","reason":"breaks"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	if !upserted {
+		t.Error("expected the classification to be persisted synchronously")
+	}
+	if auditAction != "cop_reclassified" || auditCop != "Chef/Style/Foo" {
+		t.Errorf("audit = (%q,%q), want (cop_reclassified, Chef/Style/Foo)", auditAction, auditCop)
+	}
+	// The reassessment must be enqueued (lazy queue created on first enqueue).
+	if r.reclassQueue == nil {
+		t.Error("expected a reassessment to be enqueued")
+	}
+}
+
+func TestRunReclassification_RunsPropagationClosure(t *testing.T) {
+	// The queue worker body drives the full scoped recompute closure: re-derive
+	// verdicts, re-score complexity, recompute dependent-node readiness.
+	store := &mockStore{}
+	cfg := testConfigWithTargetVersions("18")
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
 	propStore := &mockPropagationStore{
 		serverRefs: []datastore.CookstyleResultRef{
 			{OrganisationName: "org-a", CookbookName: "web", CookbookVersion: "1.0.0", TargetChefVersion: "18", Offences: offJSONForCop("Chef/Style/Foo", "warning"), Passed: true},
@@ -460,14 +489,8 @@ func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *tes
 	readiness := &mockReadinessRecomputer{}
 	r.cookstylePropagator = NewCookstylePropagator(propStore, scorer, readiness, defaultRulesFn, nil)
 
-	w := httptest.NewRecorder()
-	body := `{"classification":"blocker","reason":"breaks"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/cops/Chef/Style/Foo/classification", strings.NewReader(body))
-	r.ServeHTTP(w, req)
+	r.runReclassification(context.Background(), "Chef/Style/Foo", "18")
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
-	}
 	if len(propStore.serverPassedUpdates) != 1 || propStore.serverPassedUpdates[0].passed != false {
 		t.Errorf("expected verdict flip to false, got %+v", propStore.serverPassedUpdates)
 	}
@@ -476,9 +499,6 @@ func TestHandleCookstyleCopClassification_Put_TriggersPropagationAndAudit(t *tes
 	}
 	if len(readiness.orgs) != 1 || readiness.orgs[0] != "org-a" {
 		t.Errorf("expected readiness recompute for org-a, got %v", readiness.orgs)
-	}
-	if auditAction != "cop_reclassified" || auditCop != "Chef/Style/Foo" {
-		t.Errorf("audit = (%q,%q), want (cop_reclassified, Chef/Style/Foo)", auditAction, auditCop)
 	}
 }
 

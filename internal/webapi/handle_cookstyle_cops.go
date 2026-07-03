@@ -625,21 +625,20 @@ func (r *Router) putCookstyleCopClassification(w http.ResponseWriter, req *http.
 		return
 	}
 
-	// Re-evaluation propagation: re-derive verdicts/compat/complexity and
-	// recompute dependent-node readiness for this cop's affected closure.
-	prop := r.propagateCop(ctx, copName, target)
+	// Re-evaluation propagation (re-derive verdicts/compat/complexity + dependent
+	// readiness) is O(repos) and slow at scale, so run it asynchronously via the
+	// coalescing queue — the classification is already saved, the save returns
+	// instantly, and the UI refreshes on the WebSocket recompute event.
+	r.enqueueReclassification(copName, target)
 	r.auditCookstyle(req, "cop_reclassified", copName, target, map[string]any{
 		"classification": body.Classification,
 		"reason":         body.Reason,
-		"propagation":    prop,
 	})
-	r.emitCookstyleRecomputed(copName, target, prop)
 
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"cop_name":       copName,
 		"classification": body.Classification,
 		"status":         "saved",
-		"propagation":    prop,
 	})
 }
 
@@ -665,14 +664,12 @@ func (r *Router) deleteCookstyleCopClassification(w http.ResponseWriter, req *ht
 	}
 
 	// Removing an override changes the resolved classification (falls back to
-	// RemovedIn/curated/unclassified): re-evaluate the affected closure.
-	prop := r.propagateCop(ctx, copName, target)
-	r.auditCookstyle(req, "cop_classification_removed", copName, target, map[string]any{
-		"propagation": prop,
-	})
-	r.emitCookstyleRecomputed(copName, target, prop)
+	// RemovedIn/curated/unclassified): re-evaluate the affected closure
+	// asynchronously (see setCookstyleCopClassification) so delete returns fast.
+	r.enqueueReclassification(copName, target)
+	r.auditCookstyle(req, "cop_classification_removed", copName, target, nil)
 
-	WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted", "propagation": prop})
+	WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
 }
 
 // ---------------------------------------------------------------------------
@@ -954,6 +951,24 @@ func errInvalidField(field, reason string) error {
 // ---------------------------------------------------------------------------
 // Re-evaluation propagation + audit helpers
 // ---------------------------------------------------------------------------
+
+// enqueueReclassification schedules an asynchronous, coalesced reassessment for a
+// cop × target. The scoped recompute closure is O(repos) and slow at scale, so it
+// must not run on the request path — the classification write has already
+// succeeded synchronously. Lazily starts the queue worker on first use.
+func (r *Router) enqueueReclassification(copName, targetVersion string) {
+	r.reclassQueueOnce.Do(func() {
+		r.reclassQueue = newReclassificationQueue(r.runReclassification)
+	})
+	r.reclassQueue.enqueue(copName, targetVersion)
+}
+
+// runReclassification is the queue worker body: run the scoped recompute closure
+// and emit the WebSocket recompute event so the UI refreshes when it completes.
+func (r *Router) runReclassification(ctx context.Context, copName, targetVersion string) {
+	prop := r.propagateCop(ctx, copName, targetVersion)
+	r.emitCookstyleRecomputed(copName, targetVersion, prop)
+}
 
 // propagateCop runs the scoped recompute closure for a single cop × target
 // version. Best-effort: a nil propagator or an error is logged, never fatal —
