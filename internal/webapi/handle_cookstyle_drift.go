@@ -79,15 +79,12 @@ func (r *Router) copRegistrySnapshot(ctx context.Context) *analysis.CopRegistry 
 	return reg
 }
 
-// staticCopSources assembles the names in the compiled static tables, tagged by
-// which table owns each, for stale-drift detection. Curated exacts and the
-// RemovedIn mapping are the two named tables; namespace prefix defaults are not
-// specific cops and cannot go stale.
+// staticCopSources assembles the names in the compiled static tables for
+// stale-drift detection. The verified-removal RemovedIn mapping is the only
+// enumerable table; the structural-Noise rules classify whole namespaces and
+// have no concrete cop names to go stale.
 func staticCopSources() []analysis.StaticCopSource {
 	var out []analysis.StaticCopSource
-	for _, name := range analysis.CuratedDefaultCopNames() {
-		out = append(out, analysis.StaticCopSource{CopName: name, Source: analysis.StaticSourceCurated})
-	}
 	for _, m := range remediation.AllCopMappings() {
 		if m.CopName != "" {
 			out = append(out, analysis.StaticCopSource{CopName: m.CopName, Source: analysis.StaticSourceMapping})

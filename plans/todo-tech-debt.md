@@ -4,6 +4,14 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
+## CookStyle — Failure-rules subsystem now inert (Reliability Phase 3)
+
+Recorded 2026-07-03 (cookstyle-reliability Phase 3, trustworthy-reds resolver).
+
+- [ ] **The severity-based failure-rules argument is threaded but inert.** Phase 3 removed the severity fallback from the verdict (`DeriveStatusFromFingerprint`/`DeriveCookstyleStatus` now derive status from classification alone; the `rules CookstyleFailureRules` param is kept for call-site stability and explicitly discarded with `_ = rules`). The whole `cookstyle_failure_preset`/`cookstyle_failure_rules` subsystem, `offenseTriggersFailure`, `DefaultFailureRules`, and the admin "Failure Rules" grid no longer influence any red. **Strategic fix (full retirement, per spec "Retirement of Failure Rules"):** drop the `rules` parameter from the derivation functions and their ~10 callers, remove the failure-rules config/store/admin surfaces, and delete the now-dead severity plumbing. Deferred as a wide ripple; correctness is already correct (no severity-derived reds).
+
+---
+
 ## Security — CodeQL Path-injection / TLS Follow-ups
 
 Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dismissed).

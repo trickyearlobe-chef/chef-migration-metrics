@@ -112,8 +112,9 @@ func TestHandleCookstyleCops_BasicAggregation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestHandleCookstyleCops_FullUniverse_IncludesUnscannedCuratedCop proves the
-// list surfaces every KNOWN cop (curated defaults + mappings + custom), not only
-// cops seen in a scan — and that triggered_only narrows back to scanned cops.
+// list surfaces every KNOWN cop (verified-removal mappings + custom + registry
+// Chef cops), not only cops seen in a scan — and that triggered_only narrows
+// back to scanned cops.
 func TestHandleCookstyleCops_FullUniverse_IncludesUnscannedCuratedCop(t *testing.T) {
 	// Only NodeSet has actually triggered in a scan.
 	offences := mustMarshalCops(t, []map[string]any{
@@ -163,19 +164,20 @@ func TestHandleCookstyleCops_FullUniverse_IncludesUnscannedCuratedCop(t *testing
 		return nil
 	}
 
-	// Default (all known cops): an unscanned curated cop must appear with zero
-	// stats and a curated_default source.
+	// Default (all known cops): an unscanned known cop must appear with zero
+	// stats. This one is a verified-removal blocker (RemovedIn 15.0 ≤ target
+	// 18.0), so its source is verified_removal.
 	all := get("")
-	const unscanned = "Chef/Deprecations/RunCommandHelper" // curated blocker, not in the scan
+	const unscanned = "Chef/Deprecations/WindowsFeatureServermanagercmd" // verified-removal blocker, not in the scan
 	item := find(all.Data, unscanned)
 	if item == nil {
-		t.Fatalf("expected unscanned curated cop %q in the full list (got %d items)", unscanned, len(all.Data))
+		t.Fatalf("expected unscanned known cop %q in the full list (got %d items)", unscanned, len(all.Data))
 	}
 	if item.TotalOffences != 0 || item.CookbooksAffected != 0 {
 		t.Errorf("unscanned cop should have zero stats, got offences=%d cookbooks=%d", item.TotalOffences, item.CookbooksAffected)
 	}
-	if item.ClassificationSource != "curated_default" {
-		t.Errorf("classification_source = %q, want curated_default", item.ClassificationSource)
+	if item.ClassificationSource != "verified_removal" {
+		t.Errorf("classification_source = %q, want verified_removal", item.ClassificationSource)
 	}
 	if find(all.Data, "Chef/Deprecations/NodeSet") == nil {
 		t.Error("scanned cop NodeSet should also appear in the full list")
@@ -191,8 +193,8 @@ func TestHandleCookstyleCops_FullUniverse_IncludesUnscannedCuratedCop(t *testing
 	}
 	// Summary tracks the population being viewed: the full universe carries the
 	// long tail of known-but-untriggered cops, whereas triggered_only collapses
-	// it to just the cops that fired. Department defaults surface the untriggered
-	// Chef/Deprecations/* tail as Review (not silently Unclassified), so the
+	// it to just the cops that fired. Chef/Deprecations/* cops without a
+	// RemovedIn resolve to the honest Review default (review_default), so the
 	// universe's Review count exceeds triggered_only's.
 	if all.Summary.ReviewCops <= only.Summary.ReviewCops {
 		t.Errorf("universe summary should carry more review cops than triggered-only: all=%d triggered=%d",

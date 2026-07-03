@@ -36,72 +36,78 @@ func NewResolverFromStore(ctx context.Context, store ClassificationOverrideListe
 	return &CopClassificationResolver{OperatorOverrides: overrides, TargetChefVersion: targetChefVersion}
 }
 
-// CopClassificationLevel represents the migration impact of a cop.
+// Classification levels represent the migration impact of a cop. There is no
+// "unclassified" level: an unresolved cop *is* a Review item (the honest
+// default). See specifications/cop-classification.md (Classification Levels).
 const (
-	ClassificationBlocker      = "blocker"
-	ClassificationReview       = "review"
-	ClassificationNoise        = "noise"
-	ClassificationUnclassified = "unclassified"
+	ClassificationBlocker = "blocker"
+	ClassificationReview  = "review"
+	ClassificationNoise   = "noise"
 )
 
-// ClassificationSource describes how a classification was determined.
+// ClassificationSource describes how a classification was determined — every
+// source is a positive statement of knowledge; the default is Review, never a
+// severity-derived red.
 const (
-	SourceOperatorOverride = "operator_override"
-	SourceRemovedIn        = "removed_in"
-	SourceCuratedDefault   = "curated_default"
-	SourceUnclassified     = "unclassified"
+	SourceOperatorOverride = "operator_override" // operator's confirmed verdict (DB)
+	SourceCustomCop        = "custom_cop"        // hand-defined migration cop → Blocker by intent
+	SourceVerifiedRemoval  = "verified_removal"  // curated RemovedIn ≤ target → Blocker
+	SourceStructuralNoise  = "structural_noise"  // cosmetic department or test/CI tooling → Noise
+	SourceReviewDefault    = "review_default"    // unproven — operator decides (Review)
 )
 
 // ResolvedClassification holds the result of classification resolution for a cop.
 type ResolvedClassification struct {
-	Classification string // blocker, review, noise, unclassified
-	Source         string // operator_override, removed_in, curated_default, unclassified
+	Classification string // blocker, review, noise
+	Source         string // operator_override, custom_cop, verified_removal, structural_noise, review_default
 }
 
 // CopClassificationResolver resolves the effective classification for a cop
-// at a given target version. It checks sources in priority order:
-// 1. Operator overrides (from DB)
-// 2. RemovedIn auto-seed (from cop mapping)
-// 3. Curated defaults (shipped with application)
-// 4. Unclassified (fallback)
+// against the single active target version. Sources are checked in priority
+// order (see Resolve). The TargetChefVersion is used only for the
+// verified-removal (RemovedIn ≤ target) comparison; it is not a key for the
+// operator overrides (there is one active target).
 type CopClassificationResolver struct {
-	// OperatorOverrides maps cop_name → classification for the active target version.
+	// OperatorOverrides maps cop_name → classification (operator's verdict).
 	OperatorOverrides map[string]string
 	// TargetChefVersion is the version being migrated to.
 	TargetChefVersion string
 }
 
-// Resolve determines the classification for a given cop name.
+// Resolve determines the classification for a given cop name in priority order:
+//  1. Operator override (the operator's confirmed verdict).
+//  2. Custom/manual cop → Blocker (a hand-defined migration cop is a blocker by intent).
+//  3. Verified removal → Blocker (a curated RemovedIn ≤ target).
+//  4. Structural Noise → Noise (cosmetic department or test/CI tooling only).
+//  5. Review (default) — everything else; honest "unproven — operator decides".
+//
+// No severity fallback: severity is the signal this feature exists to distrust,
+// so it never produces a red.
 func (r *CopClassificationResolver) Resolve(copName string) ResolvedClassification {
-	// 1. Operator override (highest priority)
+	// 1. Operator override (highest priority).
 	if class, ok := r.OperatorOverrides[copName]; ok {
 		return ResolvedClassification{Classification: class, Source: SourceOperatorOverride}
 	}
 
-	// 2. RemovedIn from cop mapping: if removed_in <= target version, it's a blocker
+	// 2. Custom/manual cop → Blocker by intent.
+	if isCustomCop(copName) {
+		return ResolvedClassification{Classification: ClassificationBlocker, Source: SourceCustomCop}
+	}
+
+	// 3. Verified removal → Blocker (curated RemovedIn ≤ target).
 	if mapping := remediation.LookupCop(copName); mapping != nil && mapping.RemovedIn != "" {
 		if versionLessOrEqual(mapping.RemovedIn, r.TargetChefVersion) {
-			return ResolvedClassification{Classification: ClassificationBlocker, Source: SourceRemovedIn}
+			return ResolvedClassification{Classification: ClassificationBlocker, Source: SourceVerifiedRemoval}
 		}
 	}
 
-	// 3. Curated defaults — exact cop name wins over department prefix.
-	if entry, ok := curatedDefaults[copName]; ok {
-		if entry.MinTargetVersion == "" || versionLessOrEqual(entry.MinTargetVersion, r.TargetChefVersion) {
-			return ResolvedClassification{Classification: entry.Classification, Source: SourceCuratedDefault}
-		}
+	// 4. Structural Noise (positive structural reason only).
+	if isStructuralNoise(copName) {
+		return ResolvedClassification{Classification: ClassificationNoise, Source: SourceStructuralNoise}
 	}
 
-	// 3b. Curated department-prefix defaults (e.g. Style/, Layout/, Chef/Style/
-	// → Noise). Longest matching prefix wins.
-	if entry, ok := lookupCuratedPrefixDefault(copName); ok {
-		if entry.MinTargetVersion == "" || versionLessOrEqual(entry.MinTargetVersion, r.TargetChefVersion) {
-			return ResolvedClassification{Classification: entry.Classification, Source: SourceCuratedDefault}
-		}
-	}
-
-	// 4. Unclassified
-	return ResolvedClassification{Classification: ClassificationUnclassified, Source: SourceUnclassified}
+	// 5. Review (default) — unproven; operator decides.
+	return ResolvedClassification{Classification: ClassificationReview, Source: SourceReviewDefault}
 }
 
 // IsBlocker returns true if the given cop is classified as a blocker at the target version.

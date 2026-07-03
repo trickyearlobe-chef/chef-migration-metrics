@@ -30,6 +30,10 @@ import (
 // blocks. An empty fingerprint is Ready (a clean scan). Untested is the caller's
 // concern when no fingerprint exists at all for a result at time T.
 func DeriveStatusFromFingerprint(cops []datastore.FingerprintCopEntry, rules CookstyleFailureRules, resolver *CopClassificationResolver) string {
+	// rules is retained in the signature for call-site stability but no longer
+	// participates in the verdict: severity is the signal this feature exists to
+	// distrust, so it never produces a red. Only a Blocker classification blocks.
+	_ = rules
 	hasReview := false
 	for i := range cops {
 		c := &cops[i]
@@ -40,11 +44,6 @@ func DeriveStatusFromFingerprint(cops []datastore.FingerprintCopEntry, rules Coo
 			hasReview = true
 		case ClassificationNoise:
 			// Noise contributes nothing to the rollup.
-		default: // Unclassified — fall back to severity-based failure rules.
-			off := CookstyleOffense{CopName: c.CopName, Severity: c.Severity}
-			if offenseTriggersFailure(&off, &rules) {
-				return StatusBlocked
-			}
 		}
 	}
 	if hasReview {

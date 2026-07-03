@@ -104,6 +104,22 @@ func CopMappingCount() int {
 
 var embeddedCopMappings = []CopMapping{
 	// -----------------------------------------------------------------------
+	// Generic Ruby removals (RuboCop Lint department) — verified removals that
+	// crash on the target Chef Client's bundled Ruby.
+	// -----------------------------------------------------------------------
+	{
+		CopName:      "Lint/DeprecatedClassMethods",
+		Description:  "File.exists? and Dir.exists? were removed in Ruby 3 (bundled with Chef 18+). Calls raise NoMethodError at converge time. Use File.exist? / Dir.exist?.",
+		MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+		IntroducedIn: "",
+		RemovedIn:    "18.0",
+		ReplacementPattern: `# Before:
+File.exists?(path)
+
+# After:
+File.exist?(path)`,
+	},
+	// -----------------------------------------------------------------------
 	// Chef/Deprecations
 	// -----------------------------------------------------------------------
 	{

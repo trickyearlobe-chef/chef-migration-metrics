@@ -73,19 +73,23 @@ func TestDeriveCookstyleStatus_TruthTable(t *testing.T) {
 			want: StatusBlocked,
 		},
 		{
-			name: "unclassified at fatal severity-fails to blocked",
+			// Severity is inert: a fatal-severity cop that classifies as Review
+			// stays Needs review — it never severity-fails to Blocked.
+			name: "fatal severity is inert — review cop stays needs review",
 			offenses: []CookstyleOffense{
 				{CopName: "Lint/Syntax", Severity: "fatal"},
 			},
-			want: StatusBlocked,
+			want: StatusNeedsReview,
 		},
 		{
-			name: "unclassified severity-fail dominates review",
+			// Two Review cops, one at fatal severity: still Needs review, because
+			// severity never elevates to Blocked and neither cop is a Blocker.
+			name: "fatal severity does not dominate — all review stays needs review",
 			offenses: []CookstyleOffense{
 				{CopName: "Chef/Deprecations/ResourceWithoutUnifiedTrue", Severity: "warning"},
 				{CopName: "Lint/Syntax", Severity: "fatal"},
 			},
-			want: StatusBlocked,
+			want: StatusNeedsReview,
 		},
 		{
 			name: "operator review override beats severity error",

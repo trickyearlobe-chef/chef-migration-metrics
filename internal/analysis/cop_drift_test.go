@@ -26,8 +26,8 @@ func TestComputeCopDriftStale(t *testing.T) {
 	}, "8.6.10")
 
 	static := []StaticCopSource{
-		{CopName: "Chef/Deprecations/LiveCop", Source: StaticSourceCurated},
-		{CopName: "Chef/Deprecations/GoneCurated", Source: StaticSourceCurated},
+		{CopName: "Chef/Deprecations/LiveCop", Source: StaticSourceMapping},
+		{CopName: "Chef/Deprecations/GoneMapping", Source: StaticSourceMapping},
 		{CopName: "Lint/GoneMapped", Source: StaticSourceMapping},
 	}
 
@@ -47,8 +47,8 @@ func TestComputeCopDriftStale(t *testing.T) {
 	if len(staleByName) != 2 {
 		t.Fatalf("Stale = %d entries, want 2: %+v", len(staleByName), report.Stale)
 	}
-	if staleByName["Chef/Deprecations/GoneCurated"] != StaticSourceCurated {
-		t.Errorf("GoneCurated stale source = %q, want %q", staleByName["Chef/Deprecations/GoneCurated"], StaticSourceCurated)
+	if staleByName["Chef/Deprecations/GoneMapping"] != StaticSourceMapping {
+		t.Errorf("GoneMapping stale source = %q, want %q", staleByName["Chef/Deprecations/GoneMapping"], StaticSourceMapping)
 	}
 	if staleByName["Lint/GoneMapped"] != StaticSourceMapping {
 		t.Errorf("GoneMapped stale source = %q, want %q", staleByName["Lint/GoneMapped"], StaticSourceMapping)
@@ -60,10 +60,12 @@ func TestComputeCopDriftStale(t *testing.T) {
 
 func TestComputeCopDriftCoverageGaps(t *testing.T) {
 	reg := NewCopRegistry([]CopRegistryEntry{
-		// Unclassified Chef/* department (no prefix default) → coverage gap.
+		// Chef/* cop that nothing specifically classifies → resolves to the
+		// Review default → coverage gap.
 		{CopName: "Chef/Modernize/ZzzTestCop", Department: "Chef/Modernize", TopNamespace: "Chef", Enabled: true},
-		// Covered by the Chef/Deprecations/ prefix default (Review) → not a gap.
-		{CopName: "Chef/Deprecations/ZzzTestCop", Department: "Chef/Deprecations", TopNamespace: "Chef", Enabled: true},
+		// Covered by a positive structural-noise reason (Chef/Style/ prefix) →
+		// source structural_noise, not review_default → not a gap.
+		{CopName: "Chef/Style/ZzzTestCop", Department: "Chef/Style", TopNamespace: "Chef", Enabled: true},
 		// Covered by an operator override → not a gap.
 		{CopName: "Chef/Sharing/ZzzTestCop", Department: "Chef/Sharing", TopNamespace: "Chef", Enabled: true},
 		// Generic Ruby cop → excluded from coverage entirely.
@@ -87,7 +89,7 @@ func TestComputeCopDriftCoverageGaps(t *testing.T) {
 
 func TestComputeCopDriftNilRegistry(t *testing.T) {
 	report := ComputeCopDrift(nil, driftResolver(nil), []StaticCopSource{
-		{CopName: "Chef/Deprecations/Whatever", Source: StaticSourceCurated},
+		{CopName: "Chef/Deprecations/Whatever", Source: StaticSourceMapping},
 	})
 	if report.RegistryAvailable {
 		t.Error("RegistryAvailable = true for nil registry, want false")
@@ -103,7 +105,7 @@ func TestComputeCopDriftDeterministicOrder(t *testing.T) {
 		{CopName: "Chef/Modernize/AlphaCop", Department: "Chef/Modernize", TopNamespace: "Chef", Enabled: true},
 	}, "8.6.10")
 	static := []StaticCopSource{
-		{CopName: "Chef/Gone/Zulu", Source: StaticSourceCurated},
+		{CopName: "Chef/Gone/Zulu", Source: StaticSourceMapping},
 		{CopName: "Chef/Gone/Alpha", Source: StaticSourceMapping},
 	}
 	report := ComputeCopDrift(reg, driftResolver(nil), static)

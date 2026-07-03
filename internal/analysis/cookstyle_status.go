@@ -13,22 +13,22 @@ import "github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 const (
 	StatusReady       = "ready"        // 🟢 no blockers, no review-level offenses
 	StatusNeedsReview = "needs_review" // 🟠 no blockers, ≥1 review-level offense
-	StatusBlocked     = "blocked"      // 🔴 ≥1 blocker, or unclassified offense that severity-fails
+	StatusBlocked     = "blocked"      // 🔴 ≥1 blocker offense (severity is never a source)
 	// Untested (⚪, no scan result for this unit + target) reuses the existing
 	// StatusUntested constant defined in readiness.go; it is caller-assigned
 	// when no scan result exists, not produced by DeriveCookstyleStatus.
 )
 
-// DeriveCookstyleStatus computes the rollup status for a set of offenses using
-// resolved cop classification, falling back to severity-based failure rules for
-// unclassified cops only. This is the single derivation every surface consumes;
-// the legacy passed boolean is a convenience = status != StatusBlocked.
+// DeriveCookstyleStatus computes the rollup status for a set of offenses from
+// resolved cop classification alone. This is the single derivation every
+// surface consumes; the legacy passed boolean is a convenience = status !=
+// StatusBlocked.
 //
 // Rules (per spec):
-//   - Blocked: any Blocker offense, OR any Unclassified offense that triggers
-//     the severity failure rules. Blocked always dominates.
+//   - Blocked: any Blocker offense. Blocked always dominates. Severity is never
+//     a source (the rules argument is inert — see DeriveStatusFromFingerprint).
 //   - Needs review: no blockers, but ≥1 Review offense.
-//   - Ready: otherwise (clean, or only Noise / non-failing Unclassified).
+//   - Ready: otherwise (clean, or only Noise).
 //
 // An empty offense slice is Ready (a scan that found nothing). Untested is the
 // caller's concern when no scan result exists at all.

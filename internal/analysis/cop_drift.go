@@ -15,9 +15,10 @@ type StaticCopSource struct {
 }
 
 // Provenance of a static cop entry, reported on stale findings so an operator
-// knows which table to edit.
+// knows which table to edit. The verified-removal mapping is the only
+// enumerable static table (the structural-Noise rules classify whole
+// namespaces and have no concrete cop names to go stale).
 const (
-	StaticSourceCurated = "curated_default"
 	StaticSourceMapping = "removed_in_mapping"
 )
 
@@ -28,8 +29,9 @@ type StaleCopEntry struct {
 	Source  string `json:"source"`
 }
 
-// CoverageGapEntry is a live Chef/* cop with no classification — it resolves to
-// unclassified, so it is invisible to the preset failure clauses until curated.
+// CoverageGapEntry is a live Chef/* cop that nothing specifically classifies —
+// it falls through to the Review default. Surfacing it lets an operator triage
+// a newly shipped cop rather than leaving it silently on the default.
 type CoverageGapEntry struct {
 	CopName    string `json:"cop_name"`
 	Department string `json:"department"`
@@ -69,9 +71,10 @@ func ComputeCopDrift(reg *CopRegistry, resolver *CopClassificationResolver, stat
 		report.Stale = append(report.Stale, StaleCopEntry{CopName: s.CopName, Source: s.Source})
 	}
 
-	// Coverage gaps: live Chef/* cops that resolve to unclassified.
+	// Coverage gaps: live Chef/* cops that nothing specifically classifies —
+	// they fall through to the Review default.
 	for _, e := range reg.ChefCops() {
-		if resolver.Resolve(e.CopName).Classification == ClassificationUnclassified {
+		if resolver.Resolve(e.CopName).Source == SourceReviewDefault {
 			report.CoverageGaps = append(report.CoverageGaps, CoverageGapEntry{
 				CopName:    e.CopName,
 				Department: e.Department,

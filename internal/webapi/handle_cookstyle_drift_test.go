@@ -58,15 +58,11 @@ func lastSlash(s string) int {
 }
 
 // registryCoveringStatics builds a registry containing every static-table cop
-// (so nothing is stale) minus the names in omit, plus the extra entries. This
-// lets a test control drift precisely against the real curated/mapping tables.
+// (so nothing is stale) minus the names in omit, plus the extra entries. The
+// only enumerable static table is the verified-removal RemovedIn mapping, so
+// covering it lets a test control drift precisely against the real mapping table.
 func registryCoveringStatics(omit map[string]bool, extra ...analysis.CopRegistryEntry) *analysis.CopRegistry {
 	var entries []analysis.CopRegistryEntry
-	for _, name := range analysis.CuratedDefaultCopNames() {
-		if !omit[name] {
-			entries = append(entries, regEntry(name))
-		}
-	}
 	for _, m := range remediation.AllCopMappings() {
 		if m.CopName != "" && !omit[m.CopName] {
 			entries = append(entries, regEntry(m.CopName))
@@ -92,11 +88,12 @@ func getDrift(t *testing.T, r *Router) analysis.CopDriftReport {
 }
 
 func TestHandleCookstyleCopDrift_CoverageGaps(t *testing.T) {
-	// A Chef/* cop in a department with no prefix default and no exact entry is a
-	// coverage gap; a Chef/Deprecations cop is covered by the prefix default.
+	// A live Chef/* cop that resolves to the Review default (no RemovedIn, not
+	// structural noise) is a coverage gap. A Chef/Style/* cop is covered — it
+	// resolves to structural_noise, not review_default — so it is not a gap.
 	reg := registryCoveringStatics(nil,
 		regEntry("Chef/Modernize/ZzzGapCop"),
-		regEntry("Chef/Deprecations/ZzzCoveredCop"),
+		regEntry("Chef/Style/ZzzCoveredCop"),
 		regEntry("Style/ZzzGenericCop"), // generic Ruby — excluded from coverage
 	)
 	r := newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("18.0"))
@@ -114,8 +111,8 @@ func TestHandleCookstyleCopDrift_CoverageGaps(t *testing.T) {
 	if !gaps["Chef/Modernize/ZzzGapCop"] {
 		t.Error("expected Chef/Modernize/ZzzGapCop in coverage gaps")
 	}
-	if gaps["Chef/Deprecations/ZzzCoveredCop"] {
-		t.Error("Chef/Deprecations/ZzzCoveredCop is prefix-defaulted; should not be a gap")
+	if gaps["Chef/Style/ZzzCoveredCop"] {
+		t.Error("Chef/Style/ZzzCoveredCop resolves to structural_noise; should not be a gap")
 	}
 	if gaps["Style/ZzzGenericCop"] {
 		t.Error("generic Ruby cop should not appear in coverage gaps")
@@ -127,11 +124,20 @@ func TestHandleCookstyleCopDrift_CoverageGaps(t *testing.T) {
 }
 
 func TestHandleCookstyleCopDrift_Stale(t *testing.T) {
-	curated := analysis.CuratedDefaultCopNames()
-	if len(curated) == 0 {
-		t.Skip("no curated defaults to omit")
+	// The verified-removal RemovedIn mapping is the only enumerable static table.
+	// Drop one of its cops from the live registry: the binary no longer emits it,
+	// so it must be reported stale against the mapping source.
+	mappings := remediation.AllCopMappings()
+	var dropped string
+	for _, m := range mappings {
+		if m.CopName != "" {
+			dropped = m.CopName
+			break
+		}
 	}
-	dropped := curated[0]
+	if dropped == "" {
+		t.Skip("no mapping cops to omit")
+	}
 	reg := registryCoveringStatics(map[string]bool{dropped: true})
 
 	r := newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("18.0"))
@@ -146,10 +152,10 @@ func TestHandleCookstyleCopDrift_Stale(t *testing.T) {
 		}
 	}
 	if found == nil {
-		t.Fatalf("dropped curated cop %q not reported stale: %+v", dropped, report.Stale)
+		t.Fatalf("dropped mapping cop %q not reported stale: %+v", dropped, report.Stale)
 	}
-	if found.Source != analysis.StaticSourceCurated {
-		t.Errorf("stale source = %q, want %q", found.Source, analysis.StaticSourceCurated)
+	if found.Source != analysis.StaticSourceMapping {
+		t.Errorf("stale source = %q, want %q", found.Source, analysis.StaticSourceMapping)
 	}
 }
 

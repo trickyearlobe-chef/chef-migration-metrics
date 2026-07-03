@@ -82,13 +82,12 @@ func TestRescoreCookstyleResults_NoResults(t *testing.T) {
 	}
 }
 
-func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
-	// Offenses that already correctly reflect default rules (error/fatal → fail).
-	// Use an unclassified cop (generic Lint/, no curated/RemovedIn/department
-	// default) so the severity-rule fallback — not classification — drives the
-	// verdict; a Chef/Deprecations/* cop is now department-defaulted to Review.
+func TestRescoreCookstyleResults_ConsistentStatusNoChange(t *testing.T) {
+	// A result whose stored status already matches its classification-derived
+	// status is not rewritten. NodeSet is a verified-removal Blocker (RemovedIn
+	// 14.0 ≤ the ID's target 18), so a stored "blocked" is already correct.
 	offenses := []analysis.CookstyleOffense{
-		{Severity: "error", CopName: "Lint/SomeUnclassifiedRule"},
+		{Severity: "warning", CopName: "Chef/Deprecations/NodeSet"},
 	}
 	offJSON, _ := json.Marshal(offenses)
 
@@ -98,8 +97,8 @@ func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
 				ID:              "org1|cb1|1.0.0|18",
 				Offences:        offJSON,
 				ErrorMessage:    "",
-				Passed:          false,     // correct: error → fail
-				CookstyleStatus: "blocked", // already reflects default rules
+				Passed:          false,     // correct: Blocker → fail
+				CookstyleStatus: "blocked", // already reflects classification
 			},
 		},
 		gitResults: []datastore.CookstyleRescoreRow{
@@ -113,6 +112,7 @@ func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
 		},
 	}
 
+	// Rules are inert under the trustworthy-reds model — passed but ignored.
 	rules := analysis.DefaultFailureRules()
 	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
 	if err != nil {
@@ -132,13 +132,12 @@ func TestRescoreCookstyleResults_DefaultRulesNoChange(t *testing.T) {
 	}
 }
 
-func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
-	// Offense at "warning" severity on an unclassified cop (generic Lint/, no
-	// curated/RemovedIn/department default) so the severity-rule fallback drives
-	// the verdict — a Chef/Deprecations/* cop is now department-defaulted to
-	// Review and would ignore these rules entirely.
+func TestRescoreCookstyleResults_ClassificationFlipsVerdict(t *testing.T) {
+	// A result stored ready/passed but containing a Blocker cop flips to blocked
+	// when re-derived from classification. NodeSet is a verified-removal Blocker
+	// (RemovedIn 14.0 ≤ target 18). Severity and failure rules play no part.
 	offenses := []analysis.CookstyleOffense{
-		{Severity: "warning", CopName: "Lint/SomeUnclassifiedRule"},
+		{Severity: "warning", CopName: "Chef/Deprecations/NodeSet"},
 	}
 	offJSON, _ := json.Marshal(offenses)
 
@@ -147,7 +146,7 @@ func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
 			{
 				ID:              "org1|cb1|1.0.0|18",
 				Offences:        offJSON,
-				Passed:          true, // was passing under default rules
+				Passed:          true, // stale: stored before classification said Blocker
 				CookstyleStatus: "ready",
 			},
 		},
@@ -155,16 +154,14 @@ func TestRescoreCookstyleResults_RulesChangeFlipVerdict(t *testing.T) {
 			{
 				ID:              "myrepo|https://git.example.com/repo|18",
 				Offences:        offJSON,
-				Passed:          true, // was passing under default rules
+				Passed:          true,
 				CookstyleStatus: "ready",
 			},
 		},
 	}
 
-	// Tighten the catch-all so warnings now fail for any (unclassified) cop.
-	rules := analysis.NewCookstyleFailureRules(map[string][]string{
-		"*": {"warning", "error", "fatal"},
-	})
+	// Rules are inert — the flip is driven purely by classification.
+	rules := analysis.DefaultFailureRules()
 	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

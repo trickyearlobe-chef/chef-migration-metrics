@@ -216,9 +216,8 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 	for name := range accum {
 		known[name] = true
 	}
-	for _, name := range analysis.CuratedDefaultCopNames() {
-		known[name] = true
-	}
+	// The verified-removal mapping is the enumerable static source of known cops
+	// (the structural-Noise rules classify whole namespaces, not named cops).
 	for _, m := range remediation.AllCopMappings() {
 		if m.CopName != "" {
 			known[m.CopName] = true

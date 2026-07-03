@@ -46,15 +46,18 @@ func TestParseMajorVersion(t *testing.T) {
 	}
 }
 
-func TestResolverOperatorOverrideTakesPriority(t *testing.T) {
+// TestResolverOperatorOverrideWinsOverEverything asserts source 1 (operator
+// override) beats even a verified-removal Blocker.
+func TestResolverOperatorOverrideWinsOverEverything(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{
+			// NodeSet has RemovedIn=14.0 (would be a verified_removal Blocker),
+			// but the operator's verdict wins.
 			"Chef/Deprecations/NodeSet": ClassificationNoise,
 		},
 		TargetChefVersion: "18.0",
 	}
 
-	// NodeSet has RemovedIn=14.0 in the cop mapping, but operator override wins.
 	result := resolver.Resolve("Chef/Deprecations/NodeSet")
 	if result.Classification != ClassificationNoise {
 		t.Errorf("expected noise (operator override), got %s", result.Classification)
@@ -64,136 +67,92 @@ func TestResolverOperatorOverrideTakesPriority(t *testing.T) {
 	}
 }
 
-func TestResolverRemovedInAutoSeed(t *testing.T) {
+// TestResolverCustomCop asserts source 2: any Custom/ cop is a Blocker by intent.
+func TestResolverCustomCop(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
 		TargetChefVersion: "18.0",
 	}
 
-	// NodeSet has RemovedIn=14.0 — should be blocker for target 18.0.
-	result := resolver.Resolve("Chef/Deprecations/NodeSet")
+	result := resolver.Resolve("Custom/Anything")
 	if result.Classification != ClassificationBlocker {
-		t.Errorf("expected blocker (removed_in), got %s", result.Classification)
+		t.Errorf("expected blocker (custom cop), got %s", result.Classification)
 	}
-	if result.Source != SourceRemovedIn {
-		t.Errorf("expected source removed_in, got %s", result.Source)
+	if result.Source != SourceCustomCop {
+		t.Errorf("expected source custom_cop, got %s", result.Source)
 	}
 }
 
-func TestResolverRemovedInNotApplicable(t *testing.T) {
+// TestResolverVerifiedRemoval asserts source 3: a curated RemovedIn ≤ target
+// resolves to Blocker/verified_removal.
+func TestResolverVerifiedRemoval(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "12.0",
+		TargetChefVersion: "18.0",
 	}
 
-	// NodeSet has RemovedIn=14.0 — should NOT be a blocker for target 12.0.
-	result := resolver.Resolve("Chef/Deprecations/NodeSet")
-	// It won't be blocker via removed_in, but may hit curated defaults or unclassified.
-	if result.Classification == ClassificationBlocker && result.Source == SourceRemovedIn {
-		t.Errorf("should not be blocker via removed_in for target 12.0")
-	}
-}
-
-func TestCuratedDefaultCopNames(t *testing.T) {
-	names := CuratedDefaultCopNames()
-	if len(names) == 0 {
-		t.Fatal("expected curated default cop names, got none")
-	}
-	// Must include a known curated entry so the cop list can seed it as a cop
-	// that exists even when no scan has produced its offence yet.
-	found := false
-	for _, n := range names {
-		if n == "Lint/DeprecatedClassMethods" {
-			found = true
-			break
+	// NodeSet RemovedIn=14.0, WindowsFeatureServermanagercmd=15.0,
+	// Lint/DeprecatedClassMethods=18.0 — all ≤ target 18.0.
+	for _, cop := range []string{
+		"Chef/Deprecations/NodeSet",
+		"Chef/Deprecations/WindowsFeatureServermanagercmd",
+		"Lint/DeprecatedClassMethods",
+	} {
+		result := resolver.Resolve(cop)
+		if result.Classification != ClassificationBlocker {
+			t.Errorf("%s: expected blocker (verified_removal), got %s", cop, result.Classification)
+		}
+		if result.Source != SourceVerifiedRemoval {
+			t.Errorf("%s: expected source verified_removal, got %s", cop, result.Source)
 		}
 	}
-	if !found {
-		t.Errorf("CuratedDefaultCopNames() missing Lint/DeprecatedClassMethods; got %v", names)
-	}
 }
 
-func TestResolverCuratedDefaults(t *testing.T) {
-	resolver := &CopClassificationResolver{
-		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "18.0",
-	}
-
-	// Lint/DeprecatedClassMethods is a curated blocker for target >= 18.0
-	result := resolver.Resolve("Lint/DeprecatedClassMethods")
-	if result.Classification != ClassificationBlocker {
-		t.Errorf("expected blocker (curated_default), got %s", result.Classification)
-	}
-	if result.Source != SourceCuratedDefault {
-		t.Errorf("expected source curated_default, got %s", result.Source)
-	}
-}
-
-func TestResolverCuratedDefaultVersionGating(t *testing.T) {
+// TestResolverRemovedInGreaterThanTargetFallsThrough asserts a RemovedIn
+// GREATER than the target must NOT produce a Blocker — it falls through to the
+// honest Review default.
+func TestResolverRemovedInGreaterThanTargetFallsThrough(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
 		TargetChefVersion: "14.0",
 	}
 
-	// Lint/DeprecatedClassMethods has MinTargetVersion=18.0 — should not apply for target 14.0
+	// Lint/DeprecatedClassMethods RemovedIn=18.0 > target 14.0. Not custom, not
+	// structural noise → Review default, never a verified_removal Blocker.
 	result := resolver.Resolve("Lint/DeprecatedClassMethods")
-	if result.Classification == ClassificationBlocker && result.Source == SourceCuratedDefault {
-		t.Errorf("curated default should not apply for target 14.0 (min is 18.0)")
+	if result.Classification == ClassificationBlocker {
+		t.Errorf("RemovedIn 18.0 > target 14.0 must not blocker, got %s/%s", result.Classification, result.Source)
+	}
+	if result.Classification != ClassificationReview || result.Source != SourceReviewDefault {
+		t.Errorf("expected review/review_default, got %s/%s", result.Classification, result.Source)
 	}
 }
 
-func TestResolverCuratedNoise(t *testing.T) {
+// TestResolverStructuralNoise asserts source 4: cosmetic departments and
+// test/CI-tooling markers resolve to Noise/structural_noise.
+func TestResolverStructuralNoise(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
 		TargetChefVersion: "18.0",
 	}
 
-	// ChefSpec cops are noise regardless of version.
-	result := resolver.Resolve("Chef/Deprecations/ChefSpecLegacyRunner")
-	if result.Classification != ClassificationNoise {
-		t.Errorf("expected noise for ChefSpec cop, got %s", result.Classification)
-	}
-	if result.Source != SourceCuratedDefault {
-		t.Errorf("expected source curated_default, got %s", result.Source)
-	}
-}
-
-func TestResolverUnclassifiedFallback(t *testing.T) {
-	resolver := &CopClassificationResolver{
-		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "18.0",
-	}
-
-	// Unknown cop outside any curated prefix — should be unclassified.
-	result := resolver.Resolve("Lint/SomeUnknownCop")
-	if result.Classification != ClassificationUnclassified {
-		t.Errorf("expected unclassified, got %s", result.Classification)
-	}
-	if result.Source != SourceUnclassified {
-		t.Errorf("expected source unclassified, got %s", result.Source)
-	}
-}
-
-func TestResolverCuratedPrefixDefaults(t *testing.T) {
-	resolver := &CopClassificationResolver{
-		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "18.0",
-	}
-
-	// Cosmetic departments resolve to Noise via department prefix, even though
-	// no exact-name curated default exists for these cops.
-	cosmetic := []string{
+	noise := []string{
 		"Style/TrailingWhitespace",
 		"Layout/IndentationWidth",
 		"Chef/Style/CommentFormat",
+		"Chef/Deprecations/ChefSpecLegacyRunner", // contains "ChefSpec"
+		"Chef/Deprecations/FoodcriticComments",   // contains "Foodcritic"
+		"Chef/Deprecations/DeliveryConfig",       // contains "Delivery"
+		"Chef/Deprecations/LibrarianInclude",     // contains "Librarian"
+		"Chef/Deprecations/BerksConfig",          // contains "Berks"
 	}
-	for _, cop := range cosmetic {
+	for _, cop := range noise {
 		result := resolver.Resolve(cop)
 		if result.Classification != ClassificationNoise {
-			t.Errorf("%s: expected noise (curated prefix), got %s", cop, result.Classification)
+			t.Errorf("%s: expected noise (structural), got %s", cop, result.Classification)
 		}
-		if result.Source != SourceCuratedDefault {
-			t.Errorf("%s: expected source curated_default, got %s", cop, result.Source)
+		if result.Source != SourceStructuralNoise {
+			t.Errorf("%s: expected source structural_noise, got %s", cop, result.Source)
 		}
 	}
 
@@ -203,47 +162,36 @@ func TestResolverCuratedPrefixDefaults(t *testing.T) {
 	}
 }
 
-func TestResolverDepartmentDefaults(t *testing.T) {
+// TestResolverReviewDefault asserts source 5: everything unproven — an unknown
+// Chef cop, a generic Lint cop, and formerly-"curated" Chef deprecation/
+// correctness cops with NO RemovedIn — resolves to Review/review_default.
+func TestResolverReviewDefault(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
 		TargetChefVersion: "18.0",
 	}
 
-	// Brand-new, unmapped cops in the Chef deprecation/correctness departments
-	// resolve to Review via department prefix — visible and advisory, never
-	// silently Unclassified.
 	review := []string{
-		"Chef/Deprecations/SomeBrandNewCop",
-		"Chef/Correctness/SomeBrandNewCop",
+		"Lint/SomeUnknownCop",                      // generic Lint, no mapping
+		"Chef/Deprecations/SomeBrandNewCop",        // unknown Chef deprecation cop
+		"Chef/Correctness/SomeBrandNewCop",         // unknown Chef correctness cop
+		"Chef/Correctness/NodeNormal",              // mapped but RemovedIn=""
+		"Chef/Deprecations/HWRPWithoutUnifiedTrue", // mapped but RemovedIn=""
 	}
 	for _, cop := range review {
 		result := resolver.Resolve(cop)
 		if result.Classification != ClassificationReview {
-			t.Errorf("%s: expected review (department prefix), got %s", cop, result.Classification)
+			t.Errorf("%s: expected review, got %s", cop, result.Classification)
 		}
-		if result.Source != SourceCuratedDefault {
-			t.Errorf("%s: expected source curated_default, got %s", cop, result.Source)
+		if result.Source != SourceReviewDefault {
+			t.Errorf("%s: expected source review_default, got %s", cop, result.Source)
 		}
-	}
-
-	// More specific sources still win over the department default:
-	//   - exact curated Noise entry (ChefSpec test tooling)
-	//   - RemovedIn <= target (NodeSet removed in 14.0)
-	if got := resolver.Resolve("Chef/Deprecations/ChefSpecLegacyRunner"); got.Classification != ClassificationNoise {
-		t.Errorf("exact curated Noise must beat department Review, got %s", got.Classification)
-	}
-	if got := resolver.Resolve("Chef/Deprecations/NodeSet"); got.Classification != ClassificationBlocker || got.Source != SourceRemovedIn {
-		t.Errorf("RemovedIn Blocker must beat department Review, got %s/%s", got.Classification, got.Source)
-	}
-
-	// Cosmetic Chef/Style/* stays Noise — its own department default is
-	// disjoint from Deprecations/Correctness, so no cross-contamination.
-	if got := resolver.Resolve("Chef/Style/CommentFormat"); got.Classification != ClassificationNoise {
-		t.Errorf("Chef/Style/* must stay Noise, got %s", got.Classification)
 	}
 }
 
-func TestResolverOperatorOverrideBeatsPrefixDefault(t *testing.T) {
+// TestResolverOperatorOverrideBeatsStructuralNoise asserts the override (source
+// 1) beats a would-be structural Noise verdict (source 4).
+func TestResolverOperatorOverrideBeatsStructuralNoise(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{
 			"Style/TrailingWhitespace": ClassificationBlocker,
@@ -251,7 +199,6 @@ func TestResolverOperatorOverrideBeatsPrefixDefault(t *testing.T) {
 		TargetChefVersion: "18.0",
 	}
 
-	// Operator override wins over the Noise department prefix.
 	result := resolver.Resolve("Style/TrailingWhitespace")
 	if result.Classification != ClassificationBlocker {
 		t.Errorf("expected blocker (operator override), got %s", result.Classification)
@@ -286,21 +233,23 @@ func TestEvaluatePassFailWithClassification(t *testing.T) {
 		}
 	})
 
-	t.Run("unclassified cop at warning passes under default rules", func(t *testing.T) {
+	t.Run("review cop passes", func(t *testing.T) {
 		offenses := []CookstyleOffense{
 			{CopName: "Lint/SomeUnknownCop", Severity: "warning"},
 		}
 		if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
-			t.Error("expected pass: unknown cop at warning, default rules only fail on error/fatal")
+			t.Error("expected pass: unknown cop resolves to Review, which never blocks")
 		}
 	})
 
-	t.Run("unclassified cop at fatal fails under default rules", func(t *testing.T) {
+	t.Run("severity is inert — fatal alone never fails", func(t *testing.T) {
+		// Under the trustworthy-reds model severity never produces Blocked. A
+		// fatal-severity cop that classifies as Review must still pass.
 		offenses := []CookstyleOffense{
 			{CopName: "Lint/Syntax", Severity: "fatal"},
 		}
-		if EvaluatePassFailWithClassification(offenses, rules, resolver) {
-			t.Error("expected fail: fatal severity triggers default rules")
+		if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
+			t.Error("expected pass: severity is inert, Lint/Syntax resolves to Review not Blocker")
 		}
 	})
 
