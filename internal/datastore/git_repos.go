@@ -301,10 +301,15 @@ func (db *DB) MarkGitRepoCloneFailed(ctx context.Context, name, gitRepoURL, clon
 	if cloneError != "" {
 		ce = sql.NullString{String: cloneError, Valid: true}
 	}
+	// A repo we can't clone can't be verified — reset the materialised cookstyle
+	// and compatibility verdicts to 'untested' so the list doesn't keep showing a
+	// stale ready/needs_review/blocked status for a Missing repo.
 	const query = `
 		UPDATE git_repos
 		   SET clone_status = 'failed',
 		       clone_error  = $3,
+		       cookstyle_status     = 'untested',
+		       compatibility_status = 'untested',
 		       updated_at   = now()
 		 WHERE name = $1 AND git_repo_url = $2
 		RETURNING ` + gitRepoColumns
@@ -336,6 +341,8 @@ func (db *DB) UpsertGitRepoFailed(ctx context.Context, name, gitRepoURL, cloneEr
 		DO UPDATE SET
 			clone_status = 'failed',
 			clone_error  = EXCLUDED.clone_error,
+			cookstyle_status     = 'untested',
+			compatibility_status = 'untested',
 			updated_at   = now()
 		RETURNING ` + gitRepoColumns
 

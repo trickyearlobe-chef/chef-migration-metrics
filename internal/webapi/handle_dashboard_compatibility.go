@@ -367,6 +367,14 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		}
 		seen[key] = true
 		pv.total++
+		// A repo we can't clone can't be verified — count it untested regardless
+		// of any stale result, matching the materialised list column and the repo
+		// detail (a Missing repo must not show a ready/needs_review/blocked verdict).
+		if repoCloneStatus[repoName] == "failed" {
+			pv.untested++
+			pv.untestedCloneFailed++
+			continue
+		}
 		switch rollupBucketForScan(cs.CookstyleStatus, cs.ErrorMessage) {
 		case analysis.StatusReady:
 			pv.ready++
