@@ -53,6 +53,53 @@ func (db *DB) RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoNa
 	return nil
 }
 
+// RecomputeAllGitRepoCookstyleStatus re-materialises compatibility_status and
+// cookstyle_status for EVERY git_repos row from its latest cookstyle result for
+// the given target Chef version (repos with no result → 'untested'). It applies
+// the same derivation as RecomputeGitRepoCompatibilityStatus, in bulk.
+//
+// Call this after a bulk rescore/reclassification: the per-result recompute only
+// fires for results whose status changed, so a repo whose result status is
+// unchanged but whose materialised column is stale (e.g. after
+// ResetAllGitRepoStatuses) would otherwise never be corrected — leaving the Git
+// Repos list disagreeing with the dashboard summary (which reads results direct).
+func (db *DB) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error {
+	const query = `
+		UPDATE git_repos gr
+		SET compatibility_status = COALESCE((
+			SELECT CASE
+				WHEN cs.error_message != '' THEN 'error'
+				WHEN cs.passed = true THEN 'compatible'
+				WHEN cs.passed = false THEN 'incompatible'
+			END
+			FROM git_repo_cookstyle_results cs
+			WHERE cs.git_repo_name = gr.name
+			  AND cs.git_repo_url = gr.git_repo_url
+			  AND cs.target_chef_version = $1
+			ORDER BY cs.scanned_at DESC
+			LIMIT 1
+		), 'untested'),
+		    cookstyle_status = COALESCE((
+			SELECT CASE
+				WHEN cs.error_message != '' THEN 'untested'
+				ELSE NULLIF(cs.cookstyle_status, '')
+			END
+			FROM git_repo_cookstyle_results cs
+			WHERE cs.git_repo_name = gr.name
+			  AND cs.git_repo_url = gr.git_repo_url
+			  AND cs.target_chef_version = $1
+			ORDER BY cs.scanned_at DESC
+			LIMIT 1
+		), 'untested'),
+		    updated_at = now()`
+
+	_, err := db.q().ExecContext(ctx, query, targetChefVersion)
+	if err != nil {
+		return fmt.Errorf("datastore: recomputing all git repo cookstyle status: %w", err)
+	}
+	return nil
+}
+
 // RecomputeGitRepoTKStatus recomputes the tk_status, tk_passed, and tk_total
 // columns for a single git repo from its active (non-excluded) kitchen results.
 //
