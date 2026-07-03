@@ -24,6 +24,8 @@ type mockStore struct {
 	CountCollectionRunsFilteredFn                          func(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
 	ListNodeSnapshotsByOrganisationFn                      func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
 	ListNodeSnapshotsFilteredFn                            func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
+	ListNodeSnapshotsForExportFn                           func(ctx context.Context, f datastore.NodeSnapshotFilter, after datastore.NodeSnapshotCursor, limit int) ([]datastore.NodeSnapshot, error)
+	CountNodeSnapshotsFilteredFn                           func(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error)
 	CountNodeVersionDistributionFn                         func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
 	CountNodePlatformDistributionFn                        func(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)
 	CountNodePlatformDistributionDetailedFn                func(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.PlatformDistributionRow, int, error)
@@ -281,6 +283,20 @@ func (m *mockStore) ListNodeSnapshotsFiltered(ctx context.Context, f datastore.N
 		return m.ListNodeSnapshotsFilteredFn(ctx, f)
 	}
 	return nil, 0, nil
+}
+
+func (m *mockStore) ListNodeSnapshotsForExport(ctx context.Context, f datastore.NodeSnapshotFilter, after datastore.NodeSnapshotCursor, limit int) ([]datastore.NodeSnapshot, error) {
+	if m.ListNodeSnapshotsForExportFn != nil {
+		return m.ListNodeSnapshotsForExportFn(ctx, f, after, limit)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) CountNodeSnapshotsFiltered(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error) {
+	if m.CountNodeSnapshotsFilteredFn != nil {
+		return m.CountNodeSnapshotsFilteredFn(ctx, f)
+	}
+	return 0, nil
 }
 
 func (m *mockStore) CountNodeVersionDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error) {

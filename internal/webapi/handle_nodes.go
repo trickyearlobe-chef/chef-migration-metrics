@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -539,8 +540,13 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 // that were previously consumed by export.FilterNodes, so the semantics
 // are identical (case-insensitive substring matching).
 func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHours, criticalDays int) datastore.NodeSnapshotFilter {
-	q := req.URL.Query()
+	return nodeSnapshotFilterFromValues(req.URL.Query(), orgIDs, warningHours, criticalDays)
+}
 
+// nodeSnapshotFilterFromValues builds the node list filter from raw query values.
+// Both the list handler and the export path call this, so an export reproduces the
+// list view's filtering exactly (see specifications/web-api-exports.md).
+func nodeSnapshotFilterFromValues(q url.Values, orgIDs []string, warningHours, criticalDays int) datastore.NodeSnapshotFilter {
 	f := datastore.NodeSnapshotFilter{
 		OrganisationNames: orgIDs,
 		NodeName:          q.Get("node_name"),

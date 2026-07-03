@@ -66,6 +66,15 @@ type DataStore interface {
 	// the total count of all matching rows (for pagination), and any error.
 	ListNodeSnapshotsFiltered(ctx context.Context, f datastore.NodeSnapshotFilter) ([]datastore.NodeSnapshot, int, error)
 
+	// ListNodeSnapshotsForExport returns up to limit snapshots matching the
+	// filter, ordered by the unique (organisation_name, node_name) tuple and
+	// strictly after the cursor — keyset pagination for streaming exports.
+	ListNodeSnapshotsForExport(ctx context.Context, f datastore.NodeSnapshotFilter, after datastore.NodeSnapshotCursor, limit int) ([]datastore.NodeSnapshot, error)
+
+	// CountNodeSnapshotsFiltered returns the count of node snapshots matching
+	// the filter without loading rows (used for sync vs async export dispatch).
+	CountNodeSnapshotsFiltered(ctx context.Context, f datastore.NodeSnapshotFilter) (int, error)
+
 	// CountNodeVersionDistribution returns a map of chef_version → count
 	// for nodes matching the given filter, aggregated in SQL.
 	CountNodeVersionDistribution(ctx context.Context, f datastore.NodeSnapshotFilter) (map[string]int, int, error)

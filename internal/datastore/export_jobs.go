@@ -16,7 +16,7 @@ import (
 // completed/failed/expired.
 type ExportJob struct {
 	ID            string          `json:"id"`
-	ExportType    string          `json:"export_type"` // ready_nodes, blocked_nodes, cookbook_remediation
+	ExportType    string          `json:"export_type"` // nodes, cookbooks, roles, git_repos (one per list view)
 	Format        string          `json:"format"`      // csv, json, chef_search_query
 	Filters       json.RawMessage `json:"filters"`     // JSONB — caller-specified filters
 	Status        string          `json:"status"`      // pending, processing, completed, failed, expired
@@ -40,11 +40,13 @@ const (
 	ExportStatusExpired    = "expired"
 )
 
-// Export type constants.
+// Export type constants — one per list view. Each export streams the current
+// filtered list of that entity (see specifications/web-api-exports.md).
 const (
-	ExportTypeReadyNodes          = "ready_nodes"
-	ExportTypeBlockedNodes        = "blocked_nodes"
-	ExportTypeCookbookRemediation = "cookbook_remediation"
+	ExportTypeNodes     = "nodes"
+	ExportTypeCookbooks = "cookbooks"
+	ExportTypeRoles     = "roles"
+	ExportTypeGitRepos  = "git_repos"
 )
 
 // Export format constants.
@@ -377,7 +379,7 @@ func (db *DB) DeleteExpiredExportJobRows(ctx context.Context, olderThan time.Tim
 // ValidExportType returns true if the given string is a recognised export type.
 func ValidExportType(t string) bool {
 	switch t {
-	case ExportTypeReadyNodes, ExportTypeBlockedNodes, ExportTypeCookbookRemediation:
+	case ExportTypeNodes, ExportTypeCookbooks, ExportTypeRoles, ExportTypeGitRepos:
 		return true
 	}
 	return false

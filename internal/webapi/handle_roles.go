@@ -5,11 +5,25 @@ package webapi
 
 import (
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
+
+// roleFilterFromValues builds the role list filter from raw query values. Shared
+// by the list handler and the export path (Limit/Offset applied by the caller).
+func roleFilterFromValues(q url.Values, orgNames []string, targetChefVersion string) datastore.RoleFilter {
+	return datastore.RoleFilter{
+		OrganisationNames:   orgNames,
+		Name:                valueOr(q, "name", ""),
+		CompatibilityStatus: valueOr(q, "compatibility_status", ""),
+		TargetChefVersion:   targetChefVersion,
+		Sort:                valueOr(q, "sort", "name"),
+		SortOrder:           valueOr(q, "order", "asc"),
+	}
+}
 
 // handleRoles handles GET /api/v1/roles — paginated list of roles with
 // derived compatibility status and summary bar data.
@@ -51,16 +65,10 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 	tkFilter := queryString(req, "tk_status", "")
 	sortField := queryString(req, "sort", "name")
 
-	f := datastore.RoleFilter{
-		OrganisationNames:   orgNames,
-		Name:                queryString(req, "name", ""),
-		CompatibilityStatus: queryString(req, "compatibility_status", ""),
-		TargetChefVersion:   targetChefVersion,
-		Sort:                sortField,
-		SortOrder:           queryString(req, "order", "asc"),
-		Limit:               pg.Limit(),
-		Offset:              pg.Offset(),
-	}
+	// Shared with the export path so an export reproduces the list view's filtering.
+	f := roleFilterFromValues(req.URL.Query(), orgNames, targetChefVersion)
+	f.Limit = pg.Limit()
+	f.Offset = pg.Offset()
 
 	// When TK filter or TK sort is active, disable SQL pagination —
 	// TK status is computed post-query, so we must fetch all rows first.

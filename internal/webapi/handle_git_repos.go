@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,40 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
+
+// gitRepoFilterFromValues builds the git-repo list filter from raw query values.
+// Shared by the list handler and the export path (Limit/Offset applied by caller).
+func gitRepoFilterFromValues(q url.Values) datastore.GitRepoFilter {
+	f := datastore.GitRepoFilter{
+		Name:                valueOr(q, "name", ""),
+		CompatibilityStatus: valueOr(q, "compatibility", ""),
+		CookstyleStatus:     valueOr(q, "cookstyle_status", ""),
+		TKStatus:            valueOr(q, "tk_status", ""),
+		CloneStatus:         valueOr(q, "clone_status", ""),
+		Sort:                valueOr(q, "sort", "name"),
+		SortOrder:           valueOr(q, "order", "asc"),
+	}
+
+	// has_test_suite filter (yes, no, or "yes,no" — comma-separated).
+	if tsf := q.Get("has_test_suite"); tsf != "" {
+		wantYes := false
+		wantNo := false
+		for _, v := range strings.Split(tsf, ",") {
+			switch strings.TrimSpace(v) {
+			case "yes":
+				wantYes = true
+			case "no":
+				wantNo = true
+			}
+		}
+		// Only filter if not both selected (both = no filter).
+		if wantYes != wantNo {
+			b := wantYes
+			f.HasTestSuite = &b
+		}
+	}
+	return f
+}
 
 // ---------------------------------------------------------------------------
 // Git Repos List endpoint
@@ -79,35 +114,9 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 
 	ctx := req.Context()
 
-	// Parse query params into filter struct.
-	f := datastore.GitRepoFilter{
-		Name:                queryString(req, "name", ""),
-		CompatibilityStatus: queryString(req, "compatibility", ""),
-		CookstyleStatus:     queryString(req, "cookstyle_status", ""),
-		TKStatus:            queryString(req, "tk_status", ""),
-		CloneStatus:         queryString(req, "clone_status", ""),
-		Sort:                queryString(req, "sort", "name"),
-		SortOrder:           queryString(req, "order", "asc"),
-	}
-
-	// Parse has_test_suite filter (yes, no, yes,no — comma-separated).
-	if tsf := queryString(req, "has_test_suite", ""); tsf != "" {
-		wantYes := false
-		wantNo := false
-		for _, v := range strings.Split(tsf, ",") {
-			switch strings.TrimSpace(v) {
-			case "yes":
-				wantYes = true
-			case "no":
-				wantNo = true
-			}
-		}
-		// Only filter if not both selected (both = no filter).
-		if wantYes != wantNo {
-			b := wantYes
-			f.HasTestSuite = &b
-		}
-	}
+	// Parse query params into filter struct (shared with the export path so an
+	// export reproduces the list view's filtering exactly).
+	f := gitRepoFilterFromValues(req.URL.Query())
 
 	// Pagination.
 	pg := ParsePagination(req)

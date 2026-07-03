@@ -6,11 +6,39 @@ package webapi
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
+
+// cookbookFilterFromValues builds the cookbook list filter from raw query values.
+// Both the list handler and the export path call this so an export reproduces the
+// list view's filtering exactly. It does not set Limit/Offset — the caller applies
+// pagination (or leaves it unbounded for a streamed export).
+func cookbookFilterFromValues(q url.Values, orgIDs []string, targetChefVersion string) datastore.CookbookFilter {
+	f := datastore.CookbookFilter{
+		OrganisationNames: orgIDs,
+		Name:              q.Get("name"),
+		DownloadStatus:    q.Get("download_status"),
+		Compatibility:     q.Get("compatibility"),
+		CookstyleStatus:   q.Get("cookstyle_status"),
+		TKStatus:          q.Get("tk_status"),
+		TargetChefVersion: targetChefVersion,
+		Sort:              valueOr(q, "sort", "name"),
+		SortOrder:         valueOr(q, "order", "asc"),
+	}
+	switch q.Get("active") {
+	case "true":
+		v := true
+		f.Active = &v
+	case "false":
+		v := false
+		f.Active = &v
+	}
+	return f
+}
 
 // cookbookRow represents a single server cookbook version in the list.
 // Each row is a specific version from a specific organisation — no collapsing.
@@ -70,33 +98,13 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		targetChefVersion = r.defaultTargetVersion()
 	}
 
-	q := req.URL.Query()
 	pg := ParsePagination(req)
 
-	// Build SQL filter from query parameters.
-	f := datastore.CookbookFilter{
-		OrganisationNames: orgIDs,
-		Name:              q.Get("name"),
-		DownloadStatus:    q.Get("download_status"),
-		Compatibility:     q.Get("compatibility"),
-		CookstyleStatus:   q.Get("cookstyle_status"),
-		TKStatus:          q.Get("tk_status"),
-		TargetChefVersion: targetChefVersion,
-		Sort:              queryString(req, "sort", "name"),
-		SortOrder:         queryString(req, "order", "asc"),
-		Limit:             pg.Limit(),
-		Offset:            pg.Offset(),
-	}
-
-	// Parse the active filter (bool pointer — nil means no filter).
-	switch q.Get("active") {
-	case "true":
-		v := true
-		f.Active = &v
-	case "false":
-		v := false
-		f.Active = &v
-	}
+	// Build SQL filter from query parameters (shared with the export path so an
+	// export reproduces the list view's filtering exactly).
+	f := cookbookFilterFromValues(req.URL.Query(), orgIDs, targetChefVersion)
+	f.Limit = pg.Limit()
+	f.Offset = pg.Offset()
 
 	// When ownership filtering is active, we disable SQL pagination and
 	// apply ownership + pagination in memory (same pattern as nodes).
