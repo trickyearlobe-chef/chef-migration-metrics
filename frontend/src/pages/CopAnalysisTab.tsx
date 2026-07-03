@@ -380,7 +380,10 @@ function CopRow({
             {cop.cop_name}
           </button>
           {cop.description && (
-            <div className="mt-0.5 text-xs text-gray-400 truncate max-w-xs">
+            <div
+              className="mt-0.5 text-xs text-gray-400 truncate max-w-xs"
+              title={cop.description}
+            >
               {cop.description}
             </div>
           )}

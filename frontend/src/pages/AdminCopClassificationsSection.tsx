@@ -314,9 +314,17 @@ export function AdminCopClassificationsSection() {
                 return (
                   <tr key={cop.cop_name} className="align-top hover:bg-gray-50">
                     <td className="px-3 py-2">
-                      <div className="font-mono text-xs text-gray-800">{cop.cop_name}</div>
+                      <div
+                        className="font-mono text-xs text-gray-800"
+                        title={cop.cop_name}
+                      >
+                        {cop.cop_name}
+                      </div>
                       {cop.description && (
-                        <div className="mt-0.5 max-w-md truncate text-xs text-gray-400">
+                        <div
+                          className="mt-0.5 max-w-md truncate text-xs text-gray-400"
+                          title={cop.description}
+                        >
                           {cop.description}
                         </div>
                       )}
