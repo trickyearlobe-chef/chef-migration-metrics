@@ -105,11 +105,11 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
             {entry.total} node{entry.total !== 1 ? "s" : ""}
           </Link>
           {" · "}
-          <Link to={deploymentStateHref("Staged")} className="hover:underline">
+          <Link to={deploymentStateHref("hab_dormant")} className="hover:underline">
             {entry.staged} staged
           </Link>
           {", "}
-          <Link to={deploymentStateHref("Activated")} className="hover:underline">
+          <Link to={deploymentStateHref("hab_active")} className="hover:underline">
             {entry.activated} activated
           </Link>
         </span>

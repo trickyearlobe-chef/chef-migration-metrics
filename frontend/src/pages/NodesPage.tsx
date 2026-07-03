@@ -46,10 +46,15 @@ const READINESS_OPTIONS: { value: string; label: string }[] = [
   { value: "disk_unknown", label: "💾 Disk Unknown" },
 ];
 
+// value = the raw migration_state stored in the DB (the filter is applied as
+// migration_state = ANY(values)); label = the user-facing wording. Sending the
+// label instead of the raw value made the filter match nothing (e.g. "Staged"
+// vs the stored "hab_dormant"), so the list showed 0 while the dashboard counted
+// thousands.
 const DEPLOYMENT_STATE_OPTIONS: { value: string; label: string }[] = [
-  { value: "Current only", label: "Current only" },
-  { value: "Staged", label: "Staged" },
-  { value: "Activated", label: "Activated" },
+  { value: "omnibus_only", label: "Current only" },
+  { value: "hab_dormant", label: "Staged" },
+  { value: "hab_active", label: "Activated" },
 ];
 
 const CONVERGE_STATUS_OPTIONS: { value: string; label: string }[] = [

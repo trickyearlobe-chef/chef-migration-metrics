@@ -95,4 +95,19 @@ describe("DeploymentStatusCard", () => {
       expect(api.fetchDeploymentStatus).toHaveBeenCalledWith("staging"),
     );
   });
+
+  it("links staged/activated to the RAW migration_state values, not the display labels", async () => {
+    // Regression: the drill-down must send migration_state=hab_dormant (the stored
+    // value), not "Staged" (the label) — otherwise the Nodes list matches nothing
+    // while the dashboard counts thousands.
+    vi.mocked(api.fetchDeploymentStatus).mockResolvedValue(statusResponse);
+    renderWithRouter(<DeploymentStatusCard />);
+
+    const staged = await screen.findByRole("link", { name: /5 staged/i });
+    expect(staged.getAttribute("href")).toContain("migration_state=hab_dormant");
+    expect(staged.getAttribute("href")).not.toContain("migration_state=Staged");
+
+    const activated = screen.getByRole("link", { name: /2 activated/i });
+    expect(activated.getAttribute("href")).toContain("migration_state=hab_active");
+  });
 });
