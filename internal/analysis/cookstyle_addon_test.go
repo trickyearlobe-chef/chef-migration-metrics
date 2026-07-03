@@ -167,7 +167,7 @@ func TestScan_AddonPathProblem_Surfaced(t *testing.T) {
 	)
 
 	scanCtx := context.Background()
-	_, _, _, _, info := s.runScanWithAddonIsolation(scanCtx, cookbookDir, "18.0")
+	_, _, _, info, _ := s.runScanWithAddonIsolation(scanCtx, cookbookDir, "18.0")
 	if len(info.problems) != 1 {
 		t.Fatalf("expected the missing addon path surfaced as one problem, got %v", info.problems)
 	}

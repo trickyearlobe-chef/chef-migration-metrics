@@ -68,7 +68,7 @@ func ComputeCopDrift(reg *CopRegistry, resolver *CopClassificationResolver, stat
 			continue
 		}
 		seen[s.CopName] = true
-		report.Stale = append(report.Stale, StaleCopEntry{CopName: s.CopName, Source: s.Source})
+		report.Stale = append(report.Stale, StaleCopEntry(s))
 	}
 
 	// Coverage gaps: live Chef/* cops that nothing specifically classifies —
