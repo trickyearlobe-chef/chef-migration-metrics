@@ -19,6 +19,26 @@ const (
 	// when no scan result exists, not produced by DeriveCookstyleStatus.
 )
 
+// SeverityFatal is the cookstyle severity for a file that will not parse (a
+// syntax/parse failure). It is surfaced as a separate "won't parse — fix first"
+// data-quality flag carried ALONGSIDE the rollup status, never folded into the
+// migration classification (see specifications/cop-classification.md,
+// Pass/Fail Determination).
+const SeverityFatal = "fatal"
+
+// OffensesWontParse reports whether any offense is a parse failure (fatal
+// severity) — the "won't parse — fix first" signal. It is independent of
+// classification: a fatal offense does not make a cookbook Blocked, it flags a
+// data-quality problem the operator should fix before trusting the scan.
+func OffensesWontParse(offenses []CookstyleOffense) bool {
+	for i := range offenses {
+		if offenses[i].Severity == SeverityFatal {
+			return true
+		}
+	}
+	return false
+}
+
 // DeriveCookstyleStatus computes the rollup status for a set of offenses from
 // resolved cop classification alone. This is the single derivation every
 // surface consumes; the legacy passed boolean is a convenience = status !=

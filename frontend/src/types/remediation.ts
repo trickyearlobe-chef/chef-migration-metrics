@@ -135,6 +135,9 @@ export interface CookbookRemediationResponse {
   complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
   cookstyle_status?: CookStyleStatus;
+  // Data-quality flag: a fatal (parse-failure) offense means cookstyle could
+  // not fully analyse the cookbook. Separate from pass/fail and classification.
+  cookstyle_wont_parse?: boolean;
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];
@@ -152,6 +155,9 @@ export interface GitRepoRemediationResponse {
   complexity_breakdown?: ComplexityBreakdown;
   cookstyle_passed: boolean | null;
   cookstyle_status?: CookStyleStatus;
+  // Data-quality flag: a fatal (parse-failure) offense means cookstyle could
+  // not fully analyse the repo. Separate from pass/fail and classification.
+  cookstyle_wont_parse?: boolean;
   scanned_at: string;
   statistics: RemediationStatistics;
   offense_groups: OffenseGroup[];

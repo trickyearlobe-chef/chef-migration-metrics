@@ -211,6 +211,9 @@ export function GitRepoRemediationContent({
         </div>
       </div>
 
+      {/* Won't parse — data-quality warning */}
+      {data.cookstyle_wont_parse && <WontParseBanner />}
+
       {/* Statistics cards */}
       <StatisticsCards stats={stats} />
 
@@ -286,6 +289,30 @@ export function GitRepoRemediationContent({
           onToggle={() => setDiffExpanded((p) => !p)}
         />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Won't parse — fix first banner
+// ---------------------------------------------------------------------------
+
+function WontParseBanner() {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800"
+    >
+      <span className="shrink-0 text-base leading-none" aria-hidden="true">
+        ⚠
+      </span>
+      <div>
+        <p className="font-semibold">Won't parse — fix first</p>
+        <p className="mt-0.5 text-red-700">
+          This cookbook has a Ruby syntax/parse error; cookstyle could not fully
+          analyse it. Fix the parse error before trusting the results.
+        </p>
+      </div>
     </div>
   );
 }

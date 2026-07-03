@@ -537,6 +537,17 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		},
 	}
 
+	// "Won't parse — fix first": a data-quality flag carried alongside the
+	// rollup status, derived from any fatal (parse-failure) offense. It is not a
+	// classification blocker.
+	cookstyleWontParse := false
+	for i := range flatOffenses {
+		if flatOffenses[i].Severity == analysis.SeverityFatal {
+			cookstyleWontParse = true
+			break
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"cookbook_name":        cookbookName,
 		"cookbook_version":     cookbookVersion,
@@ -546,6 +557,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		"complexity_breakdown": breakdown,
 		"cookstyle_passed":     cookstylePassed,
 		"cookstyle_status":     cookstyleStatus,
+		"cookstyle_wont_parse": cookstyleWontParse,
 		"scanned_at":           cookstyleScannedAt,
 		"statistics": map[string]any{
 			"total_offenses":         totalOffenses,

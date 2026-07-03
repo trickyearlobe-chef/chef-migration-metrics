@@ -431,6 +431,17 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		},
 	}
 
+	// "Won't parse — fix first": a data-quality flag carried alongside the
+	// rollup status, derived from any fatal (parse-failure) offense. Not a
+	// classification blocker.
+	cookstyleWontParse := false
+	for i := range flatOffenses {
+		if flatOffenses[i].Severity == analysis.SeverityFatal {
+			cookstyleWontParse = true
+			break
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"git_repo_name":        repoName,
 		"version":              repoVersion,
@@ -441,6 +452,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 		"complexity_breakdown": breakdown,
 		"cookstyle_passed":     cookstylePassed,
 		"cookstyle_status":     cookstyleStatus,
+		"cookstyle_wont_parse": cookstyleWontParse,
 		"scanned_at":           cookstyleScannedAt,
 		"statistics": map[string]any{
 			"total_offenses":         totalOffenses,

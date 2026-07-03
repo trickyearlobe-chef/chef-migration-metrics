@@ -692,6 +692,137 @@ func TestHandleCookbookRemediation_WithAutocorrectPreview(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// handleCookbookRemediation — cookstyle_wont_parse data-quality flag
+// ---------------------------------------------------------------------------
+
+func TestHandleCookbookRemediation_WontParse_TrueOnFatal(t *testing.T) {
+	// A fatal (parse-failure) offense must set cookstyle_wont_parse = true.
+	offensesJSON := `[
+		{
+			"path": "recipes/default.rb",
+			"offenses": [
+				{
+					"cop_name": "Lint/Syntax",
+					"severity": "fatal",
+					"message": "unexpected token",
+					"correctable": false,
+					"location": {"start_line": 1, "start_column": 1, "last_line": 1, "last_column": 10}
+				}
+			]
+		}
+	]`
+
+	store := &mockStore{
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{{Name: "apt", Version: "1.0.0"}}, nil
+		},
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+			return &datastore.ServerCookbookCookstyleResult{
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
+				TargetChefVersion: "18.0",
+				Passed:            false,
+				OffenceCount:      1,
+				Offences:          []byte(offensesJSON),
+				ScannedAt:         time.Now().UTC(),
+			}, nil
+		},
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
+			return nil, nil
+		},
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+			return nil, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersion = "18.0"
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks/apt/1.0.0/remediation", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if body["cookstyle_wont_parse"] != true {
+		t.Errorf("cookstyle_wont_parse = %v, want true", body["cookstyle_wont_parse"])
+	}
+}
+
+func TestHandleCookbookRemediation_WontParse_FalseWhenNoFatal(t *testing.T) {
+	// Only non-fatal severities must leave cookstyle_wont_parse = false.
+	offensesJSON := `[
+		{
+			"path": "recipes/default.rb",
+			"offenses": [
+				{
+					"cop_name": "Chef/Deprecations/ResourceWithoutUnifiedTrue",
+					"severity": "warning",
+					"message": "Set unified_mode true",
+					"correctable": true,
+					"location": {"start_line": 5, "start_column": 1, "last_line": 5, "last_column": 40}
+				},
+				{
+					"cop_name": "Chef/Correctness/InvalidPlatformFamilyHelper",
+					"severity": "error",
+					"message": "Invalid platform family",
+					"correctable": false,
+					"location": {"start_line": 3, "start_column": 1, "last_line": 3, "last_column": 30}
+				}
+			]
+		}
+	]`
+
+	store := &mockStore{
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
+			return []datastore.ServerCookbook{{Name: "apt", Version: "1.0.0"}}, nil
+		},
+		GetServerCookbookCookstyleResultFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookCookstyleResult, error) {
+			return &datastore.ServerCookbookCookstyleResult{
+				OrganisationName:  orgName,
+				CookbookName:      cookbookName,
+				CookbookVersion:   cookbookVersion,
+				TargetChefVersion: "18.0",
+				Passed:            false,
+				OffenceCount:      2,
+				Offences:          []byte(offensesJSON),
+				ScannedAt:         time.Now().UTC(),
+			}, nil
+		},
+		ListServerCookbookComplexitiesByCookbookFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion string) ([]datastore.ServerCookbookComplexity, error) {
+			return nil, nil
+		},
+		GetServerCookbookAutocorrectPreviewFn: func(ctx context.Context, orgName, cookbookName, cookbookVersion, targetChefVersion string) (*datastore.ServerCookbookAutocorrectPreview, error) {
+			return nil, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersion = "18.0"
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks/apt/1.0.0/remediation", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if body["cookstyle_wont_parse"] != false {
+		t.Errorf("cookstyle_wont_parse = %v, want false", body["cookstyle_wont_parse"])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // handleCookbookRemediation — explicit target_chef_version query param
 // ---------------------------------------------------------------------------
 
