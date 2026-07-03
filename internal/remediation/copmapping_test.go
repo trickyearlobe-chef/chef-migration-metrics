@@ -144,7 +144,7 @@ func TestLookupCop_SpecificCops(t *testing.T) {
 			copName:        "Chef/Deprecations/UserDeprecatedSupportsProperty",
 			wantURL:        "https://docs.chef.io/deprecations/",
 			wantIntro:      "12.14",
-			wantRemoved:    "15.0",
+			wantRemoved:    "13.0",
 			hasReplacement: true,
 		},
 	}
