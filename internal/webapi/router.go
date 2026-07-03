@@ -220,6 +220,11 @@ type Router struct {
 	// persisted but not propagated. Set via WithCookstylePropagator.
 	cookstylePropagator *CookstylePropagator
 
+	// reclassQueue runs cop-reclassification reassessments asynchronously and
+	// coalesced, so saving a classification returns instantly. Lazily created.
+	reclassQueue     *reclassificationQueue
+	reclassQueueOnce sync.Once
+
 	// copRegistry supplies the live `cookstyle --show-cops` cop registry for the
 	// drift report and the cop-list universe (Chef/* cops listable before they
 	// trigger). Nil when cookstyle is unavailable — the drift report degrades to
