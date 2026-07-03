@@ -6,6 +6,7 @@ package webapi
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
@@ -207,7 +208,7 @@ func nodeExportColumns() []export.Column {
 		{Header: "policy_group", Value: func(r any) any { return nr(r).resp.PolicyGroup }},
 		{Header: "is_stale", Value: func(r any) any { return nr(r).resp.IsStale }},
 		{Header: "staleness_tier", Value: func(r any) any { return nr(r).resp.StalenesTier }},
-		{Header: "ohai_time_age_hours", Value: func(r any) any { return nr(r).resp.OhaiTimeAgeHours }},
+		{Header: "ohai_time", Value: func(r any) any { return ohaiTimeISO(nr(r).resp.OhaiTime) }},
 		{Header: "collected_at", Value: func(r any) any { return nr(r).resp.CollectedAt }},
 		{Header: "target_chef_version", Value: func(r any) any { return nr(r).target }},
 		{Header: "status", Value: func(r any) any { return nr(r).readiness.Status }},
@@ -234,4 +235,13 @@ func strOrEmpty(p *string) any {
 		return ""
 	}
 	return *p
+}
+
+// ohaiTimeISO renders a node's ohai_time (a unix epoch in seconds) as a UTC
+// datetime string in the same format as collected_at. Returns "" when unset.
+func ohaiTimeISO(epochSeconds float64) any {
+	if epochSeconds <= 0 {
+		return ""
+	}
+	return time.Unix(int64(epochSeconds), 0).UTC().Format("2006-01-02T15:04:05Z")
 }

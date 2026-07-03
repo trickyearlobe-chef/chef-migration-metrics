@@ -127,7 +127,7 @@ func TestHandleExports_Sync_NodesCSV(t *testing.T) {
 			return nil, nil
 		}
 		return []datastore.NodeSnapshot{
-			{OrganisationName: "production", NodeName: "web1", ChefEnvironment: "prod", ChefVersion: "17.10.0", Platform: "ubuntu", PlatformVersion: "22.04", AvailableDiskMB: &free, CollectedAt: time.Now().UTC()},
+			{OrganisationName: "production", NodeName: "web1", ChefEnvironment: "prod", ChefVersion: "17.10.0", Platform: "ubuntu", PlatformVersion: "22.04", AvailableDiskMB: &free, OhaiTime: 1719400000, CollectedAt: time.Now().UTC()},
 		}, nil
 	}
 
@@ -146,10 +146,15 @@ func TestHandleExports_Sync_NodesCSV(t *testing.T) {
 		t.Errorf("X-Export-Row-Count = %q, want 1", rc)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"node_name", "web1", "available_disk_mb", "5000", "install_path"} {
+	// ohai_time renders as a datetime (like collected_at), not a unix epoch.
+	wantOhai := time.Unix(1719400000, 0).UTC().Format("2006-01-02T15:04:05Z")
+	for _, want := range []string{"node_name", "web1", "available_disk_mb", "5000", "install_path", "ohai_time", wantOhai} {
 		if !strings.Contains(body, want) {
 			t.Errorf("CSV missing %q:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "1719400000") {
+		t.Errorf("CSV should not contain the raw ohai epoch:\n%s", body)
 	}
 }
 
