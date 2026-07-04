@@ -134,8 +134,10 @@ function VersionDeploymentBar({ entry, totalNodes }: VersionBarProps) {
           );
         })}
       </div>
+      {/* Always list all three converge states, including zero counts, so a
+          state not yet reached (e.g. Passing: 0) is still visible as a goal. */}
       <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-        {barSegments.filter((s) => s.count > 0).map((seg) => (
+        {barSegments.map((seg) => (
           <Link key={seg.label} to={nodesHref(seg.convergeFilter)} className="flex items-center gap-1 hover:underline">
             <span
               className="inline-block h-2 w-2 rounded-full"
