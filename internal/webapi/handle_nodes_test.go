@@ -755,11 +755,11 @@ func TestMigrationStateLabel(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{"omnibus_only", "Current only"},
+		{"omnibus_only", "—"}, // retired "Current only" → neutral dash
 		{"hab_dormant", "Staged"},
 		{"hab_active", "Activated"},
 		{"", ""},
-		{"unknown_value", ""},
+		{"unknown_value", "—"},
 	}
 	for _, tc := range cases {
 		got := migrationStateLabel(tc.raw)

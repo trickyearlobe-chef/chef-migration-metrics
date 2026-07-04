@@ -51,8 +51,14 @@ const READINESS_OPTIONS: { value: string; label: string }[] = [
 // label instead of the raw value made the filter match nothing (e.g. "Staged"
 // vs the stored "hab_dormant"), so the list showed 0 while the dashboard counted
 // thousands.
+//
+// Only the two states the migration cookbook reliably records are offered: a
+// "Staged" node is still running omnibus (the new binary is dormant); only
+// "Activated" has switched runtime. The former omnibus_only ("Current only")
+// state is not exposed — its absence is indistinguishable from a node the
+// cookbook never reached (or aborted on, e.g. disk) and it isn't a valid state
+// for later hab→hab migrations.
 const DEPLOYMENT_STATE_OPTIONS: { value: string; label: string }[] = [
-  { value: "omnibus_only", label: "Current only" },
   { value: "hab_dormant", label: "Staged" },
   { value: "hab_active", label: "Activated" },
 ];
@@ -439,6 +445,27 @@ export function NodesPage() {
           onChange={setConvergeStatusFilter}
           options={CONVERGE_STATUS_OPTIONS}
         />
+        {/* target_version is a real row filter (usually set by a dashboard
+            drill-down) but has no dropdown of its own — surface it as a removable
+            chip so it is visible and the active-filter count matches what's shown. */}
+        {targetVersionFilter.length > 0 && (
+          <div className="mb-0.5 flex items-end">
+            <span
+              className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-800"
+              title="Showing only nodes whose migration target is this version"
+            >
+              Target version: {targetVersionFilter.join(", ")}
+              <button
+                type="button"
+                onClick={() => setTargetVersionFilter([])}
+                className="ml-0.5 text-blue-600 hover:text-blue-900"
+                aria-label="Remove target version filter"
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        )}
         {activeFilterCount > 0 && (
           <button
             onClick={clearFilters}

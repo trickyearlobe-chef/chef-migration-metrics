@@ -125,7 +125,7 @@ describe("NodeDetailPage — Deployment State Panel", () => {
     expect(screen.getByText("Activated")).toBeInTheDocument();
   });
 
-  it("renders deployment panel with 'Current only' state", async () => {
+  it("renders deployment panel for retired omnibus_only state without 'Current only'", async () => {
     vi.mocked(api.fetchNodeDetail).mockResolvedValue(
       nodeWithMigration({
         migration_state: "omnibus_only",
@@ -137,7 +137,8 @@ describe("NodeDetailPage — Deployment State Panel", () => {
       expect(screen.getByText("Deployment State")).toBeInTheDocument(),
     );
     const panel = screen.getByText("Deployment State").closest(".card")!;
-    expect(screen.getByText("Current only")).toBeInTheDocument();
+    // "Current only" is retired; omnibus_only now shows the neutral "—".
+    expect(screen.queryByText("Current only")).not.toBeInTheDocument();
     expect(within(panel).getByText("17.10.0")).toBeInTheDocument();
   });
 

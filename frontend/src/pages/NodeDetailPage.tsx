@@ -484,17 +484,16 @@ function ReadinessSection({
 // Deployment State panel (parallel deployment tracking)
 // ---------------------------------------------------------------------------
 
-/** Maps raw migration_state values to UI labels. */
+/** Maps raw migration_state values to UI labels. omnibus_only ("Current only")
+ *  is retired — only Staged/Activated are meaningful; anything else shows "—". */
 function migrationStateLabel(raw?: string | null): string {
   switch (raw) {
-    case "omnibus_only":
-      return "Current only";
     case "hab_dormant":
       return "Staged";
     case "hab_active":
       return "Activated";
     default:
-      return "";
+      return "—";
   }
 }
 

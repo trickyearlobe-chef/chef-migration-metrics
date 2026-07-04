@@ -114,14 +114,16 @@ describe("StaleBadge", () => {
 });
 
 describe("DeploymentStateBadge", () => {
-  it("renders 'Current only' for null/undefined state", () => {
+  it("renders '—' for null/undefined state (no migration data)", () => {
     render(<DeploymentStateBadge state={null} />);
-    expect(screen.getByText("Current only")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("Current only")).not.toBeInTheDocument();
   });
 
-  it("renders 'Current only' for 'Current only' label", () => {
-    render(<DeploymentStateBadge state="Current only" />);
-    expect(screen.getByText("Current only")).toBeInTheDocument();
+  it("renders '—' for any non-Staged/Activated state (retired 'Current only')", () => {
+    render(<DeploymentStateBadge state="omnibus_only" />);
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText("Current only")).not.toBeInTheDocument();
   });
 
   it("renders 'Staged' label with amber styling", () => {

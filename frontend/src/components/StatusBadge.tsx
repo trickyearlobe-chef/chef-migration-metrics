@@ -549,7 +549,8 @@ export function DiskBadge({
   return <StatusBadge variant={variant} size={size} />;
 }
 
-/** Renders a deployment state badge (Current only / Staged / Activated). */
+/** Renders a deployment state badge: Staged / Activated, or "—" when the node is
+ *  neither (still on the current runtime, or no migration data). */
 export function DeploymentStateBadge({
   state,
   size = "md",
@@ -569,7 +570,7 @@ export function DeploymentStateBadge({
       variant = "inactive";
       break;
   }
-  const label = state === "Staged" || state === "Activated" ? state : "Current only";
+  const label = state === "Staged" || state === "Activated" ? state : "—";
   return <StatusBadge variant={variant} label={label} size={size} />;
 }
 
