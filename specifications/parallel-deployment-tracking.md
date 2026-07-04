@@ -33,8 +33,8 @@ All attributes live under the `chef_migration` key in node ohai data. Source: th
 
 | Raw value | UI label | Meaning |
 |-----------|----------|---------|
-| `omnibus_only` | **Current only** | Only the active version installed; no staged version present |
-| `hab_dormant` | **Staged** | Target version installed but not active; current version runs converges |
+| `omnibus_only` | **—** (not surfaced) | Only the active version installed; no staged version present. Retired from the UI: not offered as a deployment filter option and rendered as "—" in badges/labels/exports. Its absence can't be distinguished from a node the cookbook never reached (or aborted on before writing attributes), and it isn't a valid state for later hab→hab migrations. |
+| `hab_dormant` | **Staged** | Target version installed but not active; the current version still runs converges (i.e. the node is still on the current/omnibus runtime — only `hab_active` has switched) |
 | `hab_active` | **Activated** | Target version is now the active chef-client |
 
 ### Speculative Converge Results
@@ -81,10 +81,10 @@ A node is considered **ready to activate** when:
 
 ### Node List
 
-- Add deployment state column using UI labels (Current only / Staged / Activated)
+- Add deployment state column using UI labels (Staged / Activated; other states render as "—")
 - Add speculative converge result column (`success` / `fail` / not yet run)
 - Mark nodes as **Ready to Activate** where state is Staged + last converge succeeded
-- Filter by deployment state and speculative converge result
+- Filter by deployment state (**Staged** / **Activated** only) and speculative converge result
 
 ### Node Detail View
 
