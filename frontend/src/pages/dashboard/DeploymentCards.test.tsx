@@ -110,4 +110,13 @@ describe("DeploymentStatusCard", () => {
     const activated = screen.getByRole("link", { name: /2 activated/i });
     expect(activated.getAttribute("href")).toContain("migration_state=hab_active");
   });
+
+  it("shows zero-count converge states in the legend so unreached states stay visible", async () => {
+    // 19.3.5 in the fixture has 0 failing and 0 pending — both must still render
+    // (a state not yet reached is a visible goal, not hidden).
+    vi.mocked(api.fetchDeploymentStatus).mockResolvedValue(statusResponse);
+    renderWithRouter(<DeploymentStatusCard />);
+    expect(await screen.findByRole("link", { name: /Failing: 0/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Pending: 0/ })).toBeInTheDocument();
+  });
 });
