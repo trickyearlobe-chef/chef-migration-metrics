@@ -105,6 +105,11 @@ func (db *DB) Ping(ctx context.Context) error {
 // Migrations
 // ---------------------------------------------------------------------------
 
+// migrationAdvisoryLockKey is the fixed pg_advisory_lock key used to serialize
+// concurrent schema migration across processes. Arbitrary but stable — all
+// callers must contend on the same key.
+const migrationAdvisoryLockKey int64 = 427182
+
 // MigrateUp reads SQL migration files from the given directory on disk and
 // applies any that have not yet been run. This is the legacy entry point
 // retained for backward compatibility — callers that have an fs.FS (e.g.
@@ -137,10 +142,6 @@ func (db *DB) MigrateUp(ctx context.Context, migrationsDir string) (applied int,
 //
 // Only .up.sql files are applied by this function.
 func (db *DB) MigrateUpFS(ctx context.Context, fsys fs.FS) (applied int, err error) {
-	if err := db.ensureMigrationsTable(ctx); err != nil {
-		return 0, fmt.Errorf("datastore: creating schema_migrations table: %w", err)
-	}
-
 	migrations, err := discoverMigrationsFS(fsys)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: discovering migrations: %w", err)
@@ -150,6 +151,35 @@ func (db *DB) MigrateUpFS(ctx context.Context, fsys fs.FS) (applied int, err err
 		return 0, nil
 	}
 
+	// Serialize concurrent migrators with a session-level advisory lock held on a
+	// dedicated connection, acquired BEFORE any DDL. Multiple processes migrating
+	// the same database at once — app instances starting together, or parallel
+	// test packages sharing one DB — otherwise race on both the schema_migrations
+	// CREATE TABLE IF NOT EXISTS (a Postgres catalog-level race) and the per-file
+	// DDL ("column already exists"). Waiters block here until the holder finishes,
+	// then read the updated version below and no-op.
+	lockConn, err := db.pool.Conn(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: acquiring migration lock connection: %w", err)
+	}
+	defer func() { _ = lockConn.Close() }()
+	if _, err := lockConn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationAdvisoryLockKey); err != nil {
+		return 0, fmt.Errorf("datastore: acquiring migration advisory lock: %w", err)
+	}
+	defer func() {
+		// Release on the same connection that acquired it (session-scoped lock).
+		if _, uerr := lockConn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", migrationAdvisoryLockKey); uerr != nil && err == nil {
+			err = fmt.Errorf("datastore: releasing migration advisory lock: %w", uerr)
+		}
+	}()
+
+	// Everything below runs inside the lock: table creation, version read, DDL.
+	if err := db.ensureMigrationsTable(ctx); err != nil {
+		return 0, fmt.Errorf("datastore: creating schema_migrations table: %w", err)
+	}
+
+	// Read the version INSIDE the lock so a waiter observes migrations a prior
+	// holder just committed (and therefore skips them).
 	currentVersion, err := db.currentMigrationVersion(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("datastore: reading current migration version: %w", err)
