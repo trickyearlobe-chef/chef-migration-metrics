@@ -107,17 +107,20 @@ func (r *Router) buildNodeResp(n datastore.NodeSnapshot, readiness []nodeReadine
 }
 
 // migrationStateLabel maps raw migration_state values to UI-friendly labels.
-// Returns "" when state is empty (migration cookbook not deployed).
+// Only Staged/Activated are meaningful; omnibus_only ("Current only") is retired
+// to "—" (its absence can't be distinguished from a node the cookbook never
+// reached, and it isn't a valid state for later hab→hab migrations). Returns ""
+// only when state is empty (migration cookbook not deployed / no data).
 func migrationStateLabel(raw string) string {
 	switch raw {
-	case "omnibus_only":
-		return "Current only"
 	case "hab_dormant":
 		return "Staged"
 	case "hab_active":
 		return "Activated"
-	default:
+	case "":
 		return ""
+	default:
+		return "—"
 	}
 }
 
