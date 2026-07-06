@@ -191,57 +191,73 @@ func (m *GitCookbookManager) CloneOrPull(ctx context.Context, cookbookName, repo
 			result.RepoURL = actualURL
 		}
 
-		if err := m.fetch(ctx, repoDir); err != nil {
-			result.Err = fmt.Errorf("fetch: %w", err)
-			return result, result.Err
-		}
+		if fetchErr := m.fetch(ctx, repoDir); fetchErr != nil {
+			// Self-heal: the on-disk origin is unreachable — typically the
+			// repo moved to a new location and the old remote is dead. Remove
+			// the stale clone and fall through to a fresh clone from the
+			// caller's candidate URL, so a moved repo migrates to the new base
+			// URL without a manual Reset. The base-URL loop in
+			// fetchGitCookbooks advances through candidates, so the correct new
+			// location is reached even if this candidate is also wrong.
+			if rmErr := os.RemoveAll(repoDir); rmErr != nil {
+				result.Err = fmt.Errorf("fetch: %w; removing stale clone: %v", fetchErr, rmErr)
+				return result, result.Err
+			}
+			// readRemoteURL above overwrote RepoURL with the dead origin; reset
+			// it to the candidate URL we are about to clone from.
+			result.RepoURL = repoURL
+			// fall through to the clone path below.
+		} else {
+			branch, err := m.detectDefaultBranch(ctx, repoDir)
+			if err != nil {
+				result.Err = fmt.Errorf("detect default branch: %w", err)
+				return result, result.Err
+			}
+			result.DefaultBranch = branch
 
-		branch, err := m.detectDefaultBranch(ctx, repoDir)
-		if err != nil {
-			result.Err = fmt.Errorf("detect default branch: %w", err)
-			return result, result.Err
-		}
-		result.DefaultBranch = branch
+			// Read HEAD SHA before reset to detect changes.
+			oldSHA, _ := m.readHeadSHA(ctx, repoDir)
 
-		// Read HEAD SHA before reset to detect changes.
-		oldSHA, _ := m.readHeadSHA(ctx, repoDir)
+			if err := m.resetToRemote(ctx, repoDir, branch); err != nil {
+				result.Err = fmt.Errorf("reset: %w", err)
+				return result, result.Err
+			}
 
-		if err := m.resetToRemote(ctx, repoDir, branch); err != nil {
-			result.Err = fmt.Errorf("reset: %w", err)
-			return result, result.Err
+			newSHA, err := m.readHeadSHA(ctx, repoDir)
+			if err != nil {
+				result.Err = fmt.Errorf("read HEAD SHA: %w", err)
+				return result, result.Err
+			}
+			result.HeadCommitSHA = newSHA
+			result.Changed = oldSHA != newSHA
+			result.WasCloned = false
+			result.HasTestSuite = m.detectTestSuite(ctx, repoDir)
+			return result, nil
 		}
-
-		newSHA, err := m.readHeadSHA(ctx, repoDir)
-		if err != nil {
-			result.Err = fmt.Errorf("read HEAD SHA: %w", err)
-			return result, result.Err
-		}
-		result.HeadCommitSHA = newSHA
-		result.Changed = oldSHA != newSHA
-		result.WasCloned = false
-	} else {
-		// Repository does not exist — clone.
-		if err := m.clone(ctx, repoURL, repoDir); err != nil {
-			result.Err = fmt.Errorf("clone: %w", err)
-			return result, result.Err
-		}
-
-		branch, err := m.detectDefaultBranch(ctx, repoDir)
-		if err != nil {
-			result.Err = fmt.Errorf("detect default branch: %w", err)
-			return result, result.Err
-		}
-		result.DefaultBranch = branch
-
-		sha, err := m.readHeadSHA(ctx, repoDir)
-		if err != nil {
-			result.Err = fmt.Errorf("read HEAD SHA: %w", err)
-			return result, result.Err
-		}
-		result.HeadCommitSHA = sha
-		result.WasCloned = true
-		result.Changed = true
 	}
+
+	// Clone path — a fresh clone, or a re-clone after self-heal removed a stale
+	// clone whose origin was unreachable.
+	if err := m.clone(ctx, repoURL, repoDir); err != nil {
+		result.Err = fmt.Errorf("clone: %w", err)
+		return result, result.Err
+	}
+
+	branch, err := m.detectDefaultBranch(ctx, repoDir)
+	if err != nil {
+		result.Err = fmt.Errorf("detect default branch: %w", err)
+		return result, result.Err
+	}
+	result.DefaultBranch = branch
+
+	sha, err := m.readHeadSHA(ctx, repoDir)
+	if err != nil {
+		result.Err = fmt.Errorf("read HEAD SHA: %w", err)
+		return result, result.Err
+	}
+	result.HeadCommitSHA = sha
+	result.WasCloned = true
+	result.Changed = true
 
 	// Detect test suite presence.
 	result.HasTestSuite = m.detectTestSuite(ctx, repoDir)

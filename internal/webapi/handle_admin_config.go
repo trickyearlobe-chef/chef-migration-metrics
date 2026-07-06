@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -180,8 +181,37 @@ func (r *Router) putAdminConfigGitURLs(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	// Git base URLs are pulled per collector run — applied.
-	r.storeAdminConfigSection(w, req, &config.Config{GitBaseURLs: input}, configstore.KeyGitBaseURLs, appliedApplier)
+	// Trim and drop blank entries (e.g. an empty trailing row from the UI).
+	cleaned := make([]string, 0, len(input))
+	for _, u := range input {
+		if t := strings.TrimSpace(u); t != "" {
+			cleaned = append(cleaned, t)
+		}
+	}
+
+	// Save-time preflight: reject malformed git remotes before persisting, so a
+	// bad base URL (e.g. the ssh://host:<non-numeric> scp/URL hybrid) can't be
+	// stored and silently produce failed clones.
+	if err := config.ValidateGitBaseURLs(cleaned); err != nil {
+		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError, err.Error())
+		return
+	}
+
+	// Git base URLs are pulled per collector run — applied. Trigger a
+	// background collection so new/edited URLs re-fetch immediately instead of
+	// waiting for the next scheduled cycle.
+	r.storeAdminConfigSection(w, req, &config.Config{GitBaseURLs: cleaned}, configstore.KeyGitBaseURLs, r.applyGitBaseURLsRefetch)
+}
+
+// applyGitBaseURLsRefetch is the Applier for the git base URLs section: once the
+// new list is stored and reloaded, it kicks off a background collection so a
+// moved/added repo re-fetches without waiting for the schedule. Best-effort —
+// if a run is already in progress or no trigger is wired, the next scheduled
+// cycle picks up the change. The section is read live per run, so it reports
+// ReloadApplied.
+func (r *Router) applyGitBaseURLsRefetch(context.Context) (ApplyResult, error) {
+	r.triggerCollectionInBackground()
+	return ApplyResult{Reload: ReloadApplied}, nil
 }
 
 // ---------------------------------------------------------------------------

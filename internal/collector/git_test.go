@@ -457,9 +457,19 @@ func TestCloneOrPull_Pull_Unchanged(t *testing.T) {
 	}
 }
 
-func TestCloneOrPull_Pull_FetchFails(t *testing.T) {
+// TestCloneOrPull_Pull_FetchFails_SelfHeals verifies that when fetch of an
+// existing clone's origin fails (typically because the repo moved and the old
+// remote is dead), CloneOrPull removes the stale clone and re-clones from the
+// caller's candidate URL. This is what lets a moved repo migrate to a new base
+// URL without a manual Reset.
+func TestCloneOrPull_Pull_FetchFails_SelfHeals(t *testing.T) {
+	sha := "abcdef1234567890abcdef1234567890abcdef12"
 	fake := newFakeGitExecutor()
-	fake.addResponse("fetch", "", fmt.Errorf("network error"))
+	fake.addResponse("fetch", "", fmt.Errorf("repository not found")) // old origin gone
+	fake.addResponse("clone", "", nil)                                // re-clone from candidate succeeds
+	fake.addResponse("symbolic-ref", "origin/main", nil)
+	fake.addResponse("rev-parse HEAD", sha, nil)
+	fake.addResponse("ls-tree", "", fmt.Errorf("not found"))
 
 	baseDir := t.TempDir()
 	repoDir := baseDir + "/mybook"
@@ -468,12 +478,46 @@ func TestCloneOrPull_Pull_FetchFails(t *testing.T) {
 	}
 
 	mgr := NewGitCookbookManager(baseDir, fake)
-	_, err := mgr.CloneOrPull(context.Background(), "mybook", "https://example.com/mybook")
-	if err == nil {
-		t.Fatal("expected error on fetch failure")
+	result, err := mgr.CloneOrPull(context.Background(), "mybook", "https://new.example.com/mybook")
+	if err != nil {
+		t.Fatalf("expected self-heal to re-clone, got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "fetch") {
-		t.Errorf("expected error to mention fetch, got: %v", err)
+	if !result.WasCloned {
+		t.Error("expected WasCloned=true after self-heal re-clone")
+	}
+	if result.RepoURL != "https://new.example.com/mybook" {
+		t.Errorf("expected RepoURL to be the candidate URL, got %q", result.RepoURL)
+	}
+	if result.HeadCommitSHA != sha {
+		t.Errorf("expected HeadCommitSHA %q, got %q", sha, result.HeadCommitSHA)
+	}
+	// The stale clone dir must have been removed before the re-clone.
+	if _, err := os.Stat(repoDir + "/.git"); !os.IsNotExist(err) {
+		t.Error("expected the stale .git dir to be removed by self-heal")
+	}
+}
+
+// TestCloneOrPull_Pull_FetchFails_RecloneAlsoFails verifies that if the
+// self-heal re-clone also fails (e.g. this candidate URL is wrong too), the
+// error surfaces so the caller's base-URL loop can try the next candidate.
+func TestCloneOrPull_Pull_FetchFails_RecloneAlsoFails(t *testing.T) {
+	fake := newFakeGitExecutor()
+	fake.addResponse("fetch", "", fmt.Errorf("repository not found"))
+	fake.addResponse("clone", "", fmt.Errorf("repository not found"))
+
+	baseDir := t.TempDir()
+	repoDir := baseDir + "/mybook"
+	if err := createFakeGitDir(repoDir); err != nil {
+		t.Fatalf("failed to create fake .git dir: %v", err)
+	}
+
+	mgr := NewGitCookbookManager(baseDir, fake)
+	_, err := mgr.CloneOrPull(context.Background(), "mybook", "https://wrong.example.com/mybook")
+	if err == nil {
+		t.Fatal("expected error when re-clone also fails")
+	}
+	if !strings.Contains(err.Error(), "clone") {
+		t.Errorf("expected error to mention clone, got: %v", err)
 	}
 }
 
