@@ -548,6 +548,47 @@ func TestAdminConfigGitURLs_PUT_EmptyList(t *testing.T) {
 	assertStatus(t, w, http.StatusOK)
 }
 
+func TestAdminConfigGitURLs_PUT_422_InvalidURL(t *testing.T) {
+	store := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, store, nil)
+
+	// The ssh://host:<non-numeric> scp/URL hybrid must be rejected, not stored.
+	body := `["ssh://git@git.example.com:group/chef/cookbooks"]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/git-urls", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusUnprocessableEntity)
+	assertErrorCode(t, w, ErrCodeValidationError)
+
+	// Nothing should have been persisted — GET returns the (empty) prior list.
+	wg := httptest.NewRecorder()
+	r.ServeHTTP(wg, httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/git-urls", nil))
+	assertStatus(t, wg, http.StatusOK)
+	var got []string
+	decodeBody(t, wg, &got)
+	if len(got) != 0 {
+		t.Errorf("invalid URL should not have been stored, got %v", got)
+	}
+}
+
+func TestAdminConfigGitURLs_PUT_TriggersRefetch(t *testing.T) {
+	store := newTestConfigStore(t)
+	triggered := false
+	r := newTestRouterForAdminConfig(nil, store, nil,
+		WithCollectionTrigger(func(context.Context) error { triggered = true; return nil }))
+
+	body := `["https://github.com/org/cookbooks"]`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/git-urls", strings.NewReader(body))
+	r.ServeHTTP(w, req)
+
+	assertStatus(t, w, http.StatusOK)
+	if !triggered {
+		t.Error("saving git base URLs should trigger a background collection")
+	}
+}
+
 func TestAdminConfigGitURLs_PUT_503_NilStore(t *testing.T) {
 	r := newTestRouterForAdminConfig(nil, nil, nil)
 

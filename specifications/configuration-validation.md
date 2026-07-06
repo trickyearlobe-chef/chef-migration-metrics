@@ -74,6 +74,18 @@ Entity` (error code `validation_error`) without writing to the config store when
 
 The error message names the failing element and never includes key material.
 
+`PUT /api/v1/admin/config/git-urls` applies the same 422 `validation_error`
+preflight: each git base URL must be a well-formed git remote — scp-style
+`[user@]host:path`, or a scheme URL (`ssh://[user@]host[:PORT]/path` with a
+numeric PORT, `https://`, `http://`, `git://`). The `ssh://host:<non-numeric>`
+scp/URL hybrid (a scp-style path after the `ssh://` scheme, where `:` is read as
+a port) is rejected with a message suggesting `git@host:path` or
+`ssh://git@host/path`. This is a **save-time-only** check (not startup
+validation): an already-stored bad value must never block boot — the config
+store is the boot source of truth. Implemented by `config.ValidateGitBaseURLs`.
+Saving the list also triggers a background collection so new/edited URLs
+re-fetch immediately (see [data-collection.md](data-collection.md)).
+
 ---
 
 > **Note:** See [Web API specification § WebSocket Real-Time Events](web-api.md#websocket-real-time-events) for the event types, envelope format, and client reconnection behaviour.
