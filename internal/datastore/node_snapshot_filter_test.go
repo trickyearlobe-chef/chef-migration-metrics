@@ -334,8 +334,10 @@ func TestBuildNodeSnapshotFilterQuery_Tags(t *testing.T) {
 
 func TestBuildNodeSnapshotFilterQuery_TagsEmpty(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{Tags: []string{}})
-	if strings.Contains(q, "cn.tags") {
-		t.Errorf("empty Tags should add no predicate, got:\n%s", q)
+	// cn.tags is always in the SELECT projection; empty Tags must add no
+	// overlap predicate.
+	if strings.Contains(q, "cn.tags &&") {
+		t.Errorf("empty Tags should add no && predicate, got:\n%s", q)
 	}
 	if len(args) != 0 {
 		t.Errorf("empty Tags should bind no args, got %d", len(args))

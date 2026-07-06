@@ -21,6 +21,7 @@ type nodeExportRow struct {
 	readiness   nodeReadinessSummaryEntry
 	installPath string
 	target      string
+	tags        []string
 }
 
 // nodesExportSpec exports the current filtered Nodes list. Filters, org
@@ -165,6 +166,7 @@ func (s *nodeExportSource) enrich(ctx context.Context, page []datastore.NodeSnap
 			readiness:   sel,
 			installPath: s.r.installPathForNode(n.Platform),
 			target:      s.target,
+			tags:        n.Tags,
 		})
 	}
 	return out
@@ -186,6 +188,15 @@ func nodeExportColumns() []export.Column {
 		{Header: "platform_display_name", Value: func(r any) any { return strOrEmpty(nr(r).resp.PlatformDisplayName) }},
 		{Header: "policy_name", Value: func(r any) any { return nr(r).resp.PolicyName }},
 		{Header: "policy_group", Value: func(r any) any { return nr(r).resp.PolicyGroup }},
+		// Tags: JSON emits a string array ([] when none); CSV joins into one
+		// cell. Coalesce nil→[]string{} so JSON is [] not null and the CSV cell
+		// is empty rather than "[]"/"null".
+		{Header: "tags", Value: func(r any) any {
+			if t := nr(r).tags; t != nil {
+				return t
+			}
+			return []string{}
+		}},
 		{Header: "is_stale", Value: func(r any) any { return nr(r).resp.IsStale }},
 		{Header: "staleness_tier", Value: func(r any) any { return stalenessLabel(nr(r).resp.StalenesTier) }},
 		{Header: "ohai_time", Value: func(r any) any { return ohaiTimeISO(nr(r).resp.OhaiTime) }},

@@ -127,7 +127,7 @@ func TestHandleExports_Sync_NodesCSV(t *testing.T) {
 			return nil, nil
 		}
 		return []datastore.NodeSnapshot{
-			{OrganisationName: "production", NodeName: "web1", ChefEnvironment: "prod", ChefVersion: "17.10.0", Platform: "ubuntu", PlatformVersion: "22.04", AvailableDiskMB: &free, OhaiTime: 1719400000, CollectedAt: time.Now().UTC()},
+			{OrganisationName: "production", NodeName: "web1", ChefEnvironment: "prod", ChefVersion: "17.10.0", Platform: "ubuntu", PlatformVersion: "22.04", AvailableDiskMB: &free, OhaiTime: 1719400000, CollectedAt: time.Now().UTC(), Tags: []string{"prepare", "eu-west"}},
 		}, nil
 	}
 
@@ -146,7 +146,8 @@ func TestHandleExports_Sync_NodesCSV(t *testing.T) {
 	// ohai_time renders as a datetime (like collected_at), not a unix epoch.
 	wantOhai := time.Unix(1719400000, 0).UTC().Format("2006-01-02T15:04:05Z")
 	// staleness_tier uses the UI's wording (critical → "Gone"), not the raw tier.
-	for _, want := range []string{"node_name", "web1", "available_disk_mb", "5000", "install_path", "ohai_time", wantOhai, "Gone"} {
+	// tags array-joins into one comma-delimited cell.
+	for _, want := range []string{"node_name", "web1", "available_disk_mb", "5000", "install_path", "ohai_time", wantOhai, "Gone", "tags", "prepare,eu-west"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("CSV missing %q:\n%s", want, body)
 		}

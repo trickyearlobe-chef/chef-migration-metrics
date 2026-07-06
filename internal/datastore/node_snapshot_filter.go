@@ -162,7 +162,8 @@ const nodeSnapshotLightCols = `cn.collection_run_org, cn.organisation_name, cn.n
 	       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
 	       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
 	       cn.target_converge_status,
-	       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
+	       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb,
+	       cn.tags`
 
 // nodeSnapshotHeavyCols additionally includes filesystem, cookbooks, and
 // custom_attributes JSONB. The scan order in scanFilteredNodeSnapshots (heavy
@@ -178,7 +179,8 @@ const nodeSnapshotHeavyCols = `cn.collection_run_org, cn.organisation_name, cn.n
 	       cn.migration_state, cn.active_chef_version, cn.dormant_installed,
 	       cn.dormant_chef_version, cn.target_version, cn.target_execution_time,
 	       cn.target_converge_status,
-	       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb`
+	       cn.sufficient_disk_space, cn.available_disk_mb, cn.required_disk_mb,
+	       cn.tags`
 
 // buildNodeSnapshotFilterQuery constructs the SQL query and args for
 // ListNodeSnapshotsFiltered. It is extracted as a standalone function
@@ -284,6 +286,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		var policyName, policyGroup sql.NullString
 		var ohaiTime sql.NullFloat64
 		var runList, roles []byte
+		var tags pq.StringArray
 		var rowTotal int
 		var migrationState, activeChefVer, dormantChefVer sql.NullString
 		var dormantInstalled sql.NullBool
@@ -324,6 +327,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&sufficientDisk,
 				&availableDiskMB,
 				&requiredDiskMB,
+				&tags,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (heavy): %w", err)
@@ -360,6 +364,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&sufficientDisk,
 				&availableDiskMB,
 				&requiredDiskMB,
+				&tags,
 				&rowTotal,
 			); err != nil {
 				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (light): %w", err)
@@ -378,6 +383,7 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		ns.OhaiTime = floatFromNull(ohaiTime)
 		ns.RunList = jsonFromNullBytes(runList)
 		ns.Roles = jsonFromNullBytes(roles)
+		ns.Tags = []string(tags)
 		ns.MigrationState = stringFromNull(migrationState)
 		ns.ActiveChefVersion = stringFromNull(activeChefVer)
 		ns.DormantInstalled = boolFromNull(dormantInstalled)
