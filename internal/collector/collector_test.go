@@ -507,6 +507,16 @@ func TestNodeDataToSnapshotParams_JSONMarshalling(t *testing.T) {
 	if string(rolesJSON) != "null" {
 		t.Errorf("roles JSON = %s, want null", rolesJSON)
 	}
+
+	// Tags deliberately diverge from roles: a node with no tags coalesces to a
+	// non-nil empty slice (stored as [] not null), per the node-tags spec.
+	tags := nd.Tags()
+	if tags == nil {
+		t.Error("Tags() = nil, want non-nil empty slice for a node with no tags")
+	}
+	if len(tags) != 0 {
+		t.Errorf("Tags() = %v, want empty", tags)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -35,7 +35,7 @@ POST /api/v1/exports?export_type=nodes&format=csv&organisation=example-corp&envi
 
 | Type | List view | Query parameters |
 |------|-----------|------------------|
-| `nodes` | Nodes (`GET /api/v1/nodes`) | all node list filters (org, environment, platform, chef_version, role, policy, readiness/cookstyle/kitchen, migration/converge, stale, target_chef_version, …) |
+| `nodes` | Nodes (`GET /api/v1/nodes`) | all node list filters (org, environment, platform, chef_version, role, policy, tags, readiness/cookstyle/kitchen, migration/converge, stale, target_chef_version, …) |
 | `cookbooks` | Server Cookbooks (`GET /api/v1/cookbooks`) | org, name, active, cookstyle_status, download_status, tk_status, target_chef_version |
 | `roles` | Roles (`GET /api/v1/roles`) | org, name, compatibility_status, tk_status, target_chef_version |
 | `git_repos` | Git Repos (`GET /api/v1/git-repos`) | name, compatibility, cookstyle_status, tk_status, clone_status, has_test_suite, target_chef_version |
@@ -43,7 +43,8 @@ POST /api/v1/exports?export_type=nodes&format=csv&organisation=example-corp&envi
 Each export carries the list view's columns plus the migration-useful fields: the
 three-state CookStyle rollup and readiness `status`, Test Kitchen status, and — for
 `nodes` — the disk detail (`available_disk_mb`, `required_disk_mb`,
-`sufficient_disk_space`, `install_path`). Row shapes are owned by the export Go types
+`sufficient_disk_space`, `install_path`) and node `tags` (array-joined in CSV; see
+[node-tags.md](node-tags.md)). Row shapes are owned by the export Go types
 (with their json tags) — not copied here.
 
 The CookStyle vocabulary in export rows is canonical from

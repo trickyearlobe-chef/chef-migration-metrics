@@ -99,6 +99,61 @@ func TestFunctional_NodeExport_KeysetPagingCoversAllRows(t *testing.T) {
 	}
 }
 
+// TestFunctional_NodeExport_CarriesTags verifies the tags TEXT[] column is
+// projected and scanned by the export path (light scan via
+// ListNodeSnapshotsForExport), so exported rows carry each node's tags.
+func TestFunctional_NodeExport_CarriesTags(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	org, err := db.UpsertOrganisationFromConfig(ctx, UpsertOrganisationParams{
+		Name:          "func-export-tags-org",
+		ChefServerURL: "https://example.com/organizations/test",
+		OrgName:       "test",
+		ClientName:    "test-client",
+	})
+	if err != nil {
+		t.Fatalf("creating org: %v", err)
+	}
+	run, err := db.CreateCollectionRun(ctx, CreateCollectionRunParams{OrganisationName: org.Name})
+	if err != nil {
+		t.Fatalf("creating collection run: %v", err)
+	}
+	cleanupTestData(t, db,
+		"DELETE FROM node_snapshots WHERE collection_run_org = '"+run.OrganisationName+"'",
+		"DELETE FROM collection_runs WHERE organisation_name = '"+run.OrganisationName+"'",
+		"DELETE FROM organisations WHERE name = '"+org.Name+"'",
+	)
+
+	now := time.Now().UTC()
+	if _, err := db.BulkUpsertNodeSnapshots(ctx, []InsertNodeSnapshotParams{
+		{CollectionRunOrg: run.OrganisationName, OrganisationName: org.Name,
+			NodeName: "ex-tagged", Platform: "ubuntu", CollectedAt: now,
+			Tags: []string{"prepare", "eu-west"}},
+		{CollectionRunOrg: run.OrganisationName, OrganisationName: org.Name,
+			NodeName: "ex-untagged", Platform: "ubuntu", CollectedAt: now,
+			Tags: []string{}},
+	}); err != nil {
+		t.Fatalf("inserting node snapshots: %v", err)
+	}
+
+	f := NodeSnapshotFilter{OrganisationNames: []string{org.Name}}
+	page, err := db.ListNodeSnapshotsForExport(ctx, f, NodeSnapshotCursor{}, 100)
+	if err != nil {
+		t.Fatalf("export page: %v", err)
+	}
+	byName := map[string][]string{}
+	for _, ns := range page {
+		byName[ns.NodeName] = ns.Tags
+	}
+	if tags := byName["ex-tagged"]; len(tags) != 2 || tags[0] != "prepare" || tags[1] != "eu-west" {
+		t.Errorf("ex-tagged tags = %v, want [prepare eu-west]", tags)
+	}
+	if tags := byName["ex-untagged"]; len(tags) != 0 {
+		t.Errorf("ex-untagged tags = %v, want empty", tags)
+	}
+}
+
 // TestFunctional_NodeExport_FilterParity verifies the export query and the list
 // query return the same row set for the same filter (a platform filter here).
 func TestFunctional_NodeExport_FilterParity(t *testing.T) {

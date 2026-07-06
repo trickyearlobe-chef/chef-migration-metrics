@@ -314,6 +314,36 @@ func TestBuildNodeSnapshotFilterQuery_RolesExactTakesPrecedence(t *testing.T) {
 	}
 }
 
+func TestBuildNodeSnapshotFilterQuery_Tags(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
+		Tags: []string{"prepare", "rollback"},
+	})
+
+	// Native TEXT[] array-overlap — OR semantics via && with a single bound arg.
+	if !strings.Contains(q, "cn.tags && ") {
+		t.Errorf("query missing tags array-overlap (&&) clause, got:\n%s", q)
+	}
+	// Tags is a TEXT[] column, not JSONB — must not use jsonb helpers.
+	if strings.Contains(q, "jsonb_array_elements_text(cn.tags)") || strings.Contains(q, "jsonb_typeof(cn.tags)") {
+		t.Errorf("tags is TEXT[]; must not use jsonb helpers, got:\n%s", q)
+	}
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg (pq.Array), got %d", len(args))
+	}
+}
+
+func TestBuildNodeSnapshotFilterQuery_TagsEmpty(t *testing.T) {
+	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{Tags: []string{}})
+	// cn.tags is always in the SELECT projection; empty Tags must add no
+	// overlap predicate.
+	if strings.Contains(q, "cn.tags &&") {
+		t.Errorf("empty Tags should add no && predicate, got:\n%s", q)
+	}
+	if len(args) != 0 {
+		t.Errorf("empty Tags should bind no args, got %d", len(args))
+	}
+}
+
 func TestBuildNodeSnapshotFilterQuery_StaleTrue(t *testing.T) {
 	q, args := buildNodeSnapshotFilterQuery(NodeSnapshotFilter{
 		Stale: boolPtr(true),

@@ -203,6 +203,11 @@ func csvCell(v any) string {
 		return ""
 	case string:
 		return t
+	case []string:
+		// Array column joined into one cell. Comma matches the multi-value
+		// query-param convention (e.g. ?tags=a,b); encoding/csv auto-quotes the
+		// cell if any element itself contains a comma. Empty slice → "".
+		return strings.Join(t, ",")
 	case json.RawMessage:
 		if len(t) == 0 || string(t) == "null" {
 			return ""

@@ -629,6 +629,96 @@ func TestHandleFilterEnvironments_DistinctDBError(t *testing.T) {
 	}
 }
 
+func TestHandleFilterTags_HappyPath(t *testing.T) {
+	var gotOpts datastore.DistinctValueOpts
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDistinctNodeTagsFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error) {
+			gotOpts = opts
+			// Returned in count-ranked order by the datastore; the handler
+			// passes the order through unchanged.
+			return []string{"upgrade", "prepare", "eu-west"}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/tags", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	// The facet is always bounded — a cap is applied even without a prefix.
+	if gotOpts.Limit != 50 {
+		t.Errorf("opts.Limit = %d, want 50 (always bounded)", gotOpts.Limit)
+	}
+	var body struct {
+		Data []string `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(body.Data) != 3 || body.Data[0] != "upgrade" {
+		t.Errorf("data = %v, want count-ranked [upgrade prepare eu-west]", body.Data)
+	}
+}
+
+func TestHandleFilterTags_PrefixPassed(t *testing.T) {
+	var gotOpts datastore.DistinctValueOpts
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDistinctNodeTagsFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error) {
+			gotOpts = opts
+			return []string{"eu-west"}, nil
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/tags?q=eu", nil)
+	r.ServeHTTP(w, req)
+
+	if gotOpts.SearchPrefix != "eu" {
+		t.Errorf("opts.SearchPrefix = %q, want %q", gotOpts.SearchPrefix, "eu")
+	}
+	if gotOpts.Limit != 50 {
+		t.Errorf("opts.Limit = %d, want 50", gotOpts.Limit)
+	}
+}
+
+func TestHandleFilterTags_MethodNotAllowed(t *testing.T) {
+	r := testRouter()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/filters/tags", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /filters/tags status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleFilterTags_DistinctDBError(t *testing.T) {
+	store := &mockStore{
+		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {
+			return []datastore.Organisation{{Name: "prod"}}, nil
+		},
+		ListDistinctNodeTagsFn: func(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error) {
+			return nil, errors.New("partial failure")
+		},
+	}
+	r := newTestRouterWithMock(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/filters/tags", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+}
+
 func TestHandleFilterRoles_DistinctDBError(t *testing.T) {
 	store := &mockStore{
 		ListOrganisationsFn: func(ctx context.Context) ([]datastore.Organisation, error) {

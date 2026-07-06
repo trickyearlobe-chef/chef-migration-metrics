@@ -415,6 +415,7 @@ func NodeSearchAttributes() PartialSearchQuery {
 		"cookbooks":               {"cookbooks"},
 		"run_list":                {"run_list"},
 		"roles":                   {"roles"},
+		"tags":                    {"tags"},
 		"policy_name":             {"policy_name"},
 		"policy_group":            {"policy_group"},
 		"ohai_time":               {"ohai_time"},
@@ -1075,6 +1076,34 @@ func (n NodeData) Roles() []string {
 		if s, ok := v.(string); ok {
 			result = append(result, s)
 		}
+	}
+	return result
+}
+
+// Tags returns the node's tags (normal.tags in Chef) as a string slice.
+//
+// Unlike Roles, this enforces the node-tags spec invariants: a missing/null
+// or wrong-typed value coalesces to a non-nil empty slice (never nil, so the
+// stored column is [] not null), and duplicates are removed (order is not
+// significant). Values are kept exactly as Chef returns them — no lowercasing
+// or trimming — matching Chef's case-sensitive search semantics.
+func (n NodeData) Tags() []string {
+	result := make([]string, 0)
+	raw, ok := n.Raw["tags"].([]interface{})
+	if !ok {
+		return result
+	}
+	seen := make(map[string]struct{}, len(raw))
+	for _, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		result = append(result, s)
 	}
 	return result
 }

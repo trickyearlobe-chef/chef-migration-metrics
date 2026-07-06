@@ -28,6 +28,20 @@ These endpoints return the distinct values available for each filter dimension, 
 }
 ```
 
+### `GET /api/v1/filters/tags`
+
+Distinct Chef node tags seen across collected snapshots. Prefix-filterable for typeahead and capped server-side — the response is always a bounded, count-ranked page, never the full set. Reflects ingested snapshots only, not a Chef-server-wide tag list. See [node-tags.md](node-tags.md).
+
+**Query parameters:** `organisation` (optional), `q` (optional prefix filter for typeahead).
+
+**Response (200):**
+
+```json
+{
+  "data": ["prepare", "upgrade", "rollback", "eu-west", "pci"]
+}
+```
+
 ### `GET /api/v1/filters/policy-names`
 
 **Query parameters:** `organisation` (optional).
