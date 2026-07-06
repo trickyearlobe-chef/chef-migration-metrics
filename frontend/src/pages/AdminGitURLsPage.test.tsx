@@ -85,6 +85,27 @@ describe("AdminGitURLsPage", () => {
     );
   });
 
+  it("move up reorders the URLs in place", async () => {
+    vi.mocked(api.fetchGitURLs).mockResolvedValue([
+      "https://github.com/org-a",
+      "https://github.com/org-b",
+    ] as never);
+    const user = userEvent.setup();
+    render(<AdminGitURLsPage />);
+    await waitFor(() =>
+      screen.getByDisplayValue("https://github.com/org-b"),
+    );
+
+    // Row 0's "Move up" is disabled; row 1's moves org-b above org-a.
+    await user.click(screen.getAllByTitle("Move up")[1]);
+
+    const inputs = screen.getAllByRole("textbox");
+    expect(inputs[0]).toHaveValue("https://github.com/org-b");
+    expect(inputs[1]).toHaveValue("https://github.com/org-a");
+    // Reordering makes the form dirty so it can be saved.
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+  });
+
   it("save error from rejected promise shows error alert", async () => {
     vi.mocked(api.saveGitURLs).mockRejectedValue(new Error("Server error"));
     const user = userEvent.setup();

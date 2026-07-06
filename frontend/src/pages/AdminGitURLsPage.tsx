@@ -57,6 +57,26 @@ export function AdminGitURLsPage() {
     setSuccess(false);
   }
 
+  function handleMoveUp(index: number) {
+    if (index === 0) return;
+    setUrls((prev) => {
+      const next = [...prev];
+      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+      return next;
+    });
+    setSuccess(false);
+  }
+
+  function handleMoveDown(index: number) {
+    setUrls((prev) => {
+      if (index >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[index], next[index + 1]] = [next[index + 1], next[index]];
+      return next;
+    });
+    setSuccess(false);
+  }
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -95,6 +115,13 @@ export function AdminGitURLsPage() {
           Base URLs searched when resolving cookbook Git repositories. The
           collector tries each URL in order when looking for a cookbook's repo.
         </p>
+        <p className="mt-1 text-xs text-gray-400">
+          Accepts <code className="rounded bg-gray-100 px-1">git@host:path</code>,{" "}
+          <code className="rounded bg-gray-100 px-1">ssh://git@host:PORT/path</code>{" "}
+          (numeric port), or{" "}
+          <code className="rounded bg-gray-100 px-1">https://host/path</code>. Order
+          is priority — the first match wins.
+        </p>
       </div>
 
       {/* URL list */}
@@ -115,6 +142,30 @@ export function AdminGitURLsPage() {
                   className={INPUT_CLASS}
                   disabled={saving}
                 />
+                <button
+                  type="button"
+                  onClick={() => handleMoveUp(i)}
+                  disabled={saving || i === 0}
+                  title="Move up"
+                  aria-label="Move up"
+                  className="shrink-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-30"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleMoveDown(i)}
+                  disabled={saving || i === urls.length - 1}
+                  title="Move down"
+                  aria-label="Move down"
+                  className="shrink-0 rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-30"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleRemove(i)}
