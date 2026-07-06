@@ -95,6 +95,10 @@ type DataStore interface {
 	// the roles JSONB array across all nodes matching the filter.
 	ListDistinctNodeRoles(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error)
 
+	// ListDistinctNodeTags returns sorted distinct non-empty tags from the
+	// tags TEXT[] array across all nodes matching the filter.
+	ListDistinctNodeTags(ctx context.Context, f datastore.NodeSnapshotFilter, opts datastore.DistinctValueOpts) ([]string, error)
+
 	// ListNodeSnapshotsByCollectionRun returns all node snapshots captured
 	// during the given collection run.
 	ListNodeSnapshotsByCollectionRun(ctx context.Context, collectionRunID string) ([]datastore.NodeSnapshot, error)

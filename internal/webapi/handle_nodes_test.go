@@ -579,6 +579,33 @@ func TestNodeSnapshotFilterFromRequest_CommaSeparatedValues(t *testing.T) {
 	}
 }
 
+func TestNodeSnapshotFilterFromRequest_Tags(t *testing.T) {
+	// Repeatable and comma-separated tags both populate f.Tags (OR semantics),
+	// preserving exact case (no normalisation).
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/nodes?tags=prepare&tags=upgrade,Rollback", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org-1"}, 24, 7)
+
+	if len(f.Tags) != 3 {
+		t.Fatalf("Tags = %v, want 3 values", f.Tags)
+	}
+	want := map[string]bool{"prepare": true, "upgrade": true, "Rollback": true}
+	for _, tag := range f.Tags {
+		if !want[tag] {
+			t.Errorf("unexpected tag %q in %v", tag, f.Tags)
+		}
+	}
+}
+
+func TestNodeSnapshotFilterFromRequest_TagsEmpty(t *testing.T) {
+	// A bare/empty tags param must not populate f.Tags (no spurious predicate).
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes?tags=", nil)
+	f := nodeSnapshotFilterFromRequest(req, []string{"org-1"}, 24, 7)
+	if f.Tags != nil {
+		t.Errorf("Tags = %v, want nil for empty param", f.Tags)
+	}
+}
+
 func TestNodeSnapshotFilterFromRequest_ReadinessParams(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/v1/nodes?target_chef_version=18.5.0&readiness_filter=ready", nil)

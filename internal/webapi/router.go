@@ -804,6 +804,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/filters/environments", r.handleFilterEnvironments)
 	r.protect("/api/v1/filters/roles", r.handleFilterRoles)
+	r.protect("/api/v1/filters/tags", r.handleFilterTags)
 	r.protect("/api/v1/filters/policy-names", r.handleFilterPolicyNames)
 	r.protect("/api/v1/filters/policy-groups", r.handleFilterPolicyGroups)
 	r.protect("/api/v1/filters/platforms", r.handleFilterPlatforms)

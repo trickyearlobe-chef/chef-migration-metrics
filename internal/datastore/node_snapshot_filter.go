@@ -53,6 +53,11 @@ type NodeSnapshotFilter struct {
 	// over Role (substring).
 	Roles []string
 
+	// Tags filters by exact match against any of these tags in the tags
+	// TEXT[] array. OR/array-overlap semantics via the && operator: a node
+	// matches if its tag array overlaps any selected tag. Case-sensitive.
+	Tags []string
+
 	// Environments filters by exact match against any of these environments.
 	// Uses ANY($N) SQL. When set, takes precedence over Environment (substring).
 	Environments []string
@@ -627,6 +632,65 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, o
 	return values, rows.Err()
 }
 
+// ListDistinctNodeTags returns distinct non-empty tags from the tags TEXT[]
+// array across all nodes matching the filter, ranked by node frequency (most
+// common first, ties broken alphabetically). When opts.SearchPrefix is set,
+// only tags starting with that prefix are returned. When opts.Limit > 0,
+// results are capped — the node-tags facet always passes a cap so the response
+// is a bounded, count-ranked page, never the full set (see node-tags.md).
+//
+// Unnests a native text array rather than a JSONB array (cf.
+// ListDistinctNodeRoles). COUNT(*) is the number of matching nodes carrying
+// the tag: a node's tags are de-duplicated at ingest, so unnest yields each
+// tag at most once per node.
+func (db *DB) ListDistinctNodeTags(ctx context.Context, f NodeSnapshotFilter, opts DistinctValueOpts) ([]string, error) {
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
+
+	argN := len(args)
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
+	}
+
+	prefixClause := ""
+	if opts.SearchPrefix != "" {
+		prefixClause = " AND LOWER(t.value) LIKE LOWER(" + nextArg() + ") || '%'"
+		args = append(args, opts.SearchPrefix)
+	}
+
+	limitClause := ""
+	if opts.Limit > 0 {
+		limitClause = " LIMIT " + nextArg()
+		args = append(args, opts.Limit)
+	}
+
+	query := fmt.Sprintf(`%s
+		SELECT t.value AS val
+		  FROM current_nodes cn
+		%s, unnest(cn.tags) t(value)
+		%s
+		   AND t.value IS NOT NULL AND t.value != ''%s
+		 GROUP BY t.value
+		 ORDER BY COUNT(*) DESC, val ASC%s
+	`, cte, join, where, prefixClause, limitClause)
+
+	rows, err := db.pool.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing distinct node tags: %w", err)
+	}
+	defer rows.Close()
+
+	var values []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, fmt.Errorf("datastore: scanning distinct node tag: %w", err)
+		}
+		values = append(values, v)
+	}
+	return values, rows.Err()
+}
+
 // ---------------------------------------------------------------------------
 // Internal query builder helpers
 // ---------------------------------------------------------------------------
@@ -645,7 +709,7 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 		       ns.chef_environment, ns.chef_version,
 		       ns.platform, ns.platform_version, ns.platform_family,
 		       ns.platform_caption,
-		       ns.filesystem, ns.cookbooks, ns.run_list, ns.roles,
+		       ns.filesystem, ns.cookbooks, ns.run_list, ns.roles, ns.tags,
 		       ns.policy_name, ns.policy_group,
 		       ns.ohai_time, ns.custom_attributes,
 		       ns.is_stale, ns.collected_at, ns.created_at,
@@ -728,6 +792,13 @@ func buildNodeSnapshotFilterParts(f NodeSnapshotFilter) (cte string, join string
 	} else if f.Role != "" {
 		where += " AND jsonb_typeof(cn.roles) = 'array' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(cn.roles) r WHERE LOWER(r) LIKE '%' || LOWER(" + nextArg() + ") || '%')"
 		args = append(args, f.Role)
+	}
+
+	if len(f.Tags) > 0 {
+		// Native TEXT[] array-overlap: node matches if its tags intersect any
+		// selected tag (OR semantics). Single bound arg; PG expands the overlap.
+		where += " AND cn.tags && " + nextArg()
+		args = append(args, pq.Array(f.Tags))
 	}
 
 	if len(f.StaleTiers) > 0 {

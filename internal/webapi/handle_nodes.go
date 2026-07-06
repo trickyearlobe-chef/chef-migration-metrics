@@ -599,6 +599,21 @@ func nodeSnapshotFilterFromValues(q url.Values, orgIDs []string, warningHours, c
 			f.Roles = []string{role}
 		}
 	}
+	// Tags: repeatable (?tags=a&tags=b) and/or comma-separated (?tags=a,b),
+	// OR semantics. No trimming/lowercasing — tags match Chef exactly.
+	if tagVals := q["tags"]; len(tagVals) > 0 {
+		var tags []string
+		for _, tv := range tagVals {
+			for _, t := range strings.Split(tv, ",") {
+				if t != "" {
+					tags = append(tags, t)
+				}
+			}
+		}
+		if len(tags) > 0 {
+			f.Tags = tags
+		}
+	}
 
 	// Sort parameters.
 	f.Sort = q.Get("sort")
