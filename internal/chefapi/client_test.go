@@ -667,7 +667,7 @@ func TestNodeSearchAttributes(t *testing.T) {
 		"name", "chef_environment", "chef_version", "platform",
 		"platform_version", "platform_family", "kernel_os_info_caption",
 		"lsb_description", "filesystem", "cookbooks",
-		"run_list", "roles", "policy_name", "policy_group", "ohai_time",
+		"run_list", "roles", "tags", "policy_name", "policy_group", "ohai_time",
 		"chef_migration",
 	}
 	for _, key := range expected {
@@ -2098,6 +2098,75 @@ func TestNodeData_Roles_Missing(t *testing.T) {
 	nd := NewNodeData(map[string]interface{}{})
 	if nd.Roles() != nil {
 		t.Error("expected nil for missing roles")
+	}
+}
+
+func TestNodeData_Tags(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"tags": []interface{}{"prepare", "upgrade"},
+	})
+	tags := nd.Tags()
+	if len(tags) != 2 {
+		t.Errorf("expected 2 tags, got %d: %v", len(tags), tags)
+	}
+}
+
+// TestNodeData_Tags_Missing verifies the spec invariant that a node which
+// never had tags set (Chef returns null / the key is absent) coalesces to an
+// empty, non-nil slice — never nil. "Collected, no tags" is [], never null.
+func TestNodeData_Tags_Missing(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{})
+	tags := nd.Tags()
+	if tags == nil {
+		t.Fatal("expected non-nil empty slice for missing tags, got nil")
+	}
+	if len(tags) != 0 {
+		t.Errorf("expected 0 tags, got %d: %v", len(tags), tags)
+	}
+}
+
+// TestNodeData_Tags_Null verifies an explicit JSON null coalesces to [].
+func TestNodeData_Tags_Null(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{"tags": nil})
+	tags := nd.Tags()
+	if tags == nil {
+		t.Fatal("expected non-nil empty slice for null tags, got nil")
+	}
+	if len(tags) != 0 {
+		t.Errorf("expected 0 tags, got %d: %v", len(tags), tags)
+	}
+}
+
+// TestNodeData_Tags_Dedup verifies duplicate tags are removed (order not
+// significant) per the spec's de-duplication invariant.
+func TestNodeData_Tags_Dedup(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"tags": []interface{}{"pci", "prepare", "pci", "prepare", "eu-west"},
+	})
+	tags := nd.Tags()
+	if len(tags) != 3 {
+		t.Errorf("expected 3 de-duplicated tags, got %d: %v", len(tags), tags)
+	}
+	seen := map[string]int{}
+	for _, tag := range tags {
+		seen[tag]++
+	}
+	for tag, n := range seen {
+		if n != 1 {
+			t.Errorf("tag %q appears %d times, expected 1", tag, n)
+		}
+	}
+}
+
+// TestNodeData_Tags_CaseSensitive verifies tags are matched/stored exactly as
+// Chef returns them — no lowercasing or trimming; case variants are distinct.
+func TestNodeData_Tags_CaseSensitive(t *testing.T) {
+	nd := NewNodeData(map[string]interface{}{
+		"tags": []interface{}{"Prepare", "prepare"},
+	})
+	tags := nd.Tags()
+	if len(tags) != 2 {
+		t.Errorf("expected 2 case-distinct tags, got %d: %v", len(tags), tags)
 	}
 }
 

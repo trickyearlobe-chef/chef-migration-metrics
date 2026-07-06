@@ -903,6 +903,7 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			Cookbooks:            cbJSON,
 			RunList:              rlJSON,
 			Roles:                rolesJSON,
+			Tags:                 nd.Tags(),
 			PolicyName:           nd.PolicyName(),
 			PolicyGroup:          nd.PolicyGroup(),
 			OhaiTime:             nd.OhaiTime(),

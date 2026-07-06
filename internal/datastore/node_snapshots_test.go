@@ -138,6 +138,9 @@ func TestInsertNodeSnapshotParams_Defaults(t *testing.T) {
 	if p.Roles != nil {
 		t.Error("zero-value Roles should be nil")
 	}
+	if p.Tags != nil {
+		t.Error("zero-value Tags should be nil")
+	}
 }
 
 // ---------------------------------------------------------------------------
