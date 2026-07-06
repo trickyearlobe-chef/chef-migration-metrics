@@ -8,7 +8,7 @@
 
 Returns a paginated, filterable list of nodes.
 
-**Query parameters:** standard filters (including `policy_name`, `policy_group`, `stale_status`), pagination, sorting.
+**Query parameters:** standard filters (including `policy_name`, `policy_group`, `stale_status`, and `tags` — repeatable, OR/array-overlap; see [node-tags.md](node-tags.md)), pagination, sorting.
 
 The `readiness` filter (scoped to the active `target_chef_version`) accepts the three node rollup states — `ready`, `needs_review`, `blocked` — mirroring the CookStyle rollup vocabulary (see [cop-classification.md](cop-classification.md)). `needs_review` only ever returns rows when the operator config `readiness.review_blocks_readiness` is on; with it off (default) no node is `needs_review` and the filter behaves as `ready`/`blocked` only — identical to today.
 
