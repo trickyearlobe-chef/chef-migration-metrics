@@ -112,7 +112,9 @@ Nodes that have not checked in recently may have stale attribute data (especiall
 ### 2.2 Git Repositories
 
 - Cookbooks with a known git repository are cloned and kept up to date. Git repository data is stored in the `git_repos` table.
-- Multiple base git URLs must be supported (e.g. internal GitLab, GitHub).
+- Multiple base git URLs must be supported (e.g. internal GitLab, GitHub). They are searched **in order** per cookbook — the first base URL that resolves a repo for the cookbook name wins (order is priority). URL format is validated at save time (see [configuration-validation.md](configuration-validation.md)).
+- **Moved-repo self-heal**: when a `git fetch` of an existing clone's origin fails (typically the cookbook repo moved to a new base URL and the old remote is dead), the collector removes the stale clone and re-clones from the current candidate base URL. Combined with the ordered search, a moved cookbook migrates to its new location automatically on the next run — no manual reset required.
+- Changing the git base URLs through the admin config API triggers a background collection so new/edited/reordered URLs re-fetch immediately instead of waiting for the next scheduled cycle.
 - On every collection run, each git repository must be **pulled** to fetch the latest changes.
 - The **default branch** (`main` or `master`) must be detected automatically.
 - The **HEAD commit SHA** of the default branch must be recorded in `git_repos` after each pull. This is used by the Analysis component to skip test runs when HEAD has not changed.

@@ -63,6 +63,17 @@ Returns a paginated list of all known git repos with optional filtering.
 | `failed` | All tested instances failed (none passed) |
 | `untested` | No Test Kitchen results available |
 
+**Clone status:** `clone_status` is one of `ok`, `failed`, `pending`. When
+`failed`, the row also carries `clone_error` — the git error from the last
+attempted base URL (e.g. "repository not found", "Host key verification
+failed"). Both fields are on the `gitRepoResp`/`datastore.GitRepo` Go types (the
+authoritative shape). The list view surfaces a failed clone as a badge with the
+error on hover and a `clone_status=failed` filter; the detail view shows the
+full `clone_error`. Configure the base URLs searched via
+`GET`/`PUT /api/v1/admin/config/git-urls` (see
+[configuration-validation.md](configuration-validation.md) for URL validation
+and the re-fetch trigger on change).
+
 ### Get Git Repo Detail
 
 #### `GET /api/v1/git-repos/:name`
