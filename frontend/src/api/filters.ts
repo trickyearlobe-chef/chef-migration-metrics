@@ -19,6 +19,14 @@ export function fetchFilterRoles(
   );
 }
 
+export function fetchFilterTags(
+  organisation?: string,
+): Promise<FilterStringResponse> {
+  return apiFetch<FilterStringResponse>(
+    buildUrl("/filters/tags", { organisation }),
+  );
+}
+
 export function fetchFilterPolicyNames(
   organisation?: string,
 ): Promise<FilterStringResponse> {

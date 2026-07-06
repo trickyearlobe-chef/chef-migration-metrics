@@ -97,6 +97,8 @@ export interface NodeFilterQuery extends PaginationQuery {
   policy_name?: string;
   policy_group?: string;
   role?: string;
+  /** Comma-joined node tags; OR/array-overlap semantics (see node-tags spec). */
+  tags?: string;
   stale?: string;
   readiness_filter?: string;
   cookstyle_status?: string;

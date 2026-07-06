@@ -74,6 +74,11 @@ const CONVERGE_STATUS_OPTIONS: { value: string; label: string }[] = [
 // (target_chef_version, stale_tiers — owned by GlobalFilterContext, which shares
 // the same useSearchParams) intact. A blanket setSearchParams({}) would wipe those
 // and desync the global staleness/target state from the URL.
+// The three migration-phase tags pinned as one-click OR toggles above the tag
+// search. These are ordinary entries in the dynamically-discovered catalogue —
+// pinned for convenience, not hardcoded server logic (see node-tags spec).
+export const PINNED_TAGS = ["prepare", "upgrade", "rollback"] as const;
+
 export const NODE_DRILLDOWN_PARAMS = [
   "readiness",
   "target_version",
@@ -81,6 +86,7 @@ export const NODE_DRILLDOWN_PARAMS = [
   "platform",
   "environment",
   "role",
+  "tags",
   "policy_name",
   "policy_group",
   "migration_state",
@@ -126,6 +132,9 @@ export function NodesPage() {
   );
   const [roles, setRoles] = useState<string[]>(
     searchParams.get("role")?.split(",").filter(Boolean) ?? [],
+  );
+  const [tags, setTags] = useState<string[]>(
+    searchParams.get("tags")?.split(",").filter(Boolean) ?? [],
   );
   const [policyNames, setPolicyNames] = useState<string[]>(
     searchParams.get("policy_name")?.split(",").filter(Boolean) ?? [],
@@ -231,6 +240,7 @@ export function NodesPage() {
     if (platforms.length > 0) q.platform = platforms.join(",");
     if (chefVersion) q.chef_version = chefVersion;
     if (roles.length > 0) q.role = roles.join(",");
+    if (tags.length > 0) q.tags = tags.join(",");
     if (policyNames.length > 0) q.policy_name = policyNames.join(",");
     if (policyGroups.length > 0) q.policy_group = policyGroups.join(",");
     if (staleTiers.length > 0) q.stale = staleTiers.join(",");
@@ -256,6 +266,7 @@ export function NodesPage() {
     platforms,
     chefVersion,
     roles,
+    tags,
     policyNames,
     policyGroups,
     staleTiers,
@@ -297,6 +308,7 @@ export function NodesPage() {
     platforms,
     chefVersion,
     roles,
+    tags,
     policyNames,
     policyGroups,
     staleTiers,
@@ -317,6 +329,7 @@ export function NodesPage() {
     (platforms.length > 0 ? 1 : 0) +
     (chefVersion ? 1 : 0) +
     (roles.length > 0 ? 1 : 0) +
+    (tags.length > 0 ? 1 : 0) +
     (policyNames.length > 0 ? 1 : 0) +
     (policyGroups.length > 0 ? 1 : 0) +
     (readinessFilter.length > 0 ? 1 : 0) +
@@ -332,6 +345,7 @@ export function NodesPage() {
     setPlatforms([]);
     setChefVersion("");
     setRoles([]);
+    setTags([]);
     setPolicyNames([]);
     setPolicyGroups([]);
     setReadinessFilter([]);
@@ -394,6 +408,44 @@ export function NodesPage() {
           selected={roles}
           onChange={setRoles}
         />
+        {/* Tags: three pinned migration-phase toggles (OR) above a typeahead
+            for the long tail. Both drive one shared `tags` array, so a pinned
+            tag also appears as a removable chip in the typeahead below. */}
+        <div>
+          <div className="mb-1 flex flex-wrap gap-1">
+            {PINNED_TAGS.map((t) => {
+              const active = tags.includes(t);
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() =>
+                    setTags(
+                      active ? tags.filter((x) => x !== t) : [...tags, t],
+                    )
+                  }
+                  className={
+                    active
+                      ? "rounded-full border border-blue-300 bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800"
+                      : "rounded-full border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                  }
+                >
+                  {t}
+                </button>
+              );
+            })}
+          </div>
+          <FilterTypeAhead
+            label="Tags"
+            endpoint="/api/v1/filters/tags"
+            selected={tags}
+            onChange={setTags}
+          />
+          <p className="mt-1 w-48 text-xs text-gray-400">
+            Reflects tags seen in collected snapshots, not a Chef-wide tag list.
+          </p>
+        </div>
         <FilterMultiCheckbox
           label="Policy Name"
           selected={policyNames}

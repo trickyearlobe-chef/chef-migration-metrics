@@ -33,7 +33,7 @@ describe("stripNodeDrilldownParams", () => {
 
   it("strips every page param", () => {
     const before = new URLSearchParams(
-      "readiness=ready&chef_version=18&platform=ubuntu&environment=prod&role=web&policy_name=p&policy_group=g&migration_state=Staged&target_converge_status=failed&stale_tiers=critical",
+      "readiness=ready&chef_version=18&platform=ubuntu&environment=prod&role=web&tags=prepare,rollback&policy_name=p&policy_group=g&migration_state=Staged&target_converge_status=failed&stale_tiers=critical",
     );
     const after = stripNodeDrilldownParams(before);
     for (const p of [
@@ -42,6 +42,7 @@ describe("stripNodeDrilldownParams", () => {
       "platform",
       "environment",
       "role",
+      "tags",
       "policy_name",
       "policy_group",
       "migration_state",
