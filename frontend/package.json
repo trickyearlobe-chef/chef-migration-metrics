@@ -43,7 +43,7 @@
   },
   "overrides": {
     "picomatch": "^4.0.4",
-    "undici": "7.27.0",
+    "undici": "7.28.0",
     "semver": "7.8.1",
     "caniuse-lite": "1.0.30001793",
     "electron-to-chromium": "1.5.366",
