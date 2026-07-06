@@ -88,10 +88,114 @@ func truncateToHour(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, time.UTC)
 }
 
-// orgHourKey is used to deduplicate snapshots per org within an hour bucket.
-type orgHourKey struct {
-	hour time.Time
-	org  string
+// fillBucketKey identifies an output bucket after forward-fill: an hour on the
+// global time axis, plus an optional variant (the target Chef version for the
+// version-scoped charts; "" for the fleet-wide ones).
+type fillBucketKey struct {
+	hour    time.Time
+	variant string
+}
+
+// forwardFillContributions is the shared cross-org trend aggregation core.
+//
+// Orgs collect at slightly different times, so bucketing per hour and summing
+// only the orgs that happen to have a snapshot in each bucket produces a
+// seesaw: a bucket where only one org collected shows just that org's counts,
+// dipping sharply before the next org's bucket. Selecting a single org hides
+// this because there is no cross-org bucket mismatch.
+//
+// Instead, treat each (org, variant) as an independent step-function series and
+// forward-fill it across the global hour axis: for every hour at or after a
+// series' first sample, the series contributes its most recent sample at or
+// before that hour. Summing these carried-forward values means every bucket
+// reflects ALL orgs that have ever reported (their last-known state), not just
+// those that collected in that hour — so the line is smooth whether orgs
+// collect at different hours or skip a cycle entirely.
+//
+// A series is never back-filled before its first appearance (an org that didn't
+// exist yet contributes nothing), and its last value is carried forward
+// indefinitely (a decommissioned org keeps its final counts — an accepted
+// trade-off; org removal is rare and out of scope for the trend view).
+//
+// Points are first deduplicated to the latest per (org, hour, variant). The
+// returned map gives, per output bucket, the forward-filled contributing points
+// (one per org); callers sum the fields they care about.
+func forwardFillContributions[P any](
+	points []P,
+	tsOf func(P) (time.Time, bool),
+	orgOf func(P) string,
+	variantOf func(P) string,
+) map[fillBucketKey][]P {
+	type sample struct {
+		hour  time.Time
+		ts    time.Time
+		point P
+	}
+	type dedupKey struct {
+		hour    time.Time
+		org     string
+		variant string
+	}
+	type seriesKey struct {
+		org     string
+		variant string
+	}
+
+	// Phase 1: dedup to the latest sample per (org, hour, variant); collect the
+	// global set of hours.
+	latest := make(map[dedupKey]sample)
+	hourSet := make(map[time.Time]struct{})
+	for _, p := range points {
+		t, ok := tsOf(p)
+		if !ok {
+			continue
+		}
+		t = t.UTC()
+		hour := truncateToHour(t)
+		hourSet[hour] = struct{}{}
+		k := dedupKey{hour: hour, org: orgOf(p), variant: variantOf(p)}
+		if ex, ok := latest[k]; !ok || t.After(ex.ts) {
+			latest[k] = sample{hour: hour, ts: t, point: p}
+		}
+	}
+	if len(latest) == 0 {
+		return nil
+	}
+
+	hours := make([]time.Time, 0, len(hourSet))
+	for h := range hourSet {
+		hours = append(hours, h)
+	}
+	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
+
+	// Group samples into per-series ordered lists (distinct hours per series).
+	series := make(map[seriesKey][]sample)
+	for k, s := range latest {
+		sk := seriesKey{org: k.org, variant: k.variant}
+		series[sk] = append(series[sk], s)
+	}
+	for sk := range series {
+		ss := series[sk]
+		sort.Slice(ss, func(i, j int) bool { return ss[i].hour.Before(ss[j].hour) })
+		series[sk] = ss
+	}
+
+	// Phase 2: forward-fill each series across the global hour axis.
+	out := make(map[fillBucketKey][]P)
+	for sk, samples := range series {
+		idx := -1 // index of the series' most recent sample at or before the hour
+		for _, h := range hours {
+			for idx+1 < len(samples) && !samples[idx+1].hour.After(h) {
+				idx++
+			}
+			if idx < 0 {
+				continue // series has not started yet at this hour
+			}
+			bk := fillBucketKey{hour: h, variant: sk.variant}
+			out[bk] = append(out[bk], samples[idx].point)
+		}
+	}
+	return out
 }
 
 // mergeVersionDistributionSnapshots aggregates per-org version distribution
@@ -105,59 +209,30 @@ func mergeVersionDistributionSnapshots(points []versionDistTrendPoint) []version
 		return points
 	}
 
-	// Phase 1: Deduplicate — keep the latest snapshot per (org, hour).
-	type dedupEntry struct {
-		point     versionDistTrendPoint
-		timestamp time.Time
-	}
-	deduped := make(map[orgHourKey]*dedupEntry)
+	contrib := forwardFillContributions(points,
+		func(p versionDistTrendPoint) (time.Time, bool) {
+			t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
+			return t, err == nil
+		},
+		func(p versionDistTrendPoint) string { return p.OrganisationName },
+		func(versionDistTrendPoint) string { return "" },
+	)
 
-	for _, p := range points {
-		t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
-		if err != nil {
-			continue
+	result := make([]versionDistTrendPoint, 0, len(contrib))
+	for bk, pts := range contrib {
+		merged := versionDistTrendPoint{
+			CompletedAt:  bk.hour.Format(trendTimestampFormat),
+			Distribution: make(map[string]int),
 		}
-		hour := truncateToHour(t)
-		key := orgHourKey{hour: hour, org: p.OrganisationName}
-
-		if existing, ok := deduped[key]; !ok || t.After(existing.timestamp) {
-			deduped[key] = &dedupEntry{point: p, timestamp: t}
+		for _, p := range pts {
+			merged.TotalNodes += p.TotalNodes
+			for ver, cnt := range p.Distribution {
+				merged.Distribution[ver] += cnt
+			}
 		}
+		result = append(result, merged)
 	}
-
-	// Phase 2: Sum across orgs within each hour bucket.
-	type bucket struct {
-		totalNodes   int
-		distribution map[string]int
-	}
-
-	buckets := make(map[time.Time]*bucket)
-	var hours []time.Time
-
-	for k, entry := range deduped {
-		b, ok := buckets[k.hour]
-		if !ok {
-			b = &bucket{distribution: make(map[string]int)}
-			buckets[k.hour] = b
-			hours = append(hours, k.hour)
-		}
-		b.totalNodes += entry.point.TotalNodes
-		for ver, cnt := range entry.point.Distribution {
-			b.distribution[ver] += cnt
-		}
-	}
-
-	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
-
-	result := make([]versionDistTrendPoint, 0, len(hours))
-	for _, hour := range hours {
-		b := buckets[hour]
-		result = append(result, versionDistTrendPoint{
-			CompletedAt:  hour.Format(trendTimestampFormat),
-			TotalNodes:   b.totalNodes,
-			Distribution: b.distribution,
-		})
-	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CompletedAt < result[j].CompletedAt })
 	return result
 }
 
@@ -170,93 +245,29 @@ func mergeStaleTrendSnapshots(points []staleTrendPoint) []staleTrendPoint {
 		return points
 	}
 
-	// Phase 1: Deduplicate — keep the latest snapshot per (org, hour).
-	type dedupEntry struct {
-		point     staleTrendPoint
-		timestamp time.Time
-	}
-	deduped := make(map[orgHourKey]*dedupEntry)
+	contrib := forwardFillContributions(points,
+		func(p staleTrendPoint) (time.Time, bool) {
+			t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
+			return t, err == nil
+		},
+		func(p staleTrendPoint) string { return p.OrganisationName },
+		func(staleTrendPoint) string { return "" },
+	)
 
-	for _, p := range points {
-		t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
-		if err != nil {
-			continue
+	result := make([]staleTrendPoint, 0, len(contrib))
+	for bk, pts := range contrib {
+		merged := staleTrendPoint{CompletedAt: bk.hour.Format(trendTimestampFormat)}
+		for _, p := range pts {
+			merged.TotalNodes += p.TotalNodes
+			merged.StaleNodes += p.StaleNodes
+			merged.FreshNodes += p.FreshNodes
+			merged.WarningNodes += p.WarningNodes
+			merged.CriticalNodes += p.CriticalNodes
 		}
-		hour := truncateToHour(t)
-		key := orgHourKey{hour: hour, org: p.OrganisationName}
-
-		if existing, ok := deduped[key]; !ok || t.After(existing.timestamp) {
-			deduped[key] = &dedupEntry{point: p, timestamp: t}
-		}
+		result = append(result, merged)
 	}
-
-	// Phase 2: Sum across orgs within each hour bucket.
-	type bucket struct {
-		totalNodes    int
-		staleNodes    int
-		freshNodes    int
-		warningNodes  int
-		criticalNodes int
-	}
-
-	buckets := make(map[time.Time]*bucket)
-	var hours []time.Time
-
-	for k, entry := range deduped {
-		b, ok := buckets[k.hour]
-		if !ok {
-			b = &bucket{}
-			buckets[k.hour] = b
-			hours = append(hours, k.hour)
-		}
-		b.totalNodes += entry.point.TotalNodes
-		b.staleNodes += entry.point.StaleNodes
-		b.freshNodes += entry.point.FreshNodes
-		b.warningNodes += entry.point.WarningNodes
-		b.criticalNodes += entry.point.CriticalNodes
-	}
-
-	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
-
-	result := make([]staleTrendPoint, 0, len(hours))
-	for _, hour := range hours {
-		b := buckets[hour]
-		result = append(result, staleTrendPoint{
-			CompletedAt:   hour.Format(trendTimestampFormat),
-			TotalNodes:    b.totalNodes,
-			StaleNodes:    b.staleNodes,
-			FreshNodes:    b.freshNodes,
-			WarningNodes:  b.warningNodes,
-			CriticalNodes: b.criticalNodes,
-		})
-	}
+	sort.Slice(result, func(i, j int) bool { return result[i].CompletedAt < result[j].CompletedAt })
 	return result
-}
-
-// complexityOrgKey deduplicates complexity snapshots per (org, hour, version).
-type complexityOrgKey struct {
-	hour    time.Time
-	org     string
-	version string
-}
-
-// complexityKey groups complexity trend points by hour and target version.
-type complexityKey struct {
-	hour    time.Time
-	version string
-}
-
-// readinessKey groups readiness trend points by hour and target version.
-type readinessKey struct {
-	hour    time.Time
-	version string
-}
-
-// readinessOrgKey deduplicates readiness snapshots per (org, hour, version).
-type readinessOrgKey struct {
-	hour    time.Time
-	org     string
-	version string
 }
 
 // mergeComplexityTrendSnapshots aggregates per-org complexity trend points
@@ -270,81 +281,40 @@ func mergeComplexityTrendSnapshots(points []complexityTrendPoint) []complexityTr
 		return points
 	}
 
-	// Phase 1: Deduplicate — keep the latest snapshot per (org, hour, version).
-	type dedupEntry struct {
-		point     complexityTrendPoint
-		timestamp time.Time
-	}
-	deduped := make(map[complexityOrgKey]*dedupEntry)
+	contrib := forwardFillContributions(points,
+		func(p complexityTrendPoint) (time.Time, bool) {
+			t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
+			return t, err == nil
+		},
+		func(p complexityTrendPoint) string { return p.OrganisationName },
+		func(p complexityTrendPoint) string { return p.TargetChefVersion },
+	)
 
-	for _, p := range points {
-		t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
-		if err != nil {
-			continue
+	result := make([]complexityTrendPoint, 0, len(contrib))
+	for bk, pts := range contrib {
+		merged := complexityTrendPoint{
+			CompletedAt:       bk.hour.Format(trendTimestampFormat),
+			TargetChefVersion: bk.variant,
 		}
-		hour := truncateToHour(t)
-		key := complexityOrgKey{hour: hour, org: p.OrganisationName, version: p.TargetChefVersion}
-
-		if existing, ok := deduped[key]; !ok || t.After(existing.timestamp) {
-			deduped[key] = &dedupEntry{point: p, timestamp: t}
+		for _, p := range pts {
+			merged.TotalCookbooks += p.TotalCookbooks
+			merged.TotalScore += p.TotalScore
+			merged.LowCount += p.LowCount
+			merged.MediumCount += p.MediumCount
+			merged.HighCount += p.HighCount
+			merged.CriticalCount += p.CriticalCount
 		}
-	}
-
-	// Phase 2: Sum across orgs within each (hour, version) bucket.
-	type bucket struct {
-		totalCookbooks int
-		totalScore     int
-		lowCount       int
-		mediumCount    int
-		highCount      int
-		criticalCount  int
-	}
-
-	buckets := make(map[complexityKey]*bucket)
-	var keys []complexityKey
-
-	for k, entry := range deduped {
-		ck := complexityKey{hour: k.hour, version: k.version}
-		b, ok := buckets[ck]
-		if !ok {
-			b = &bucket{}
-			buckets[ck] = b
-			keys = append(keys, ck)
+		if merged.TotalCookbooks > 0 {
+			merged.AverageScore = float64(merged.TotalScore) / float64(merged.TotalCookbooks)
 		}
-		b.totalCookbooks += entry.point.TotalCookbooks
-		b.totalScore += entry.point.TotalScore
-		b.lowCount += entry.point.LowCount
-		b.mediumCount += entry.point.MediumCount
-		b.highCount += entry.point.HighCount
-		b.criticalCount += entry.point.CriticalCount
+		result = append(result, merged)
 	}
-
-	sort.Slice(keys, func(i, j int) bool {
-		if !keys[i].hour.Equal(keys[j].hour) {
-			return keys[i].hour.Before(keys[j].hour)
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CompletedAt != result[j].CompletedAt {
+			return result[i].CompletedAt < result[j].CompletedAt
 		}
-		return keys[i].version < keys[j].version
+		return result[i].TargetChefVersion < result[j].TargetChefVersion
 	})
-
-	result := make([]complexityTrendPoint, 0, len(keys))
-	for _, k := range keys {
-		b := buckets[k]
-		avg := 0.0
-		if b.totalCookbooks > 0 {
-			avg = float64(b.totalScore) / float64(b.totalCookbooks)
-		}
-		result = append(result, complexityTrendPoint{
-			CompletedAt:       k.hour.Format(trendTimestampFormat),
-			TargetChefVersion: k.version,
-			TotalCookbooks:    b.totalCookbooks,
-			TotalScore:        b.totalScore,
-			AverageScore:      avg,
-			LowCount:          b.lowCount,
-			MediumCount:       b.mediumCount,
-			HighCount:         b.highCount,
-			CriticalCount:     b.criticalCount,
-		})
-	}
 	return result
 }
 
@@ -358,74 +328,37 @@ func mergeReadinessTrendSnapshots(points []readinessTrendPoint) []readinessTrend
 		return points
 	}
 
-	// Phase 1: Deduplicate — keep the latest snapshot per (org, hour, version).
-	type dedupEntry struct {
-		point     readinessTrendPoint
-		timestamp time.Time
-	}
-	deduped := make(map[readinessOrgKey]*dedupEntry)
+	contrib := forwardFillContributions(points,
+		func(p readinessTrendPoint) (time.Time, bool) {
+			t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
+			return t, err == nil
+		},
+		func(p readinessTrendPoint) string { return p.OrganisationName },
+		func(p readinessTrendPoint) string { return p.TargetChefVersion },
+	)
 
-	for _, p := range points {
-		t, err := time.Parse(trendTimestampFormat, p.CompletedAt)
-		if err != nil {
-			continue
+	result := make([]readinessTrendPoint, 0, len(contrib))
+	for bk, pts := range contrib {
+		merged := readinessTrendPoint{
+			CompletedAt:       bk.hour.Format(trendTimestampFormat),
+			TargetChefVersion: bk.variant,
 		}
-		hour := truncateToHour(t)
-		key := readinessOrgKey{hour: hour, org: p.OrganisationName, version: p.TargetChefVersion}
-
-		if existing, ok := deduped[key]; !ok || t.After(existing.timestamp) {
-			deduped[key] = &dedupEntry{point: p, timestamp: t}
+		for _, p := range pts {
+			merged.TotalNodes += p.TotalNodes
+			merged.ReadyNodes += p.ReadyNodes
+			merged.NeedsReviewNodes += p.NeedsReviewNodes
+			merged.BlockedNodes += p.BlockedNodes
 		}
-	}
-
-	// Phase 2: Sum across orgs within each (hour, version) bucket.
-	type bucket struct {
-		totalNodes       int
-		readyNodes       int
-		needsReviewNodes int
-		blockedNodes     int
-	}
-
-	buckets := make(map[readinessKey]*bucket)
-	var keys []readinessKey
-
-	for k, entry := range deduped {
-		rk := readinessKey{hour: k.hour, version: k.version}
-		b, ok := buckets[rk]
-		if !ok {
-			b = &bucket{}
-			buckets[rk] = b
-			keys = append(keys, rk)
+		if merged.TotalNodes > 0 {
+			merged.ReadyPercent = float64(merged.ReadyNodes) / float64(merged.TotalNodes) * 100
 		}
-		b.totalNodes += entry.point.TotalNodes
-		b.readyNodes += entry.point.ReadyNodes
-		b.needsReviewNodes += entry.point.NeedsReviewNodes
-		b.blockedNodes += entry.point.BlockedNodes
+		result = append(result, merged)
 	}
-
-	sort.Slice(keys, func(i, j int) bool {
-		if !keys[i].hour.Equal(keys[j].hour) {
-			return keys[i].hour.Before(keys[j].hour)
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CompletedAt != result[j].CompletedAt {
+			return result[i].CompletedAt < result[j].CompletedAt
 		}
-		return keys[i].version < keys[j].version
+		return result[i].TargetChefVersion < result[j].TargetChefVersion
 	})
-
-	result := make([]readinessTrendPoint, 0, len(keys))
-	for _, k := range keys {
-		b := buckets[k]
-		pct := 0.0
-		if b.totalNodes > 0 {
-			pct = float64(b.readyNodes) / float64(b.totalNodes) * 100
-		}
-		result = append(result, readinessTrendPoint{
-			CompletedAt:       k.hour.Format(trendTimestampFormat),
-			TargetChefVersion: k.version,
-			TotalNodes:        b.totalNodes,
-			ReadyNodes:        b.readyNodes,
-			NeedsReviewNodes:  b.needsReviewNodes,
-			BlockedNodes:      b.blockedNodes,
-			ReadyPercent:      pct,
-		})
-	}
 	return result
 }
