@@ -240,6 +240,54 @@ func TestMergeVersionDistributionSnapshots_MultipleOrgs_DifferentHours(t *testin
 	}
 }
 
+// TestMergeVersionDistributionSnapshots_DisjointHours_ForwardFills is the actual
+// seesaw scenario: org-a collects only in hour 14, org-b only in hour 15. Without
+// forward-fill, hour 15 would drop org-a entirely (showing 55, a sharp dip). With
+// forward-fill, org-a's last-known 100 is carried into hour 15 and summed with
+// org-b's 55 → a smooth 155.
+func TestMergeVersionDistributionSnapshots_DisjointHours_ForwardFills(t *testing.T) {
+	points := []versionDistTrendPoint{
+		{
+			OrganisationName: "org-a",
+			CompletedAt:      "2025-06-15T14:02:00Z",
+			TotalNodes:       100,
+			Distribution:     map[string]int{"18.4.2": 100},
+		},
+		{
+			OrganisationName: "org-b",
+			CompletedAt:      "2025-06-15T15:08:00Z",
+			TotalNodes:       55,
+			Distribution:     map[string]int{"18.4.2": 40, "19.3.15": 15},
+		},
+	}
+
+	got := mergeVersionDistributionSnapshots(points)
+
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (hours 14 and 15)", len(got))
+	}
+
+	// Hour 14: only org-a has reported → 100. org-b is not back-filled.
+	if got[0].CompletedAt != "2025-06-15T14:00:00Z" || got[0].TotalNodes != 100 {
+		t.Errorf("hour 14 = (%q, %d), want (2025-06-15T14:00:00Z, 100)", got[0].CompletedAt, got[0].TotalNodes)
+	}
+	if got[0].Distribution["19.3.15"] != 0 {
+		t.Errorf("hour 14 must not back-fill org-b's version: 19.3.15 = %d, want 0", got[0].Distribution["19.3.15"])
+	}
+
+	// Hour 15: org-a's 100 carried forward + org-b's 55 = 155 (no seesaw dip).
+	if got[1].CompletedAt != "2025-06-15T15:00:00Z" || got[1].TotalNodes != 155 {
+		t.Errorf("hour 15 = (%q, %d), want (2025-06-15T15:00:00Z, 155)", got[1].CompletedAt, got[1].TotalNodes)
+	}
+	// org-a carried 100 of 18.4.2, org-b adds 40 of 18.4.2 + 15 of 19.3.15.
+	if got[1].Distribution["18.4.2"] != 140 {
+		t.Errorf("hour 15 18.4.2 = %d, want 140 (100 carried + 40)", got[1].Distribution["18.4.2"])
+	}
+	if got[1].Distribution["19.3.15"] != 15 {
+		t.Errorf("hour 15 19.3.15 = %d, want 15", got[1].Distribution["19.3.15"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // mergeStaleTrendSnapshots
 // ---------------------------------------------------------------------------
@@ -726,6 +774,48 @@ func TestMergeReadinessTrendSnapshots_DedupSameOrgSameHour(t *testing.T) {
 	wantPct := float64(70) / float64(150) * 100
 	if got[0].ReadyPercent != wantPct {
 		t.Errorf("ReadyPercent = %f, want %f", got[0].ReadyPercent, wantPct)
+	}
+}
+
+// TestMergeReadinessTrendSnapshots_DisjointHours_ForwardFillsPerVersion verifies
+// forward-fill is per (org, version): org-a reports version 18.4.2 only in hour
+// 10, org-b reports the same version only in hour 11. Hour 11 must carry org-a's
+// last value forward and sum (no seesaw). A version is not back-filled before its
+// first appearance.
+func TestMergeReadinessTrendSnapshots_DisjointHours_ForwardFillsPerVersion(t *testing.T) {
+	points := []readinessTrendPoint{
+		{
+			OrganisationName:  "org-a",
+			CompletedAt:       "2025-06-15T10:05:00Z",
+			TargetChefVersion: "18.4.2",
+			TotalNodes:        100,
+			ReadyNodes:        40,
+			BlockedNodes:      60,
+		},
+		{
+			OrganisationName:  "org-b",
+			CompletedAt:       "2025-06-15T11:05:00Z",
+			TargetChefVersion: "18.4.2",
+			TotalNodes:        50,
+			ReadyNodes:        30,
+			BlockedNodes:      20,
+		},
+	}
+
+	got := mergeReadinessTrendSnapshots(points)
+
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (hours 10 and 11 for version 18.4.2)", len(got))
+	}
+
+	// Hour 10: only org-a → 100 total, 40 ready.
+	if got[0].CompletedAt != "2025-06-15T10:00:00Z" || got[0].TotalNodes != 100 || got[0].ReadyNodes != 40 {
+		t.Errorf("hour 10 = (%q, total %d, ready %d), want (…10:00:00Z, 100, 40)", got[0].CompletedAt, got[0].TotalNodes, got[0].ReadyNodes)
+	}
+
+	// Hour 11: org-a carried (100/40) + org-b (50/30) = 150 total, 70 ready.
+	if got[1].CompletedAt != "2025-06-15T11:00:00Z" || got[1].TotalNodes != 150 || got[1].ReadyNodes != 70 {
+		t.Errorf("hour 11 = (%q, total %d, ready %d), want (…11:00:00Z, 150, 70)", got[1].CompletedAt, got[1].TotalNodes, got[1].ReadyNodes)
 	}
 }
 
