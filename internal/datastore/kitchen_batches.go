@@ -42,16 +42,16 @@ type BatchFilters struct {
 
 // KitchenBatch represents a row in the kitchen_batches table.
 type KitchenBatch struct {
-	ID               string       `json:"id"`
-	Name             string       `json:"name"`
-	Filters          BatchFilters `json:"filters"`
-	MaxCount         *int         `json:"max_count"`
-	DryRun           bool         `json:"dry_run"`
-	Status           string       `json:"status"`
-	CreatedBy        string       `json:"created_by,omitempty"`
-	CreatedAt        time.Time    `json:"created_at"`
-	StartedAt        *time.Time   `json:"started_at,omitempty"`
-	CompletedAt      *time.Time   `json:"completed_at,omitempty"`
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Filters     BatchFilters `json:"filters"`
+	MaxCount    *int         `json:"max_count"`
+	DryRun      bool         `json:"dry_run"`
+	Status      string       `json:"status"`
+	CreatedBy   string       `json:"created_by,omitempty"`
+	CreatedAt   time.Time    `json:"created_at"`
+	StartedAt   *time.Time   `json:"started_at,omitempty"`
+	CompletedAt *time.Time   `json:"completed_at,omitempty"`
 }
 
 // CreateKitchenBatchParams holds the fields required to create a kitchen batch.
@@ -264,7 +264,12 @@ func (db *DB) SetGitRepoKitchenExclusion(ctx context.Context, name string, reaso
 		return err
 	}
 	// Exclusion changes which results are "active" → recompute TK status.
-	return db.RecomputeGitRepoTKStatusByName(ctx, name)
+	if err := db.RecomputeGitRepoTKStatusByName(ctx, name); err != nil {
+		return err
+	}
+	// Roles roll up git TK status → refresh their role_summary tk columns.
+	_ = db.RecomputeAllRoleTKStatus(ctx)
+	return nil
 }
 
 func (db *DB) setGitRepoKitchenExclusion(ctx context.Context, q queryable, name string, reason string, excludedBy string) error {
@@ -297,7 +302,12 @@ func (db *DB) ClearGitRepoKitchenExclusion(ctx context.Context, name string) err
 		return err
 	}
 	// Exclusion changes which results are "active" → recompute TK status.
-	return db.RecomputeGitRepoTKStatusByName(ctx, name)
+	if err := db.RecomputeGitRepoTKStatusByName(ctx, name); err != nil {
+		return err
+	}
+	// Roles roll up git TK status → refresh their role_summary tk columns.
+	_ = db.RecomputeAllRoleTKStatus(ctx)
+	return nil
 }
 
 func (db *DB) clearGitRepoKitchenExclusion(ctx context.Context, q queryable, name string) error {

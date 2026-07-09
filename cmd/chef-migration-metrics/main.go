@@ -1021,6 +1021,47 @@ func (app *serverApp) backfillCookstyleStatus(ctx context.Context) {
 	}
 }
 
+// roleSummaryBackfillMarker names the one-time role_summary population.
+const roleSummaryBackfillMarker = "role_summary_materialised_v1"
+
+// backfillRoleSummary populates the role_summary materialised table on first
+// boot after its introducing migration (0049), so the roles list has data
+// before the first scheduled collection run recomputes it. Marker-gated and
+// idempotent; non-fatal — every collection run recomputes role_summary anyway,
+// so a failure here just leaves the marker unset for the next boot to retry.
+func (app *serverApp) backfillRoleSummary(ctx context.Context) {
+	done, err := app.db.BackfillCompleted(ctx, roleSummaryBackfillMarker)
+	if err != nil {
+		app.startup.Warn(fmt.Sprintf("could not check role_summary backfill marker: %v", err))
+		return
+	}
+	if done {
+		app.startup.Info("role_summary backfill: already applied — skipping")
+		return
+	}
+
+	if err := app.db.RecomputeAllRoleStructural(ctx); err != nil {
+		app.startup.Warn(fmt.Sprintf("role_summary backfill: structural recompute failed (will retry next boot): %v", err))
+		return
+	}
+	cfg := app.configHolder.Get()
+	if cfg.TargetChefVersion != "" {
+		if err := app.db.RecomputeAllRoleCompatStatus(ctx, cfg.TargetChefVersion); err != nil {
+			app.startup.Warn(fmt.Sprintf("role_summary backfill: compat recompute failed (will retry next boot): %v", err))
+			return
+		}
+	}
+	if err := app.db.RecomputeAllRoleTKStatus(ctx); err != nil {
+		app.startup.Warn(fmt.Sprintf("role_summary backfill: TK recompute failed (will retry next boot): %v", err))
+		return
+	}
+	app.startup.Info("role_summary backfill: materialised per-role aggregates")
+
+	if err := app.db.MarkBackfillCompleted(ctx, roleSummaryBackfillMarker); err != nil {
+		app.startup.Warn(fmt.Sprintf("role_summary backfill: completed but failed to set marker (will re-run next boot): %v", err))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Phase: analysis pipeline and collector setup.
 // ---------------------------------------------------------------------------
@@ -2849,6 +2890,10 @@ func run() int {
 	// Phase 12b: one-time precise CookStyle status backfill (needs the readiness
 	// evaluator built in Phase 12). Idempotent and marker-gated; non-fatal.
 	app.backfillCookstyleStatus(ctx)
+
+	// Phase 12c: one-time role_summary materialisation so the roles list has data
+	// before the first scheduled collection. Idempotent and marker-gated; non-fatal.
+	app.backfillRoleSummary(ctx)
 
 	// Phase 13: ownership startup tasks.
 	app.setupOwnership(ctx)

@@ -23,9 +23,10 @@ type mockPropagationStore struct {
 	gitRefs         []datastore.CookstyleResultRef
 	orgs            []datastore.Organisation
 
-	serverPassedUpdates []passedUpdate
-	gitPassedUpdates    []passedUpdate
-	gitCompatRecomputed []string
+	serverPassedUpdates  []passedUpdate
+	gitPassedUpdates     []passedUpdate
+	gitCompatRecomputed  []string
+	roleCompatRecomputed []string
 }
 
 type passedUpdate struct {
@@ -62,6 +63,11 @@ func (m *mockPropagationStore) UpdateGitRepoCookstyleVerdict(ctx context.Context
 
 func (m *mockPropagationStore) RecomputeGitRepoCompatibilityStatus(ctx context.Context, name, url, target string) error {
 	m.gitCompatRecomputed = append(m.gitCompatRecomputed, name)
+	return nil
+}
+
+func (m *mockPropagationStore) RecomputeAllRoleCompatStatus(ctx context.Context, target string) error {
+	m.roleCompatRecomputed = append(m.roleCompatRecomputed, target)
 	return nil
 }
 
@@ -148,6 +154,11 @@ func TestPropagate_FlipsServerVerdictAndRecomputes(t *testing.T) {
 	}
 	if res.OrgsReadinessRecomputed != 1 || len(readiness.orgs) != 1 || readiness.orgs[0] != "org-a" {
 		t.Errorf("expected readiness recompute for org-a, got %v", readiness.orgs)
+	}
+	// Roles derive from the same cookstyle verdicts, so a reclassification must
+	// re-materialise role compat for the target once.
+	if len(store.roleCompatRecomputed) != 1 || store.roleCompatRecomputed[0] != "18" {
+		t.Errorf("expected role compat recompute for target 18, got %v", store.roleCompatRecomputed)
 	}
 }
 

@@ -350,6 +350,19 @@ type DataStore interface {
 	// version, so the materialised list columns cannot drift from the results.
 	RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error
 
+	// RecomputeAllRoleCompatStatus re-materialises every role's compatibility
+	// columns in role_summary from cookstyle results for the target Chef version.
+	RecomputeAllRoleCompatStatus(ctx context.Context, targetChefVersion string) error
+
+	// RecomputeAllRoleTKStatus re-materialises every role's TK columns in
+	// role_summary from its transitive cookbook set's git_repos.tk_status.
+	RecomputeAllRoleTKStatus(ctx context.Context) error
+
+	// ResetAllRoleStatuses blanks the active-target role_summary columns
+	// (compat + tk) to defaults, preserving structural columns. Call on target
+	// Chef version change.
+	ResetAllRoleStatuses(ctx context.Context) error
+
 	// DeleteAllGitRepoComplexities removes all git repo complexity records.
 	DeleteAllGitRepoComplexities(ctx context.Context) error
 

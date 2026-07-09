@@ -51,6 +51,7 @@ func (db *DB) CreateKitchenExclusion(ctx context.Context, p CreateKitchenExclusi
 	}
 	// Instance exclusion changes active results → recompute TK status.
 	_ = db.RecomputeGitRepoTKStatusByName(ctx, p.GitRepoName)
+	_ = db.RecomputeAllRoleTKStatus(ctx)
 	return e, nil
 }
 
@@ -100,6 +101,7 @@ func (db *DB) DeleteKitchenExclusion(ctx context.Context, id string) (bool, erro
 	n, _ := result.RowsAffected()
 	if n > 0 && repoName != "" {
 		_ = db.RecomputeGitRepoTKStatusByName(ctx, repoName)
+		_ = db.RecomputeAllRoleTKStatus(ctx)
 	}
 	return n > 0, nil
 }

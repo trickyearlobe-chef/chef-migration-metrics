@@ -730,6 +730,18 @@ func (m *mockStore) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targ
 	return nil
 }
 
+func (m *mockStore) RecomputeAllRoleCompatStatus(ctx context.Context, targetChefVersion string) error {
+	return nil
+}
+
+func (m *mockStore) RecomputeAllRoleTKStatus(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockStore) ResetAllRoleStatuses(ctx context.Context) error {
+	return nil
+}
+
 func (m *mockStore) DeleteAllGitRepoComplexities(ctx context.Context) error {
 	if m.DeleteAllGitRepoComplexitiesFn != nil {
 		return m.DeleteAllGitRepoComplexitiesFn(ctx)
