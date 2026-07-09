@@ -586,11 +586,11 @@ func (db *DB) ListDistinctNodeValues(ctx context.Context, f NodeSnapshotFilter, 
 	return values, rows.Err()
 }
 
-// ListDistinctNodeRoles returns sorted distinct non-empty role names from
-// the roles JSONB array across all nodes matching the filter. When
-// opts.SearchPrefix is set, only roles starting with that prefix are
-// returned. When opts.Limit > 0, results are capped.
-func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, opts DistinctValueOpts) ([]string, error) {
+// buildDistinctNodeRolesQuery constructs the SQL + args for ListDistinctNodeRoles
+// (distinct role names unnested from node_snapshots.roles). Extracted as a
+// standalone builder so the EXPLAIN diagnostics catalog (query_explain.go) can
+// explain the exact production query without drift.
+func buildDistinctNodeRolesQuery(f NodeSnapshotFilter, opts DistinctValueOpts) (string, []interface{}) {
 	cte, join, where, args := buildNodeSnapshotFilterParts(f)
 
 	argN := len(args)
@@ -620,6 +620,16 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, o
 		   AND r.value IS NOT NULL AND r.value != ''%s
 		 ORDER BY val%s
 	`, cte, join, where, prefixClause, limitClause)
+
+	return query, args
+}
+
+// ListDistinctNodeRoles returns sorted distinct non-empty role names from
+// the roles JSONB array across all nodes matching the filter. When
+// opts.SearchPrefix is set, only roles starting with that prefix are
+// returned. When opts.Limit > 0, results are capped.
+func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, opts DistinctValueOpts) ([]string, error) {
+	query, args := buildDistinctNodeRolesQuery(f, opts)
 
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {
