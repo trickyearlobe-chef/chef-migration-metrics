@@ -4,18 +4,25 @@
 import { useSearchParams } from "react-router-dom";
 import { AdminSystemStatsPage } from "./AdminSystemStatsPage";
 import { AdminPerformancePage } from "./AdminPerformancePage";
+import { AdminExplainPage } from "./AdminExplainPage";
 import { AdminStatusPage } from "./AdminStatusPage";
 
-type HealthTab = "overview" | "performance" | "status";
+type HealthTab = "overview" | "performance" | "explain" | "status";
 
 const TABS: { key: HealthTab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "performance", label: "Performance" },
+  { key: "explain", label: "Explain" },
   { key: "status", label: "Status" },
 ];
 
 function isValidTab(value: string | null): value is HealthTab {
-  return value === "overview" || value === "performance" || value === "status";
+  return (
+    value === "overview" ||
+    value === "performance" ||
+    value === "explain" ||
+    value === "status"
+  );
 }
 
 export function AdminSystemHealthPage() {
@@ -58,6 +65,7 @@ export function AdminSystemHealthPage() {
 
       {activeTab === "overview" && <AdminSystemStatsPage />}
       {activeTab === "performance" && <AdminPerformancePage />}
+      {activeTab === "explain" && <AdminExplainPage />}
       {activeTab === "status" && <AdminStatusPage />}
     </div>
   );
