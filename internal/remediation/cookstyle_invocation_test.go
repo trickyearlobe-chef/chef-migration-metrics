@@ -86,18 +86,23 @@ func TestWriteCookstyleTargetConfig_NoSidecarWithoutTargetOrAddons(t *testing.T)
 	}
 }
 
-// TestWriteCookstyleTargetConfig_AddonsWithCookbookConfig proves addons are
-// require:'d even when inheriting the cookbook's own .rubocop.yml (no NewCops
-// regression, cookstyle inherited not re-required).
-func TestWriteCookstyleTargetConfig_AddonsWithCookbookConfig(t *testing.T) {
+// TestWriteCookstyleTargetConfig_IgnoresCookbookConfig proves the sidecar is
+// self-contained even when the cookbook ships its own .rubocop.yml: it requires
+// cookstyle itself and does NOT inherit the cookbook config (which would drag in
+// an obsolete .rubocop_todo.yml and make CookStyle abort with exit 2). Addons
+// are still require:'d and enabled.
+func TestWriteCookstyleTargetConfig_IgnoresCookbookConfig(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".rubocop.yml"), []byte("require:\n  - cookstyle\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".rubocop.yml"), []byte("inherit_from: .rubocop_todo.yml\nrequire:\n  - cookstyle\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	WriteCookstyleTargetConfig(dir, "18.0", []AddonCop{{Path: "/opt/cops/x.rb", CopNames: []string{"Cmm/X"}}})
 	got := readSidecar(t, dir)
-	if !strings.Contains(got, "inherit_from: .rubocop.yml") {
-		t.Errorf("must inherit the cookbook config:\n%s", got)
+	if strings.Contains(got, "inherit_from") {
+		t.Errorf("must NOT inherit the cookbook config:\n%s", got)
+	}
+	if !strings.Contains(got, "require:") || !strings.Contains(got, "- cookstyle") {
+		t.Errorf("must require cookstyle itself:\n%s", got)
 	}
 	if !strings.Contains(got, "- /opt/cops/x.rb") {
 		t.Errorf("must require the addon:\n%s", got)

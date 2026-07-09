@@ -75,12 +75,18 @@ func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 	}
 }
 
-func TestBuildAutocorrectArgs_WithTargetVersion_WithCookbookConfig(t *testing.T) {
+func TestBuildAutocorrectArgs_WithTargetVersion_IgnoresCookbookConfig(t *testing.T) {
 	cookbookDir := t.TempDir()
 
-	// Simulate a cookbook that already has its own .rubocop.yml.
-	existingConfig := "require:\n  - cookstyle\n\nChef/Style/TrueClassFalseClassResourceProperties:\n  Enabled: false\n"
+	// Simulate a cookbook that ships its own .rubocop.yml (and, as is common, a
+	// .rubocop_todo.yml referencing obsolete/renamed cops that would make
+	// CookStyle abort with exit 2 if we inherited it).
+	existingConfig := "inherit_from: .rubocop_todo.yml\n\nrequire:\n  - cookstyle\n"
 	if err := os.WriteFile(filepath.Join(cookbookDir, ".rubocop.yml"), []byte(existingConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+	todo := "Metrics/LineLength:\n  Max: 120\n" // obsolete cop name (moved to Layout/LineLength)
+	if err := os.WriteFile(filepath.Join(cookbookDir, ".rubocop_todo.yml"), []byte(todo), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,20 +97,26 @@ func TestBuildAutocorrectArgs_WithTargetVersion_WithCookbookConfig(t *testing.T)
 		t.Error("args should contain --config when target version is set")
 	}
 
-	// Verify sidecar inherits from the cookbook's own config.
 	data, err := os.ReadFile(filepath.Join(cookbookDir, CmmConfigName))
 	if err != nil {
 		t.Fatalf("expected %s to be written: %v", CmmConfigName, err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "inherit_from: .rubocop.yml") {
-		t.Errorf("%s should inherit_from .rubocop.yml, got:\n%s", CmmConfigName, content)
+
+	// The sidecar must be self-contained: it must NOT inherit the cookbook's own
+	// config (which would drag in the obsolete .rubocop_todo.yml → exit 2), and
+	// must require cookstyle itself so TargetChefVersion is recognised.
+	if strings.Contains(content, "inherit_from") {
+		t.Errorf("%s must NOT inherit the cookbook's config, got:\n%s", CmmConfigName, content)
+	}
+	if !strings.Contains(content, "require:") || !strings.Contains(content, "cookstyle") {
+		t.Errorf("%s must require cookstyle itself, got:\n%s", CmmConfigName, content)
 	}
 	if !strings.Contains(content, "TargetChefVersion: 17.0") {
 		t.Errorf("%s should contain TargetChefVersion: 17.0, got:\n%s", CmmConfigName, content)
 	}
 
-	// The cookbook's original .rubocop.yml must be preserved.
+	// We still must not clobber the cookbook's own files — only add the sidecar.
 	origData, err := os.ReadFile(filepath.Join(cookbookDir, ".rubocop.yml"))
 	if err != nil {
 		t.Fatal("cookbook .rubocop.yml should still exist")

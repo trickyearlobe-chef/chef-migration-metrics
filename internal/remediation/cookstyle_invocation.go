@@ -54,12 +54,18 @@ func BuildCookstyleArgs(cookbookDir, targetChefVersion string, leadingArgs []str
 	return args
 }
 
-// WriteCookstyleTargetConfig writes a sidecar .rubocop_cmm.yml into the cookbook
-// directory that sets AllCops.TargetChefVersion and require:s any addon cops.
-// If the cookbook already contains a .rubocop.yml the sidecar inherits from it
-// so the cookbook's own configuration (excludes, custom cops, etc.) is
-// preserved. When no cookbook config exists the sidecar explicitly requires
-// cookstyle so that the TargetChefVersion parameter is recognised.
+// WriteCookstyleTargetConfig writes a self-contained sidecar .rubocop_cmm.yml
+// into the cookbook directory that sets AllCops.TargetChefVersion, requires
+// cookstyle, and require:s any addon cops.
+//
+// The sidecar deliberately does NOT inherit the cookbook's own .rubocop.yml /
+// .rubocop_todo.yml. Those files are the team's style configuration and a
+// deferred-violations TODO — irrelevant to a migration-readiness scan (honouring
+// the TODO would hide the very offences we assess), and frequently referencing
+// obsolete/renamed cops (e.g. `Metrics/LineLength` → `Layout/LineLength`) that
+// make CookStyle abort with exit 2 ("obsolete configuration found"). Assessing
+// every cookbook against a consistent, tool-controlled ruleset for the target
+// Chef version is both correct and immune to those stale configs.
 //
 // addonCops are resolved operator addon cops; each file is added to the
 // sidecar's require: list and each parsed cop name is enabled with an explicit
@@ -77,19 +83,10 @@ func WriteCookstyleTargetConfig(cookbookDir, targetChefVersion string, addonCops
 
 	var buf strings.Builder
 
-	// Build the require list. cookstyle is required directly only when the
-	// cookbook has no config of its own (otherwise it is inherited).
-	var requires []string
-	existingConfig := filepath.Join(cookbookDir, ".rubocop.yml")
-	if _, err := os.Stat(existingConfig); err == nil {
-		// Cookbook has its own config — inherit from it (which also picks up
-		// any `require: cookstyle` it contains).
-		buf.WriteString("inherit_from: .rubocop.yml\n\n")
-	} else {
-		// No cookbook config — require cookstyle ourselves so the
-		// TargetChefVersion AllCops parameter is registered.
-		requires = append(requires, "cookstyle")
-	}
+	// Always require cookstyle ourselves so the AllCops.TargetChefVersion
+	// parameter and the Chef cops are registered. We never inherit the cookbook's
+	// own config (see the doc comment above), so this is unconditional.
+	requires := []string{"cookstyle"}
 	for _, c := range addonCops {
 		requires = append(requires, c.Path)
 	}
