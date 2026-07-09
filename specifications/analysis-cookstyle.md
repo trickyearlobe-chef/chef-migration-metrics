@@ -26,6 +26,8 @@ Chef Workstation must be installed on the host for CookStyle scanning to be avai
 
    The `--format json` flag produces machine-parseable output. Capture combined stdout/stderr. Set a configurable timeout (default: 10 minutes).
 
+   **Config isolation.** The scan is driven by a **self-contained sidecar** config (`.rubocop_cmm.yml`, written into the cookbook directory and pointed at via `--config`) that sets `AllCops.TargetChefVersion`, requires `cookstyle`, and enables any operator addon cops. It **must not** inherit the cookbook's own `.rubocop.yml` / `.rubocop_todo.yml`. Those files are the team's style configuration and a deferred-violations TODO — irrelevant to a migration-readiness verdict (honouring the TODO would *hide* the offences we assess), and git-sourced cookbooks routinely carry a `.rubocop_todo.yml` referencing renamed/obsolete cops (e.g. `Metrics/LineLength` → `Layout/LineLength`) that make CookStyle abort with **exit 2** ("obsolete configuration found"). Every cookbook is therefore assessed against one consistent, tool-controlled ruleset for the target version, immune to stale in-repo configs. The cookbook's own files are left untouched — only the sidecar is added.
+
 4. **Parse JSON output** — The CookStyle JSON output follows the RuboCop JSON formatter structure:
 
    ```json
