@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   fetchPerformanceStats,
   fetchPerformanceDB,
@@ -6,6 +7,7 @@ import {
   resetPerformanceDB,
   vacuumFull,
 } from "../api";
+import { PREFILL_KEY } from "./AdminExplainPage";
 import type {
   PerformanceResponse,
   PerformanceDBResponse,
@@ -141,6 +143,17 @@ function EndpointsSection({ data }: { data: PerformanceResponse }) {
 }
 
 function TopQueriesSection({ data }: { data: PerformanceDBResponse }) {
+  const [, setSearchParams] = useSearchParams();
+  // pg_stat_statements text is normalised ($1, no values), so it can't be
+  // one-click ANALYZEd — pre-fill the Explain tab's free-text box instead.
+  const explainQuery = (query: string) => {
+    sessionStorage.setItem(PREFILL_KEY, query);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", "explain");
+      return next;
+    });
+  };
   if (!data.pg_stat_statements_available) {
     return (
       <section className={cardCls}>
@@ -167,6 +180,7 @@ function TopQueriesSection({ data }: { data: PerformanceDBResponse }) {
                 <th className={thCls + " text-right"}>Max ms</th>
                 <th className={thCls + " text-right"}>Rows</th>
                 <th className={thCls + " text-right"}>Cache Hit</th>
+                <th className={thCls + " text-right"}>Explain</th>
               </tr>
             </thead>
             <tbody>
@@ -181,6 +195,14 @@ function TopQueriesSection({ data }: { data: PerformanceDBResponse }) {
                   <td className={tdCls + " text-right font-medium"}>{formatMs(q.max_time_ms)}</td>
                   <td className={tdCls + " text-right"}>{q.rows}</td>
                   <td className={tdCls + " text-right"}>{cacheHitRatio(q.shared_blks_hit, q.shared_blks_read)}</td>
+                  <td className={tdCls + " text-right"}>
+                    <button
+                      className="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-50"
+                      onClick={() => explainQuery(q.query)}
+                    >
+                      Explain
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

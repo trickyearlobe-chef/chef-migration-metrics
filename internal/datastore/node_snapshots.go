@@ -484,24 +484,29 @@ func (db *DB) GetNodeSnapshotByName(ctx context.Context, organisationName, nodeN
 	return db.getNodeSnapshotByName(ctx, db.q(), organisationName, nodeName)
 }
 
+// nodeSnapshotByNameQuery fetches the most recent full-row snapshot for one
+// node (heavy JSONB columns included). Exported at package scope so the EXPLAIN
+// diagnostics catalog (query_explain.go) can explain the exact production query
+// without drift.
+const nodeSnapshotByNameQuery = `
+	SELECT collection_run_org, organisation_name, node_name,
+	       chef_environment, chef_version, platform, platform_version,
+	       platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
+	       policy_name, policy_group, ohai_time, custom_attributes,
+	       is_stale, collected_at, created_at,
+	       migration_state, active_chef_version, dormant_installed,
+	       dormant_chef_version, target_version, target_execution_time,
+	       target_converge_status,
+	       sufficient_disk_space, available_disk_mb, required_disk_mb,
+	       tags
+	FROM node_snapshots
+	WHERE organisation_name = $1 AND node_name = $2
+	ORDER BY collected_at DESC
+	LIMIT 1
+`
+
 func (db *DB) getNodeSnapshotByName(ctx context.Context, q queryable, organisationName, nodeName string) (NodeSnapshot, error) {
-	const query = `
-		SELECT collection_run_org, organisation_name, node_name,
-		       chef_environment, chef_version, platform, platform_version,
-		       platform_family, platform_caption, filesystem, cookbooks, run_list, roles,
-		       policy_name, policy_group, ohai_time, custom_attributes,
-		       is_stale, collected_at, created_at,
-		       migration_state, active_chef_version, dormant_installed,
-		       dormant_chef_version, target_version, target_execution_time,
-		       target_converge_status,
-		       sufficient_disk_space, available_disk_mb, required_disk_mb,
-		       tags
-		FROM node_snapshots
-		WHERE organisation_name = $1 AND node_name = $2
-		ORDER BY collected_at DESC
-		LIMIT 1
-	`
-	return scanNodeSnapshot(q.QueryRowContext(ctx, query, organisationName, nodeName))
+	return scanNodeSnapshot(q.QueryRowContext(ctx, nodeSnapshotByNameQuery, organisationName, nodeName))
 }
 
 // CountNodeSnapshotsByCollectionRun returns the number of node snapshots

@@ -23,6 +23,19 @@ type ProductionPlatformRow struct {
 // Query
 // ---------------------------------------------------------------------------
 
+// productionPlatformsForCookbookQuery aggregates production platforms for a
+// cookbook via a JSONB key-existence (`cookbooks ? $1`) scan over
+// node_snapshots. Exported at package scope so the EXPLAIN diagnostics catalog
+// (query_explain.go) can explain the exact production query without drift.
+const productionPlatformsForCookbookQuery = `
+	SELECT platform, platform_version, platform_family,
+	       COUNT(DISTINCT node_name) AS node_count
+	FROM node_snapshots
+	WHERE cookbooks::jsonb ? $1
+	GROUP BY platform, platform_version, platform_family
+	ORDER BY node_count DESC, platform, platform_version
+`
+
 // GetProductionPlatformsForCookbook returns aggregated production platform
 // tuples for the given cookbook name across all organisations. It queries
 // node_snapshots rows whose cookbooks JSONB column contains the cookbook as
@@ -37,16 +50,7 @@ func (db *DB) GetProductionPlatformsForCookbook(ctx context.Context, cookbookNam
 		return nil, fmt.Errorf("datastore: cookbook_name is required")
 	}
 
-	const query = `
-		SELECT platform, platform_version, platform_family,
-		       COUNT(DISTINCT node_name) AS node_count
-		FROM node_snapshots
-		WHERE cookbooks::jsonb ? $1
-		GROUP BY platform, platform_version, platform_family
-		ORDER BY node_count DESC, platform, platform_version
-	`
-
-	return scanProductionPlatformRows(db.pool.QueryContext(ctx, query, cookbookName))
+	return scanProductionPlatformRows(db.pool.QueryContext(ctx, productionPlatformsForCookbookQuery, cookbookName))
 }
 
 // ---------------------------------------------------------------------------

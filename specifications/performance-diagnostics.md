@@ -8,11 +8,12 @@ General UI/application sluggishness reported. No data exists to identify bottlen
 
 ## Approach
 
-Three layers of instrumentation, all readable via API endpoints and the admin UI:
+Four layers of instrumentation, all readable via API endpoints and the admin UI:
 
 1. **Request timing middleware** — per-endpoint latency percentiles
 2. **PostgreSQL stats dashboard** — query the database's own performance statistics
 3. **pprof endpoints** — standard Go profiling (behind admin auth, config-gated)
+4. **EXPLAIN runner** — capture query plans (scan type, index usage, buffers, timings) for the hot queries Layer 2 surfaces
 
 ## Layer 1: Request Timing Middleware
 
@@ -255,6 +256,108 @@ performance:
 - When `pprof_enabled` is false, the routes are not registered at all (not just 403).
 - Log a warning at startup when pprof is enabled: "pprof endpoints enabled — do not use in production without auth".
 
+## Layer 4: EXPLAIN Runner
+
+### Rationale
+
+Layer 2 shows *which* query is hot (calls, total time, cache-hit ratio) and *which*
+tables are being sequentially scanned — but not the query's execution plan. The plan
+(seq-scan vs index, join strategy, `BUFFERS` shared-hit-vs-read, per-node actual timings)
+is what turns "this query is slow" into "it full-scans `node_snapshots` because no index
+covers the predicate". This layer runs `EXPLAIN` from the browser and returns the plan text.
+
+The customer environment is airgapped (VDI or file transfer only) and its mail filter
+**blocks inbound SQL** (a pasted-SQL email was rejected). So the queries to explain cannot be
+sent in ad-hoc — they must already ship in the app. Hence a **canned catalog** of named
+explains is the primary path; a free-text box is a secondary convenience for careful VDI paste.
+
+### Safety invariants
+
+- The `EXPLAIN` runs inside a **read-only transaction** (`BEGIN … READ ONLY`), then `ROLLBACK`.
+  This is the write backstop even for `EXPLAIN (ANALYZE …)`, which *executes* the statement:
+  a `SELECT` runs but cannot write, and an accidental `ANALYZE` of a mutating statement errors.
+- A per-run `SET LOCAL statement_timeout` caps cost (the target queries are the slow ones); it
+  is transaction-local and auto-resets on rollback.
+- Exactly one statement per run (the driver is one-statement-per-exec); never concatenate with `;`.
+- `EXPLAIN (… FORMAT TEXT)` returns the plan as multiple rows — the full body must be read, not
+  just the first row.
+
+### Canned catalog
+
+Each catalog entry reuses the **live production query builder** for that read path, so the
+explained SQL is exactly what the app runs and cannot drift from production across migrations.
+Parameters are resolved from **live values** at run time (all organisations; a sample
+role/node/cookbook; the active default target version) so **no customer identifiers are
+hardcoded** in source. An entry whose live values are unavailable (e.g. empty DB) reports
+"unavailable" rather than failing the run.
+
+Initial entries target the roles fix and the `node_snapshots` investigation:
+
+- `roles_list` — the materialised roles-list read path.
+- `node_list_heavy` / `node_list_light` — the node-snapshots list with and without the heavy
+  JSONB projection (the heavy full-row fetch is a known slow path).
+- `cookbook_coverage_containment` — the `cookbooks ? <name>` JSONB key-existence scan (a known
+  sequential-scan hotspot).
+- `node_single_full_row` — single node-snapshot fetch by org + name.
+- `distinct_node_roles` — the distinct-roles unnest over `node_snapshots.roles`.
+
+### Free-text runs
+
+A free-text box accepts a **single** explainable data statement — `SELECT`, `WITH`, `INSERT`,
+`UPDATE`, `DELETE`, `MERGE`, `TABLE`, or `VALUES` (leading-keyword check; multi-statement input and
+utility statements like `COPY`/`VACUUM`/DDL are rejected because PostgreSQL cannot `EXPLAIN` them).
+Writes are permitted because plan-only `EXPLAIN` never executes them; the read-only transaction is
+the backstop. If `ANALYZE` is requested for a write, the read-only transaction rejects it and the
+runner falls back to a plan-only `EXPLAIN`, returning a note that `ANALYZE` was skipped — so a hot
+write query (e.g. a queue-claim `UPDATE … FOR UPDATE SKIP LOCKED`) can still be planned.
+
+### Run-twice ("warm")
+
+An optional second run reports a second plan. The second run demonstrates **buffer-cache**
+warmth (`BUFFERS` shows shared-hit rising vs shared-read on the first run), **not** plan-cache
+effects — the label must not overpromise "cold vs warm" in the OS-cache sense.
+
+### API Endpoints
+
+`GET /api/v1/admin/performance/explain/catalog` — admin-only. Returns the catalog entries
+(`key`, `label`, `description`, whether the entry supports `ANALYZE`) for the UI dropdown.
+
+`POST /api/v1/admin/performance/explain` — admin-only. Body selects **either** a `catalog_key`
+**or** free-text `sql`, plus `analyze` and optional `run_twice`. Response shape:
+
+```
+{
+  "label": "Roles list",
+  "param_summary": "orgs=3, target=19.3.15",
+  "analyze": true,
+  "statement_timeout_ms": 15000,
+  "captured_at": "2026-07-09T13:20:00Z",
+  "app_version": "2.15.1",
+  "run1": { "plan_text": "…", "duration_ms": 1234.5, "truncated": false },
+  "run2": { "plan_text": "…", "duration_ms": 118.2, "truncated": false }
+}
+```
+
+Catalog SQL is **not** echoed to the client (a resolved plan/param summary may embed live
+identifiers); free-text SQL is echoed back since the caller supplied it. These endpoints are
+registered for admins independently of `performance.enabled`/the request recorder — the EXPLAIN
+capability does not depend on request instrumentation.
+
+### Egress
+
+Plans are readable in the browser and downloadable as a single self-contained `.txt` (label,
+param summary, timestamp, app version, statement timeout, both plan runs) — small enough to
+screenshot over VDI or carry out by file transfer.
+
+### Frontend
+
+An "EXPLAIN" tab on the system-stats page: catalog dropdown + run buttons, a free-text box,
+`ANALYZE` and run-twice toggles, both plans rendered monospace, and a "Download .txt" button.
+The Top Queries table (Layer 2) gains a per-row "Explain" action that **pre-fills** the free-text
+box with that query — because `pg_stat_statements` stores queries normalised (`$1`, no bound
+values), such a query cannot be one-click `ANALYZE`d; the canned catalog is the one-click
+real-timings path.
+
 ## Package Layout
 
 ### `internal/perf/` — new package
@@ -270,8 +373,11 @@ performance:
 - `internal/webapi/handle_performance_test.go` — tests
 - `internal/config/` — add `Performance` config section
 - `internal/datastore/` — add methods to query `pg_stat_statements`, `pg_stat_user_tables`, `pg_stat_user_indexes`, `pg_stat_activity`
+- `internal/datastore/query_explain.go` — Layer 4 EXPLAIN runner + canned catalog (reuses the live query builders; read-only transaction + statement_timeout)
+- `internal/webapi/handle_explain.go` — Layer 4 handlers (`GET …/performance/explain/catalog`, `POST …/performance/explain`)
 - `migrations/` — `0006_pg_stat_statements` up/down pair
 - `cmd/chef-migration-metrics/main.go` — pass perf recorder to router, log pprof warning
+- Frontend — `AdminExplainPage` + an `explain` tab on the system-stats page; per-row "Explain" action on the Top Queries table
 
 ## Configuration
 
@@ -320,6 +426,10 @@ Add "Performance" link to the admin navigation menu, after "System Stats".
 - No measurable latency increase from the request timing middleware (<1µs overhead).
 - Rolling window correctly expires old samples.
 - Migration enables `pg_stat_statements` gracefully (no failure if `shared_preload_libraries` not set).
+- `POST /api/v1/admin/performance/explain` returns a plan for a canned catalog entry or a guarded free-text `SELECT`; `GET …/explain/catalog` lists the entries.
+- The EXPLAIN runner never mutates data (read-only transaction) and cannot hang (statement_timeout), verified for the `ANALYZE` path.
+- Canned explains reuse the live query builders (no drift) and resolve parameters from live values (no hardcoded customer identifiers).
+- Plans are viewable in the browser and downloadable as a self-contained `.txt`.
 
 ## Out of Scope
 

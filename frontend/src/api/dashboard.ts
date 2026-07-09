@@ -148,6 +148,55 @@ export function fetchPerformanceDB(): Promise<PerformanceDBResponse> {
   return apiFetch<PerformanceDBResponse>(buildUrl("/admin/performance/db"));
 }
 
+// --- EXPLAIN runner (performance-diagnostics Layer 4) ---
+
+export interface ExplainCatalogEntry {
+  key: string;
+  label: string;
+  description: string;
+  analyzable: boolean;
+}
+
+export interface ExplainRun {
+  plan_text: string;
+  duration_ms: number;
+  truncated: boolean;
+}
+
+export interface ExplainResponse {
+  label: string;
+  param_summary: string;
+  sql?: string;
+  note?: string;
+  analyze: boolean;
+  statement_timeout_ms: number;
+  captured_at: string;
+  app_version: string;
+  run1: ExplainRun;
+  run2?: ExplainRun;
+}
+
+export interface ExplainRequest {
+  catalog_key?: string;
+  sql?: string;
+  analyze: boolean;
+  run_twice: boolean;
+}
+
+export function fetchExplainCatalog(): Promise<{ entries: ExplainCatalogEntry[] }> {
+  return apiFetch<{ entries: ExplainCatalogEntry[] }>(
+    buildUrl("/admin/performance/explain/catalog"),
+  );
+}
+
+export function runExplain(req: ExplainRequest): Promise<ExplainResponse> {
+  return apiFetch<ExplainResponse>(buildUrl("/admin/performance/explain"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+}
+
 export async function resetPerformanceDB(): Promise<void> {
   const res = await fetch(buildUrl("/admin/performance/db/reset"), {
     method: "POST",

@@ -135,6 +135,9 @@ type mockStore struct {
 	ActiveQueriesFn                                        func(ctx context.Context) ([]datastore.ActiveQuery, error)
 	ResetPgStatsFn                                         func(ctx context.Context) error
 	VacuumFullFn                                           func(ctx context.Context) error
+	ExplainCatalogFn                                       func() []datastore.ExplainCatalogEntry
+	ResolveCatalogExplainFn                                func(ctx context.Context, key string, p datastore.CatalogParams) (string, []interface{}, string, string, error)
+	RunExplainFn                                           func(ctx context.Context, sqlText string, args []interface{}, opts datastore.ExplainOptions) (datastore.ExplainResult, error)
 	GetCookbookPlatformCoverageFn                          func(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error)
 	GetKitchenAnalysisSummaryFn                            func(ctx context.Context) (*datastore.KitchenAnalysisSummary, error)
 	ListKitchenAnalysisResultsFn                           func(ctx context.Context) ([]datastore.KitchenAnalysisResult, error)
@@ -1151,6 +1154,27 @@ func (m *mockStore) VacuumFull(ctx context.Context) error {
 		return m.VacuumFullFn(ctx)
 	}
 	return nil
+}
+
+func (m *mockStore) ExplainCatalog() []datastore.ExplainCatalogEntry {
+	if m.ExplainCatalogFn != nil {
+		return m.ExplainCatalogFn()
+	}
+	return nil
+}
+
+func (m *mockStore) ResolveCatalogExplain(ctx context.Context, key string, p datastore.CatalogParams) (string, []interface{}, string, string, error) {
+	if m.ResolveCatalogExplainFn != nil {
+		return m.ResolveCatalogExplainFn(ctx, key, p)
+	}
+	return "", nil, "", "", nil
+}
+
+func (m *mockStore) RunExplain(ctx context.Context, sqlText string, args []interface{}, opts datastore.ExplainOptions) (datastore.ExplainResult, error) {
+	if m.RunExplainFn != nil {
+		return m.RunExplainFn(ctx, sqlText, args, opts)
+	}
+	return datastore.ExplainResult{}, nil
 }
 
 func (m *mockStore) GetCookbookPlatformCoverage(ctx context.Context, cookbookName string) (*datastore.CookbookPlatformCoverage, error) {
