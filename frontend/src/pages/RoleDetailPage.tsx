@@ -487,7 +487,7 @@ export function RoleDetailPage() {
           <span>
             Nodes:{" "}
             <Link
-              to={`/nodes?role=${encodeURIComponent(detail.role_name)}`}
+              to={`/nodes?role=${encodeURIComponent(detail.role_name)}&stale=false`}
               className="font-medium text-blue-600 hover:underline"
             >
               {detail.node_count.toLocaleString()}

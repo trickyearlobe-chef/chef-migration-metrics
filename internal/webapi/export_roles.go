@@ -24,10 +24,10 @@ func (r *Router) rolesExportSpec() exportSpec {
 	}
 }
 
-func (r *Router) roleExportSetup(req *http.Request) (datastore.RoleFilter, []string, string, error) {
+func (r *Router) roleExportSetup(req *http.Request) (datastore.RoleFilter, error) {
 	orgs, err := r.resolveOrganisationFilter(req)
 	if err != nil {
-		return datastore.RoleFilter{}, nil, "", err
+		return datastore.RoleFilter{}, err
 	}
 	orgNames := make([]string, 0, len(orgs))
 	for _, o := range orgs {
@@ -38,52 +38,20 @@ func (r *Router) roleExportSetup(req *http.Request) (datastore.RoleFilter, []str
 		target = r.defaultTargetVersion()
 	}
 	f := roleFilterFromValues(req.URL.Query(), orgNames, target) // Limit/Offset 0 → all rows
-	return f, orgNames, target, nil
+	return f, nil
 }
 
 func newRoleExportSource(ctx context.Context, r *Router, req *http.Request) (export.RowSource, error) {
-	f, orgNames, target, err := r.roleExportSetup(req)
+	f, err := r.roleExportSetup(req)
 	if err != nil {
 		return nil, err
 	}
+	// TK status is a materialised column: ListRolesFiltered populates row.TKStatus
+	// and applies the tk_status filter in SQL from f.TKStatuses. Order (tk sort) is
+	// intentionally not reproduced; the consumer re-sorts an exported file.
 	rows, _, _, err := r.db.ListRolesFiltered(ctx, f)
 	if err != nil {
 		return nil, err
-	}
-
-	// Enrich with TK status, then apply the tk_status filter in memory — the same
-	// post-query steps the Roles list handler performs (TK status is not a SQL
-	// column). Order (tk sort) is intentionally not reproduced; the consumer
-	// re-sorts an exported file.
-	if target != "" && len(rows) > 0 {
-		names := make([]string, 0, len(rows))
-		for _, row := range rows {
-			names = append(names, row.RoleName)
-		}
-		if tkMap, tkErr := r.db.GetRoleTKStatuses(ctx, names, orgNames, target); tkErr == nil {
-			for i := range rows {
-				if status, ok := tkMap[rows[i].RoleName]; ok {
-					rows[i].TKStatus = status
-				}
-			}
-		}
-	}
-	if tk := req.URL.Query().Get("tk_status"); tk != "" {
-		allowed := make(map[string]bool)
-		for _, v := range strings.Split(tk, ",") {
-			allowed[strings.TrimSpace(v)] = true
-		}
-		filtered := rows[:0]
-		for _, row := range rows {
-			tkVal := row.TKStatus
-			if tkVal == "" {
-				tkVal = "untested"
-			}
-			if allowed[tkVal] {
-				filtered = append(filtered, row)
-			}
-		}
-		rows = filtered
 	}
 
 	anyRows := make([]any, len(rows))

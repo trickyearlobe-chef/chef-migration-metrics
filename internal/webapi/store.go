@@ -451,10 +451,6 @@ type DataStore interface {
 	// Used by ListRolesFiltered and by handlers that need the full compat map.
 	GetRoleCompatSummary(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error)
 
-	// GetRoleTKStatuses returns the aggregate TK status per role for a set
-	// of role names, based on transitive cookbook dependencies with TK results.
-	GetRoleTKStatuses(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error)
-
 	// GetCookbookTKStatuses returns aggregate TK status for server cookbooks
 	// that have matching git repos with Test Kitchen results.
 	GetCookbookTKStatuses(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error)

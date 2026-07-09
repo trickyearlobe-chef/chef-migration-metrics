@@ -201,9 +201,9 @@ ON CONFLICT (organisation_name, role_name) DO UPDATE SET
 // RecomputeAllRoleTKStatus re-materialises the tk columns (tk_status,
 // tk_passed, tk_total) for every role by rolling up its transitive cookbook
 // set's git_repos.tk_status with worst-of logic (any failed → failed, any
-// partial → partial, else any passed → passed, else untested). Mirrors
-// GetRoleTKStatuses. git_repos.tk_status already reflects the active target, so
-// no target parameter is needed.
+// partial → partial, else any passed → passed, else untested).
+// git_repos.tk_status already reflects the active target, so no target
+// parameter is needed.
 //
 // Call after collection or a kitchen-exclusion change.
 func (db *DB) RecomputeAllRoleTKStatus(ctx context.Context) error {

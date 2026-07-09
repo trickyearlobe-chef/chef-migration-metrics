@@ -28,8 +28,11 @@ big problem with real diags.
   2026-07-07). Root cause: query-time derived aggregation over all ~37k roles
   (`node_count` containment + `role_compat` expansion). Fix: materialise
   `role_summary` (structural cols at collection; compat/tk via existing
-  `cookstyle_propagation`) + kill O(N²) `array_position` + tune `work_mem`. NEXT:
-  `roles.md` spec edit → TDD chunks.
+  `cookstyle_propagation`). Read path now reads/rolls up `role_summary` (no
+  recursive CTE, no seeded path). The O(N²) `array_position` lived only in the
+  seeded path and is gone with it; `work_mem` tuning is moot now the recursive
+  expansion is off the request path. NEXT: measure list p50 at customer scale to
+  confirm the fix, then close P2 and start P1 coverage full-scan.
 - **P1 coverage full-scan hotspot — proven** (5.6M unindexed `node_snapshots`
   scans); fix after roles + tooling.
 - **P3** — 6 s `node_snapshots` full-row fetches; caller unknown (tooling from step
