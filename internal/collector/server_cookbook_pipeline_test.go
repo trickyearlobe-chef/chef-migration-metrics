@@ -292,6 +292,65 @@ func TestDownloadCookbook_SignatureCompiles(t *testing.T) {
 	_ = t
 }
 
+// cachedServerCookbookDir decides whether a cookbook version can be scanned from
+// the on-disk cache without re-downloading — independent of download_status, so
+// a rescan (which resets status to 'pending') reuses cached files instead of
+// re-pulling the whole fleet from the Chef server.
+func TestCachedServerCookbookDir(t *testing.T) {
+	cb := datastore.ServerCookbook{OrganisationName: "org-a", Name: "nginx", Version: "5.1.0"}
+
+	stageVersionDir := func(t *testing.T, cacheDir string, empty bool) string {
+		t.Helper()
+		dir := filepath.Join(cacheDir, cb.OrganisationName, cb.Name, cb.Version)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if !empty {
+			if err := os.WriteFile(filepath.Join(dir, "metadata.rb"), []byte("name 'nginx'\n"), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+		}
+		return dir
+	}
+
+	t.Run("cached non-empty dir is reused regardless of status", func(t *testing.T) {
+		cacheDir := t.TempDir()
+		want := stageVersionDir(t, cacheDir, false)
+		got, ok := cachedServerCookbookDir(cacheDir, cb, false)
+		if !ok || got != want {
+			t.Errorf("got (%q,%v), want (%q,true)", got, ok, want)
+		}
+	})
+
+	t.Run("absent version dir is not reused", func(t *testing.T) {
+		if _, ok := cachedServerCookbookDir(t.TempDir(), cb, false); ok {
+			t.Error("expected no reuse when the version dir is absent")
+		}
+	})
+
+	t.Run("empty version dir is not reused (guards partial downloads)", func(t *testing.T) {
+		cacheDir := t.TempDir()
+		stageVersionDir(t, cacheDir, true)
+		if _, ok := cachedServerCookbookDir(cacheDir, cb, false); ok {
+			t.Error("expected no reuse when the version dir is empty")
+		}
+	})
+
+	t.Run("delete-after-scan mode never reuses (no persistent cache)", func(t *testing.T) {
+		cacheDir := t.TempDir()
+		stageVersionDir(t, cacheDir, false)
+		if _, ok := cachedServerCookbookDir(cacheDir, cb, true); ok {
+			t.Error("expected no reuse in delete-after-scan mode")
+		}
+	})
+
+	t.Run("empty cache dir config never reuses", func(t *testing.T) {
+		if _, ok := cachedServerCookbookDir("", cb, false); ok {
+			t.Error("expected no reuse when cookbookCacheDir is empty")
+		}
+	})
+}
+
 // downloadCookbook uses the persistent cache directory when
 // deleteAfterScan is false, and os.MkdirTemp when true. The nil chefapi
 // client panics inside GetCookbookVersionManifest (it's not nil-safe), so
