@@ -17,13 +17,14 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockRescoreStore struct {
-	serverResults   []datastore.CookstyleRescoreRow
-	gitResults      []datastore.CookstyleRescoreRow
-	serverUpdates        []datastore.CookstylePassedUpdate
-	gitUpdates           []datastore.CookstylePassedUpdate
-	recomputedGit        []gitRepoKey
-	recomputedAllTargets []string // targets passed to RecomputeAllGitRepoCookstyleStatus
-	classifications      map[string][]datastore.CopClassification // target version -> overrides
+	serverResults         []datastore.CookstyleRescoreRow
+	gitResults            []datastore.CookstyleRescoreRow
+	serverUpdates         []datastore.CookstylePassedUpdate
+	gitUpdates            []datastore.CookstylePassedUpdate
+	recomputedGit         []gitRepoKey
+	recomputedAllTargets  []string                                 // targets passed to RecomputeAllGitRepoCookstyleStatus
+	recomputedRoleTargets []string                                 // targets passed to RecomputeAllRoleCompatStatus
+	classifications       map[string][]datastore.CopClassification // target version -> overrides
 }
 
 type gitRepoKey struct {
@@ -63,6 +64,11 @@ func (m *mockRescoreStore) RecomputeGitRepoCompatibilityStatus(ctx context.Conte
 
 func (m *mockRescoreStore) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error {
 	m.recomputedAllTargets = append(m.recomputedAllTargets, targetChefVersion)
+	return nil
+}
+
+func (m *mockRescoreStore) RecomputeAllRoleCompatStatus(ctx context.Context, targetChefVersion string) error {
+	m.recomputedRoleTargets = append(m.recomputedRoleTargets, targetChefVersion)
 	return nil
 }
 
@@ -143,6 +149,11 @@ func TestRescoreCookstyleResults_ConsistentStatusNoChange(t *testing.T) {
 	// which is what made the Git Repos list disagree with the dashboard summary.
 	if len(store.recomputedAllTargets) != 1 || store.recomputedAllTargets[0] != "18" {
 		t.Errorf("recomputedAllTargets = %v, want [18] even with no result changes", store.recomputedAllTargets)
+	}
+	// Roles derive from the same results, so their compat must be re-materialised
+	// for the same target too — else the roles list would drift from the results.
+	if len(store.recomputedRoleTargets) != 1 || store.recomputedRoleTargets[0] != "18" {
+		t.Errorf("recomputedRoleTargets = %v, want [18]", store.recomputedRoleTargets)
 	}
 }
 

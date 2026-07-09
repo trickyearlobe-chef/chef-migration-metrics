@@ -25,6 +25,10 @@ type CookstyleRescoreStore interface {
 	// the materialised list columns cannot drift from the results (which the
 	// dashboard summary reads directly).
 	RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error
+	// RecomputeAllRoleCompatStatus re-materialises every role's compatibility
+	// columns in role_summary from the rescored cookstyle results, so the roles
+	// list cannot drift from the results after a rules change.
+	RecomputeAllRoleCompatStatus(ctx context.Context, targetChefVersion string) error
 	// ListCopClassifications returns operator classification overrides (keyed by
 	// cop_name; single active target), used to build the single-source-of-truth
 	// derivation. The resolver still applies RemovedIn auto-seed + curated
@@ -102,6 +106,11 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 	for _, tv := range distinctRescoreTargets(gitRows) {
 		if err := store.RecomputeAllGitRepoCookstyleStatus(ctx, tv); err != nil {
 			rescoreLogf(logger, "ERROR", "rescore: recomputing git repo status for target %s: %v", tv, err)
+		}
+		// Roles derive from cookstyle results too; re-materialise their compat
+		// columns for the same targets so the roles list cannot drift.
+		if err := store.RecomputeAllRoleCompatStatus(ctx, tv); err != nil {
+			rescoreLogf(logger, "ERROR", "rescore: recomputing role compat for target %s: %v", tv, err)
 		}
 	}
 

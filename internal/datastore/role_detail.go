@@ -413,12 +413,14 @@ func collectPaths(roleName string, adj map[string][]RoleDependency, visited map[
 }
 
 // getRoleBlastRadius computes node counts by org, environment, and platform
-// for nodes that have this role.
+// for nodes that have this role. Only non-stale nodes (is_stale = false) count,
+// matching role_summary.node_count and the /nodes?role=<name>&stale=false link,
+// so the list, detail, and linked node views never disagree (shared selection).
 func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []OrgCount, []EnvCount, []PlatformCount, error) {
 	// Total node count (DISTINCT to avoid counting duplicates across snapshots).
 	var totalCount int
 	err := db.pool.QueryRowContext(ctx,
-		`SELECT COUNT(DISTINCT organisation_name || '/' || node_name) FROM node_snapshots WHERE roles @> to_jsonb(ARRAY[$1])`,
+		`SELECT COUNT(DISTINCT organisation_name || '/' || node_name) FROM node_snapshots WHERE is_stale = false AND roles @> to_jsonb(ARRAY[$1])`,
 		roleName,
 	).Scan(&totalCount)
 	if err != nil {
@@ -428,7 +430,7 @@ func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []O
 	// By organisation
 	orgRows, err := db.pool.QueryContext(ctx,
 		`SELECT organisation_name, COUNT(DISTINCT node_name) FROM node_snapshots
-		 WHERE roles @> to_jsonb(ARRAY[$1])
+		 WHERE is_stale = false AND roles @> to_jsonb(ARRAY[$1])
 		 GROUP BY organisation_name ORDER BY COUNT(DISTINCT node_name) DESC`,
 		roleName,
 	)
@@ -449,7 +451,7 @@ func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []O
 	// By environment
 	envRows, err := db.pool.QueryContext(ctx,
 		`SELECT chef_environment, COUNT(DISTINCT organisation_name || '/' || node_name) FROM node_snapshots
-		 WHERE roles @> to_jsonb(ARRAY[$1])
+		 WHERE is_stale = false AND roles @> to_jsonb(ARRAY[$1])
 		 GROUP BY chef_environment ORDER BY COUNT(DISTINCT organisation_name || '/' || node_name) DESC`,
 		roleName,
 	)
@@ -470,7 +472,7 @@ func (db *DB) getRoleBlastRadius(ctx context.Context, roleName string) (int, []O
 	// By platform
 	platRows, err := db.pool.QueryContext(ctx,
 		`SELECT platform, COALESCE(platform_version, ''), COUNT(DISTINCT organisation_name || '/' || node_name) FROM node_snapshots
-		 WHERE roles @> to_jsonb(ARRAY[$1])
+		 WHERE is_stale = false AND roles @> to_jsonb(ARRAY[$1])
 		 GROUP BY platform, platform_version ORDER BY COUNT(DISTINCT organisation_name || '/' || node_name) DESC`,
 		roleName,
 	)

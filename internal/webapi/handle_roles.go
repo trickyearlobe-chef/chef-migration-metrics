@@ -14,11 +14,22 @@ import (
 
 // roleFilterFromValues builds the role list filter from raw query values. Shared
 // by the list handler and the export path (Limit/Offset applied by the caller).
+// tk_status is a materialised column, so its filter/sort/pagination all run in
+// SQL — parsed here into the shared filter rather than applied post-query.
 func roleFilterFromValues(q url.Values, orgNames []string, targetChefVersion string) datastore.RoleFilter {
+	var tkStatuses []string
+	if raw := valueOr(q, "tk_status", ""); raw != "" {
+		for _, v := range strings.Split(raw, ",") {
+			if v = strings.TrimSpace(v); v != "" {
+				tkStatuses = append(tkStatuses, v)
+			}
+		}
+	}
 	return datastore.RoleFilter{
 		OrganisationNames:   orgNames,
 		Name:                valueOr(q, "name", ""),
 		CompatibilityStatus: valueOr(q, "compatibility_status", ""),
+		TKStatuses:          tkStatuses,
 		TargetChefVersion:   targetChefVersion,
 		Sort:                valueOr(q, "sort", "name"),
 		SortOrder:           valueOr(q, "order", "asc"),
@@ -62,27 +73,19 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 	}
 
 	pg := ParsePagination(req)
-	tkFilter := queryString(req, "tk_status", "")
-	sortField := queryString(req, "sort", "name")
 
 	// Shared with the export path so an export reproduces the list view's filtering.
+	// tk_status is a materialised column, so its filter/sort/pagination all run in
+	// SQL alongside the other derived fields — no post-query enrichment needed.
 	f := roleFilterFromValues(req.URL.Query(), orgNames, targetChefVersion)
 	f.Limit = pg.Limit()
 	f.Offset = pg.Offset()
-
-	// When TK filter or TK sort is active, disable SQL pagination —
-	// TK status is computed post-query, so we must fetch all rows first.
-	tkFilterActive := tkFilter != ""
-	tkSortActive := sortField == "tk_status"
-	if tkFilterActive || tkSortActive {
-		f.Limit = 0
-		f.Offset = 0
-	}
 
 	// Pre-fetch the compat summary from cache so ListRolesFiltered skips its
 	// internal GetRoleCompatSummary call (which is O(all-roles) and slow).
 	summaryFilter := f
 	summaryFilter.CompatibilityStatus = ""
+	summaryFilter.TKStatuses = nil
 	summaryFilter.Limit = 0
 	summaryFilter.Offset = 0
 	cachedSummary, compatMap := r.cachedRoleCompatSummary(ctx, summaryFilter)
@@ -97,52 +100,6 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 
 	if rows == nil {
 		rows = []datastore.RoleFilterRow{}
-	}
-
-	// Enrich rows with TK status from git_kitchen_results.
-	if targetChefVersion != "" && len(rows) > 0 {
-		roleNames := make([]string, 0, len(rows))
-		for _, row := range rows {
-			roleNames = append(roleNames, row.RoleName)
-		}
-		tkMap, _ := r.db.GetRoleTKStatuses(ctx, roleNames, orgNames, targetChefVersion)
-		for i := range rows {
-			if status, ok := tkMap[rows[i].RoleName]; ok {
-				rows[i].TKStatus = status
-			}
-		}
-	}
-
-	// Apply TK status filter in memory.
-	if tkFilterActive {
-		allowed := make(map[string]bool)
-		for _, v := range strings.Split(tkFilter, ",") {
-			allowed[strings.TrimSpace(v)] = true
-		}
-		filtered := make([]datastore.RoleFilterRow, 0, len(rows))
-		for _, row := range rows {
-			tkVal := row.TKStatus
-			if tkVal == "" {
-				tkVal = "untested"
-			}
-			if allowed[tkVal] {
-				filtered = append(filtered, row)
-			}
-		}
-		rows = filtered
-		total = len(rows)
-	}
-
-	// Apply TK sort in memory.
-	if tkSortActive {
-		sortOrder := queryString(req, "order", "asc")
-		sortRolesByTK(rows, sortOrder)
-	}
-
-	// Paginate in memory if we disabled SQL pagination.
-	if tkFilterActive || tkSortActive {
-		pageRows, _ := PaginateSlice(rows, pg)
-		rows = pageRows
 	}
 
 	type roleResp struct {
@@ -186,30 +143,6 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		"data":       result,
 		"summary":    summary,
 		"pagination": NewPaginationResponse(pg, total),
-	})
-}
-
-// sortRolesByTK sorts role rows by TK status in a deterministic order.
-func sortRolesByTK(rows []datastore.RoleFilterRow, order string) {
-	rank := map[string]int{
-		"failed":   0,
-		"partial":  1,
-		"passed":   2,
-		"untested": 3,
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		ri := rank[rows[i].TKStatus]
-		rj := rank[rows[j].TKStatus]
-		if _, ok := rank[rows[i].TKStatus]; !ok {
-			ri = 3
-		}
-		if _, ok := rank[rows[j].TKStatus]; !ok {
-			rj = 3
-		}
-		if order == "desc" {
-			return ri > rj
-		}
-		return ri < rj
 	})
 }
 

@@ -350,6 +350,19 @@ type DataStore interface {
 	// version, so the materialised list columns cannot drift from the results.
 	RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error
 
+	// RecomputeAllRoleCompatStatus re-materialises every role's compatibility
+	// columns in role_summary from cookstyle results for the target Chef version.
+	RecomputeAllRoleCompatStatus(ctx context.Context, targetChefVersion string) error
+
+	// RecomputeAllRoleTKStatus re-materialises every role's TK columns in
+	// role_summary from its transitive cookbook set's git_repos.tk_status.
+	RecomputeAllRoleTKStatus(ctx context.Context) error
+
+	// ResetAllRoleStatuses blanks the active-target role_summary columns
+	// (compat + tk) to defaults, preserving structural columns. Call on target
+	// Chef version change.
+	ResetAllRoleStatuses(ctx context.Context) error
+
 	// DeleteAllGitRepoComplexities removes all git repo complexity records.
 	DeleteAllGitRepoComplexities(ctx context.Context) error
 
@@ -437,10 +450,6 @@ type DataStore interface {
 	// filters. CompatibilityStatus, Limit, and Offset in f are ignored.
 	// Used by ListRolesFiltered and by handlers that need the full compat map.
 	GetRoleCompatSummary(ctx context.Context, f datastore.RoleFilter) (datastore.RoleFilterSummary, map[string]string, error)
-
-	// GetRoleTKStatuses returns the aggregate TK status per role for a set
-	// of role names, based on transitive cookbook dependencies with TK results.
-	GetRoleTKStatuses(ctx context.Context, roleNames, orgNames []string, targetVersion string) (map[string]string, error)
 
 	// GetCookbookTKStatuses returns aggregate TK status for server cookbooks
 	// that have matching git repos with Test Kitchen results.

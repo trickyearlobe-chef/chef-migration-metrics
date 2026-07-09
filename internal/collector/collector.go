@@ -517,6 +517,11 @@ func (c *Collector) runForOrganisations(ctx context.Context, orgs map[string]dat
 		result.TotalNodes, result.TotalCookbooks,
 	))
 
+	// Re-materialise the role_summary aggregate table after the resumed run.
+	if result.SucceededOrgs > 0 {
+		c.recomputeRoleSummaries(ctx, log)
+	}
+
 	return result, nil
 }
 
@@ -665,6 +670,12 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 		result.TotalNodes, result.TotalCookbooks,
 	))
 
+	// Re-materialise the role_summary aggregate table now role_dependencies,
+	// node_snapshots, cookstyle and kitchen results have settled for this run.
+	if result.SucceededOrgs > 0 {
+		c.recomputeRoleSummaries(ctx, log)
+	}
+
 	// Purge old log entries if retention is configured.
 	if c.cfg.Logging.RetentionDays > 0 {
 		purged, purgeErr := c.db.PurgeLogEntriesOlderThanDays(ctx, c.cfg.Logging.RetentionDays)
@@ -706,6 +717,26 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 	}
 
 	return result, nil
+}
+
+// recomputeRoleSummaries re-materialises the role_summary aggregate table after
+// a collection run: structural columns (node_count, cookbook counts), plus the
+// active-target compatibility and TK rollups. It is a single global bulk pass
+// (not per-org), best-effort and non-fatal — the roles list reads these columns
+// instead of expanding a recursive CTE over all roles per request. See
+// internal/datastore/role_summary_recompute.go.
+func (c *Collector) recomputeRoleSummaries(ctx context.Context, log *logging.ScopedLogger) {
+	if err := c.db.RecomputeAllRoleStructural(ctx); err != nil {
+		log.Warn(fmt.Sprintf("role_summary structural recompute failed: %v", err))
+	}
+	if target := c.cfg.TargetChefVersion; target != "" {
+		if err := c.db.RecomputeAllRoleCompatStatus(ctx, target); err != nil {
+			log.Warn(fmt.Sprintf("role_summary compat recompute failed: %v", err))
+		}
+	}
+	if err := c.db.RecomputeAllRoleTKStatus(ctx); err != nil {
+		log.Warn(fmt.Sprintf("role_summary TK recompute failed: %v", err))
+	}
 }
 
 // nodeDiskVerdict computes the version-invariant disk-space verdict to store on a

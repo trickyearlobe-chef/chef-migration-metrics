@@ -140,29 +140,78 @@ Each node in the tree is a link to the corresponding role or cookbook detail pag
 
 ## Performance Architecture
 
-### List Query (Two-Query Fast Path)
+### Materialised Role Summary
 
-`GET /api/v1/roles` uses a two-query approach for name-sorted requests (the default):
+Role list requests that sort or filter by a derived field (`node_count`,
+`incompatible_cookbook_count`, `tk_status`, `compatibility_status`) cannot
+paginate before the value exists, so the pre-materialisation design computed
+these aggregates over **all roles on every request** — measured p50 ~12.6 s
+(sort=node_count), ~25 s (tk_status filter) at customer scale (~37k roles,
+2 GB `node_snapshots`). Root cause: derived aggregates computed for every role
+at query time.
 
-1. **Page query** — `SELECT DISTINCT role_name, COUNT(*) OVER()` from `role_dependencies` with name/org filters, LIMIT/OFFSET. Fast index scan; returns only the ~20 role names for the current page.
-2. **Seeded CTE query** — the full recursive transitive-dep expansion, but seeded with `AND rd.role_name = ANY($page_roles)`. Expands deps for O(page size) roles instead of O(all roles).
+The fix mirrors the proven `git_repos` materialised-column pattern: a
+`role_summary` table at grain **(organisation_name, role_name)** holding
+pre-computed per-role aggregates. The list endpoint reads indexed columns —
+every sort/filter becomes an indexed read, and pagination happens in SQL. The
+in-memory tk_status pagination path is removed.
 
-Roles with no reachable cookbooks (e.g. roles that only include other roles with no cookbook closure) appear as `untested` via `all_seed_roles LEFT JOIN role_compat`.
+**Columns:**
 
-Sort by `node_count` or `incompatible_cookbook_count` falls back to the single-query slow path (all roles expanded before sorting).
+- *Version-independent* (recomputed at collection): `node_count`,
+  `direct_cookbook_count`, `transitive_cookbook_count`.
+- *Active-target* (like git_repos): `compatible_count`, `incompatible_count`,
+  `untested_count`, `compatibility_status`, `tk_status`, `tk_passed`,
+  `tk_total`. These reflect the **active target Chef version only**; the detail
+  page's multi-version view is a separate endpoint and is unaffected.
 
-### Summary Bar Cache
+**Invariants:**
 
-The summary bar compat counts require `GetRoleCompatSummary` — a lighter recursive CTE that returns only `(role_name, compat_status)` for all matching roles. This is cached in memory on the `router` struct:
+- `node_count` counts **distinct non-stale nodes** (`node_snapshots.is_stale =
+  false`) whose `roles` array contains the role. Stale (decommissioned / absent
+  from the latest collection) nodes are excluded from blast radius. This
+  selection is identical across the list, the role detail page, and the
+  `/nodes?role=<name>` blast-radius link — the three surfaces must never
+  disagree (shared-selection consistency).
+- `compatibility_status` uses the existing precedence: any incompatible →
+  `incompatible`; else any untested → `untested`; else if any cookbook →
+  `compatible`; else `untested`.
+- `tk_status` rolls up per-role from the transitive cookbook set's
+  `git_repos.tk_status` (worst-of: any failed → `failed`, any partial →
+  `partial`, all passed → `passed`, none → `untested`).
+- Rollup across orgs for a role is free (orgs ≤ 3).
 
-- **TTL:** 60 seconds
-- **Cache key:** sorted orgs + name filter + target chef version (excludes compat filter)
-- **Invalidation:** cleared on rescan-all; also expires naturally after 60s
-- **First load** after startup or cache expiry is slow for the summary bar (O(all roles)); subsequent loads within TTL are instant
+### Recompute Triggers
 
-### Future: Pre-computation During Collection
+`role_summary` is recomputed in **bulk** (set-based passes, not per-request),
+at the same points `git_repos` derived columns are recomputed:
 
-Dashboard aggregations (cookbook-compatibility, compat summary bar) remain O(all roles) without pre-computation. The strategic fix is to write per-org compat summary counts to a `role_compat_summary` table at the end of each collection run, making all aggregate reads O(1). Tracked in tech debt.
+| Trigger | Recomputed |
+|---|---|
+| Collection run completion | structural (`node_count`, cookbook counts) + active-target (compat, tk) |
+| Target Chef version change | reset, then recompute active-target columns for the new target |
+| CookStyle failure-rules change / bulk rescore | active-target compat columns per target |
+| Cop reclassification (propagation closure) | active-target compat columns |
+| Kitchen exclusion change | active-target tk columns |
+
+Per-cookbook-result and per-kitchen-result upserts do **not** trigger a role
+recompute (too frequent during collection); roles roll up once at collection
+end. There is a staleness window between a source change and the next bulk
+recompute, bounded by these triggers — acceptable because roles are a derived
+rollup, matching how `git_repos` already lags its cookstyle results.
+
+### Consistency Contract
+
+A contract test asserts, after each trigger, that every materialised
+`role_summary` column equals the live derivation from source tables
+(`role_dependencies`, cookstyle results, `git_repos`, `node_snapshots`). This
+is the same guarantee `git_repos` materialised columns hold.
+
+### Summary Bar
+
+The summary bar compat counts are a rollup of `role_summary.compatibility_status`
+for the active target — an O(roles) indexed aggregate, no recursive CTE. The
+60 s in-memory cache is retained as a cheap front but is no longer load-bearing.
 
 ## API Endpoints
 

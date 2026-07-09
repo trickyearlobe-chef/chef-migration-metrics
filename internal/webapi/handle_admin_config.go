@@ -145,6 +145,12 @@ func (r *Router) putAdminConfigTargetVersions(w http.ResponseWriter, req *http.R
 		r.logf("ERROR", "admin/config/target-chef-versions: reset git repo statuses: %v", err)
 		// Non-fatal: statuses will be recomputed on next scan cycle.
 	}
+	// Roles derive from the same results — blank their active-target columns too
+	// so the roles list doesn't show stale compat/tk for the old target.
+	if err := r.db.ResetAllRoleStatuses(req.Context()); err != nil {
+		r.logf("ERROR", "admin/config/target-chef-versions: reset role statuses: %v", err)
+		// Non-fatal: recomputed on next scan cycle.
+	}
 
 	// Single-target model: collapse the list to the highest version (matching
 	// the prior live behaviour) and store it as the scalar target. Transitional

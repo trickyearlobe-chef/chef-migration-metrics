@@ -39,6 +39,7 @@ type CookstylePropagationStore interface {
 	UpdateServerCookbookCookstyleVerdict(ctx context.Context, organisationName, cookbookName, cookbookVersion, targetChefVersion string, passed bool, status string) error
 	UpdateGitRepoCookstyleVerdict(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string, passed bool, status string) error
 	RecomputeGitRepoCompatibilityStatus(ctx context.Context, gitRepoName, gitRepoURL, targetChefVersion string) error
+	RecomputeAllRoleCompatStatus(ctx context.Context, targetChefVersion string) error
 	ListOrganisations(ctx context.Context) ([]datastore.Organisation, error)
 }
 
@@ -170,6 +171,13 @@ func (p *CookstylePropagator) PropagateReclassification(ctx context.Context, cop
 
 	// --- Re-score classification-weighted complexity for the affected units. ---
 	p.rescoreComplexity(ctx, targetChefVersion, cbsByOrg, gitRepos, &result)
+
+	// --- Re-materialise role compatibility. Roles derive from the same cookstyle
+	// results whose verdicts just changed; a single bulk pass keeps the roles
+	// list from drifting after a reclassification. ---
+	if rerr := p.store.RecomputeAllRoleCompatStatus(ctx, targetChefVersion); rerr != nil {
+		p.logf("ERROR", "propagation: recomputing role compat for target %q: %v", targetChefVersion, rerr)
+	}
 
 	// --- Re-evaluate readiness for the affected (dependent) organisations. ---
 	// Git repos do not participate in node run-lists, so readiness recompute is
