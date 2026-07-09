@@ -672,6 +672,18 @@ type DataStore interface {
 	// VacuumFull runs VACUUM FULL to reclaim disk space from dead tuples.
 	VacuumFull(ctx context.Context) error
 
+	// ExplainCatalog returns the static list of canned EXPLAIN entries.
+	ExplainCatalog() []datastore.ExplainCatalogEntry
+
+	// ResolveCatalogExplain returns the SQL + args for a catalog key, plus a
+	// label and a param summary. Returns datastore.ErrExplainUnavailable when
+	// the entry needs live sample data that is absent.
+	ResolveCatalogExplain(ctx context.Context, key string, p datastore.CatalogParams) (sqlText string, args []interface{}, label, paramSummary string, err error)
+
+	// RunExplain runs EXPLAIN on the given SQL inside a read-only, timeout-bounded
+	// transaction and returns the plan run(s). It never mutates data.
+	RunExplain(ctx context.Context, sqlText string, args []interface{}, opts datastore.ExplainOptions) (datastore.ExplainResult, error)
+
 	// -----------------------------------------------------------------
 	// Cookbook Platform Coverage
 	// -----------------------------------------------------------------

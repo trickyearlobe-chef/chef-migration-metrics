@@ -934,6 +934,11 @@ func (r *Router) registerRoutes() {
 	// Database maintenance (always available to admins).
 	r.adminOnly("/api/v1/admin/performance/vacuum", r.handleVacuumFull)
 
+	// EXPLAIN runner (always available to admins — does not depend on the request
+	// recorder or performance.enabled).
+	r.adminOnly("/api/v1/admin/performance/explain", r.handleExplain)
+	r.adminOnly("/api/v1/admin/performance/explain/catalog", r.handleExplainCatalog)
+
 	// pprof endpoints (admin-only, only registered when explicitly enabled).
 	if r.cfg.Performance.PprofEnabled {
 		r.adminOnly("/debug/pprof/", func(w http.ResponseWriter, req *http.Request) {
