@@ -281,26 +281,25 @@ func resolveCookbookDir(
 	deleteAfterScan bool,
 	index, total int,
 ) (string, bool) {
-	if cb.IsDownloaded() {
-		// Already downloaded — try to find it in the cache.
-		if !deleteAfterScan && cookbookCacheDir != "" {
-			candidateDir := filepath.Join(cookbookCacheDir, cb.OrganisationName, cb.Name, cb.Version)
-			if info, statErr := os.Stat(candidateDir); statErr == nil && info.IsDir() {
-				return candidateDir, true
+	// Reuse an already-cached version directory even when download_status was
+	// reset to pending/failed (e.g. by rescan-all-cookstyle). Server cookbook
+	// versions are immutable and the cache path is version-keyed, so a populated
+	// <cache>/<org>/<name>/<version>/ directory is authoritative — re-downloading
+	// it from the Chef server just to re-run CookStyle is pure waste (at fleet
+	// scale it makes a rescan effectively never complete).
+	if candidateDir, ok := cachedServerCookbookDir(cookbookCacheDir, cb, deleteAfterScan); ok {
+		if !cb.IsDownloaded() {
+			// Reflect the reuse in the DB so the row's status matches reality and
+			// it is not reprocessed. Non-fatal — the files are on disk regardless.
+			if _, markErr := db.MarkServerCookbookDownloadOK(ctx, cb.OrganisationName, cb.Name, cb.Version); markErr != nil {
+				_ = markErr
 			}
 		}
-		// Cache miss (deleteAfterScan cleaned it up, or cache moved) —
-		// re-download to a temp directory for scanning.
-		destDir, downloadErr := downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
-		if downloadErr != nil {
-			log.Warn(fmt.Sprintf("[%d/%d] cookbook re-download failed: %s/%s: %v",
-				index, total, cb.Name, cb.Version, downloadErr))
-			return "", false
-		}
-		return destDir, true
+		return candidateDir, true
 	}
 
-	// Needs download (pending or failed status).
+	// Not cached (pending/failed, or a cache miss after delete-after-scan or a
+	// moved cache) — download it.
 	destDir, downloadErr := downloadCookbook(ctx, client, db, cb, cookbookCacheDir, deleteAfterScan)
 	if downloadErr != nil {
 		log.Warn(fmt.Sprintf("[%d/%d] cookbook download failed: %s/%s: %v",
@@ -308,6 +307,29 @@ func resolveCookbookDir(
 		return "", false
 	}
 	return destDir, true
+}
+
+// cachedServerCookbookDir returns the on-disk version directory for a server
+// cookbook when it is present in the persistent cache and non-empty. Because
+// server cookbook versions are immutable, a populated version directory is the
+// correct files and can be scanned without re-downloading — regardless of the
+// row's download_status (which rescan-all-cookstyle resets to 'pending').
+//
+// Returns ("", false) in delete-after-scan mode (no persistent cache), when no
+// cache dir is configured, or when the directory is absent or empty. The
+// non-empty check guards against a partial directory: a failed download removes
+// its dir (see downloadCookbook), so any present, non-empty dir came from a
+// completed download.
+func cachedServerCookbookDir(cookbookCacheDir string, cb datastore.ServerCookbook, deleteAfterScan bool) (string, bool) {
+	if deleteAfterScan || cookbookCacheDir == "" {
+		return "", false
+	}
+	dir := filepath.Join(cookbookCacheDir, cb.OrganisationName, cb.Name, cb.Version)
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) == 0 {
+		return "", false
+	}
+	return dir, true
 }
 
 // scanAndPreview runs CookStyle scanning and autocorrect preview generation

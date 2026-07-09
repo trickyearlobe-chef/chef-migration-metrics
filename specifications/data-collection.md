@@ -163,6 +163,7 @@ These failures must be handled as follows:
 - Cookbook versions on the Chef server are **immutable** — once uploaded, their content never changes. Therefore:
   - A given cookbook version only needs to be **downloaded once**. Subsequent collection runs must skip versions already present in `server_cookbooks`.
   - A **manual rescan** option must be provided to force re-download of a specific cookbook version, for exceptional cases such as data corruption or tooling bugs.
+  - A **CookStyle rescan** (re-running CookStyle across the fleet, e.g. after a cop reclassification or tooling upgrade) must **reuse the cached files on disk** and must not re-download. When the persistent cache is retained (`delete_server_cookbooks_after_scan = false`), a populated version directory `<cache>/<org>/<name>/<version>/` is authoritative and is scanned in place regardless of the row's `download_status` — which the rescan resets to `pending` purely to re-drive the scan. Re-downloading the whole fleet just to re-lint it does not scale (an immutable version's cached files can never be stale).
 - The same cookbook name and version may differ in content between organisations. Cookbook versions must be keyed in `server_cookbooks` by **organisation + cookbook name + version**.
 - Cookbooks downloaded from the Chef server do **not** include test suites and are not eligible for Test Kitchen testing. They are eligible for CookStyle linting only.
 
