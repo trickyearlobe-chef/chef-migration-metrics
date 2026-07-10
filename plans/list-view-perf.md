@@ -21,12 +21,10 @@ be evaluated in Phase 3, NOT conclusions. These are large changes; no winging.
   coverage loop (`collector.go:1476`) over all cloned repos. EXPLAIN now confirms the
   plan (Seq Scan, 119,073 rows removed by filter — see EXPLAIN evidence). Open: exact
   call cadence/trigger; whether the candidate fixes fully remove it.
-- **P2 roles 12–28 s — NOT root-caused.** Confirmed *intrinsic* (measured on calm
-  box, load 2.12), and worst on derived-sort / `tk_status` filter. But we have
-  only *hypotheses* from reading `role_filter.go` (recursive CTE over all roles on
-  the slow path; `node_snapshots.roles @>` node-count; `tk_status` path fetches
-  all rows + `GetRoleTKStatuses` CTE + in-mem paginate). **No query-plan evidence**
-  for which step dominates, at what scale, for which exact request.
+- **P2 roles — FIXED + CLOSED.** Materialised `role_summary` (migration 0049); read path
+  rolls up `role_summary`. Confirmed sub-second at customer scale via the v2.16.1 admin
+  EXPLAIN runner. Residual cost is the `COUNT(*) OVER()` full-count + external-merge sort —
+  same class as the node-list P3 mechanism, so folded into the P1/P3 fix directions.
 - **P3 — `node_snapshots` full-row fetches — IDENTIFIED via EXPLAIN.** It is the
   **node-list heavy-JSON path**, not a single-node fetch: full Seq Scan over ~119k rows +
   a `COUNT(*) OVER()` WindowAgg that materialises **all** rows before `LIMIT 50` + a

@@ -21,20 +21,18 @@ Chunks A (lint) + B/D (rules) landed in `main`. Open:
 
 ## Queued — List-view / node_snapshots perf (`plans/list-view-perf.md`)
 
-Delivery order: (1) roles fix, (2) data-layer query diagnostics, (3) node_snapshots
-big problem with real diags.
+Delivery order: (1) roles fix ✅ DONE, (2) data-layer query diagnostics ✅ DONE
+(v2.16.1 admin EXPLAIN runner), (3) node_snapshots big problem with real diags.
 
-- **P2 roles — diagnosed + design APPROVED** (`plans/roles-perf-design.md`,
-  2026-07-07). Root cause: query-time derived aggregation over all ~37k roles
-  (`node_count` containment + `role_compat` expansion). Fix: materialise
-  `role_summary` (structural cols at collection; compat/tk via existing
-  `cookstyle_propagation`). Read path now reads/rolls up `role_summary` (no
-  recursive CTE, no seeded path). The O(N²) `array_position` lived only in the
-  seeded path and is gone with it; `work_mem` tuning is moot now the recursive
-  expansion is off the request path. NEXT: measure list p50 at customer scale to
-  confirm the fix, then close P2 and start P1 coverage full-scan.
-- **P1 coverage full-scan hotspot — proven** (5.6M unindexed `node_snapshots`
-  scans); fix after roles + tooling.
+- **P2 roles — DONE.** `role_summary` materialisation shipped; confirmed sub-second at
+  customer scale via the admin EXPLAIN runner. Root cause eliminated. (Residual =
+  `COUNT(*) OVER()` full-count + external-merge sort — same class as P3, folded into the
+  P1/P3 fix directions, not a roles-specific task.)
+- **P1 coverage full-scan hotspot — NEXT.** Proven: `cookbooks ? $1` unindexed Seq
+  Scan over ~119k `node_snapshots` (712 ms/query, 119,073 rows removed by filter),
+  driven by the per-org coverage loop (`collector.go:1476`). Candidate fix: GIN index
+  on `node_snapshots.cookbooks` (jsonb_path_ops) → `?` index scan. Evaluate insert
+  write-cost tradeoff; TDD.
 - **P3** — 6 s `node_snapshots` full-row fetches; caller unknown (tooling from step
   2 will identify it).
 
