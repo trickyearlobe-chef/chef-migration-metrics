@@ -31,7 +31,7 @@ const productionPlatformsForCookbookQuery = `
 	SELECT platform, platform_version, platform_family,
 	       COUNT(DISTINCT node_name) AS node_count
 	FROM node_snapshots
-	WHERE cookbooks::jsonb ? $1
+	WHERE cookbooks ? $1
 	GROUP BY platform, platform_version, platform_family
 	ORDER BY node_count DESC, platform, platform_version
 `
