@@ -15,19 +15,60 @@ be evaluated in Phase 3, NOT conclusions. These are large changes; no winging.
 
 ## Evidence status (honest)
 
-- **P1 coverage hotspot — PROVEN.** Unindexed `cookbooks ? $1` full scan;
+- **P1 coverage hotspot — PROVEN + plan captured.** Unindexed `cookbooks ? $1` full scan;
   **5.6M calls / 3.1B ms**, 45% cache hit; **10.6M `node_snapshots` seq scans**;
   no cookbooks index (DDL + Index Usage + seq_scan agree). Driver: per-org
-  coverage loop (`collector.go:1476`) over all cloned repos. Open: exact call
-  cadence/trigger; whether the candidate fixes fully remove it.
+  coverage loop (`collector.go:1476`) over all cloned repos. EXPLAIN now confirms the
+  plan (Seq Scan, 119,073 rows removed by filter — see EXPLAIN evidence). Open: exact
+  call cadence/trigger; whether the candidate fixes fully remove it.
 - **P2 roles 12–28 s — NOT root-caused.** Confirmed *intrinsic* (measured on calm
   box, load 2.12), and worst on derived-sort / `tk_status` filter. But we have
   only *hypotheses* from reading `role_filter.go` (recursive CTE over all roles on
   the slow path; `node_snapshots.roles @>` node-count; `tk_status` path fetches
   all rows + `GetRoleTKStatuses` CTE + in-mem paginate). **No query-plan evidence**
   for which step dominates, at what scale, for which exact request.
-- **P3 — 6 s `node_snapshots` full-row fetches — NOT root-caused.** Caller unknown
-  (`SELECT ns.collection_run_org, … FROM node_snapshots`, ~6 s mean / 22 s max).
+- **P3 — `node_snapshots` full-row fetches — IDENTIFIED via EXPLAIN.** It is the
+  **node-list heavy-JSON path**, not a single-node fetch: full Seq Scan over ~119k rows +
+  a `COUNT(*) OVER()` WindowAgg that materialises **all** rows before `LIMIT 50` + a
+  heavy-row (width≈1796) top-N sort that **spills to temp** (~47k temp reads). The
+  single-node full-row fetch is indexed and <1 ms, so it is ruled out. See EXPLAIN evidence.
+
+## Customer-scale EXPLAIN evidence
+
+Captured on the customer DB via the v2.16.1 admin EXPLAIN runner (ANALYZE + run-twice,
+target 19.3.15, ~119,142 `node_snapshots`). Identifiers redacted; only plan shapes,
+cardinalities, timings, and buffer/temp stats recorded.
+
+- **Node list (heavy JSON), LIMIT 50 — 606 ms cold / 602 ms warm.**
+  `Limit → Sort (top-N heapsort, node_name) → WindowAgg → Seq Scan on node_snapshots (~119,142 rows)`;
+  width=1796; buffers shared read≈75,596, **temp read≈47,777 written≈24,100**. Mechanism:
+  `COUNT(*) OVER()` materialises all rows before the LIMIT; heavy 1796-byte rows blow the
+  sort's work_mem → large temp spill.
+- **Node list (light), LIMIT 50 — 445 ms cold / 430 ms warm.** Same shape, width=746,
+  temp read≈18,075 written≈9,213. The full Seq Scan + WindowAgg over 119k rows is a ~440 ms
+  floor even without heavy JSONB; the heavy columns add ~165 ms + ~2.6× the temp spill.
+- **Cookbook coverage containment (`cookbooks ? <name>`) — 712 ms cold / 735 ms warm (P1).**
+  `Sort → GroupAggregate → Sort → Seq Scan on node_snapshots, Filter: cookbooks ? $1, Rows Removed by Filter: 119,073` (kept ~69); buffers shared read≈70,532; no index on `cookbooks`.
+- **Single node full row (by org+name) — 0.5 ms cold / 0.02 ms warm.**
+  `Limit → Index Scan using idx_node_snapshots_org_name_collected`. Already fast — **rules
+  out** single-node fetch as P3's slow caller.
+- **Distinct node roles — 305 ms cold / 305 ms warm.**
+  `Unique → Gather Merge (2w) → Sort → HashAggregate → Nested Loop → Parallel Seq Scan on
+  node_snapshots (Filter jsonb_typeof(roles)='array') → Function Scan jsonb_array_elements_text (loops≈118,438)`.
+  Full parallel seq scan + roles unnest across all nodes.
+
+**Cross-cutting:** warm ≈ cold everywhere (606→602, 445→430, 712→735, 305→305) — these are
+full-scan / temp-spill bound, **not** cache-warmup; each reads ≈70–76k shared blocks (repeated
+full reads of `node_snapshots`). (The customer's earlier ~6 s vs 606 ms here likely reflects a
+deeper page/OFFSET, concurrent load, or colder cache — same mechanism.)
+
+**Fix directions to evaluate (Phase 3):**
+- **List queries (P3):** remove the `COUNT(*) OVER()` full-materialisation (separate/estimated
+  count), and/or a deferred-heavy-columns pattern — sort+page on a cheap indexed projection
+  (PK/node_name), then fetch heavy JSONB only for the 50 rows on the page → sort width collapses,
+  temp spill disappears. Consider an index supporting the default `node_name` sort.
+- **Coverage (P1):** GIN index on `node_snapshots.cookbooks` (jsonb_path_ops) → `?` index scan.
+- **Distinct roles:** materialise distinct roles (or reuse `role_summary`) if on a hot path.
 
 ## Phase 1 — Definitive diagnosis (evidence, not inference)
 
