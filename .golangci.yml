@@ -4,6 +4,11 @@ version: "2"
 
 linters:
   exclusions:
+    paths:
+      # Vendored JS dependencies ship sample/port .go files (e.g. flatted's Go
+      # port under frontend/node_modules) that are not our source and must not
+      # be linted.
+      - frontend/node_modules
     rules:
       # QF* are staticcheck's optional "quickfix" style suggestions (e.g. prefer
       # a tagged switch, merge an assignment into a declaration). They are
