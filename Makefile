@@ -196,10 +196,13 @@ test-short: ## Run only short/fast Go unit tests
 test-frontend: ## Run frontend unit tests
 	@if [ -d "$(FRONTEND_DIR)" ] && [ -f "$(FRONTEND_DIR)/package.json" ]; then \
 		echo "$(GREEN)Running frontend tests...$(RESET)"; \
-		cd $(FRONTEND_DIR) && npm ci --prefer-offline && npm test -- --coverage; \
+		cd $(FRONTEND_DIR) && npm ci --prefer-offline && npm test; \
 	else \
 		echo "$(YELLOW)Skipping frontend tests — $(FRONTEND_DIR)/ not found$(RESET)"; \
 	fi
+	@# NOTE: no --coverage — @vitest/coverage-v8 is not a declared devDependency,
+	@# so `vitest run --coverage` errored and broke `make ci`. Add that package
+	@# (supply-chain checked) and restore --coverage if frontend coverage is wanted.
 
 .PHONY: test-all
 test-all: test test-frontend ## Run all unit tests (Go + frontend)
@@ -368,10 +371,31 @@ vuln-go: ## Scan Go module + reachable code for known vulnerabilities (govulnche
 		echo "$(GREEN)Running govulncheck...$(RESET)"; \
 		govulncheck ./...; \
 	else \
-		echo "$(YELLOW)govulncheck not found — install with:$(RESET)"; \
-		echo "  go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+		echo "$(YELLOW)govulncheck not found — install the CI-pinned version:$(RESET)"; \
+		echo "  go install golang.org/x/vuln/cmd/govulncheck@v1.1.4"; \
 		exit 1; \
 	fi
+
+# trivy-npm mirrors the BLOCKING Trivy gates in the CI security job: npm
+# production dependencies at MEDIUM+ fail the build. It scans the LOCKFILE only
+# (never node_modules / npm ci), so a compromised dep's install hook can't run.
+# ignore-unfixed is left at its default (false) to match CI.
+.PHONY: trivy-npm
+trivy-npm: ## Trivy scan of npm production deps (MEDIUM/HIGH/CRITICAL, blocking — mirrors CI)
+	@if command -v trivy >/dev/null 2>&1; then \
+		echo "$(GREEN)Running Trivy on frontend/package-lock.json...$(RESET)"; \
+		trivy fs --scanners vuln --severity MEDIUM,HIGH,CRITICAL --exit-code 1 frontend/package-lock.json; \
+	else \
+		echo "$(YELLOW)trivy not found — install with:$(RESET)"; \
+		echo "  brew install trivy   # or see https://trivy.dev/latest/getting-started/installation/"; \
+		exit 1; \
+	fi
+
+# security aggregates the two blocking supply-chain gates from the CI security
+# job so `make ci` predicts CI. (CI also runs a non-blocking Tier-2 Trivy SARIF
+# report to the Security tab — informational, intentionally omitted here.)
+.PHONY: security
+security: vuln-go trivy-npm ## Run the blocking supply-chain gates (govulncheck + Trivy) — mirrors CI
 
 .PHONY: scan-trivy
 scan-trivy: ## Filesystem scan (vuln + secret + misconfig) with Trivy
@@ -794,6 +818,7 @@ clean-all: clean ## Remove build artifacts, caches, and downloaded dependencies
 # =============================================================================
 
 .PHONY: ci
-ci: deps fmt vet lint test-all build ## Run the full CI pipeline locally (deps, fmt, vet, lint, test, build)
+ci: deps lint test-all security build ## Mirror GitHub CI gates locally (lint, test, security, build) — run before every release
 	@echo ""
 	@echo "$(GREEN)$(BOLD)CI pipeline passed.$(RESET)"
+	@echo "$(GREEN)This mirrors the blocking gates in .github/workflows/ci.yml.$(RESET)"

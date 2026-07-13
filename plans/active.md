@@ -5,11 +5,6 @@ Single source of truth for what is in flight. **Read this first at session start
 ## Branch map (2026-07-13)
 
 - `main` — holds all merged work.
-- **Pending merge** `fix/cop-analysis-tabs` — Cop Analysis tabs feature complete
-  (all 3 chunks: backend server drill-down grouped by name; frontend Server/Git
-  tabs with reset + surfaced pagination; spec + legacy deep-link migration). Go +
-  frontend tests green, lint clean. Awaiting merge approval; manual UI check still
-  advised (open each tab, confirm header count == what you page through).
 - **Parked** `fix/node-list-count-split` — P3: split the node-list `COUNT(*) OVER()`
   into a separate count query (WIP, compiles, tests NOT run). **Low urgency,
   deploy-risky** (shared node-list + export read path) → the nodes page is not
@@ -19,9 +14,10 @@ Single source of truth for what is in flight. **Read this first at session start
   deprioritised behind feature delivery. Don't nag to merge (see [[spec-drift-parked]]).
 - No other branches in flight. Start new work on a fresh branch.
 
-Recently merged to `main` (this session): P1 GIN index on `node_snapshots.cookbooks`
-(`plans/p1-cookbooks-gin-index.md`); P2 roles `role_summary` fix closure
-(`plans/list-view-perf.md`).
+Recently merged to `main` + released as **v2.16.2**: Cop Analysis Server/Git tabs
+(`plans/cop-analysis-tabs.md`) + drill-down click-throughs to cookbook/repo pages.
+Earlier this session (in v2.16.1 line): P1 GIN index on `node_snapshots.cookbooks`;
+P2 roles `role_summary` fix closure.
 
 ## NOW — next up (pick one after the Cop Analysis merge)
 
