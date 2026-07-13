@@ -5,6 +5,11 @@ Single source of truth for what is in flight. **Read this first at session start
 ## Branch map (2026-07-13)
 
 - `main` — holds all merged work.
+- **Pending merge** `fix/cop-analysis-tabs` — Cop Analysis tabs feature complete
+  (all 3 chunks: backend server drill-down grouped by name; frontend Server/Git
+  tabs with reset + surfaced pagination; spec + legacy deep-link migration). Go +
+  frontend tests green, lint clean. Awaiting merge approval; manual UI check still
+  advised (open each tab, confirm header count == what you page through).
 - **Parked** `fix/node-list-count-split` — P3: split the node-list `COUNT(*) OVER()`
   into a separate count query (WIP, compiles, tests NOT run). **Low urgency,
   deploy-risky** (shared node-list + export read path) → the nodes page is not
@@ -18,25 +23,11 @@ Recently merged to `main` (this session): P1 GIN index on `node_snapshots.cookbo
 (`plans/p1-cookbooks-gin-index.md`); P2 roles `role_summary` fix closure
 (`plans/list-view-perf.md`).
 
-## NOW — ships first: Cop Analysis tabs (`plans/cop-analysis-tabs.md`)
+## NOW — next up (pick one after the Cop Analysis merge)
 
-Not started; needs a fresh branch `fix/cop-analysis-tabs`. Fixes three Remediation-page
-Cop Analysis inconsistencies caused by mixing two grains (git repo = 1:1 cookbook;
-server cookbook = many versions × orgs):
-- **Double-count** in "All sources" (a name in both sources counted twice → cop 2026 vs
-  Blocker card 1945).
-- **Stale drill-down** not reset on filter change (server rows persist under Git filter).
-- **Hidden pagination** — drill-down drops `resp.pagination` (header N vs 20 shown).
-
-Fix = replace the source dropdown with **Cop Analysis (Server)** + **Cop Analysis (Git)**
-tabs, each at its natural grain (auto-resolves the double-count). Chunks:
-1. Backend (`handle_cookstyle_cops.go`): server drill-down grouped by name + nested
-   `versions[]`; paginate by name; + unit/functional tests.
-2. Frontend (`RemediationPage`, `CopAnalysisTab.tsx`): two tabs, reset-on-change,
-   surface pagination, server expand UI; + vitest.
-3. Spec + nav; deep-link `?source=` fixes.
-**Invariant to assert:** within a tab, header count == drill-down total.
-Instance of [[cross-view-value-mismatch-bug-class]].
+- **CookStyle Reliability / Trustworthy Reds** (queued below) — feature work.
+- **God-handler split** — `handle_cookstyle_cops.go` (1044 lines) per REST resource;
+  now unblocked (its Cop Analysis backend churn just landed). See tech-debt todo.
 
 ## Queued — CookStyle Reliability / Trustworthy Reds (`plans/cookstyle-reliability.md`)
 
