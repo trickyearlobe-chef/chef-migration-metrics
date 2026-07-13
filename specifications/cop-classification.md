@@ -272,27 +272,22 @@ Fields:
 
 ### GET /api/v1/cookstyle/cops/:cop_name/cookbooks
 
-Returns the list of cookbooks affected by a specific cop.
+Returns the cookbooks affected by a cop. The response **shape depends on `source`**
+because server and git cookbooks have different natural grains (see Cop Analysis
+Page):
 
-#### Response
+- **`source=git`** (and the legacy no-source list) — flat, one row per
+  `{name, version, org}` (`copCookbookItem`): `source, name, version,
+  organisation?, offence_count, auto_correctable, would_pass_without`.
+- **`source=server`** — grouped by cookbook name and paginated **by name**
+  (`copCookbookGroup`), with `grouped: true`, `version_count`, summed
+  `offence_count`/`auto_correctable`, `would_pass_without` (true only if resolving
+  the cop clears **every** version), and the per-`{version, org}` detail nested
+  under `versions[]`. The pagination total equals the distinct-name count, so it
+  matches the header `cookbooks_affected` for the same cop+target (invariant below).
 
-```json
-{
-  "cop_name": "Lint/DeprecatedClassMethods",
-  "data": [
-    {
-      "source": "server",
-      "name": "example-cookbook",
-      "version": "1.2.3",
-      "organisation": "acme",
-      "offence_count": 5,
-      "auto_correctable": 5,
-      "would_pass_without": true
-    }
-  ],
-  "pagination": { ... }
-}
-```
+Normative shapes: the Go types `copCookbookItem` / `copCookbookGroup` and their
+response wrappers in `internal/webapi/handle_cookstyle_cops.go`.
 
 ### PUT /api/v1/cookstyle/cops/:cop_name/classification
 
@@ -343,24 +338,41 @@ Custom cop offenses are stored in the same `offences` JSONB as cookstyle results
 
 ### Cop Analysis Page
 
-New tab on the Remediation page: **Priority | Cop Analysis**
+Tabs on the Remediation page: **Priority | Cop Analysis (Server) | Cop Analysis (Git)**
 
-(Replaces the previously planned "CookStyle Violations" flat-list tab.)
+(Replaces the previously planned "CookStyle Violations" flat-list tab, and the
+earlier single "Cop Analysis" tab with an All-sources/Server/Git dropdown.)
+
+**Per-source grain.** Server and git cookbooks have different natural grains, so
+each has its own tab with `source` fixed (no dropdown): a **server** cookbook has
+real multiplicity (many versions across orgs) — headline and drill-down both count
+**distinct name**, grouped by name and expandable to `{version, org}` detail; a
+**git** repo is **1:1** with a cookbook, so its drill-down is the flat repo list.
+
+**Invariant (shared record selection):** within a tab, the header
+`cookbooks_affected` for a cop **equals** its drill-down pagination total. Fixing
+`source` per tab is what makes this hold — it removes the old All-sources
+double-count (a name in both sources was counted once per source). The legacy deep
+link `?tab=cop-analysis` (optionally `&source=git`) migrates to the matching tab.
 
 #### Layout
 
-1. **Summary cards** — Blocker cops / Review cops / Noise cops / Unclassified, with cookbook counts
+1. **Summary cards** — Blocker cops / Review cops / Noise cops, with cookbook counts
 2. **Classification filter** — toggle which levels to show (default: Blockers only)
-3. **Cop table** — one row per cop, grouped by classification level:
+3. **Cop table** — one row per cop:
    - Cop name (with link to drill-down)
    - Classification badge (🔴/🟠/⚪/❓) with source tooltip
    - `RemovedIn` version (if known)
-   - Severity (from cookstyle)
    - Cookbooks affected (count)
    - Total offences
    - Auto-correctable %
    - Unblocks count (blocker cops only)
-4. **Drill-down panel** — click a cop → slide-out or expand showing affected cookbooks with links to remediation
+4. **Drill-down panel** — click a cop → expand showing affected cookbooks,
+   **paginated** (total surfaced). Server rows group by name and expand to
+   version/org detail; git rows are the flat repo list. The panel **resets** when
+   the classification filter, sort, or target version changes. Rows link through:
+   server name → `/cookbooks/:name`, server version → `/cookbooks/:name/:version/remediation`,
+   git repo → `/git-repos/:name` (client-side routes, no extra queries).
 
 #### Interactions
 

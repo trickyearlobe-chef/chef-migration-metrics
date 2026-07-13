@@ -394,6 +394,205 @@ func TestHandleCookstyleCopCookbooks_DrillDown(t *testing.T) {
 	}
 }
 
+// A server cookbook has real multiplicity (many immutable versions across orgs),
+// so the server drill-down groups by cookbook name — one row per name, expandable
+// to its per-version/org detail — matching the header "cookbooks affected" grain.
+func TestHandleCookstyleCopCookbooks_ServerGroupedByName(t *testing.T) {
+	cop := "Chef/Deprecations/NodeSet"
+	// mk builds a server result's offences: n offences for cop, first one corrected.
+	mk := func(n int) []byte {
+		offs := make([]map[string]any, 0, n)
+		for i := range n {
+			offs = append(offs, map[string]any{"cop_name": cop, "severity": "warning", "corrected": i == 0})
+		}
+		return mustMarshalCops(t, []map[string]any{{"path": "recipes/default.rb", "offenses": offs}})
+	}
+
+	store := &mockStore{
+		ListAllServerCookbookCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return []datastore.ServerCookbookCookstyleResult{
+				{CookbookName: "cb-one", CookbookVersion: "2.0.0", OrganisationName: "org-a", TargetChefVersion: "18.0", Offences: mk(2), ScannedAt: time.Now()},
+				{CookbookName: "cb-one", CookbookVersion: "1.0.0", OrganisationName: "org-a", TargetChefVersion: "18.0", Offences: mk(3), ScannedAt: time.Now()},
+				{CookbookName: "cb-one", CookbookVersion: "1.0.0", OrganisationName: "org-b", TargetChefVersion: "18.0", Offences: mk(1), ScannedAt: time.Now()},
+			}, nil
+		},
+		ListGitRepoCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.GitRepoCookstyleResult, error) {
+			return nil, nil
+		},
+		ListCopClassificationsFn: func(_ context.Context) ([]datastore.CopClassification, error) {
+			return nil, nil
+		},
+	}
+
+	r := newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("18.0"))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookstyle/cops/"+cop+"/cookbooks?target_chef_version=18.0&source=server", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp copCookbookGroupResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if !resp.Grouped {
+		t.Errorf("grouped = false, want true")
+	}
+	// Three {version,org} rows of one name collapse into a single grouped row.
+	if len(resp.Data) != 1 {
+		t.Fatalf("groups = %d, want 1 (distinct cookbook name)", len(resp.Data))
+	}
+	g := resp.Data[0]
+	if g.Name != "cb-one" {
+		t.Errorf("name = %q, want cb-one", g.Name)
+	}
+	if g.Source != "server" {
+		t.Errorf("source = %q, want server", g.Source)
+	}
+	if g.VersionCount != 3 || len(g.Versions) != 3 {
+		t.Errorf("version_count = %d, len(versions) = %d, want 3/3", g.VersionCount, len(g.Versions))
+	}
+	if g.OffenceCount != 6 {
+		t.Errorf("offence_count = %d, want 6 (2+3+1 summed across versions)", g.OffenceCount)
+	}
+	if g.AutoCorrectable != 3 {
+		t.Errorf("auto_correctable = %d, want 3 (one per version)", g.AutoCorrectable)
+	}
+	// Drill-down total must be the distinct-name count so it matches the header.
+	if resp.Pagination.TotalItems != 1 {
+		t.Errorf("total_items = %d, want 1 (distinct name)", resp.Pagination.TotalItems)
+	}
+	// Nested versions are sorted by offence count descending.
+	if g.Versions[0].OffenceCount != 3 {
+		t.Errorf("versions[0].offence_count = %d, want 3 (highest first)", g.Versions[0].OffenceCount)
+	}
+}
+
+// The server drill-down paginates by cookbook name, not by {version,org} row, so
+// the total equals the distinct-name count regardless of version multiplicity.
+func TestHandleCookstyleCopCookbooks_ServerGroupPaginatesByName(t *testing.T) {
+	cop := "Chef/Deprecations/NodeSet"
+	off := mustMarshalCops(t, []map[string]any{{"path": "r.rb", "offenses": []map[string]any{
+		{"cop_name": cop, "severity": "warning", "corrected": false},
+	}}})
+
+	store := &mockStore{
+		ListAllServerCookbookCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return []datastore.ServerCookbookCookstyleResult{
+				{CookbookName: "cb-a", CookbookVersion: "1.0.0", OrganisationName: "org-a", TargetChefVersion: "18.0", Offences: off, ScannedAt: time.Now()},
+				{CookbookName: "cb-a", CookbookVersion: "2.0.0", OrganisationName: "org-a", TargetChefVersion: "18.0", Offences: off, ScannedAt: time.Now()},
+				{CookbookName: "cb-b", CookbookVersion: "1.0.0", OrganisationName: "org-a", TargetChefVersion: "18.0", Offences: off, ScannedAt: time.Now()},
+			}, nil
+		},
+		ListGitRepoCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.GitRepoCookstyleResult, error) {
+			return nil, nil
+		},
+		ListCopClassificationsFn: func(_ context.Context) ([]datastore.CopClassification, error) {
+			return nil, nil
+		},
+	}
+
+	r := newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("18.0"))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookstyle/cops/"+cop+"/cookbooks?target_chef_version=18.0&source=server&per_page=1&page=1", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp copCookbookGroupResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("page groups = %d, want 1 (per_page=1)", len(resp.Data))
+	}
+	// Two distinct names (cb-a has two versions) → total 2, two pages.
+	if resp.Pagination.TotalItems != 2 {
+		t.Errorf("total_items = %d, want 2 (distinct names)", resp.Pagination.TotalItems)
+	}
+	if resp.Pagination.TotalPages != 2 {
+		t.Errorf("total_pages = %d, want 2", resp.Pagination.TotalPages)
+	}
+}
+
+// Invariant (the whole point of the tabs split): within the Server tab, the
+// header "cookbooks affected" for a cop must equal the drill-down total for that
+// same cop+target. Both count distinct cookbook names under source=server, so
+// feeding one mock to both endpoints must agree — no double-count, no grain skew.
+func TestHandleCookstyleCopCookbooks_ServerHeaderMatchesDrillDownTotal(t *testing.T) {
+	cop := "Chef/Deprecations/NodeSet"
+	off := func(corrected bool) []byte {
+		return mustMarshalCops(t, []map[string]any{{"path": "r.rb", "offenses": []map[string]any{
+			{"cop_name": cop, "severity": "warning", "corrected": corrected},
+		}}})
+	}
+	// Two distinct names; cb-a has two versions across two orgs. The header must
+	// count 2 (distinct names), never 4 ({name,version,org} rows).
+	serverResults := []datastore.ServerCookbookCookstyleResult{
+		{CookbookName: "cb-a", CookbookVersion: "1.0.0", OrganisationName: "org-a", TargetChefVersion: "18.0", Offences: off(true), ScannedAt: time.Now()},
+		{CookbookName: "cb-a", CookbookVersion: "2.0.0", OrganisationName: "org-b", TargetChefVersion: "18.0", Offences: off(false), ScannedAt: time.Now()},
+		{CookbookName: "cb-b", CookbookVersion: "1.0.0", OrganisationName: "org-a", TargetChefVersion: "18.0", Offences: off(false), ScannedAt: time.Now()},
+	}
+	store := &mockStore{
+		ListAllServerCookbookCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.ServerCookbookCookstyleResult, error) {
+			return serverResults, nil
+		},
+		ListGitRepoCookstyleResultsByTargetVersionFn: func(_ context.Context, _ string) ([]datastore.GitRepoCookstyleResult, error) {
+			return nil, nil
+		},
+		ListCopClassificationsFn: func(_ context.Context) ([]datastore.CopClassification, error) {
+			return nil, nil
+		},
+	}
+	r := newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("18.0"))
+
+	// Header count from the aggregation endpoint (Server tab).
+	wAgg := httptest.NewRecorder()
+	r.ServeHTTP(wAgg, httptest.NewRequest(http.MethodGet, "/api/v1/cookstyle/cops?target_chef_version=18.0&source=server&per_page=200", nil))
+	if wAgg.Code != http.StatusOK {
+		t.Fatalf("aggregation status = %d; body: %s", wAgg.Code, wAgg.Body.String())
+	}
+	var agg copAggregationResponse
+	if err := json.Unmarshal(wAgg.Body.Bytes(), &agg); err != nil {
+		t.Fatalf("aggregation unmarshal: %v", err)
+	}
+	var headerCount int
+	found := false
+	for _, it := range agg.Data {
+		if it.CopName == cop {
+			headerCount = it.CookbooksAffected
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("%s not present in aggregation response", cop)
+	}
+
+	// Drill-down total from the cookbooks endpoint (Server tab).
+	wDrill := httptest.NewRecorder()
+	r.ServeHTTP(wDrill, httptest.NewRequest(http.MethodGet, "/api/v1/cookstyle/cops/"+cop+"/cookbooks?target_chef_version=18.0&source=server", nil))
+	if wDrill.Code != http.StatusOK {
+		t.Fatalf("drill-down status = %d; body: %s", wDrill.Code, wDrill.Body.String())
+	}
+	var drill copCookbookGroupResponse
+	if err := json.Unmarshal(wDrill.Body.Bytes(), &drill); err != nil {
+		t.Fatalf("drill-down unmarshal: %v", err)
+	}
+
+	if headerCount != 2 {
+		t.Errorf("header cookbooks_affected = %d, want 2 (distinct names)", headerCount)
+	}
+	if drill.Pagination.TotalItems != headerCount {
+		t.Errorf("drill-down total_items = %d, header cookbooks_affected = %d; must be equal", drill.Pagination.TotalItems, headerCount)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // PUT /api/v1/cookstyle/cops/:cop/classification
 // ---------------------------------------------------------------------------

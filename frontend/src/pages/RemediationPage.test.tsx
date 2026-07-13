@@ -125,37 +125,53 @@ describe("RemediationPage tabs", () => {
     );
   });
 
-  it("shows Priority tab as default", async () => {
+  it("shows Priority tab as default with the two Cop Analysis tabs", async () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("Remediation Priority")).toBeInTheDocument(),
     );
     expect(screen.getByRole("button", { name: "Priority" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cop Analysis" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cop Analysis (Server)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cop Analysis (Git)" }),
+    ).toBeInTheDocument();
   });
 
-  it("switches to Cop Analysis tab on click", async () => {
+  it("switches to the Server Cop Analysis tab on click", async () => {
     renderPage();
     await waitFor(() =>
       expect(screen.getByText("Remediation Priority")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByText("Cop Analysis"));
+    fireEvent.click(screen.getByText("Cop Analysis (Server)"));
 
     await waitFor(() =>
       expect(screen.getByText("Chef/Deprecations/NodeSet")).toBeInTheDocument(),
     );
   });
 
-  it("renders cop analysis tab directly when ?tab=cop-analysis", async () => {
+  it("migrates the legacy ?tab=cop-analysis deep link to the Server tab", async () => {
     renderPage(["/remediation?tab=cop-analysis"]);
     await waitFor(() =>
       expect(screen.getByText("Chef/Deprecations/NodeSet")).toBeInTheDocument(),
     );
+  });
+
+  it("migrates the legacy ?tab=cop-analysis&source=git deep link to the Git tab", async () => {
+    renderPage(["/remediation?tab=cop-analysis&source=git"]);
+    await waitFor(() =>
+      expect(screen.getByText("Chef/Deprecations/NodeSet")).toBeInTheDocument(),
+    );
+    // The Git tab is the active one.
+    expect(
+      screen.getByRole("button", { name: "Cop Analysis (Git)" }),
+    ).toHaveClass("text-blue-600");
   });
 
   it("switching back to Priority tab shows priority content", async () => {
-    renderPage(["/remediation?tab=cop-analysis"]);
+    renderPage(["/remediation?tab=cop-analysis-server"]);
     await waitFor(() =>
       expect(screen.getByText("Chef/Deprecations/NodeSet")).toBeInTheDocument(),
     );

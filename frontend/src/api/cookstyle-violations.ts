@@ -3,6 +3,7 @@
 import type {
   CopAggregationResponse,
   CopCookbookResponse,
+  CopCookbookGroupResponse,
   CopDriftReport,
   CustomCopDefinition,
 } from "../types";
@@ -59,6 +60,26 @@ export function fetchCookstyleCopCookbooks(
     buildUrl(
       `/cookstyle/cops/${copName}/cookbooks`,
       params as Record<string, string | number | boolean | undefined>,
+    ),
+  );
+}
+
+// fetchCookstyleServerCopCookbooks fetches the server drill-down grouped by
+// cookbook name (source=server). The response nests per-version/org detail under
+// each name and paginates by name, so its total equals the header "cookbooks
+// affected" count. Use fetchCookstyleCopCookbooks (source=git) for the flat repo
+// list on the Git tab.
+export function fetchCookstyleServerCopCookbooks(
+  copName: string,
+  params?: { target_chef_version?: string; page?: number; per_page?: number },
+): Promise<CopCookbookGroupResponse> {
+  return apiFetch<CopCookbookGroupResponse>(
+    buildUrl(
+      `/cookstyle/cops/${copName}/cookbooks`,
+      { ...params, source: "server" } as Record<
+        string,
+        string | number | boolean | undefined
+      >,
     ),
   );
 }
