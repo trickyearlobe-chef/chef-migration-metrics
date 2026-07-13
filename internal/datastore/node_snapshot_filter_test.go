@@ -28,9 +28,11 @@ func TestBuildNodeSnapshotFilterQuery_NoFilters(t *testing.T) {
 	if !strings.Contains(q, "WITH current_nodes AS") {
 		t.Error("query missing CTE")
 	}
-	// Should contain COUNT(*) OVER() for pagination total.
-	if !strings.Contains(q, "COUNT(*) OVER ()") {
-		t.Error("query missing COUNT(*) OVER ()")
+	// The rows query must NOT compute the total via COUNT(*) OVER() — the window
+	// materialises every matching row before LIMIT (P3 hotspot). The exact total
+	// now comes from the separate count query (buildNodeSnapshotCountQuery).
+	if strings.Contains(q, "COUNT(*) OVER") {
+		t.Error("rows query should not contain COUNT(*) OVER() — total comes from the count query")
 	}
 	// Should have ORDER BY.
 	if !strings.Contains(q, "ORDER BY cn.node_name") {
@@ -55,6 +57,55 @@ func TestBuildNodeSnapshotFilterQuery_NoFilters(t *testing.T) {
 	}
 	if strings.Contains(outerSelect, "cn.custom_attributes") {
 		t.Error("lightweight query should not SELECT cn.custom_attributes")
+	}
+}
+
+func TestBuildNodeSnapshotCountQuery_NoFilters(t *testing.T) {
+	q, args := buildNodeSnapshotCountQuery(NodeSnapshotFilter{})
+
+	if len(args) != 0 {
+		t.Errorf("expected 0 args, got %d: %v", len(args), args)
+	}
+	if !strings.Contains(q, "WITH current_nodes AS") {
+		t.Error("count query missing CTE")
+	}
+	if !strings.Contains(q, "SELECT COUNT(*)") {
+		t.Errorf("count query missing SELECT COUNT(*), got:\n%s", q)
+	}
+	// The count is exact and order-independent — no sort, no pagination.
+	if strings.Contains(q, "ORDER BY") {
+		t.Error("count query should not contain ORDER BY")
+	}
+	if strings.Contains(q, "LIMIT") || strings.Contains(q, "OFFSET") {
+		t.Error("count query should not contain LIMIT/OFFSET")
+	}
+	// The count must not project heavy JSONB columns in the outer SELECT.
+	if strings.Contains(q, "COUNT(*) OVER") {
+		t.Error("count query should use a plain COUNT(*), not a window")
+	}
+}
+
+func TestBuildNodeSnapshotCountQuery_AppliesSameFilters(t *testing.T) {
+	f := NodeSnapshotFilter{
+		OrganisationNames: []string{"org-1"},
+		NodeName:          "web01",
+	}
+	_, rowsArgs := buildNodeSnapshotFilterQuery(f)
+	countQ, countArgs := buildNodeSnapshotCountQuery(f)
+
+	// The count query must apply the identical filter predicates (so the total
+	// matches the filtered rows) — same clauses, same arg values.
+	if !strings.Contains(countQ, "cn.organisation_name = ANY($1)") {
+		t.Errorf("count query missing org filter, got:\n%s", countQ)
+	}
+	if !strings.Contains(countQ, "LOWER(cn.node_name) LIKE") {
+		t.Errorf("count query missing node_name filter, got:\n%s", countQ)
+	}
+	if len(countArgs) != len(rowsArgs) {
+		t.Errorf("count args (%d) should match rows filter args (%d) minus pagination", len(countArgs), len(rowsArgs))
+	}
+	if fmt.Sprintf("%v", countArgs) != fmt.Sprintf("%v", rowsArgs) {
+		t.Errorf("count args %v should equal rows filter args %v (no pagination args here)", countArgs, rowsArgs)
 	}
 }
 
