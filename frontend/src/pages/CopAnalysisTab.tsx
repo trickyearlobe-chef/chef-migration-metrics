@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { DEFAULT_PAGE_SIZE } from "../constants";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
 import { useIsAdmin } from "../context/AuthContext";
@@ -548,14 +548,23 @@ function ServerGroupRow({ group }: { group: CopCookbookGroup }) {
     <>
       <tr className="border-t border-gray-100">
         <td className="py-1 font-mono">
-          <button
-            onClick={() => setOpen((v) => !v)}
-            className="text-left text-blue-700 hover:underline"
-            aria-expanded={open}
-          >
-            <span className="inline-block w-3 text-gray-400">{open ? "▾" : "▸"}</span>
-            {group.name}
-          </button>
+          {/* Caret toggles the version detail; the name links to the cookbook. */}
+          <span className="inline-flex items-center gap-1">
+            <button
+              onClick={() => setOpen((v) => !v)}
+              className="text-gray-400 hover:text-gray-600"
+              aria-expanded={open}
+              aria-label={open ? "Collapse versions" : "Expand versions"}
+            >
+              <span className="inline-block w-3">{open ? "▾" : "▸"}</span>
+            </button>
+            <Link
+              to={`/cookbooks/${encodeURIComponent(group.name)}`}
+              className="text-blue-700 hover:underline"
+            >
+              {group.name}
+            </Link>
+          </span>
         </td>
         <td className="py-1 text-right tabular-nums">{group.version_count}</td>
         <td className="py-1 text-right tabular-nums">{group.offence_count}</td>
@@ -575,7 +584,12 @@ function ServerGroupRow({ group }: { group: CopCookbookGroup }) {
             className="border-t border-gray-50 bg-white/60"
           >
             <td className="py-1 pl-6 text-gray-600">
-              <span className="font-mono">{v.version}</span>
+              <Link
+                to={`/cookbooks/${encodeURIComponent(v.name)}/${encodeURIComponent(v.version)}/remediation`}
+                className="font-mono text-blue-700 hover:underline"
+              >
+                {v.version}
+              </Link>
               {v.organisation && (
                 <span className="ml-2 text-gray-400">{v.organisation}</span>
               )}
@@ -615,7 +629,14 @@ function GitDrillDown({ items }: { items: CopCookbookItem[] }) {
         <tbody>
           {items.map((cb, i) => (
             <tr key={`${cb.name}-${i}`} className="border-t border-gray-100">
-              <td className="py-1 font-mono">{cb.name}</td>
+              <td className="py-1 font-mono">
+                <Link
+                  to={`/git-repos/${encodeURIComponent(cb.name)}`}
+                  className="text-blue-700 hover:underline"
+                >
+                  {cb.name}
+                </Link>
+              </td>
               <td className="py-1 text-right tabular-nums">{cb.offence_count}</td>
               <td className="py-1 text-right tabular-nums">{cb.auto_correctable}</td>
               <td className="py-1 text-center">

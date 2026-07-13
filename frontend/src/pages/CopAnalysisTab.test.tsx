@@ -147,14 +147,24 @@ describe("CopAnalysisTab", () => {
       COP,
       expect.objectContaining({ page: 1, per_page: 20 }),
     );
+    // The cookbook name links to its name-level detail page.
+    expect(screen.getByRole("link", { name: "cb-one" })).toHaveAttribute(
+      "href",
+      "/cookbooks/cb-one",
+    );
     // Version detail is hidden until the group is expanded.
     expect(screen.queryByText("2.0.0")).not.toBeInTheDocument();
 
-    // Expand the cookbook name → its version/org rows.
-    fireEvent.click(screen.getByRole("button", { name: /cb-one/ }));
+    // Expand the cookbook name → its version/org rows (caret, not the name link).
+    fireEvent.click(screen.getByRole("button", { name: /expand versions/i }));
     await waitFor(() => expect(screen.getByText("2.0.0")).toBeInTheDocument());
     expect(screen.getByText("org-a")).toBeInTheDocument();
     expect(screen.getByText("1.0.0")).toBeInTheDocument();
+    // Each version links to its version-specific remediation page.
+    expect(screen.getByRole("link", { name: "2.0.0" })).toHaveAttribute(
+      "href",
+      "/cookbooks/cb-one/2.0.0/remediation",
+    );
   });
 
   it("surfaces drill-down pagination (showing X of N)", async () => {
@@ -197,5 +207,10 @@ describe("CopAnalysisTab", () => {
     // Flat list header, and no version-grouping affordance.
     const drill = screen.getByText("repo-x").closest("table")!;
     expect(within(drill).getByText("Repository")).toBeInTheDocument();
+    // The repo name links to its git-repo detail page.
+    expect(screen.getByRole("link", { name: "repo-x" })).toHaveAttribute(
+      "href",
+      "/git-repos/repo-x",
+    );
   });
 });

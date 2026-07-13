@@ -370,7 +370,9 @@ link `?tab=cop-analysis` (optionally `&source=git`) migrates to the matching tab
 4. **Drill-down panel** — click a cop → expand showing affected cookbooks,
    **paginated** (total surfaced). Server rows group by name and expand to
    version/org detail; git rows are the flat repo list. The panel **resets** when
-   the classification filter, sort, or target version changes.
+   the classification filter, sort, or target version changes. Rows link through:
+   server name → `/cookbooks/:name`, server version → `/cookbooks/:name/:version/remediation`,
+   git repo → `/git-repos/:name` (client-side routes, no extra queries).
 
 #### Interactions
 
