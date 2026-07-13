@@ -64,6 +64,29 @@ export interface CopCookbookResponse {
   pagination: Pagination;
 }
 
+// CopCookbookGroup is one grouped row in the server drill-down: a cookbook name
+// with its per-version/org detail nested under `versions`. Server cookbooks have
+// real multiplicity (many immutable versions across orgs), so the server tab
+// groups by name — matching the header "cookbooks affected" grain. offence_count
+// and auto_correctable are summed across versions; would_pass_without is true only
+// when resolving this cop would clear every version of the cookbook.
+export interface CopCookbookGroup {
+  source: string;
+  name: string;
+  version_count: number;
+  offence_count: number;
+  auto_correctable: number;
+  would_pass_without: boolean;
+  versions: CopCookbookItem[];
+}
+
+export interface CopCookbookGroupResponse {
+  cop_name: string;
+  grouped: boolean;
+  data: CopCookbookGroup[];
+  pagination: Pagination;
+}
+
 // ---------------------------------------------------------------------------
 // Cop drift / coverage report (live registry vs. static classification tables)
 // ---------------------------------------------------------------------------

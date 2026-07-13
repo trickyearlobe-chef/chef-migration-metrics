@@ -25,33 +25,52 @@ import { CopAnalysisTab } from "./CopAnalysisTab";
 // tabs. Tab selection is persisted via ?tab= query param.
 // ---------------------------------------------------------------------------
 
-type RemediationTab = "priority" | "cop-analysis";
+type RemediationTab = "priority" | "cop-analysis-server" | "cop-analysis-git";
 
 const TABS: { key: RemediationTab; label: string }[] = [
   { key: "priority", label: "Priority" },
-  { key: "cop-analysis", label: "Cop Analysis" },
+  { key: "cop-analysis-server", label: "Cop Analysis (Server)" },
+  { key: "cop-analysis-git", label: "Cop Analysis (Git)" },
 ];
 
 function isValidTab(value: string | null): value is RemediationTab {
-  return value === "priority" || value === "cop-analysis";
+  return (
+    value === "priority" ||
+    value === "cop-analysis-server" ||
+    value === "cop-analysis-git"
+  );
+}
+
+// resolveTab maps the ?tab= param to an active tab, migrating the legacy
+// single-tab deep link (?tab=cop-analysis with an optional ?source=) to the
+// per-source tabs so old bookmarks keep working.
+function resolveTab(rawTab: string | null, source: string | null): RemediationTab {
+  if (isValidTab(rawTab)) return rawTab;
+  if (rawTab === "cop-analysis") {
+    return source === "git" ? "cop-analysis-git" : "cop-analysis-server";
+  }
+  return "priority";
 }
 
 export function RemediationPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const rawTab = searchParams.get("tab");
-  const activeTab: RemediationTab = isValidTab(rawTab) ? rawTab : "priority";
+  const activeTab = resolveTab(
+    searchParams.get("tab"),
+    searchParams.get("source"),
+  );
 
   const switchTab = (tab: RemediationTab) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
-      // Clear filter params from the other tab when switching
+      // Clear filter params carried by the other tab when switching.
       if (tab === "priority") {
         next.delete("tab");
-        next.delete("source");
-        next.delete("classification");
       } else {
         next.set("tab", tab);
       }
+      // The source is now implied by the tab, so the legacy param is dropped.
+      next.delete("source");
+      next.delete("classification");
       next.delete("page");
       next.delete("sort");
       next.delete("order");
@@ -82,7 +101,8 @@ export function RemediationPage() {
       </div>
 
       {activeTab === "priority" && <RemediationPriorityContent />}
-      {activeTab === "cop-analysis" && <CopAnalysisTab />}
+      {activeTab === "cop-analysis-server" && <CopAnalysisTab source="server" />}
+      {activeTab === "cop-analysis-git" && <CopAnalysisTab source="git" />}
     </div>
   );
 }

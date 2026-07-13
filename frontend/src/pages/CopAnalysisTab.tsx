@@ -8,6 +8,7 @@ import { useIsAdmin } from "../context/AuthContext";
 import {
   fetchCookstyleCops,
   fetchCookstyleCopCookbooks,
+  fetchCookstyleServerCopCookbooks,
   setCopClassification,
   type CopAggregationQuery,
 } from "../api";
@@ -15,6 +16,7 @@ import type {
   CopAggregateItem,
   CopAggregationSummary,
   CopCookbookItem,
+  CopCookbookGroup,
   Pagination as PaginationType,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
@@ -22,10 +24,19 @@ import { Pagination } from "../components/Pagination";
 import { ClassificationBadge, CLASSIFICATION_FILTERS } from "../components/ClassificationBadge";
 
 // ---------------------------------------------------------------------------
-// CopAnalysisTab — classification-aware cop aggregation view
+// CopAnalysisTab — classification-aware cop aggregation for a single source.
+//
+// The source is fixed per tab (Server or Git) rather than chosen from a
+// dropdown, so each tab uses its natural grain: a server cookbook has many
+// versions across orgs (grouped by name in the drill-down), while a git repo is
+// 1:1 with a cookbook (a flat list). Fixing the source per tab also removes the
+// old "All sources" double-count, and keeps the header count equal to the
+// drill-down total within a tab.
 // ---------------------------------------------------------------------------
 
-export function CopAnalysisTab() {
+const DRILL_PAGE_SIZE = 20;
+
+export function CopAnalysisTab({ source }: { source: "server" | "git" }) {
   const { targetChefVersion } = useGlobalFilters();
   const isAdmin = useIsAdmin();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -37,9 +48,12 @@ export function CopAnalysisTab() {
   const [summary, setSummary] = useState<CopAggregationSummary | null>(null);
   const [pagination, setPagination] = useState<PaginationType | null>(null);
 
-  // Drill-down state
+  // Drill-down state. Server uses grouped rows (drillGroups); git uses the flat
+  // list (drillItems). Only the one matching `source` is populated at a time.
   const [drillCop, setDrillCop] = useState<string | null>(null);
   const [drillItems, setDrillItems] = useState<CopCookbookItem[]>([]);
+  const [drillGroups, setDrillGroups] = useState<CopCookbookGroup[]>([]);
+  const [drillPagination, setDrillPagination] = useState<PaginationType | null>(null);
   const [drillLoading, setDrillLoading] = useState(false);
 
   // Reclassification state
@@ -50,7 +64,6 @@ export function CopAnalysisTab() {
 
   // Filters from URL params
   const classFilter = searchParams.get("classification") ?? "";
-  const source = searchParams.get("source") ?? "";
   const sortField = searchParams.get("sort") ?? "cookbooks_affected";
   const sortOrder = searchParams.get("order") ?? "desc";
   const page = parseInt(searchParams.get("page") ?? "1", 10);
@@ -79,6 +92,7 @@ export function CopAnalysisTab() {
     try {
       const params: CopAggregationQuery = {
         target_chef_version: targetChefVersion,
+        source,
         page,
         per_page: DEFAULT_PAGE_SIZE,
         sort: sortField,
@@ -89,7 +103,6 @@ export function CopAnalysisTab() {
         triggered_only: true,
       };
       if (classFilter) params.classification = classFilter;
-      if (source === "server" || source === "git") params.source = source;
 
       const resp = await fetchCookstyleCops(params);
       setItems(resp.data ?? []);
@@ -100,32 +113,70 @@ export function CopAnalysisTab() {
     } finally {
       setLoading(false);
     }
-  }, [targetChefVersion, classFilter, source, sortField, sortOrder, page]);
+  }, [targetChefVersion, source, classFilter, sortField, sortOrder, page]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Drill-down handler
-  const openDrillDown = async (copName: string) => {
+  // Reset the open drill-down when a list-level filter, sort, or target version
+  // changes. Without this the expanded panel would show stale rows selected
+  // under the previous filter (issue A: stale drill-down).
+  useEffect(() => {
+    setDrillCop(null);
+    setDrillItems([]);
+    setDrillGroups([]);
+    setDrillPagination(null);
+  }, [classFilter, sortField, sortOrder, targetChefVersion, source]);
+
+  // Load one page of the drill-down for a cop. Server → grouped-by-name;
+  // git → flat repo list. Both surface pagination (issue C).
+  const loadDrill = useCallback(
+    async (copName: string, drillPage: number) => {
+      setDrillLoading(true);
+      try {
+        if (source === "server") {
+          const resp = await fetchCookstyleServerCopCookbooks(copName, {
+            target_chef_version: targetChefVersion,
+            page: drillPage,
+            per_page: DRILL_PAGE_SIZE,
+          });
+          setDrillGroups(resp.data ?? []);
+          setDrillItems([]);
+          setDrillPagination(resp.pagination);
+        } else {
+          const resp = await fetchCookstyleCopCookbooks(copName, {
+            target_chef_version: targetChefVersion,
+            source: "git",
+            page: drillPage,
+            per_page: DRILL_PAGE_SIZE,
+          });
+          setDrillItems(resp.data ?? []);
+          setDrillGroups([]);
+          setDrillPagination(resp.pagination);
+        }
+      } catch {
+        setDrillItems([]);
+        setDrillGroups([]);
+        setDrillPagination(null);
+      } finally {
+        setDrillLoading(false);
+      }
+    },
+    [source, targetChefVersion],
+  );
+
+  const openDrillDown = (copName: string) => {
     if (drillCop === copName) {
       setDrillCop(null);
       return;
     }
     setDrillCop(copName);
-    setDrillLoading(true);
-    try {
-      const resp = await fetchCookstyleCopCookbooks(copName, {
-        target_chef_version: targetChefVersion,
-        source: source || undefined,
-        per_page: 20,
-      });
-      setDrillItems(resp.data ?? []);
-    } catch {
-      setDrillItems([]);
-    } finally {
-      setDrillLoading(false);
-    }
+    loadDrill(copName, 1);
+  };
+
+  const changeDrillPage = (drillPage: number) => {
+    if (drillCop) loadDrill(drillCop, drillPage);
   };
 
   // Reclassification handler
@@ -190,17 +241,6 @@ export function CopAnalysisTab() {
             </button>
           ))}
         </div>
-
-        {/* Source filter */}
-        <select
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
-          value={source}
-          onChange={(e) => setParam("source", e.target.value)}
-        >
-          <option value="">All sources</option>
-          <option value="server">Server</option>
-          <option value="git">Git</option>
-        </select>
       </div>
 
       {/* Main content */}
@@ -258,11 +298,15 @@ export function CopAnalysisTab() {
                   <CopRow
                     key={cop.cop_name}
                     cop={cop}
+                    source={source}
                     isExpanded={drillCop === cop.cop_name}
                     drillItems={drillCop === cop.cop_name ? drillItems : []}
+                    drillGroups={drillCop === cop.cop_name ? drillGroups : []}
+                    drillPagination={drillCop === cop.cop_name ? drillPagination : null}
                     drillLoading={drillCop === cop.cop_name && drillLoading}
                     canReclassify={isAdmin}
                     onExpand={() => openDrillDown(cop.cop_name)}
+                    onDrillPageChange={changeDrillPage}
                     onReclassify={() => {
                       setReclassifyCop(cop.cop_name);
                       setReclassifyValue(cop.classification || "blocker");
@@ -353,21 +397,32 @@ function SummaryCard({
 
 function CopRow({
   cop,
+  source,
   isExpanded,
   drillItems,
+  drillGroups,
+  drillPagination,
   drillLoading,
   canReclassify,
   onExpand,
+  onDrillPageChange,
   onReclassify,
 }: {
   cop: CopAggregateItem;
+  source: "server" | "git";
   isExpanded: boolean;
   drillItems: CopCookbookItem[];
+  drillGroups: CopCookbookGroup[];
+  drillPagination: PaginationType | null;
   drillLoading: boolean;
   canReclassify: boolean;
   onExpand: () => void;
+  onDrillPageChange: (page: number) => void;
   onReclassify: () => void;
 }) {
+  const isEmpty =
+    source === "server" ? drillGroups.length === 0 : drillItems.length === 0;
+
   return (
     <>
       <tr className="hover:bg-gray-50">
@@ -436,44 +491,145 @@ function CopRow({
           <td colSpan={canReclassify ? 8 : 7} className="bg-gray-50 px-6 py-3">
             {drillLoading ? (
               <div className="text-xs text-gray-400">Loading affected cookbooks…</div>
-            ) : drillItems.length === 0 ? (
+            ) : isEmpty ? (
               <div className="text-xs text-gray-400">No cookbooks found.</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-gray-500">
-                      <th className="text-left pb-1">Cookbook</th>
-                      <th className="text-left pb-1">Source</th>
-                      <th className="text-right pb-1">Offences</th>
-                      <th className="text-right pb-1">Auto-fix</th>
-                      <th className="text-center pb-1">Would pass</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {drillItems.map((cb, i) => (
-                      <tr key={`${cb.source}-${cb.name}-${i}`} className="border-t border-gray-100">
-                        <td className="py-1 font-mono">{cb.name}</td>
-                        <td className="py-1 text-gray-500">{cb.source}</td>
-                        <td className="py-1 text-right">{cb.offence_count}</td>
-                        <td className="py-1 text-right">{cb.auto_correctable}</td>
-                        <td className="py-1 text-center">
-                          {cb.would_pass_without ? (
-                            <span className="text-green-600">✓</span>
-                          ) : (
-                            <span className="text-gray-300">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                {source === "server" ? (
+                  <ServerDrillDown groups={drillGroups} />
+                ) : (
+                  <GitDrillDown items={drillItems} />
+                )}
+                {drillPagination && (
+                  <Pagination
+                    pagination={drillPagination}
+                    onPageChange={onDrillPageChange}
+                  />
+                )}
               </div>
             )}
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Server drill-down: one row per cookbook name, expandable to version/org detail
+// ---------------------------------------------------------------------------
+
+function ServerDrillDown({ groups }: { groups: CopCookbookGroup[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-gray-500">
+            <th className="text-left pb-1">Cookbook</th>
+            <th className="text-right pb-1">Versions</th>
+            <th className="text-right pb-1">Offences</th>
+            <th className="text-right pb-1">Auto-fix</th>
+            <th className="text-center pb-1">Would pass</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((g) => (
+            <ServerGroupRow key={g.name} group={g} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ServerGroupRow({ group }: { group: CopCookbookGroup }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <tr className="border-t border-gray-100">
+        <td className="py-1 font-mono">
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="text-left text-blue-700 hover:underline"
+            aria-expanded={open}
+          >
+            <span className="inline-block w-3 text-gray-400">{open ? "▾" : "▸"}</span>
+            {group.name}
+          </button>
+        </td>
+        <td className="py-1 text-right tabular-nums">{group.version_count}</td>
+        <td className="py-1 text-right tabular-nums">{group.offence_count}</td>
+        <td className="py-1 text-right tabular-nums">{group.auto_correctable}</td>
+        <td className="py-1 text-center">
+          {group.would_pass_without ? (
+            <span className="text-green-600">✓</span>
+          ) : (
+            <span className="text-gray-300">—</span>
+          )}
+        </td>
+      </tr>
+      {open &&
+        group.versions.map((v, i) => (
+          <tr
+            key={`${v.version}-${v.organisation ?? ""}-${i}`}
+            className="border-t border-gray-50 bg-white/60"
+          >
+            <td className="py-1 pl-6 text-gray-600">
+              <span className="font-mono">{v.version}</span>
+              {v.organisation && (
+                <span className="ml-2 text-gray-400">{v.organisation}</span>
+              )}
+            </td>
+            <td className="py-1 text-right text-gray-300">—</td>
+            <td className="py-1 text-right tabular-nums">{v.offence_count}</td>
+            <td className="py-1 text-right tabular-nums">{v.auto_correctable}</td>
+            <td className="py-1 text-center">
+              {v.would_pass_without ? (
+                <span className="text-green-600">✓</span>
+              ) : (
+                <span className="text-gray-300">—</span>
+              )}
+            </td>
+          </tr>
+        ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Git drill-down: flat repo list (1:1 repo == cookbook)
+// ---------------------------------------------------------------------------
+
+function GitDrillDown({ items }: { items: CopCookbookItem[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-gray-500">
+            <th className="text-left pb-1">Repository</th>
+            <th className="text-right pb-1">Offences</th>
+            <th className="text-right pb-1">Auto-fix</th>
+            <th className="text-center pb-1">Would pass</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((cb, i) => (
+            <tr key={`${cb.name}-${i}`} className="border-t border-gray-100">
+              <td className="py-1 font-mono">{cb.name}</td>
+              <td className="py-1 text-right tabular-nums">{cb.offence_count}</td>
+              <td className="py-1 text-right tabular-nums">{cb.auto_correctable}</td>
+              <td className="py-1 text-center">
+                {cb.would_pass_without ? (
+                  <span className="text-green-600">✓</span>
+                ) : (
+                  <span className="text-gray-300">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
