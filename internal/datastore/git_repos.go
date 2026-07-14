@@ -316,22 +316,49 @@ func (db *DB) MarkGitRepoCloneFailed(ctx context.Context, name, gitRepoURL, clon
 	return scanGitRepo(db.pool.QueryRowContext(ctx, query, name, gitRepoURL, ce))
 }
 
-// UpsertGitRepoFailed inserts or updates a git repo row in the 'failed'
-// state. This is used when a clone fails from all configured base URLs —
-// the repo row is created (or updated) so it appears in the UI as missing,
-// rather than being silently absent.
-func (db *DB) UpsertGitRepoFailed(ctx context.Context, name, gitRepoURL, cloneError string) (GitRepo, error) {
+// MarkGitRepoFailedByName records a failed fetch for a cookbook name, so the
+// repo appears in the UI as missing with its reason rather than being silently
+// absent.
+//
+// The collector tries each configured base URL in turn and only reaches this
+// path when every one of them failed — at which point it does not know which
+// URL the repo actually lives at. An existing row is the authority on that, so
+// its URL and scan history are kept and the row itself is marked failed. Only
+// when no row exists is the repo genuinely new; fallbackURL (the last base URL
+// tried) is then recorded as the best guess available.
+//
+// Keying the write on fallbackURL instead would insert a *second* row for any
+// repo living at an earlier base URL, and the remediation handlers — which take
+// gitRepos[0] from an unordered list — would pick between the twins arbitrarily.
+//
+// Pre-existing duplicate rows for the name are all marked failed: leaving a
+// stale 'ok' twin behind would let an unreachable repo keep rendering healthy.
+func (db *DB) MarkGitRepoFailedByName(ctx context.Context, name, fallbackURL, cloneError string) (GitRepo, error) {
 	if name == "" {
 		return GitRepo{}, fmt.Errorf("datastore: git repo name is required")
 	}
-	if gitRepoURL == "" {
-		return GitRepo{}, fmt.Errorf("datastore: git repo URL is required")
+	if fallbackURL == "" {
+		return GitRepo{}, fmt.Errorf("datastore: git repo fallback URL is required")
 	}
 	var ce sql.NullString
 	if cloneError != "" {
 		ce = sql.NullString{String: cloneError, Valid: true}
 	}
-	const query = `
+
+	// A repo we can't clone can't be verified — reset the materialised cookstyle
+	// and compatibility verdicts to 'untested' so the list doesn't keep showing a
+	// stale ready/needs_review/blocked status for a repo we can no longer reach.
+	const markExisting = `
+		UPDATE git_repos
+		   SET clone_status = 'failed',
+		       clone_error  = $2,
+		       cookstyle_status     = 'untested',
+		       compatibility_status = 'untested',
+		       updated_at   = now()
+		 WHERE name = $1
+		RETURNING ` + gitRepoColumns
+
+	const insertFailed = `
 		INSERT INTO git_repos (
 			name, git_repo_url, clone_status, clone_error
 		) VALUES (
@@ -346,7 +373,27 @@ func (db *DB) UpsertGitRepoFailed(ctx context.Context, name, gitRepoURL, cloneEr
 			updated_at   = now()
 		RETURNING ` + gitRepoColumns
 
-	return scanGitRepo(db.pool.QueryRowContext(ctx, query, name, gitRepoURL, ce))
+	var repo GitRepo
+	err := db.Tx(ctx, func(tx *sql.Tx) error {
+		existing, err := scanGitRepos(tx.QueryContext(ctx, markExisting, name, ce))
+		if err != nil {
+			return fmt.Errorf("marking existing rows failed: %w", err)
+		}
+		if len(existing) > 0 {
+			repo = existing[0]
+			return nil
+		}
+
+		repo, err = scanGitRepo(tx.QueryRowContext(ctx, insertFailed, name, fallbackURL, ce))
+		if err != nil {
+			return fmt.Errorf("inserting failed row: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return GitRepo{}, err
+	}
+	return repo, nil
 }
 
 // ResetGitRepoCloneStatus resets the clone_status to 'pending' and clears

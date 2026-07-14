@@ -71,20 +71,6 @@ Recorded 2026-06-19 (`feature/orphan-sweep-ticker`).
 
 - [ ] When `CMM_CREDENTIAL_ENCRYPTION_KEY` is rotated, entries in `config_store` (including all credentials) are **not** re-encrypted under the new key. The old `rotateSecrets` function only operated on the now-dropped `credentials` table. **Strategic fix:** implement `Store.RotateKey(ctx, oldKey []byte)` that re-encrypts every `config_store` row under the new derived key within a single transaction.
 
-## Git Collector — A Failed Clone Can Duplicate a Repo Row
-
-- [ ] **A failed fetch attributes the failure to a base URL the repo never lived at, creating a second row for the same name.** All citations `@ ccad467`.
-
-  The success path holds the one-row-per-name invariant: upsert, then `DeleteStaleGitRepos(ctx, cbName, repoURL)` removes rows for other base URLs (`internal/collector/git.go:562`) — this is what makes a repo migrating between git orgs update rather than duplicate. The failure path does not: it calls `UpsertGitRepoFailed` with `failedURL := trimmedURLs[len(trimmedURLs)-1] + "/" + cbName` (`internal/collector/git.go:599`) — the **last configured base URL**, regardless of where the repo actually lives — and never calls `DeleteStaleGitRepos`.
-
-  Since that insert is `ON CONFLICT (name, git_repo_url)` (`internal/datastore/git_repos.go:340`), it only conflicts when the repo happens to live at the *last* base URL. Any repo living at an earlier base URL gets a **second row** on failure. Repos at the last base URL are immune, which is why this would present as intermittent rather than systematic.
-
-  **Impact.** `listGitReposByName` is `WHERE name = $1` with no `ORDER BY` (`internal/datastore/git_repos.go:188`), and both remediation handlers then take `gitRepos[0]` (`handle_cookbook_remediation.go:154`, `handle_git_repo_remediation.go:82`). With two rows the choice is arbitrary and unstable across requests (these rows are `UPDATE`d by clone/scan, which moves them in the heap). A healthy, fully-scanned cookbook can therefore render as `failed`/`untested` with no cookstyle results — the page landed on the phantom row. It self-heals on the next *successful* fetch, and not at all if the repo stays unreachable. Another instance of the record-**selection** consistency class, not a derivation bug.
-
-  **Not a classification problem.** A deliberate move to a *known* base URL is a success (the collector tries each in turn and stops at the first that works), so the failure branch can never be a move to a configured URL. "All URLs failed" means transient *or* genuinely gone — and both want the same treatment, so they need not be told apart.
-
-  **Strategic fix:** on failure, if a row already exists for that name, mark **that** row failed — its real URL and scan history are already known, so do not invent one. Only insert a failed row when no row exists (a genuinely new repo that clones nowhere). This keeps failed clones visible in the UI with their reason, which is the requirement, while preserving one row per name. Consider also making the invariant structural: `git_repos_name_key` (UNIQUE on name) was dropped in `migrations/0009_natural_keys.up.sql:517`; restoring it and switching the upserts to `ON CONFLICT (name) DO UPDATE ... SET git_repo_url = EXCLUDED.git_repo_url` would enforce one-row-per-name in the schema and make `DeleteStaleGitRepos` unnecessary. Found 2026-07-14.
-
 ## Backend — Code Smells
 
 - [ ] `DataStore` interface has 190 methods (`webapi/store.go`, up from 138 — the cookstyle status/classification/fingerprint cluster on `feature/cookstyle-violations-browser` added ~10 + ~450 lines of `store_mock_test.go`) — split into domain-specific sub-interfaces (nodes, cookbooks, kitchen, auth, config, **cookstyle**) composed into the full interface. The cookstyle methods are the cleanest first slice to extract (`CookstyleStore`) since they were all added together. **Queued for its own branch after the cookstyle branch merges.**

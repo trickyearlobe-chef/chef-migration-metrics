@@ -2,9 +2,9 @@
 
 Single source of truth for what is in flight. **Read this first at session start.**
 
-## Branch map (2026-07-13)
+## Branch map (2026-07-14)
 
-- `main` — holds all merged work.
+- `main` — holds all merged work. Released line: **v2.16.2**.
 - **Parked** `fix/node-list-count-split` — P3: split the node-list `COUNT(*) OVER()`
   into a separate count query (WIP, compiles, tests NOT run). **Low urgency,
   deploy-risky** (shared node-list + export read path) → the nodes page is not
@@ -14,16 +14,9 @@ Single source of truth for what is in flight. **Read this first at session start
   deprioritised behind feature delivery. Don't nag to merge (see [[spec-drift-parked]]).
 - No other branches in flight. Start new work on a fresh branch.
 
-Recently merged to `main` + released as **v2.16.2**: Cop Analysis Server/Git tabs
-(`plans/cop-analysis-tabs.md`) + drill-down click-throughs to cookbook/repo pages.
-Earlier this session (in v2.16.1 line): P1 GIN index on `node_snapshots.cookbooks`;
-P2 roles `role_summary` fix closure.
-
-## NOW — next up (pick one after the Cop Analysis merge)
+## NOW — next up
 
 - **CookStyle Reliability / Trustworthy Reds** (queued below) — feature work.
-- **God-handler split** — `handle_cookstyle_cops.go` (1044 lines) per REST resource;
-  now unblocked (its Cop Analysis backend churn just landed). See tech-debt todo.
 
 ## Queued — CookStyle Reliability / Trustworthy Reds (`plans/cookstyle-reliability.md`)
 
@@ -38,11 +31,13 @@ Chunks A/B/D landed. Open: **E** (drift sweep — the parked `chore/spec-drift-r
 branch is its output); **C** (criteria↔test linkage). 5 specs still WARN on
 copied-contract (`diagnostic-bundle`, `system-health-*`) — fold into E.
 
-## Queued — post-merge structural refactors (own branches, `todo-tech-debt.md`)
+## Queued — structural refactors (own branches, `todo-tech-debt.md`)
 
 - `CookstyleStore` sub-interface split (DataStore at 190 methods).
-- Split the 978-line `handle_cookstyle_cops.go` god-handler per REST resource.
-  (Note: overlaps the Cop Analysis backend work — sequence after it.)
+- Extract pipeline stages from the two remediation god-handlers
+  (`handle_cookbook_remediation.go`, `handle_git_repo_remediation.go` — each is
+  one ~480-line function). No shared extraction between them; they serve
+  different sources.
 
 ## Deferred proposal — event ingest (`plans/proposal-event-ingest.md`)
 
