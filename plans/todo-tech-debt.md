@@ -343,6 +343,18 @@ Recorded 2026-07-09 (roles list perf `role_summary` materialisation, chunk 3 rol
 
 - [ ] **The roles list rolls up per-org `role_summary` rows, but the role detail page is single-org.** A role that exists in multiple orgs is stored per `(org, role)` in `role_summary`; the list combines those rows (cookbook/compat **counts → MAX** across orgs, compatibility **status → worst-of**, **node_count → SUM** — deliberately matching the pre-materialisation behaviour). The detail page (`role_detail.go` — nested chain, transitive cookbook list, blocking cookbooks, dependency graph) is built from **`orgs[0]` only** (first org alphabetically; graph endpoint also accepts `?organisation=`). In **steady state the orgs are identical**, so `MAX` = `orgs[0]` = every org and all surfaces agree. During **promotion** (orgs transiently diverge) the list count (e.g. 7 cookbooks, the max) can disagree with the deps view (e.g. 5, `orgs[0]`'s set) — a cross-view value-mismatch instance that is inherent to the detail page being single-org, not to the list's aggregation. **Strategic fix (if it matters):** give the detail page an org-aware view (per-org tabs, or aggregate to match the list's selection) so list↔detail share record selection. Low priority — divergence is transient and expected.
 
+## Role Dependency Graph Carries No Cookbook Version (the Node Graph Does)
+
+Recorded 2026-07-14 (cookbook detail redesign — `specifications/cookbook-detail.md`).
+
+- [ ] **`RoleGraphNode` has no `version`, while `NodeGraphNode` does** (`frontend/src/types/roles.ts` vs `types/nodes.ts`). The node dependency tree therefore links a cookbook straight to its version, and even renders `@{version}` beside it, while the role graph and the ownership blocking-cookbook list can only link to the cookbook *name* — forcing those callers through the version chooser. Same for `BlockingCookbookSummary` (`types/ownership.ts`), which the ownership payload aggregates by name with no version. **Strategic fix:** carry the cookbook version on the role-graph and ownership payloads, as the node graph already does, then link those callers straight to `/cookbooks/:name/:version`. Needs a backend payload change (not frontend-only), which is why it was left out of the cookbook-detail work. Low priority — the chooser handles it correctly today; this would just save a click.
+
+## Cookbook Remediation Route Ignores Organisation
+
+Recorded 2026-07-14 (cookbook detail redesign).
+
+- [ ] **`handle_cookbook_remediation.go` resolves a cookbook by name+version and never reads `organisation`**, though `server_cookbook_cookstyle_results` is keyed by `(organisation_name, cookbook_name, cookbook_version, target_chef_version)`. The same name+version in two organisations is therefore ambiguous on `/cookbooks/:name/:version/remediation` — whichever row the query returns first wins, silently. Pre-existing; surfaced (not caused) by the per-version detail page, which does carry the organisation. **Strategic fix:** thread `organisation` through the route and the query. Another instance of the cross-view record-selection family — the fix is to make the selection explicit, not to derive it.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.
