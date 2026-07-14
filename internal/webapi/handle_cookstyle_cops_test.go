@@ -686,7 +686,7 @@ func TestRunReclassification_RunsPropagationClosure(t *testing.T) {
 	}
 	scorer := &mockComplexityRescorer{}
 	readiness := &mockReadinessRecomputer{}
-	r.cookstylePropagator = NewCookstylePropagator(propStore, scorer, readiness, defaultRulesFn, nil)
+	r.cookstylePropagator = NewCookstylePropagator(propStore, scorer, readiness, nil)
 
 	r.runReclassification(context.Background(), "Chef/Style/Foo", "18")
 

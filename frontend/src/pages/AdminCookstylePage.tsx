@@ -7,11 +7,8 @@ import {
   saveAnalysisTools,
   rescanAllCookstyle,
   type AnalysisToolsConfig,
-  type CookstyleFailurePreset,
-  COOKSTYLE_PRESETS,
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
-import { CookstyleFailureRulesGrid } from "../components/CookstyleFailureRulesGrid";
 import { AdminCustomCopsSection } from "./AdminCustomCopsSection";
 import { AdminCopClassificationsSection } from "./AdminCopClassificationsSection";
 import { AdminCopInventorySection } from "./AdminCopInventorySection";
@@ -19,32 +16,9 @@ import { AdminCopInventorySection } from "./AdminCopInventorySection";
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
 
-function detectPreset(rules: Record<string, string[]>): CookstyleFailurePreset {
-  for (const name of ["strict", "default", "relaxed"] as const) {
-    const preset = COOKSTYLE_PRESETS[name];
-    if (JSON.stringify(normalizeRules(preset)) === JSON.stringify(normalizeRules(rules))) {
-      return name;
-    }
-  }
-  return "custom";
-}
-
-function normalizeRules(rules: Record<string, string[]>): Record<string, string[]> {
-  const sorted: Record<string, string[]> = {};
-  for (const key of Object.keys(rules).sort()) {
-    sorted[key] = [...(rules[key] ?? [])].sort();
-  }
-  return sorted;
-}
-
 export function AdminCookstylePage() {
   const [config, setConfig] = useState<AnalysisToolsConfig | null>(null);
   const [saved, setSaved] = useState<AnalysisToolsConfig | null>(null);
-  const [failurePreset, setFailurePreset] = useState<CookstyleFailurePreset>("default");
-  const [failureRules, setFailureRules] = useState<Record<string, string[]>>(
-    COOKSTYLE_PRESETS["default"],
-  );
-  const [savedRulesJSON, setSavedRulesJSON] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -74,10 +48,6 @@ export function AdminCookstylePage() {
         if (cancelled) return;
         setConfig(data.value);
         setSaved(data.value);
-        const effectiveRules = data.effective_failure_rules ?? COOKSTYLE_PRESETS["default"];
-        setFailureRules(effectiveRules);
-        setSavedRulesJSON(JSON.stringify(normalizeRules(effectiveRules)));
-        setFailurePreset(detectPreset(effectiveRules));
       })
       .catch((err: unknown) => {
         if (!cancelled)
@@ -107,21 +77,13 @@ export function AdminCookstylePage() {
   if (!config) return null;
 
   const cookstyleEnabled = config.cookstyle_enabled ?? true;
-  const configDirty = JSON.stringify(config) !== JSON.stringify(saved);
-  const rulesDirty = JSON.stringify(normalizeRules(failureRules)) !== savedRulesJSON;
-  const isDirty = configDirty || rulesDirty;
+  const isDirty = JSON.stringify(config) !== JSON.stringify(saved);
 
   function handleChange<K extends keyof AnalysisToolsConfig>(
     key: K,
     value: AnalysisToolsConfig[K],
   ) {
     setConfig((prev) => (prev ? { ...prev, [key]: value } : prev));
-    setSuccessMsg(null);
-  }
-
-  function handleRulesChange(preset: CookstyleFailurePreset, rules: Record<string, string[]>) {
-    setFailurePreset(preset);
-    setFailureRules(rules);
     setSuccessMsg(null);
   }
 
@@ -133,8 +95,6 @@ export function AdminCookstylePage() {
     const payload: AnalysisToolsConfig = {
       ...config,
       cookstyle_enabled: config.cookstyle_enabled ?? true,
-      cookstyle_failure_preset: failurePreset === "custom" ? "" : failurePreset,
-      cookstyle_failure_rules: failurePreset === "custom" ? failureRules : undefined,
       // Drop blank lines the operator left while editing the path list.
       cookstyle_addon_cop_paths: (config.cookstyle_addon_cop_paths ?? [])
         .map((p) => p.trim())
@@ -144,7 +104,6 @@ export function AdminCookstylePage() {
       const { value: updated, verdictsChanged } = await saveAnalysisTools(payload);
       setConfig(updated);
       setSaved(updated);
-      setSavedRulesJSON(JSON.stringify(normalizeRules(failureRules)));
       const verdictText =
         verdictsChanged != null && verdictsChanged > 0
           ? ` ${verdictsChanged} cookbook verdict${verdictsChanged === 1 ? "" : "s"} changed.`
@@ -164,7 +123,7 @@ export function AdminCookstylePage() {
       <div className="max-w-3xl">
         <h2 className="text-xl font-semibold text-gray-900">CookStyle</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Controls CookStyle scanning behaviour and failure rules. CookStyle analyses cookbook code
+          Controls CookStyle scanning behaviour. CookStyle analyses cookbook code
           for deprecations, correctness issues, and style violations.
         </p>
       </div>
@@ -244,6 +203,26 @@ export function AdminCookstylePage() {
         </p>
       </div>
 
+      {saveError && <ErrorAlert message="Failed to save" detail={saveError} />}
+
+      {successMsg && (
+        <div className="max-w-2xl rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {successMsg}
+        </div>
+      )}
+
+      <div className="max-w-2xl flex justify-end">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || !isDirty}
+          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+        >
+          {saving && <InlineSpinner />}
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+
       {/* Rescan all — destructive maintenance action */}
       <div className="max-w-3xl rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
@@ -319,50 +298,6 @@ export function AdminCookstylePage() {
 
       {/* Custom Cops section */}
       <AdminCustomCopsSection />
-
-      {/* Separator */}
-      <hr className="my-6 border-gray-200" />
-
-      {/* Fallback rules — de-emphasised; applies to cops with no explicit classification */}
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 shadow-sm">
-        <h3 className="text-lg font-medium text-gray-900">Fallback Rules</h3>
-        <p className="mb-4 mt-1 text-sm text-gray-500">
-          Severity-based pass/fail, applied only to cops with{" "}
-          <strong>no explicit classification</strong> — those with no operator override,
-          verified removal, or structural-noise decision, which otherwise resolve to the
-          review default. Classify a cop above and these rules no longer apply to it.
-        </p>
-        <CookstyleFailureRulesGrid
-          preset={failurePreset}
-          rules={failureRules}
-          onChange={handleRulesChange}
-          disabled={saving}
-        />
-
-        {saveError && (
-          <div className="mt-4">
-            <ErrorAlert message="Failed to save" detail={saveError} />
-          </div>
-        )}
-
-        {successMsg && (
-          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            {successMsg}
-          </div>
-        )}
-
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || !isDirty}
-            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-          >
-            {saving && <InlineSpinner />}
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

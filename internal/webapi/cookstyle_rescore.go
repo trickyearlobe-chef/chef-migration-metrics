@@ -43,16 +43,15 @@ type RescoreResult struct {
 }
 
 // RescoreCookstyleResults re-evaluates all stored cookstyle results against the
-// given failure rules, updating the passed column for any row whose verdict has
-// changed. It then triggers compatibility status recomputation for affected git
-// repos. The logger is optional (nil-safe).
-func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, rules analysis.CookstyleFailureRules, logger func(level, msg string)) (RescoreResult, error) {
+// current classification, updating the passed column for any row whose verdict
+// has changed. It then triggers compatibility status recomputation for affected
+// git repos. The logger is optional (nil-safe).
+func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, logger func(level, msg string)) (RescoreResult, error) {
 	var result RescoreResult
 
 	// Memoise one classification resolver per target version so the override
 	// load happens once per target rather than once per result. The resolver
-	// applies operator overrides, RemovedIn auto-seed, and curated defaults;
-	// severity-based failure rules are only the fallback for unclassified cops.
+	// applies operator overrides, RemovedIn auto-seed, and curated defaults.
 	resolverCache := map[string]*analysis.CopClassificationResolver{}
 	resolverFor := func(target string) *analysis.CopClassificationResolver {
 		if r, ok := resolverCache[target]; ok {
@@ -77,7 +76,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 		return result, fmt.Errorf("rescore: listing server results: %w", err)
 	}
 
-	serverUpdates := rescoreRows(serverRows, rules, resolverFor, &result)
+	serverUpdates := rescoreRows(serverRows, resolverFor, &result)
 	if len(serverUpdates) > 0 {
 		if err := store.BatchUpdateServerCookstylePassed(ctx, serverUpdates); err != nil {
 			return result, fmt.Errorf("rescore: updating server results: %w", err)
@@ -90,7 +89,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 		return result, fmt.Errorf("rescore: listing git results: %w", err)
 	}
 
-	gitUpdates := rescoreRows(gitRows, rules, resolverFor, &result)
+	gitUpdates := rescoreRows(gitRows, resolverFor, &result)
 	if len(gitUpdates) > 0 {
 		if err := store.BatchUpdateGitRepoCookstylePassed(ctx, gitUpdates); err != nil {
 			return result, fmt.Errorf("rescore: updating git results: %w", err)
@@ -118,10 +117,10 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, r
 	return result, nil
 }
 
-// rescoreRows evaluates a slice of rescore rows against the given rules,
-// collecting updates for rows whose verdict has changed. Rows with
-// error_message or nil/empty offences are skipped.
-func rescoreRows(rows []datastore.CookstyleRescoreRow, rules analysis.CookstyleFailureRules, resolverFor func(target string) *analysis.CopClassificationResolver, result *RescoreResult) []datastore.CookstylePassedUpdate {
+// rescoreRows evaluates a slice of rescore rows against the current
+// classification, collecting updates for rows whose verdict has changed. Rows
+// with error_message or nil/empty offences are skipped.
+func rescoreRows(rows []datastore.CookstyleRescoreRow, resolverFor func(target string) *analysis.CopClassificationResolver, result *RescoreResult) []datastore.CookstylePassedUpdate {
 	var updates []datastore.CookstylePassedUpdate
 
 	for i := range rows {
@@ -143,12 +142,11 @@ func rescoreRows(rows []datastore.CookstyleRescoreRow, rules analysis.CookstyleF
 		}
 
 		result.Total++
-		// Single source of truth: classification-derived status, with the
-		// severity failure rules only as the fallback for unclassified cops.
-		// Compare on the full rollup status (not just passed) so a change that
-		// keeps passed but moves ready↔needs_review still re-materialises.
+		// Single source of truth: classification-derived status. Compare on the
+		// full rollup status (not just passed) so a change that keeps passed but
+		// moves ready↔needs_review still re-materialises.
 		resolver := resolverFor(rescoreTargetFromID(row.ID))
-		newStatus := analysis.DeriveCookstyleStatus(offenses, rules, resolver)
+		newStatus := analysis.DeriveCookstyleStatus(offenses, resolver)
 		newPassed := newStatus != analysis.StatusBlocked
 		if newStatus != row.CookstyleStatus {
 			result.Changed++

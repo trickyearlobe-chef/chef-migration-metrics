@@ -13,7 +13,6 @@
 | [chef-api](chef-api.md) | Chef Infra Server API client and reference used by data collection. |
 | [configuration](configuration.md) | The application's full configuration surface, live-reloadable without restart. |
 | [cop-classification](cop-classification.md) | Per-cop migration impact classification (Blocker/Review/Noise), auto-seeded from RemovedIn, with operator overrides and custom cops. |
-| [cookstyle-failure-rules](cookstyle-failure-rules.md) | Configurable per-namespace severity thresholds for CookStyle pass/fail, with presets and auto re-score. Becomes fallback for unclassified cops — see cop-classification. |
 | [cookstyle-full-ruleset](cookstyle-full-ruleset.md) | Run the full CookStyle ruleset (drop `--only`) and let classification decide the verdict; load operator-supplied addon RuboCop cop files from disk; seed Noise defaults. |
 | [cookstyle-violations-browser](cookstyle-violations-browser.md) | ⚠️ Superseded by cop-classification. API endpoint retained; flat-list UI replaced by Cop Analysis view. |
 | [data-collection](data-collection.md) | Collecting node, cookbook, and git-repo data from Chef servers and Git. |

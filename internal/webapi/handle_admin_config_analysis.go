@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 )
@@ -39,12 +38,9 @@ func (r *Router) handleAdminConfigAnalysisTools(w http.ResponseWriter, req *http
 	}
 }
 
-// analysisToolsGetResponse wraps the standard config section JSON with the
-// resolved effective failure rules (so the UI can render the checkbox grid
-// without having to know preset definitions).
+// analysisToolsGetResponse wraps the standard config section JSON.
 type analysisToolsGetResponse struct {
-	Value                 json.RawMessage     `json:"value"`
-	EffectiveFailureRules map[string][]string `json:"effective_failure_rules"`
+	Value json.RawMessage `json:"value"`
 }
 
 func (r *Router) getAdminConfigAnalysisTools(w http.ResponseWriter) {
@@ -55,13 +51,8 @@ func (r *Router) getAdminConfigAnalysisTools(w http.ResponseWriter) {
 		WriteInternalError(w, "Failed to serialise config section.")
 		return
 	}
-	rules := analysis.EffectiveRules(
-		cfg.AnalysisTools.CookstyleFailurePreset,
-		cfg.AnalysisTools.CookstyleFailureRules,
-	)
 	WriteJSON(w, http.StatusOK, analysisToolsGetResponse{
-		Value:                 sections[configstore.KeyAnalysisTools],
-		EffectiveFailureRules: rules.Rules,
+		Value: sections[configstore.KeyAnalysisTools],
 	})
 }
 
@@ -149,15 +140,12 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	// Apply cookstyle re-score and capture result.
+	// Apply cookstyle re-score and capture result. The active target version can
+	// change here, which moves the verified-removal (RemovedIn ≤ target) verdict,
+	// so stored results are re-derived against the current classification.
 	var rescoreResult RescoreResult
 	if r.db != nil {
-		cfg := r.liveConfig()
-		rules := analysis.EffectiveRules(
-			cfg.AnalysisTools.CookstyleFailurePreset,
-			cfg.AnalysisTools.CookstyleFailureRules,
-		)
-		res, err := RescoreCookstyleResults(req.Context(), r.db, rules, r.logger)
+		res, err := RescoreCookstyleResults(req.Context(), r.db, r.logger)
 		if err != nil {
 			// Non-fatal: log the error but don't block the config save.
 			r.logf("ERROR", "admin/config/analysis_tools: apply rescore: %v", err)

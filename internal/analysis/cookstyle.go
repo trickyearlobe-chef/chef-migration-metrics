@@ -219,10 +219,6 @@ type CookstyleScanner struct {
 	// at the start of each batch so a config change takes effect on the next
 	// collection run without a restart. Falls back to the baked concurrency.
 	concurrencyFn func() int
-	// failureRulesFn, when set, returns the live failure rules, read at scan
-	// time so a config change takes effect on the next scan without a restart.
-	// Falls back to DefaultFailureRules().
-	failureRulesFn func() CookstyleFailureRules
 	// classificationOverridesFn, when set, returns the operator classification
 	// overrides for a target version, read at scan time. Falls back to loading
 	// from the datastore (or empty overrides when no db is configured).
@@ -250,13 +246,6 @@ func WithCookstyleConcurrencyFunc(fn func() int) CookstyleScannerOption {
 	return func(s *CookstyleScanner) { s.concurrencyFn = fn }
 }
 
-// WithCookstyleFailureRulesFn sets a live provider for the failure rules.
-// When set, the scanner reads the rules at scan time so a config change takes
-// effect on the next scan without a restart.
-func WithCookstyleFailureRulesFn(fn func() CookstyleFailureRules) CookstyleScannerOption {
-	return func(s *CookstyleScanner) { s.failureRulesFn = fn }
-}
-
 // WithCookstyleClassificationOverridesFn wires a live provider of operator
 // classification overrides (cop_name → classification) for a target version,
 // read at scan time. When unset, overrides are loaded from the datastore.
@@ -280,15 +269,6 @@ func (s *CookstyleScanner) effectiveConcurrency() int {
 		}
 	}
 	return s.concurrency
-}
-
-// effectiveFailureRules returns the live failure rules when a provider is
-// wired, otherwise the default rules.
-func (s *CookstyleScanner) effectiveFailureRules() CookstyleFailureRules {
-	if s.failureRulesFn != nil {
-		return s.failureRulesFn()
-	}
-	return DefaultFailureRules()
 }
 
 // buildResolver constructs a cop classification resolver for the given target
@@ -627,7 +607,7 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	}
 
 	resolver := s.buildResolver(ctx, targetChefVersion)
-	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, resolver)
 	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.
@@ -775,7 +755,7 @@ func (s *CookstyleScanner) scanOneGitRepo(
 	}
 
 	resolver := s.buildResolver(ctx, targetChefVersion)
-	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, resolver)
 	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.

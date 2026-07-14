@@ -152,10 +152,8 @@ type ConcurrencyConfig struct {
 // cookstyle/kitchen binaries are resolved from PATH (provided by Chef
 // Workstation); they are not bundled.
 type AnalysisToolsConfig struct {
-	CookstyleEnabled        *bool               `yaml:"cookstyle_enabled"`
-	CookstyleTimeoutMinutes int                 `yaml:"cookstyle_timeout_minutes"`
-	CookstyleFailurePreset  string              `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
-	CookstyleFailureRules   map[string][]string `yaml:"cookstyle_failure_rules" json:"cookstyle_failure_rules"`
+	CookstyleEnabled        *bool `yaml:"cookstyle_enabled"`
+	CookstyleTimeoutMinutes int   `yaml:"cookstyle_timeout_minutes"`
 	// CookstyleAddonCopPaths lists operator-supplied RuboCop cop files (real .rb
 	// cop classes) on the app host to load into every scan. Entries may be
 	// files, directories (expanded to *.rb), or globs. Trust boundary is
@@ -951,9 +949,6 @@ func (c *Config) setDefaults() {
 		t := true
 		c.AnalysisTools.CookstyleEnabled = &t
 	}
-	if c.AnalysisTools.CookstyleFailurePreset == "" {
-		c.AnalysisTools.CookstyleFailurePreset = "default"
-	}
 	if c.AnalysisTools.TestKitchen.Enabled == nil {
 		t := true
 		c.AnalysisTools.TestKitchen.Enabled = &t
@@ -1436,9 +1431,6 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		ve.add("analysis_tools.cookstyle_timeout_minutes must be >= 1")
 	}
 
-	// Validate cookstyle failure rules.
-	c.validateCookstyleFailureRules(ve)
-
 	// Addon cop paths must be non-empty and syntactically valid glob patterns.
 	// Whether each path actually resolves to .rb files is checked at scan time
 	// and surfaced as a non-fatal problem, not here — the path may legitimately
@@ -1584,35 +1576,6 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		}
 		if !allCovered {
 			w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or per-image chef_download_urls for Chef 19+ installation", v)
-		}
-	}
-}
-
-// validCookstyleSeverities is the set of valid RuboCop severity levels.
-var validCookstyleSeverities = map[string]bool{
-	"convention": true,
-	"refactor":   true,
-	"warning":    true,
-	"error":      true,
-	"fatal":      true,
-}
-
-func (c *Config) validateCookstyleFailureRules(ve *ValidationError) {
-	preset := c.AnalysisTools.CookstyleFailurePreset
-	validPresets := map[string]bool{"strict": true, "default": true, "relaxed": true}
-	if preset != "" && !validPresets[preset] {
-		ve.addf("analysis_tools.cookstyle_failure_preset must be one of strict, default, relaxed; got %q", preset)
-	}
-
-	for key, severities := range c.AnalysisTools.CookstyleFailureRules {
-		if key == "" {
-			ve.add("analysis_tools.cookstyle_failure_rules: keys must be non-empty")
-			continue
-		}
-		for _, sev := range severities {
-			if !validCookstyleSeverities[sev] {
-				ve.addf("analysis_tools.cookstyle_failure_rules[%q]: invalid severity %q", key, sev)
-			}
 		}
 	}
 }

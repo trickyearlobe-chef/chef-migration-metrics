@@ -83,7 +83,7 @@ func TestFunctional_BackfillCookstyleStatus_RecoversNeedsReview(t *testing.T) {
 		t.Fatalf("precondition: coarse status = %q, want ready", before.CookstyleStatus)
 	}
 
-	res, err := analysis.BackfillCookstyleStatus(ctx, db, analysis.DefaultFailureRules())
+	res, err := analysis.BackfillCookstyleStatus(ctx, db)
 	if err != nil {
 		t.Fatalf("BackfillCookstyleStatus: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestFunctional_BackfillCookstyleStatus_RecoversNeedsReview(t *testing.T) {
 	// Idempotent: a second pass leaves the now-precise row at needs_review.
 	// (The global change count may be non-zero if other tests left coarse rows
 	// in the shared DB, so the invariant is asserted at the row level.)
-	if _, err := analysis.BackfillCookstyleStatus(ctx, db, analysis.DefaultFailureRules()); err != nil {
+	if _, err := analysis.BackfillCookstyleStatus(ctx, db); err != nil {
 		t.Fatalf("second BackfillCookstyleStatus: %v", err)
 	}
 	again, err := db.GetServerCookbookCookstyleResult(ctx, org, cb, "1.0.0", "18")

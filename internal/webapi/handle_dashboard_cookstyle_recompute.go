@@ -51,7 +51,6 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 	}
 
 	ctx := req.Context()
-	rules := r.cookstyleFailureRules()
 	targetVersions := r.liveConfig().TargetChefVersionList()
 
 	// Live result keys per target — the current-membership set the fingerprint
@@ -107,7 +106,7 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 				continue
 			}
 			times := analysis.DistinctScanTimes(part.histories)
-			for _, p := range analysis.RecomputeTrend(part.histories, times, rules, resolver) {
+			for _, p := range analysis.RecomputeTrend(part.histories, times, resolver) {
 				roll := p.Rollup
 				points = append(points, cookstyleRecomputeTrendPoint{
 					TargetChefVersion: tv,

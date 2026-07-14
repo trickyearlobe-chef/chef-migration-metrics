@@ -23,17 +23,16 @@ import (
 // Criteria and specifications/cop-classification.md → History.
 
 // DeriveStatusFromFingerprint re-derives the rollup status from a result's stored
-// offence fingerprint under the given failure rules + resolver. It is exactly the
-// scan-time derivation (DeriveCookstyleStatus delegates to the same core): a cop's
+// offence fingerprint under the given resolver. It is exactly the scan-time
+// derivation (DeriveCookstyleStatus delegates to the same core): a cop's
 // occurrence count is collapsed in the fingerprint but does not affect status —
-// one blocker blocks, one review needs review, one unclassified severity-fail
-// blocks. An empty fingerprint is Ready (a clean scan). Untested is the caller's
-// concern when no fingerprint exists at all for a result at time T.
-func DeriveStatusFromFingerprint(cops []datastore.FingerprintCopEntry, rules CookstyleFailureRules, resolver *CopClassificationResolver) string {
-	// rules is retained in the signature for call-site stability but no longer
-	// participates in the verdict: severity is the signal this feature exists to
-	// distrust, so it never produces a red. Only a Blocker classification blocks.
-	_ = rules
+// one blocker blocks, one review needs review. An empty fingerprint is Ready (a
+// clean scan). Untested is the caller's concern when no fingerprint exists at all
+// for a result at time T.
+//
+// Severity is never a source: it is the signal this feature exists to distrust,
+// so it never produces a red. Only a Blocker classification blocks.
+func DeriveStatusFromFingerprint(cops []datastore.FingerprintCopEntry, resolver *CopClassificationResolver) string {
 	hasReview := false
 	for i := range cops {
 		c := &cops[i]
@@ -163,12 +162,12 @@ func FingerprintValidAt(rows []datastore.CookstyleOffenceFingerprint, t time.Tim
 }
 
 // RecomputeRollupAt re-derives each member's rollup status and weighted CookStyle
-// complexity from its fingerprint valid at time t, under the given failure rules
-// and resolver, and aggregates them. Membership is the supplied set of histories
-// (bounded to CURRENT membership — membership-at-T history does not exist; see
+// complexity from its fingerprint valid at time t, under the given resolver, and
+// aggregates them. Membership is the supplied set of histories (bounded to CURRENT
+// membership — membership-at-T history does not exist; see
 // specifications/enriched-metric-snapshots.md → Limitations). The resolver must be
 // the one for the members' target version.
-func RecomputeRollupAt(histories []ResultFingerprintHistory, t time.Time, rules CookstyleFailureRules, resolver *CopClassificationResolver) RecomputedRollup {
+func RecomputeRollupAt(histories []ResultFingerprintHistory, t time.Time, resolver *CopClassificationResolver) RecomputedRollup {
 	var out RecomputedRollup
 	classifier := resolver // *CopClassificationResolver satisfies remediation.CopClassifier
 	for i := range histories {
@@ -178,7 +177,7 @@ func RecomputeRollupAt(histories []ResultFingerprintHistory, t time.Time, rules 
 			continue
 		}
 		out.MembersWithData++
-		switch DeriveStatusFromFingerprint(cops, rules, resolver) {
+		switch DeriveStatusFromFingerprint(cops, resolver) {
 		case StatusBlocked:
 			out.Blocked++
 		case StatusNeedsReview:
@@ -222,10 +221,10 @@ func DistinctScanTimes(histories []ResultFingerprintHistory) []time.Time {
 // trend point per time (ascending order preserved). It is the assembly the trend
 // endpoint serialises; current-membership and target scoping are the caller's
 // responsibility (the histories passed in are the membership).
-func RecomputeTrend(histories []ResultFingerprintHistory, times []time.Time, rules CookstyleFailureRules, resolver *CopClassificationResolver) []RecomputeTrendPoint {
+func RecomputeTrend(histories []ResultFingerprintHistory, times []time.Time, resolver *CopClassificationResolver) []RecomputeTrendPoint {
 	points := make([]RecomputeTrendPoint, 0, len(times))
 	for _, t := range times {
-		points = append(points, RecomputeTrendPoint{At: t, Rollup: RecomputeRollupAt(histories, t, rules, resolver)})
+		points = append(points, RecomputeTrendPoint{At: t, Rollup: RecomputeRollupAt(histories, t, resolver)})
 	}
 	return points
 }
