@@ -45,7 +45,7 @@ func TestBuildCookstyleArgs_DropsOnly_FullRuleset(t *testing.T) {
 // TestDeriveStatus_BlockerOutsideDepartments_Blocked proves that once the
 // scan stops hiding it, a Blocker-classified cop OUTSIDE Deprecations/
 // Correctness (Lint/DeprecatedClassMethods, curated Blocker at target >= 18)
-// drives the rollup to Blocked under the default failure rules.
+// drives the rollup to Blocked purely on its classification.
 func TestDeriveStatus_BlockerOutsideDepartments_Blocked(t *testing.T) {
 	offenses := []CookstyleOffense{
 		// File.exists? — curated Blocker at >= 18.0, severity is a mere warning,
