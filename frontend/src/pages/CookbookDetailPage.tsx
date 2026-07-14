@@ -8,11 +8,16 @@ import {
 import type {
   CookbookDetailResponse,
   CookbookPlatformCoverage,
+  ServerCookbookVersionDetail,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { PlatformCoverageCard } from "../components/PlatformCoverageCard";
 import { StatusBadge, CookStyleStatusBadge, TKBadge } from "../components/StatusBadge";
 import { CookstyleResultRow } from "../components/CookstyleResultRow";
+import {
+  partitionVersionsByActive,
+  inactiveOpenByDefault,
+} from "./cookbookVersions";
 
 /** Small helper – renders a label/value row in the metadata grid. */
 function MetaRow({
@@ -51,6 +56,10 @@ function MapBadges({ map }: { map?: Record<string, string> }) {
 
 export function CookbookDetailPage() {
   const [expandedMeta, setExpandedMeta] = useState<Record<string, boolean>>({});
+  // null until the operator touches it — the default depends on whether there is
+  // anything active to show, which is not known until the data loads.
+  const [inactiveOpen, setInactiveOpen] = useState<boolean | null>(null);
+  const [activeOpen, setActiveOpen] = useState(true);
 
   const toggleMeta = (key: string) =>
     setExpandedMeta((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -103,6 +112,11 @@ export function CookbookDetailPage() {
   if (loading) return <LoadingSpinner message="Loading cookbook detail…" />;
   if (error) return <ErrorAlert message={error} onRetry={load} />;
   if (!data) return null;
+
+  // The unused tail is usually the majority during a migration; collapsing it stops
+  // it burying the versions still in use.
+  const { active: activeVersions, inactive: inactiveVersions } =
+    partitionVersionsByActive(data.server_cookbooks ?? []);
 
   const hasGitRepos = data.git_repos && data.git_repos.length > 0;
   const hasServerCookbooks =
@@ -224,10 +238,62 @@ export function CookbookDetailPage() {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
             Chef Server Versions
           </h3>
-          {data.server_cookbooks.map((vd, idx) => {
-            const cb = vd.cookbook;
-            return (
-              <div key={`sc-${idx}`} className="card">
+          {renderVersionGroup(
+            `Active versions (${activeVersions.length})`,
+            activeVersions,
+            activeOpen,
+            () => setActiveOpen((v) => !v),
+          )}
+          {renderVersionGroup(
+            `Inactive versions (${inactiveVersions.length})`,
+            inactiveVersions,
+            inactiveOpen ?? inactiveOpenByDefault(activeVersions.length),
+            () =>
+              setInactiveOpen(
+                (v) => !(v ?? inactiveOpenByDefault(activeVersions.length)),
+              ),
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  /**
+   * One collapsible group of versions. Rendered empty-group-free: a cookbook with
+   * no unused versions shows no "Inactive" section at all, rather than an empty one.
+   */
+  function renderVersionGroup(
+    title: string,
+    versions: ServerCookbookVersionDetail[],
+    open: boolean,
+    onToggle: () => void,
+  ) {
+    if (versions.length === 0) return null;
+
+    return (
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900"
+        >
+          <span className="text-xs">{open ? "▼" : "▶"}</span>
+          {title}
+        </button>
+        {open && versions.map(renderVersionCard)}
+      </div>
+    );
+  }
+
+  function renderVersionCard(vd: ServerCookbookVersionDetail) {
+    const cb = vd.cookbook;
+    // Key on (organisation, version) — the row's real identity. An array index
+    // would collide across the two groups (active[0] and inactive[0] would share
+    // a metadata toggle).
+    const idx = `${cb.organisation_name ?? ""}@${cb.version}`;
+    return (
+      <div key={`sc-${idx}`} className="card">
                 <div className="mb-4 flex flex-wrap items-center gap-3">
                   <h3 className="text-base font-semibold text-gray-800">
                     {cb.name}
@@ -337,11 +403,7 @@ export function CookbookDetailPage() {
                     </div>
                   </div>
                 )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  }
 }
