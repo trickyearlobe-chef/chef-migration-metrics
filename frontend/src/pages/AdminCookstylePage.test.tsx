@@ -24,7 +24,6 @@ const mockResponse = {
     cookstyle_timeout_minutes: 30,
     cookstyle_addon_cop_paths: ["/opt/cops/no_eval.rb"],
   },
-  effective_failure_rules: { "*": ["error", "fatal"] },
 };
 
 describe("AdminCookstylePage", () => {
@@ -66,25 +65,17 @@ describe("AdminCookstylePage", () => {
     );
   });
 
-  it("renders the fallback rules grid", async () => {
-    render(<AdminCookstylePage />);
-    await waitFor(() =>
-      expect(screen.getByText("Fallback Rules")).toBeInTheDocument(),
-    );
-    expect(screen.getByRole("combobox", { name: /preset/i })).toHaveValue("default");
-  });
-
   it("save button is disabled when no changes", async () => {
     render(<AdminCookstylePage />);
     await waitFor(() => screen.getByText("CookStyle"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
-  it("enables save when failure rules change", async () => {
+  it("enables save when config changes", async () => {
     render(<AdminCookstylePage />);
     await waitFor(() => screen.getByText("CookStyle"));
-    fireEvent.change(screen.getByRole("combobox", { name: /preset/i }), {
-      target: { value: "strict" },
+    fireEvent.change(screen.getByDisplayValue("30"), {
+      target: { value: "45" },
     });
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
   });
@@ -126,8 +117,8 @@ describe("AdminCookstylePage", () => {
     } as never);
     render(<AdminCookstylePage />);
     await waitFor(() => screen.getByText("CookStyle"));
-    fireEvent.change(screen.getByRole("combobox", { name: /preset/i }), {
-      target: { value: "strict" },
+    fireEvent.change(screen.getByDisplayValue("30"), {
+      target: { value: "45" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
@@ -143,8 +134,8 @@ describe("AdminCookstylePage", () => {
     } as never);
     render(<AdminCookstylePage />);
     await waitFor(() => screen.getByText("CookStyle"));
-    fireEvent.change(screen.getByRole("combobox", { name: /preset/i }), {
-      target: { value: "strict" },
+    fireEvent.change(screen.getByDisplayValue("30"), {
+      target: { value: "45" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>

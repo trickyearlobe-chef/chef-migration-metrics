@@ -29,14 +29,6 @@ export type {
   AcmeStatus,
   AuthConfig,
   AuthProvider,
-  CookstyleFailurePreset,
-  CookstyleSeverity,
-} from "../types/config";
-export {
-  COOKSTYLE_SEVERITIES,
-  COOKSTYLE_NAMESPACES,
-  COOKSTYLE_NAMESPACE_LABELS,
-  COOKSTYLE_PRESETS,
 } from "../types/config";
 import { apiFetch, buildUrl } from "./client";
 
@@ -131,7 +123,6 @@ export function saveConcurrency(
 
 export interface AnalysisToolsGetResponse {
   value: AnalysisToolsConfig;
-  effective_failure_rules: Record<string, string[]>;
 }
 
 export function fetchAnalysisTools(): Promise<AnalysisToolsGetResponse> {
