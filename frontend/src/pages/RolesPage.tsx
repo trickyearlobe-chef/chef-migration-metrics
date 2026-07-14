@@ -13,7 +13,10 @@ import type {
   RoleSummary,
   Pagination as PaginationType,
   ExportParams,
+  SavedFilterParams,
 } from "../types";
+import { SavedFilterBar } from "../components/SavedFilterBar";
+import { roleStateToParams, paramsToRoleState } from "./listSavedFilters";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { CookStyleBadge, TKBadge } from "../components/StatusBadge";
@@ -202,6 +205,26 @@ export function RolesPage() {
     setTkStatus([]);
   };
 
+  // The current selection in the vocabulary a saved filter stores. Sort, page and
+  // the global lens are deliberately not in here.
+  const currentFilterParams = useMemo<SavedFilterParams>(
+    () => roleStateToParams({ nameFilter, compatibility, tkStatus }),
+    [nameFilter, compatibility, tkStatus],
+  );
+
+  /**
+   * Apply a saved selection: set the filter state and nothing else. Sort and the
+   * global lens are how the operator is reading the list, not part of the named
+   * cohort — only `page` resets, as it does for any filter change.
+   */
+  const applySavedFilter = useCallback((params: SavedFilterParams) => {
+    const next = paramsToRoleState(params);
+    setNameFilter(next.nameFilter);
+    setCompatibility(next.compatibility);
+    setTkStatus(next.tkStatus);
+    setPage(1);
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -255,6 +278,11 @@ export function RolesPage() {
             Clear ({activeFilterCount})
           </button>
         )}
+        <SavedFilterBar
+          view="roles"
+          currentParams={currentFilterParams}
+          onApply={applySavedFilter}
+        />
       </div>
 
       {loading && <LoadingSpinner message="Loading roles…" />}

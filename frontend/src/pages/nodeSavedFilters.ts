@@ -2,22 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // ---------------------------------------------------------------------------
-// Mapping between the Nodes filter bar's state and the query-param selection a
-// saved filter stores (see specifications/saved-filters.md).
+// The Nodes view's saved-filter mapping, and its stale-reference check.
 //
-// The param names here are the Nodes view's request vocabulary — the same names
-// handle_nodes.go parses and internal/webapi/saved_filter_params.go allows.
-// Adding a filter to the Nodes page means adding it in all three places, or it
-// cannot be saved.
+// The generic mapping lives in savedFilterMapping.ts; what is Nodes-specific is
+// the param table below (the view's request vocabulary) and the role check —
+// Nodes is the only list view whose filters name *entities* that can disappear.
 //
-// Deliberately absent: sort, order, page, per_page (view state, not a filter);
-// target_chef_version and stale_tiers (the global lens, owned by
-// GlobalFilterContext); organisation (the org selector) and ready_to_activate
-// (no control on this page). The backend allows the last two but the filter bar
-// does not own them, so they are neither saved nor applied.
+// Not mapped: organisation (the org selector, not a filter-bar control) and
+// ready_to_activate (no control on this page). The backend allows both, but the
+// filter bar does not own them, so they are neither saved nor applied.
 // ---------------------------------------------------------------------------
 
 import type { SavedFilterParams } from "../types";
+import {
+  stateToParams,
+  paramsToState,
+  type FilterParamMap,
+} from "./savedFilterMapping";
 
 /** The Nodes filter bar's selection, keyed as NodesPage holds it. */
 export interface NodeFilterState {
@@ -54,64 +55,35 @@ export const EMPTY_NODE_FILTER_STATE: NodeFilterState = {
   targetVersionFilter: [],
 };
 
-/** Multi-value filters: state key -> query param name. */
-const LIST_PARAMS: [keyof NodeFilterState, string][] = [
-  ["environments", "environment"],
-  ["platforms", "platform"],
-  ["roles", "role"],
-  ["tags", "tags"],
-  ["policyNames", "policy_name"],
-  ["policyGroups", "policy_group"],
-  ["readinessFilter", "readiness_filter"],
-  ["cookstyleFilter", "cookstyle_status"],
-  ["kitchenFilter", "kitchen_status"],
-  ["deploymentStateFilter", "migration_state"],
-  ["convergeStatusFilter", "target_converge_status"],
-  ["targetVersionFilter", "target_version"],
-];
+export const NODE_FILTER_MAP: FilterParamMap<NodeFilterState> = {
+  lists: [
+    ["environments", "environment"],
+    ["platforms", "platform"],
+    ["roles", "role"],
+    ["tags", "tags"],
+    ["policyNames", "policy_name"],
+    ["policyGroups", "policy_group"],
+    // The URL drill-down param is `readiness`; the request param — and so the
+    // saved one — is `readiness_filter`.
+    ["readinessFilter", "readiness_filter"],
+    ["cookstyleFilter", "cookstyle_status"],
+    ["kitchenFilter", "kitchen_status"],
+    ["deploymentStateFilter", "migration_state"],
+    ["convergeStatusFilter", "target_converge_status"],
+    ["targetVersionFilter", "target_version"],
+  ],
+  scalars: [
+    ["nodeName", "node_name"],
+    ["chefVersion", "chef_version"],
+  ],
+};
 
-/** Single-value filters, stored as a one-element list. */
-const SCALAR_PARAMS: [keyof NodeFilterState, string][] = [
-  ["nodeName", "node_name"],
-  ["chefVersion", "chef_version"],
-];
-
-/** The current filter-bar selection as a storable param map. Empties omitted. */
 export function nodeStateToParams(state: NodeFilterState): SavedFilterParams {
-  const params: SavedFilterParams = {};
-
-  for (const [key, param] of LIST_PARAMS) {
-    const values = state[key] as string[];
-    if (values.length > 0) params[param] = [...values];
-  }
-
-  for (const [key, param] of SCALAR_PARAMS) {
-    const value = state[key] as string;
-    if (value) params[param] = [value];
-  }
-
-  return params;
+  return stateToParams(state, NODE_FILTER_MAP);
 }
 
-/**
- * A stored selection as filter-bar state. Params the filter bar does not own
- * are ignored, and params the selection omits are cleared — applying a named
- * cohort gives you that cohort, not that cohort merged with what you had set.
- */
 export function paramsToNodeState(params: SavedFilterParams): NodeFilterState {
-  const state: NodeFilterState = { ...EMPTY_NODE_FILTER_STATE };
-
-  for (const [key, param] of LIST_PARAMS) {
-    const values = params[param];
-    if (values) (state[key] as string[]) = [...values];
-  }
-
-  for (const [key, param] of SCALAR_PARAMS) {
-    const values = params[param];
-    if (values && values.length > 0) (state[key] as string) = values[0];
-  }
-
-  return state;
+  return paramsToState(params, EMPTY_NODE_FILTER_STATE, NODE_FILTER_MAP);
 }
 
 /**
