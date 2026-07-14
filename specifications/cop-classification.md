@@ -8,8 +8,7 @@
 > **Reliability model (v2 — trustworthy reds).** This revises the earlier
 > auto-seed/severity-fallback model. Two invariants drive it:
 > 1. **Single target.** There is exactly one active target Chef version. Cops are
->    classified per-cop, not per-target. (The old per-target machinery is removed
->    — see [cookstyle-reliability plan].)
+>    classified per-cop, not per-target. (The old per-target machinery is removed.)
 > 2. **Asymmetric confidence.** A wrong Blocker wastes effort (visible,
 >    recoverable); a wrong Noise *hides a real blocker* (silent, dangerous). So
 >    Noise needs a higher bar than Blocker, and anything uncertain falls to
@@ -384,19 +383,17 @@ link `?tab=cop-analysis` (optionally `&source=git`) migrates to the matching tab
 
 Admin page: **Admin → CookStyle → Cop Classification**
 
-Three sections:
+Two sections:
 
-1. **Classifications** — searchable list of **all** known cops (curated defaults +
-   `RemovedIn` mappings + scanned + custom), with a target-version selector, the
-   resolved classification + its source (operator_override / removed_in /
-   curated_default / unclassified), and per-cop override (with reason). Curated
-   defaults are visible as the seed; overrides layer on top. This is the missing
-   surface — today reclassification is only reachable inline from the Cop Analysis
-   drill-down.
-2. **Custom Cops** — CRUD for custom cop definitions (name, pattern, target version, classification)
-3. **Fallback rules** — the existing severity-based "Failure Rules" grid, reframed
-   and labelled as applying **only to unclassified cops** (de-emphasised / below
-   classification). Not removed — it remains the Unclassified fallback.
+1. **Classifications** — searchable list of **all** known cops (curated
+   `RemovedIn` mappings + scanned + custom) against the single active target, with
+   the resolved classification + its source (operator_override / custom_cop /
+   verified_removal / structural_noise / review_default) and a per-cop override
+   (with reason). Overrides layer on top of the resolved default.
+2. **Custom Cops** — CRUD for custom cop definitions (name, pattern, classification)
+
+There is no fallback-rules section: severity does not produce a verdict (see
+Retirement of Failure Rules), so there is nothing for such a grid to configure.
 
 ### Updated Cookbook/Git Repo Detail Views
 
@@ -491,7 +488,6 @@ deliberate behaviour change from the additive-fallback model.
 
 ## Related
 
-- [cookstyle-failure-rules.md](cookstyle-failure-rules.md) — Severity pass/fail, now **retired** as a verdict source
 - [cookstyle-violations-browser.md](cookstyle-violations-browser.md) — Superseded by this spec's Cop Analysis view
 - [analysis.md](analysis.md) — CookStyle invocation and output parsing (extended for custom cops)
 - `internal/remediation/copmapping.go` — Embedded cop mapping with `RemovedIn` data

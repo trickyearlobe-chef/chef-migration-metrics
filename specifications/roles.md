@@ -190,7 +190,7 @@ at the same points `git_repos` derived columns are recomputed:
 |---|---|
 | Collection run completion | structural (`node_count`, cookbook counts) + active-target (compat, tk) |
 | Target Chef version change | reset, then recompute active-target columns for the new target |
-| CookStyle failure-rules change / bulk rescore | active-target compat columns per target |
+| CookStyle bulk rescore (reclassification, target change) | active-target compat columns per target |
 | Cop reclassification (propagation closure) | active-target compat columns |
 | Kitchen exclusion change | active-target tk columns |
 

@@ -258,9 +258,9 @@ Trends recompute under the **current** classification criteria **going forward**
 **past trend points are frozen** and are not retroactively recomputed. The
 offense-level inputs needed to re-derive old points were never retained
 (snapshots store rolled-up aggregates), so historical points stay as captured and
-may reflect older criteria. A criteria change (reclassification, failure-rule or
-custom-cop edit, target-version add) recomputes current state and appends a new
-point under the new criteria; it does not rewrite history. An audit event marks
+may reflect older criteria. A criteria change (reclassification, custom-cop edit,
+target-version change) recomputes current state and appends a new point under the
+new criteria; it does not rewrite history. An audit event marks
 criteria changes so a step in a trend is explainable. See
 [cop-classification.md](cop-classification.md) § History and
 [enriched-metric-snapshots.md](enriched-metric-snapshots.md).

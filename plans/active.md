@@ -16,12 +16,8 @@ Single source of truth for what is in flight. **Read this first at session start
 
 ## NOW — next up
 
-1. **Failure-rules retirement** — the severity failure-rules subsystem is inert but
-   still threaded (`_ = rules`) and still has an admin grid implying it drives reds.
-   Drop the param from its call sites, delete the config/store/admin surfaces. See
-   `todo-tech-debt.md` ("Failure-rules subsystem now inert").
-2. **Saved Filters** (`plans/saved-filters.md`) — customer-requested feature.
-   **Outranks the remaining tech debt**, incl. the per-target teardown.
+- **Saved Filters** (`plans/saved-filters.md`) — customer-requested feature, start
+  at Chunk 1. **Outranks the remaining tech debt**, incl. the per-target teardown.
 
 ## Queued — Saved Filters (`plans/saved-filters.md`, spec `saved-filters.md`)
 
