@@ -42,6 +42,7 @@
 | [platform-display-names](platform-display-names.md) | Friendly display names for platforms. |
 | [platform-mapping-ui](platform-mapping-ui.md) | UI for mapping platforms to Test Kitchen images. |
 | [roles](roles.md) | Chef roles and their cookbook references. |
+| [saved-filters](saved-filters.md) | Named, owned, shareable filter selections on list views (e.g. a 20-role "All Windows OS" cohort on Nodes). |
 | [secrets-storage](secrets-storage.md) | Credential storage, encryption, master key management, and rotation. |
 | [semantic-contracts](semantic-contracts.md) | Semantic API/data contracts between components. |
 | [server-side-pagination](server-side-pagination.md) | Server-side pagination for list endpoints. |

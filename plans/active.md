@@ -16,14 +16,19 @@ Single source of truth for what is in flight. **Read this first at session start
 
 ## NOW — next up
 
-- **CookStyle Reliability / Trustworthy Reds** (queued below) — feature work.
+1. **Failure-rules retirement** — the severity failure-rules subsystem is inert but
+   still threaded (`_ = rules`) and still has an admin grid implying it drives reds.
+   Drop the param from its call sites, delete the config/store/admin surfaces. See
+   `todo-tech-debt.md` ("Failure-rules subsystem now inert").
+2. **Saved Filters** (`plans/saved-filters.md`) — customer-requested feature.
+   **Outranks the remaining tech debt**, incl. the per-target teardown.
 
-## Queued — CookStyle Reliability / Trustworthy Reds (`plans/cookstyle-reliability.md`)
+## Queued — Saved Filters (`plans/saved-filters.md`, spec `saved-filters.md`)
 
-Make CookStyle a reliable indicator (reds = "we know", Review = "operator decides",
-Noise = "provably harmless"); strip the non-existent per-target dimension. Durability
-#1 (dept defaults → Review-worklist) + #2 (drift) stay; #3 (DB seed) abandoned. Spec
-revision gated on user approval (Phase 1).
+Name and persist a filter selection on a list view (driving case: a ~20-role
+"All Windows OS" cohort on Nodes). Persistence + UI only — the multi-role filter
+already works (`NodeSnapshotFilter.Roles`). Private w/ explicit share; filters only
+(no sort/page); stale refs kept and warned on apply.
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
