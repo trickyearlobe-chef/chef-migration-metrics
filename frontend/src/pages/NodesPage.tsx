@@ -15,13 +15,21 @@ import {
   fetchFilterPolicyGroups,
   fetchFilterEnvironments,
   fetchFilterPlatforms,
+  fetchFilterRoles,
   type NodeFilterQuery,
 } from "../api";
 import type {
   NodeListItem,
   Pagination as PaginationType,
   ExportParams,
+  SavedFilterParams,
 } from "../types";
+import { SavedFilterBar } from "../components/SavedFilterBar";
+import {
+  nodeStateToParams,
+  paramsToNodeState,
+  staleRoleWarning,
+} from "./nodeSavedFilters";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StaleBadge, CookStyleBadge, TKBadge, DiskBadge, DeploymentStateBadge, ConvergeBadge } from "../components/StatusBadge";
@@ -178,6 +186,12 @@ export function NodesPage() {
   const [policyNameOptions, setPolicyNameOptions] = useState<string[]>([]);
   const [policyGroupOptions, setPolicyGroupOptions] = useState<string[]>([]);
   const [environmentOptions, setEnvironmentOptions] = useState<string[]>([]);
+  // The full role catalogue — not a dropdown (Role is a typeahead), but the
+  // reference a saved filter's roles are checked against on apply. Roles vanish
+  // during a migration and the operator has to be told, not quietly given a
+  // smaller cohort under the same name.
+  const [roleOptions, setRoleOptions] = useState<string[]>([]);
+  const [staleWarning, setStaleWarning] = useState<string | null>(null);
   const [platformOptions, setPlatformOptions] = useState<
     { value: string; label: string }[]
   >([]);
@@ -211,6 +225,12 @@ export function NodesPage() {
     fetchFilterEnvironments(org)
       .then((res) => setEnvironmentOptions(res.data ?? []))
       .catch(() => setEnvironmentOptions([]));
+
+    // An empty catalogue means "unknown", not "every role is gone" — see
+    // missingRoles, which stays silent rather than claiming a false shortfall.
+    fetchFilterRoles(org)
+      .then((res) => setRoleOptions(res.data ?? []))
+      .catch(() => setRoleOptions([]));
 
     fetchFilterPlatforms(org)
       .then((res) => {
@@ -354,7 +374,79 @@ export function NodesPage() {
     setDeploymentStateFilter([]);
     setConvergeStatusFilter([]);
     setTargetVersionFilter([]);
+    setStaleWarning(null);
   };
+
+  // The current filter-bar selection, in the vocabulary a saved filter stores.
+  // Sort, page and the global lens are deliberately not in here.
+  const currentFilterParams = useMemo<SavedFilterParams>(
+    () =>
+      nodeStateToParams({
+        nodeName,
+        environments,
+        platforms,
+        chefVersion,
+        roles,
+        tags,
+        policyNames,
+        policyGroups,
+        readinessFilter,
+        cookstyleFilter,
+        kitchenFilter,
+        deploymentStateFilter,
+        convergeStatusFilter,
+        targetVersionFilter,
+      }),
+    [
+      nodeName,
+      environments,
+      platforms,
+      chefVersion,
+      roles,
+      tags,
+      policyNames,
+      policyGroups,
+      readinessFilter,
+      cookstyleFilter,
+      kitchenFilter,
+      deploymentStateFilter,
+      convergeStatusFilter,
+      targetVersionFilter,
+    ],
+  );
+
+  /**
+   * Apply a saved selection: set the filter state and nothing else. Sort, page
+   * size and the global lens (target Chef version, staleness) are the operator's
+   * current reading of the fleet, not part of the named cohort — only `page`
+   * resets, as it does for any filter change.
+   *
+   * The saved roles are applied verbatim, including any that no longer exist:
+   * dropping them silently would shrink the cohort while keeping its name. The
+   * shortfall is reported instead.
+   */
+  const applySavedFilter = useCallback(
+    (params: SavedFilterParams) => {
+      const next = paramsToNodeState(params);
+      setNodeName(next.nodeName);
+      setEnvironments(next.environments);
+      setPlatforms(next.platforms);
+      setChefVersion(next.chefVersion);
+      setRoles(next.roles);
+      setTags(next.tags);
+      setPolicyNames(next.policyNames);
+      setPolicyGroups(next.policyGroups);
+      setReadinessFilter(next.readinessFilter);
+      setCookstyleFilter(next.cookstyleFilter);
+      setKitchenFilter(next.kitchenFilter);
+      setDeploymentStateFilter(next.deploymentStateFilter);
+      setConvergeStatusFilter(next.convergeStatusFilter);
+      setTargetVersionFilter(next.targetVersionFilter);
+      setPage(1);
+      setStaleWarning(staleRoleWarning(next.roles, roleOptions));
+    },
+    [roleOptions],
+  );
 
   // Readiness filtering is now handled server-side via readiness_filter and
   // target_chef_version query params. No client-side post-filtering needed.
@@ -373,6 +465,22 @@ export function NodesPage() {
           />
         </div>
       </div>
+
+      {/* A saved cohort that has rotted is signal, not corruption — say so rather
+          than quietly filtering on the survivors under the original name. */}
+      {staleWarning && (
+        <div className="flex items-start justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span>{staleWarning}</span>
+          <button
+            type="button"
+            onClick={() => setStaleWarning(null)}
+            aria-label="Dismiss stale role warning"
+            className="shrink-0 text-amber-600 hover:text-amber-900"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
@@ -527,6 +635,13 @@ export function NodesPage() {
             Clear ({activeFilterCount})
           </button>
         )}
+        {/* Sits with the filter actions, not up in the header: it acts on the
+            selection built in this row. */}
+        <SavedFilterBar
+          view="nodes"
+          currentParams={currentFilterParams}
+          onApply={applySavedFilter}
+        />
       </div>
 
       {/* Table */}

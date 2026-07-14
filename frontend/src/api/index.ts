@@ -23,3 +23,4 @@ export * from "./saml";
 export * from "./roles";
 export * from "./aliases";
 export * from "./cookstyle-violations";
+export * from "./savedFilters";

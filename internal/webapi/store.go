@@ -914,6 +914,32 @@ type DataStore interface {
 	// depth statistics per organisation. When includeNames is true, the top
 	// 10 deepest roles are also returned.
 	DependencyDepthStats(ctx context.Context, includeNames bool) (datastore.DepthStatsResult, error)
+
+	// -----------------------------------------------------------------
+	// Saved filters
+	// -----------------------------------------------------------------
+
+	// ListSavedFilters returns the saved filters visible to a user — their own
+	// plus every shared one — optionally narrowed to a single view.
+	ListSavedFilters(ctx context.Context, f datastore.SavedFilterListFilter) ([]datastore.SavedFilter, error)
+
+	// GetSavedFilter returns a saved filter by id. Returns datastore.ErrNotFound
+	// if no such filter exists.
+	GetSavedFilter(ctx context.Context, id string) (datastore.SavedFilter, error)
+
+	// InsertSavedFilter creates a saved filter. Returns datastore.ErrAlreadyExists
+	// if the owner already has one of that name on that view.
+	InsertSavedFilter(ctx context.Context, p datastore.InsertSavedFilterParams) (datastore.SavedFilter, error)
+
+	// UpdateSavedFilter applies the non-nil fields of p — a rename, a new
+	// selection, and a share toggle are all the same call. Returns
+	// datastore.ErrNotFound if the filter is gone, or datastore.ErrAlreadyExists
+	// if a rename collides.
+	UpdateSavedFilter(ctx context.Context, id string, p datastore.UpdateSavedFilterParams) (datastore.SavedFilter, error)
+
+	// DeleteSavedFilter removes a saved filter by id. Returns
+	// datastore.ErrNotFound if no such filter exists.
+	DeleteSavedFilter(ctx context.Context, id string) error
 }
 
 // Compile-time assertion: *datastore.DB satisfies DataStore.
