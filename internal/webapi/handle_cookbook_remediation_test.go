@@ -1422,3 +1422,37 @@ func TestHandleCookbookRemediation_ComplexityError_Graceful(t *testing.T) {
 		t.Errorf("complexity_label = %v, want empty", body["complexity_label"])
 	}
 }
+
+// The cookbook remediation endpoint serves server cookbooks only.
+//
+// It used to carry a git-repo fallback, from when server and git cop analysis
+// shared one table and one page. The Server/Git tab separation gave git repos
+// their own page and their own endpoint (handleGitRepoRemediation), so a name
+// that exists only as a git repo must 404 here rather than be served git data
+// by a second, duplicate copy of the git pipeline.
+func TestHandleCookbookRemediation_GitOnlyCookbookIsNotFound(t *testing.T) {
+	store := &mockStore{
+		// No server cookbook of this name...
+		ListServerCookbooksByNameFn: func(ctx context.Context, name string) ([]datastore.ServerCookbook, error) {
+			return nil, nil
+		},
+		// ...but a git repo of the same name does exist. The old fallback would
+		// have served this repo's remediation data from the cookbook endpoint.
+		ListGitReposByNameFn: func(ctx context.Context, name string) ([]datastore.GitRepo, error) {
+			return []datastore.GitRepo{
+				{Name: name, GitRepoURL: "https://example.com/org/" + name + ".git"},
+			}, nil
+		},
+	}
+	cfg := testConfig()
+	cfg.TargetChefVersion = "18.0"
+	r := newTestRouterWithMockAndConfig(store, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks/only-in-git/1.0.0/remediation", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d — a git-only cookbook must 404 here; git remediation lives at /api/v1/git-repos/...", w.Code, http.StatusNotFound)
+	}
+}
