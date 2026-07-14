@@ -16,8 +16,9 @@ Single source of truth for what is in flight. **Read this first at session start
 
 ## NOW — next up
 
-- **Saved Filters** (`plans/saved-filters.md`) — customer-requested feature, start
-  at Chunk 1. **Outranks the remaining tech debt**, incl. the per-target teardown.
+- **Saved Filters** (`plans/saved-filters.md`) — customer-requested feature, next
+  is **Chunk 2** (Nodes view UI; the storage + API backend is in).
+  **Outranks the remaining tech debt**, incl. the per-target teardown.
 
 ## Queued — Saved Filters (`plans/saved-filters.md`, spec `saved-filters.md`)
 
@@ -25,6 +26,9 @@ Name and persist a filter selection on a list view (driving case: a ~20-role
 "All Windows OS" cohort on Nodes). Persistence + UI only — the multi-role filter
 already works (`NodeSnapshotFilter.Roles`). Private w/ explicit share; filters only
 (no sort/page); stale refs kept and warned on apply.
+
+Remaining: Chunk 2 (Nodes UI — save/apply control, stale-reference warning on
+apply), then Chunk 3 (extract the control to the other three list views).
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 

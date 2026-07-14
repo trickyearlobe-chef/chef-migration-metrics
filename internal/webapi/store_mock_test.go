@@ -221,6 +221,13 @@ type mockStore struct {
 	CreateCustomCopDefinitionFn func(ctx context.Context, d datastore.CustomCopDefinition) (string, error)
 	UpdateCustomCopDefinitionFn func(ctx context.Context, d *datastore.CustomCopDefinition) error
 	DeleteCustomCopDefinitionFn func(ctx context.Context, copName string) error
+
+	// Saved filters
+	ListSavedFiltersFn  func(ctx context.Context, f datastore.SavedFilterListFilter) ([]datastore.SavedFilter, error)
+	GetSavedFilterFn    func(ctx context.Context, id string) (datastore.SavedFilter, error)
+	InsertSavedFilterFn func(ctx context.Context, p datastore.InsertSavedFilterParams) (datastore.SavedFilter, error)
+	UpdateSavedFilterFn func(ctx context.Context, id string, p datastore.UpdateSavedFilterParams) (datastore.SavedFilter, error)
+	DeleteSavedFilterFn func(ctx context.Context, id string) error
 }
 
 // compile-time check
@@ -1712,6 +1719,45 @@ func (m *mockStore) UpdateCustomCopDefinition(ctx context.Context, d *datastore.
 func (m *mockStore) DeleteCustomCopDefinition(ctx context.Context, copName string) error {
 	if m.DeleteCustomCopDefinitionFn != nil {
 		return m.DeleteCustomCopDefinitionFn(ctx, copName)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Saved filter mock implementations
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) ListSavedFilters(ctx context.Context, f datastore.SavedFilterListFilter) ([]datastore.SavedFilter, error) {
+	if m.ListSavedFiltersFn != nil {
+		return m.ListSavedFiltersFn(ctx, f)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) GetSavedFilter(ctx context.Context, id string) (datastore.SavedFilter, error) {
+	if m.GetSavedFilterFn != nil {
+		return m.GetSavedFilterFn(ctx, id)
+	}
+	return datastore.SavedFilter{}, nil
+}
+
+func (m *mockStore) InsertSavedFilter(ctx context.Context, p datastore.InsertSavedFilterParams) (datastore.SavedFilter, error) {
+	if m.InsertSavedFilterFn != nil {
+		return m.InsertSavedFilterFn(ctx, p)
+	}
+	return datastore.SavedFilter{}, nil
+}
+
+func (m *mockStore) UpdateSavedFilter(ctx context.Context, id string, p datastore.UpdateSavedFilterParams) (datastore.SavedFilter, error) {
+	if m.UpdateSavedFilterFn != nil {
+		return m.UpdateSavedFilterFn(ctx, id, p)
+	}
+	return datastore.SavedFilter{}, nil
+}
+
+func (m *mockStore) DeleteSavedFilter(ctx context.Context, id string) error {
+	if m.DeleteSavedFilterFn != nil {
+		return m.DeleteSavedFilterFn(ctx, id)
 	}
 	return nil
 }

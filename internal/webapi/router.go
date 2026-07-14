@@ -907,6 +907,13 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/kitchen/queue/stats", r.handleKitchenQueueStats)
 	r.protect("/api/v1/kitchen/queue/", r.handleKitchenQueueRouting)
 
+	// -----------------------------------------------------------------
+	// Saved filter endpoints — any authenticated user manages their own;
+	// mutations are owner-only, enforced in the handler.
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/saved-filters", r.handleSavedFilters)
+	r.protect("/api/v1/saved-filters/", r.handleSavedFilter)
+
 	if r.authStore != nil {
 		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
 		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers)
