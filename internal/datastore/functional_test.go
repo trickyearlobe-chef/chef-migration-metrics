@@ -550,9 +550,9 @@ func TestFunctional_ListClonedGitRepos_FiltersNonOK(t *testing.T) {
 	}
 
 	// repo-b: clone_status = 'failed'
-	_, err = db.UpsertGitRepoFailed(ctx, "test-lcg-repo-b", "git@example.com:org-a/test-lcg-repo-b", "timeout")
+	_, err = db.MarkGitRepoFailedByName(ctx, "test-lcg-repo-b", "git@example.com:org-a/test-lcg-repo-b", "timeout")
 	if err != nil {
-		t.Fatalf("upserting repo-b: %v", err)
+		t.Fatalf("marking repo-b failed: %v", err)
 	}
 
 	// repo-c: clone_status = 'pending' (create as ok, then reset)
@@ -627,10 +627,19 @@ func TestFunctional_DeleteStaleGitRepos_CleansUpStaleRows(t *testing.T) {
 		t.Fatalf("upserting org-a repo: %v", err)
 	}
 
-	// Insert the "stale" repo (org-b, failed).
-	_, err = db.UpsertGitRepoFailed(ctx, "test-dsg-cookbook", "git@example.com:org-b/test-dsg-cookbook", "not found")
+	// Insert the "stale" repo (org-b, failed) — a duplicate row of the kind a
+	// cookbook migration between git orgs leaves behind.
+	_, err = db.UpsertGitRepo(ctx, UpsertGitRepoParams{
+		Name:          "test-dsg-cookbook",
+		GitRepoURL:    "git@example.com:org-b/test-dsg-cookbook",
+		LastFetchedAt: time.Now().UTC(),
+	})
 	if err != nil {
 		t.Fatalf("upserting org-b repo: %v", err)
+	}
+	_, err = db.MarkGitRepoCloneFailed(ctx, "test-dsg-cookbook", "git@example.com:org-b/test-dsg-cookbook", "not found")
+	if err != nil {
+		t.Fatalf("marking org-b repo failed: %v", err)
 	}
 
 	// Insert a cookstyle result referencing the stale URL.
