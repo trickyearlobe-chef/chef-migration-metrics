@@ -16,23 +16,11 @@ Single source of truth for what is in flight. **Read this first at session start
 
 ## NOW — next up
 
-- **Saved Filters Chunk 3** (`plans/saved-filters.md`) — extract `SavedFilterBar`
-  to the Roles, Cookbooks and Git Repos views. The backend already serves all
-  four. **Outranks the remaining tech debt**, incl. the per-target teardown.
-
-## Queued — Saved Filters (`plans/saved-filters.md`, spec `saved-filters.md`)
-
-Remaining: Chunk 3 only (generalise the control to the other three list views).
-
-Two things Chunk 3 must carry over from the Nodes view:
-
-- **Applying goes through the view's own filter-setting path, not the URL.** The
-  list views hold filter state in `useState` and read URL params only as inbound
-  seeding on mount. Do not assume URL-as-state — the spec used to, wrongly.
-- **The stale-reference check is per-view.** It needs that view's entity
-  catalogue; on Nodes it is roles (`missingRoles`/`staleRoleWarning` in
-  `pages/nodeSavedFilters.ts`). An unloadable catalogue must report *nothing*,
-  not "everything vanished".
+Nothing claimed. Saved Filters is complete on all four list views. Pick the next
+item from the queues below, or the Nodes filter-bar layout tidy-up (the row wraps
+raggedly: the Tags block carries a two-line help text its neighbours lack, and the
+Role/Readiness chips add height below their inputs, inside an `items-end`
+flex-wrap — pre-existing, user-flagged).
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
