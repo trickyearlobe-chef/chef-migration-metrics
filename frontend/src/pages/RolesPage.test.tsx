@@ -29,6 +29,12 @@ vi.mock("../hooks/useTargetChefVersion", () => ({
   }),
 }));
 
+// SavedFilterBar reads the session to tell the caller's own filters from shared
+// ones. It fetches nothing until the panel is opened, which these tests never do.
+vi.mock("../context/AuthContext", () => ({
+  useAuth: vi.fn().mockReturnValue({ user: { username: "org-a-user" } }),
+}));
+
 // RolesPage must be imported after the mocks are set up.
 import { RolesPage } from "./RolesPage";
 

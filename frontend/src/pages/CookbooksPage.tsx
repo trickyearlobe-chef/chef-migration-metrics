@@ -12,7 +12,13 @@ import type {
   CookbookListItem,
   Pagination as PaginationType,
   ExportParams,
+  SavedFilterParams,
 } from "../types";
+import { SavedFilterBar } from "../components/SavedFilterBar";
+import {
+  cookbookStateToParams,
+  paramsToCookbookState,
+} from "./listSavedFilters";
 import { ExportButton } from "../components/ExportButton";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
@@ -189,6 +195,35 @@ export function CookbooksPage() {
     setTkStatus([]);
   };
 
+  // The current selection in the vocabulary a saved filter stores. Sort, page and
+  // the global lens are deliberately not in here.
+  const currentFilterParams = useMemo<SavedFilterParams>(
+    () =>
+      cookbookStateToParams({
+        nameFilter,
+        active,
+        cookstyleStatus,
+        downloadStatus,
+        tkStatus,
+      }),
+    [nameFilter, active, cookstyleStatus, downloadStatus, tkStatus],
+  );
+
+  /**
+   * Apply a saved selection: set the filter state and nothing else. Sort and the
+   * global lens are how the operator is reading the list, not part of the named
+   * cohort — only `page` resets, as it does for any filter change.
+   */
+  const applySavedFilter = useCallback((params: SavedFilterParams) => {
+    const next = paramsToCookbookState(params);
+    setNameFilter(next.nameFilter);
+    setActive(next.active);
+    setCookstyleStatus(next.cookstyleStatus);
+    setDownloadStatus(next.downloadStatus);
+    setTkStatus(next.tkStatus);
+    setPage(1);
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -259,6 +294,11 @@ export function CookbooksPage() {
             Clear ({activeFilterCount})
           </button>
         )}
+        <SavedFilterBar
+          view="cookbooks"
+          currentParams={currentFilterParams}
+          onApply={applySavedFilter}
+        />
       </div>
 
       {/* Table */}
