@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -238,13 +237,4 @@ func (r *Router) auditCookstyle(req *http.Request, action, copName, targetVersio
 	}); err != nil {
 		r.logf("WARN", "cookstyle: failed to write audit log: %v", err)
 	}
-}
-
-// cookstyleFailureRules returns the current cookstyle failure rules from config.
-func (r *Router) cookstyleFailureRules() analysis.CookstyleFailureRules {
-	cfg := r.liveConfig()
-	if cfg != nil && cfg.AnalysisTools.CookstyleFailureRules != nil {
-		return analysis.NewCookstyleFailureRules(cfg.AnalysisTools.CookstyleFailureRules)
-	}
-	return analysis.DefaultFailureRules()
 }

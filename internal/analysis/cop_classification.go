@@ -123,13 +123,11 @@ func (r *CopClassificationResolver) Classify(copName string) string {
 	return r.Resolve(copName).Classification
 }
 
-// EvaluatePassFailWithClassification evaluates whether a set of offenses
-// passes, using cop classification when available and falling back to
-// severity-based failure rules for unclassified cops. The boolean is a
-// back-compat convenience derived from the single source of truth:
-// passed = status != Blocked.
-func EvaluatePassFailWithClassification(offenses []CookstyleOffense, rules CookstyleFailureRules, resolver *CopClassificationResolver) bool {
-	return DeriveCookstyleStatus(offenses, rules, resolver) != StatusBlocked
+// EvaluatePassFailWithClassification evaluates whether a set of offenses passes,
+// using cop classification alone. The boolean is a convenience derived from the
+// single source of truth: passed = status != Blocked.
+func EvaluatePassFailWithClassification(offenses []CookstyleOffense, resolver *CopClassificationResolver) bool {
+	return DeriveCookstyleStatus(offenses, resolver) != StatusBlocked
 }
 
 // versionLessOrEqual compares two Chef version strings. Returns true if a <= b.

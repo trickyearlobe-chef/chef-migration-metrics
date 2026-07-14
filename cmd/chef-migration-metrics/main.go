@@ -987,8 +987,7 @@ func (app *serverApp) backfillCookstyleStatus(ctx context.Context) {
 	}
 
 	cfg := app.configHolder.Get()
-	rules := analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
-	res, err := analysis.BackfillCookstyleStatus(ctx, app.db, rules)
+	res, err := analysis.BackfillCookstyleStatus(ctx, app.db)
 	if err != nil {
 		app.startup.Warn(fmt.Sprintf("cookstyle status backfill failed (will retry next boot): %v", err))
 		return
@@ -1181,10 +1180,6 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		app.db,
 		cxScorer,
 		readinessEval,
-		func() analysis.CookstyleFailureRules {
-			cfg := app.configHolder.Get()
-			return analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
-		},
 		func(level, msg string) {
 			switch level {
 			case "DEBUG":

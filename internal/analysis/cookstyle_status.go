@@ -52,7 +52,7 @@ func OffensesWontParse(offenses []CookstyleOffense) bool {
 //
 // An empty offense slice is Ready (a scan that found nothing). Untested is the
 // caller's concern when no scan result exists at all.
-func DeriveCookstyleStatus(offenses []CookstyleOffense, rules CookstyleFailureRules, resolver *CopClassificationResolver) string {
+func DeriveCookstyleStatus(offenses []CookstyleOffense, resolver *CopClassificationResolver) string {
 	// Project to the same minimal per-offence shape the stored fingerprint keeps
 	// (cop_name + severity is all status needs) and delegate to the single core,
 	// so the scan path and the trend-recompute path can never drift. Count is
@@ -65,5 +65,5 @@ func DeriveCookstyleStatus(offenses []CookstyleOffense, rules CookstyleFailureRu
 			Count:    1,
 		}
 	}
-	return DeriveStatusFromFingerprint(entries, rules, resolver)
+	return DeriveStatusFromFingerprint(entries, resolver)
 }

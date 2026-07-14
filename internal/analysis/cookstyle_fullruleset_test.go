@@ -63,7 +63,7 @@ func TestDeriveStatus_BlockerOutsideDepartments_Blocked(t *testing.T) {
 		t.Fatalf("Lint/DeprecatedClassMethods should classify as blocker at 18.0, got %q", got)
 	}
 
-	status := DeriveCookstyleStatus(offenses, DefaultFailureRules(), resolver)
+	status := DeriveCookstyleStatus(offenses, resolver)
 	if status != StatusBlocked {
 		t.Errorf("a Blocker cop outside the two departments should yield blocked, got %q", status)
 	}
@@ -86,7 +86,7 @@ func TestDeriveStatus_CosmeticStyleCop_Ready(t *testing.T) {
 		t.Fatalf("a generic Style cop should seed to noise via the curated prefix, got %q", got)
 	}
 
-	status := DeriveCookstyleStatus(offenses, DefaultFailureRules(), resolver)
+	status := DeriveCookstyleStatus(offenses, resolver)
 	if status != StatusReady {
 		t.Errorf("a cosmetic convention-severity cop must not block, want %q got %q", StatusReady, status)
 	}

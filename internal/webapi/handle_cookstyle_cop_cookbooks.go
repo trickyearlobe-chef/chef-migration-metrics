@@ -102,9 +102,6 @@ func (r *Router) handleCookstyleCopCookbooks(w http.ResponseWriter, req *http.Re
 		TargetChefVersion: targetVersion,
 	}
 
-	// Load failure rules for "would pass without" evaluation.
-	rules := r.cookstyleFailureRules()
-
 	var items []copCookbookItem
 
 	if source == "" || source == "server" {
@@ -116,7 +113,7 @@ func (r *Router) handleCookstyleCopCookbooks(w http.ResponseWriter, req *http.Re
 		}
 		for _, res := range results {
 			offenses := parseFullOffenses(res.Offences)
-			item := buildCopCookbookItem(copName, "server", res.CookbookName, res.CookbookVersion, res.OrganisationName, offenses, resolver, rules)
+			item := buildCopCookbookItem(copName, "server", res.CookbookName, res.CookbookVersion, res.OrganisationName, offenses, resolver)
 			if item != nil {
 				items = append(items, *item)
 			}
@@ -132,7 +129,7 @@ func (r *Router) handleCookstyleCopCookbooks(w http.ResponseWriter, req *http.Re
 		}
 		for _, res := range results {
 			offenses := parseFullOffenses(res.Offences)
-			item := buildCopCookbookItem(copName, "git", res.GitRepoName, res.CommitSHA, "", offenses, resolver, rules)
+			item := buildCopCookbookItem(copName, "git", res.GitRepoName, res.CommitSHA, "", offenses, resolver)
 			if item != nil {
 				items = append(items, *item)
 			}
@@ -211,7 +208,7 @@ func groupCopCookbooksByName(items []copCookbookItem) []copCookbookGroup {
 
 // buildCopCookbookItem creates a drill-down item if the given cookbook has
 // offenses for the specified cop. Returns nil if the cop is not present.
-func buildCopCookbookItem(copName, source, name, version, org string, offenses []fullOffense, resolver *analysis.CopClassificationResolver, rules analysis.CookstyleFailureRules) *copCookbookItem {
+func buildCopCookbookItem(copName, source, name, version, org string, offenses []fullOffense, resolver *analysis.CopClassificationResolver) *copCookbookItem {
 	var count, correctable int
 	for _, o := range offenses {
 		if o.CopName == copName {
@@ -235,7 +232,7 @@ func buildCopCookbookItem(copName, source, name, version, org string, offenses [
 			})
 		}
 	}
-	wouldPass := analysis.EvaluatePassFailWithClassification(remaining, rules, resolver)
+	wouldPass := analysis.EvaluatePassFailWithClassification(remaining, resolver)
 
 	return &copCookbookItem{
 		Source:           source,

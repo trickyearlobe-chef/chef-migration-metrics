@@ -55,8 +55,8 @@ func (r CookstyleStatusBackfillResult) Changed() int {
 // (error_message set) carry no verdict and are skipped. A resolver is built once
 // per distinct target version (mirroring the complexity scorer's classifierCache)
 // so operator overrides + RemovedIn + curated defaults load once per target, not
-// once per row. rules is the live failure-rule fallback for unclassified cops.
-func BackfillCookstyleStatus(ctx context.Context, store CookstyleStatusBackfillStore, rules CookstyleFailureRules) (CookstyleStatusBackfillResult, error) {
+// once per row.
+func BackfillCookstyleStatus(ctx context.Context, store CookstyleStatusBackfillStore) (CookstyleStatusBackfillResult, error) {
 	var res CookstyleStatusBackfillResult
 	if store == nil {
 		return res, nil
@@ -87,7 +87,7 @@ func BackfillCookstyleStatus(ctx context.Context, store CookstyleStatusBackfillS
 		if ref.ErrorMessage != "" {
 			continue
 		}
-		status := DeriveCookstyleStatus(ParseStoredOffenses(ref.Offences), rules, resolverFor(ref.TargetChefVersion))
+		status := DeriveCookstyleStatus(ParseStoredOffenses(ref.Offences), resolverFor(ref.TargetChefVersion))
 		if status == ref.CookstyleStatus {
 			continue
 		}
@@ -105,7 +105,7 @@ func BackfillCookstyleStatus(ctx context.Context, store CookstyleStatusBackfillS
 		if ref.ErrorMessage != "" {
 			continue
 		}
-		status := DeriveCookstyleStatus(ParseStoredOffenses(ref.Offences), rules, resolverFor(ref.TargetChefVersion))
+		status := DeriveCookstyleStatus(ParseStoredOffenses(ref.Offences), resolverFor(ref.TargetChefVersion))
 		if status == ref.CookstyleStatus {
 			continue
 		}

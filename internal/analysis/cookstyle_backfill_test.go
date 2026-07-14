@@ -74,7 +74,7 @@ func TestBackfillCookstyleStatus_RederivesNeedsReview(t *testing.T) {
 		}},
 	}
 
-	res, err := BackfillCookstyleStatus(context.Background(), store, DefaultFailureRules())
+	res, err := BackfillCookstyleStatus(context.Background(), store)
 	if err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestBackfillCookstyleStatus_Idempotent(t *testing.T) {
 		}},
 	}
 
-	res, err := BackfillCookstyleStatus(context.Background(), store, DefaultFailureRules())
+	res, err := BackfillCookstyleStatus(context.Background(), store)
 	if err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestBackfillCookstyleStatus_BlockerAndGit(t *testing.T) {
 		}},
 	}
 
-	res, err := BackfillCookstyleStatus(context.Background(), store, DefaultFailureRules())
+	res, err := BackfillCookstyleStatus(context.Background(), store)
 	if err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestBackfillCookstyleStatus_SkipsErrorRows(t *testing.T) {
 		}},
 	}
 
-	res, err := BackfillCookstyleStatus(context.Background(), store, DefaultFailureRules())
+	res, err := BackfillCookstyleStatus(context.Background(), store)
 	if err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestBackfillCookstyleStatus_OperatorOverrideApplies(t *testing.T) {
 		}},
 	}
 
-	res, err := BackfillCookstyleStatus(context.Background(), store, DefaultFailureRules())
+	res, err := BackfillCookstyleStatus(context.Background(), store)
 	if err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
