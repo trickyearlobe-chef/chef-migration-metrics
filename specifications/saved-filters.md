@@ -100,9 +100,15 @@ means a saved filter cannot diverge from what the view natively supports.
 
 - On each list view: save the current filter selection under a name; pick a saved
   filter to apply; manage (rename, delete, share) own filters.
-- Applying writes the selection into the view's URL params, so the existing
-  URL-as-state behaviour (deep links, browser back, bookmarking) keeps working
-  unchanged — see the rationale in `GlobalFilterContext`.
+- Applying sets the view's filter selection and nothing else — it must not move
+  the user's sort, page, or the global lens (see Invariants).
+- *How* a view holds that selection is the view's own business, and a saved
+  filter must go through the view's existing filter-setting path rather than
+  around it. The Nodes view keeps its filters in component state and reads URL
+  params only as inbound seeding on mount, then strips them (`NodesPage.tsx` —
+  the strip is deliberate: `GlobalFilterContext` shares those params). So a
+  saved filter is applied by setting the view's filter state, not by rewriting
+  the URL. Saved filters are addressed by id, not by a filter-bearing URL.
 - Shared filters are visually distinguished from own filters, and show their
   owner.
 - The stale-reference warning appears on apply, not buried in a management
