@@ -31,11 +31,17 @@ type AutocorrectExecutor interface {
 	// Run executes cookstyle with the given arguments and returns
 	// stdout, stderr, the exit code, and any execution error.
 	//
+	// dir is the working directory for the process. It MUST be set to the
+	// cookbook directory being corrected: RuboCop reports paths relative to
+	// the process CWD, so an empty dir under the systemd default CWD of "/"
+	// makes it strip the leading two characters off every absolute path
+	// (/var/lib → ar/lib). Pass "" only when no cookbook is involved.
+	//
 	// A non-zero exit code is NOT returned as an error when the process
 	// ran to completion — CookStyle exits non-zero when offenses are
 	// found. An error is returned only for failures to start the
 	// process, context cancellation, or signal-based termination.
-	Run(ctx context.Context, args ...string) (stdout, stderr string, exitCode int, err error)
+	Run(ctx context.Context, dir string, args ...string) (stdout, stderr string, exitCode int, err error)
 }
 
 // ---------------------------------------------------------------------------
@@ -469,14 +475,14 @@ func (g *AutocorrectGenerator) runAutocorrectWithAddonIsolation(
 	}
 
 	args := buildAutocorrectArgsWithAddons(cookbookDir, targetChefVersion, addonCops)
-	stdout, _, exitCode, execErr := g.executor.Run(ctx, args...)
+	stdout, _, exitCode, execErr := g.executor.Run(ctx, cookbookDir, args...)
 
 	// Only attempt isolation when addons were actually injected and cookstyle ran
 	// to completion with an error exit (a start/timeout failure is not an addon
 	// problem and must surface as-is).
 	if len(addonCops) > 0 && execErr == nil && exitCode >= 2 {
 		cleanArgs := buildAutocorrectArgs(cookbookDir, targetChefVersion)
-		cStdout, _, cExit, cErr := g.executor.Run(ctx, cleanArgs...)
+		cStdout, _, cExit, cErr := g.executor.Run(ctx, cookbookDir, cleanArgs...)
 		if cErr == nil && cExit < 2 {
 			log.Error(fmt.Sprintf(
 				"an addon cop failed to load during autocorrect preview (cookstyle exit %d with addons, %d without); preview generated WITHOUT addon cops — verify these files: %v",
@@ -989,15 +995,22 @@ type defaultAutocorrectExecutor struct {
 	path string
 }
 
-func (e *defaultAutocorrectExecutor) Run(ctx context.Context, args ...string) (string, string, int, error) {
-	return executeAutocorrectCommand(ctx, e.path, args...)
+func (e *defaultAutocorrectExecutor) Run(ctx context.Context, dir string, args ...string) (string, string, int, error) {
+	return executeAutocorrectCommand(ctx, e.path, dir, args...)
 }
 
 // executeAutocorrectCommand runs an external command and returns stdout,
 // stderr, exit code, and error. A non-zero exit code from a process that
 // ran to completion is NOT returned as an error.
-func executeAutocorrectCommand(ctx context.Context, name string, args ...string) (string, string, int, error) {
+//
+// dir, when non-empty, is set as the process working directory so RuboCop's
+// CWD-relative path reporting is anchored to the scanned cookbook (see the
+// AutocorrectExecutor.Run doc comment).
+func executeAutocorrectCommand(ctx context.Context, name, dir string, args ...string) (string, string, int, error) {
 	cmd := makeAutocorrectCommand(ctx, name, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 
 	var stdoutBuf, stderrBuf strings.Builder
 	cmd.Stdout = &stdoutBuf

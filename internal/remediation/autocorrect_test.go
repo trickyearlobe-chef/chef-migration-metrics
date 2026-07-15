@@ -187,7 +187,7 @@ type autocorrectExecResult struct {
 	err            error
 }
 
-func (e *seqAutocorrectExecutor) Run(_ context.Context, args ...string) (string, string, int, error) {
+func (e *seqAutocorrectExecutor) Run(_ context.Context, _ string, args ...string) (string, string, int, error) {
 	idx := len(e.calls)
 	e.calls = append(e.calls, append([]string{}, args...))
 	if idx >= len(e.results) {
