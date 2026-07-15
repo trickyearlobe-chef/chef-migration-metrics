@@ -195,11 +195,18 @@ type CookstyleExecutor interface {
 	// Run executes cookstyle with the given arguments and returns
 	// stdout, stderr, the exit code, and any execution error.
 	//
+	// dir is the working directory for the process. It MUST be set to the
+	// cookbook/repo directory being scanned: RuboCop reports offence file
+	// paths relative to the process CWD, so an empty dir under the systemd
+	// default CWD of "/" makes it strip the leading two characters off every
+	// absolute path (/var/lib → ar/lib). Pass "" only for invocations that do
+	// not scan a cookbook (e.g. --show-cops).
+	//
 	// A non-zero exit code is NOT returned as an error when the process
 	// ran to completion — CookStyle exits non-zero when offenses are
 	// found. An error is returned only for failures to start the
 	// process, context cancellation, or signal-based termination.
-	Run(ctx context.Context, args ...string) (stdout, stderr string, exitCode int, err error)
+	Run(ctx context.Context, dir string, args ...string) (stdout, stderr string, exitCode int, err error)
 }
 
 // ---------------------------------------------------------------------------
@@ -881,14 +888,14 @@ func (s *CookstyleScanner) runScanWithAddonIsolation(
 	info.requires = addonCops
 
 	args := buildCookstyleArgsWithAddons(cookbookDir, targetChefVersion, addonCops)
-	stdout, stderr, exitCode, execErr = s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr = s.executor.Run(scanCtx, cookbookDir, args...)
 
 	// Only attempt isolation when addons were actually injected and cookstyle
 	// ran to completion with an error exit (a start/timeout failure is not an
 	// addon problem and must surface as-is).
 	if len(addonCops) > 0 && execErr == nil && exitCode >= 2 {
 		cleanArgs := buildCookstyleArgs(cookbookDir, targetChefVersion)
-		cStdout, cStderr, cExit, cErr := s.executor.Run(scanCtx, cleanArgs...)
+		cStdout, cStderr, cExit, cErr := s.executor.Run(scanCtx, cookbookDir, cleanArgs...)
 		if cErr == nil && cExit < 2 {
 			info.loadFailed = true
 			info.addonExit = exitCode
@@ -1129,16 +1136,23 @@ type defaultCookstyleExecutor struct {
 	path string
 }
 
-func (e *defaultCookstyleExecutor) Run(ctx context.Context, args ...string) (string, string, int, error) {
-	return executeCommand(ctx, e.path, args...)
+func (e *defaultCookstyleExecutor) Run(ctx context.Context, dir string, args ...string) (string, string, int, error) {
+	return executeCommand(ctx, e.path, dir, args...)
 }
 
 // executeCommand runs an external command and returns stdout, stderr, exit
 // code, and error. A non-zero exit code from a process that ran to
 // completion is NOT returned as an error — the caller inspects the exit
 // code and stdout/stderr separately.
-func executeCommand(ctx context.Context, name string, args ...string) (string, string, int, error) {
+//
+// dir, when non-empty, is set as the process working directory. This anchors
+// RuboCop's CWD-relative offence path reporting to the scanned cookbook (see
+// the CookstyleExecutor.Run doc comment).
+func executeCommand(ctx context.Context, name, dir string, args ...string) (string, string, int, error) {
 	cmd := makeCommand(ctx, name, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 
 	var stdoutBuf, stderrBuf strings.Builder
 	cmd.Stdout = &stdoutBuf

@@ -22,6 +22,7 @@ import (
 
 // fakeCookstyleExecCall records a single invocation.
 type fakeCookstyleExecCall struct {
+	Dir  string
 	Args []string
 }
 
@@ -49,8 +50,8 @@ type fakeCookstyleResult struct {
 	err      error
 }
 
-func (f *fakeCookstyleExecutor) Run(_ context.Context, args ...string) (string, string, int, error) {
-	f.calls = append(f.calls, fakeCookstyleExecCall{Args: args})
+func (f *fakeCookstyleExecutor) Run(_ context.Context, dir string, args ...string) (string, string, int, error) {
+	f.calls = append(f.calls, fakeCookstyleExecCall{Dir: dir, Args: args})
 
 	// Check for a per-directory override (last arg is the cookbook dir).
 	if len(args) > 0 && f.perDir != nil {
@@ -1044,6 +1045,31 @@ func TestExecutor_CookbookDirIsLastArg(t *testing.T) {
 	args := fe.calls[0].Args
 	if args[len(args)-1] != cookbookDir {
 		t.Errorf("last arg should be cookbook dir, got %q", args[len(args)-1])
+	}
+}
+
+// TestExecutor_RunsWithCookbookDirAsWorkingDir guards the fix for the offence
+// path chop: cookstyle must run with its working directory set to the scanned
+// cookbook dir. RuboCop reports paths relative to the process CWD, so when the
+// service runs from "/" (systemd default) an unset working dir makes it strip
+// the leading two characters off every absolute path (/var/lib → ar/lib).
+// Pinning the working dir to the cookbook root keeps reported paths anchored so
+// relativeCookstylePath can strip them cleanly.
+func TestExecutor_RunsWithCookbookDirAsWorkingDir(t *testing.T) {
+	cookbookDir := t.TempDir()
+	fe := &fakeCookstyleExecutor{
+		stdout: makeCleanJSON(),
+	}
+	s := NewCookstyleScanner(nil, nil, "/usr/bin/cookstyle", 1, 10,
+		WithCookstyleExecutor(fe))
+
+	s.scanOneNoDB(context.Background(), "test-cookbook", "1.0.0", "", cookbookDir)
+
+	if len(fe.calls) == 0 {
+		t.Fatal("expected at least one executor call")
+	}
+	if fe.calls[0].Dir != cookbookDir {
+		t.Errorf("cookstyle should run with working dir %q, got %q", cookbookDir, fe.calls[0].Dir)
 	}
 }
 
