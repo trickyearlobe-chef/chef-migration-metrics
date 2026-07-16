@@ -681,6 +681,9 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.mux.HandleFunc("/api/v1/health", r.handleHealth)
 	r.mux.HandleFunc("/api/v1/version", r.handleVersion)
+	// Event ingest sink — INTENTIONALLY UNAUTHENTICATED (MVP tech debt). Passive
+	// receiver for Chef run telemetry; gated at runtime by ingest.enabled.
+	r.mux.HandleFunc("/api/v1/ingest", r.handleIngest)
 	r.mux.HandleFunc("/api/v1/server/tls-status", r.handleServerTLSStatus)
 
 	// -----------------------------------------------------------------
@@ -854,6 +857,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
 	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness)
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)
+	r.adminOnly("/api/v1/admin/config/ingest", r.handleAdminConfigIngest)
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
 	r.adminOnly("/api/v1/admin/saml/endpoints", r.handleSAMLEndpoints)

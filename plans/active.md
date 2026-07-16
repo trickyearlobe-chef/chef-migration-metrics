@@ -24,34 +24,26 @@ Chef Server proxy `run_converge`, and Automate Data Feed per-node state), normal
 into a partitioned `converge_runs` table, surfaced on a new Node Detail **Runs** tab.
 **No auth** (tech debt). Key = (organisation, node_name); dedup on run_id.
 
-Landed (in git): **golden fixtures** (`testdata/event-ingest/`, authored from the
-`ff19f58e` field-report — not raw captures; validate against a live capture
-opportunistically) and the **migration** (`0052_converge_runs` — partitioned on
-`end_time`, PK `(run_id, end_time)` since PG requires the partition key in the PK,
-index `(organisation, node_name, end_time DESC)`, `converge_runs_ensure_partition(date)`
-helper). `converge_runs` is decoupled: no FKs, `organisation` = delivered org name.
+Landed (in git): **fixtures**, **migration** `0052_converge_runs`, **normaliser**
+(`internal/ingest`). Landed (working tree, pending commit): **config** (`IngestConfig`
++ store registration + admin `PUT /api/v1/admin/config/ingest` toggle), **store**
+(`BulkUpsertConvergeRuns` dedup + `PurgeConvergeRunPartitions`, functional tests),
+**handler** `POST /api/v1/ingest` (gunzip, NDJSON, size/record caps, one-txn-per-body,
+200-and-drop, no auth). `converge_runs` decoupled: no FKs, `organisation` = delivered
+org name; PK `(run_id, end_time)`.
 
-TDD order (may span sessions — pause on a clean step boundary):
+Remaining:
 
-1. **Normaliser** (new `internal/ingest`) — detect shape by **structural top-level keys**
-   (`client_run` present → Data Feed; `message_type:"run_converge"` → converge; else
-   ignore) → `ConvergeRun`. **Contract test first** against the fixtures (run_id, node,
-   org, status, run_list, cookbooks, and failure `error`+backtrace+failed-resource);
-   `run_start` and attributes-only feed records → no row.
-2. **Ingest handler** — `POST /api/v1/ingest`: gunzip, NDJSON one-or-more, cap
-   records/bytes, **one txn per body**, 200-and-drop, no auth. Tests: gzip batch →
-   N rows; plain single; malformed → 0 rows; oversize/too-many-records handled.
-3. **Store** — upsert-dedup on `(run_id, end_time)`; call `ensure_partition` before
-   insert; retention purge by **dropping day partitions** (scheduled;
-   `ingest.retention_days` default 2). Tests inc. same run_id twice → 1.
-4. **Config** — `ingest.enabled|retention_days|max_body_bytes|max_records_per_body`
-   via live accessor (dynamic; default `enabled=false`).
-5. **Read API** — GET runs for a node (org+name), paginated (`web-api.md`).
-6. **Frontend Runs tab** — `NodeDetailPage` new tab + panel + `api/nodes.ts`; renders
+1. **Read API** — GET runs for a node (org+name), paginated (`web-api.md`). Needs a
+   `datastore` read method (+ interface/mock) and a `NodeDetail`-scoped route.
+2. **Frontend Runs tab** — `NodeDetailPage` new tab + panel + `api/nodes.ts`; renders
    runs incl. collapsible failure detail. Reuse existing panel pattern.
-7. **E2E on lab** — point node → server → Automate Data Feed at the running app;
-   drive a success + a `ruby_block`-raise failure; confirm rows + tab. `chef-load`
-   for volume/firehose.
+3. **Retention scheduler** — `PurgeConvergeRunPartitions` exists + tested but is NOT
+   wired to a periodic job yet; hook it into the app scheduler (cutoff = now −
+   `retention_days`). Low urgency at 2-day pilot scale.
+4. **E2E on lab** — enable `ingest.enabled`, point Automate Data Feed at the running app;
+   drive a success + a `ruby_block`-raise failure; confirm rows (via SQL until the Runs
+   tab lands) then the tab. `chef-load` for volume/firehose.
 
 Acceptance: fixtures normalise correctly; a gzip NDJSON batch yields the right deduped
 rows and a malformed body persists nothing; a converge failure shows on the node's
