@@ -865,6 +865,7 @@ export function NodeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<"overview" | "runs">("overview");
 
   const load = useCallback(() => {
     if (!org || !name) return;
@@ -970,37 +971,69 @@ export function NodeDetailPage() {
         </div>
       </div>
 
-      {/* Deployment State — parallel deployment tracking */}
-      <DeploymentStatePanel node={node} />
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-4">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`border-b-2 px-1 py-2 text-sm font-medium ${
+              activeTab === "overview"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab("runs")}
+            className={`border-b-2 px-1 py-2 text-sm font-medium ${
+              activeTab === "runs"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Runs
+          </button>
+        </nav>
+      </div>
 
-      {/* Disk space — version-invariant node-level verdict (self-labelled panel),
-          shown even when there are no readiness rows (e.g. no target configured). */}
-      <DiskSpacePanel
-        sufficient={node.sufficient_disk_space}
-        available={node.available_disk_mb}
-        required={node.required_disk_mb}
-        total={data.total_disk_mb}
-        stale={node.is_stale}
-        org={org}
-        nodeName={name}
-        installPath={data.install_path}
-        minRemainingFreePercent={data.min_remaining_free_percent}
-      />
+      {activeTab === "overview" && (
+        <>
+          {/* Deployment State — parallel deployment tracking */}
+          <DeploymentStatePanel node={node} />
 
-      {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
-      <ReadinessSection data={data} org={org} nodeName={name} />
+          {/* Disk space — version-invariant node-level verdict (self-labelled panel),
+              shown even when there are no readiness rows (e.g. no target configured). */}
+          <DiskSpacePanel
+            sufficient={node.sufficient_disk_space}
+            available={node.available_disk_mb}
+            required={node.required_disk_mb}
+            total={data.total_disk_mb}
+            stale={node.is_stale}
+            org={org}
+            nodeName={name}
+            installPath={data.install_path}
+            minRemainingFreePercent={data.min_remaining_free_percent}
+          />
 
-      {/* Node Kitchen Testing */}
-      {org && name && (
-        <NodeKitchenSection
-          org={org}
-          nodeName={name}
-          targetVersions={targetVersions}
-        />
+          {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
+          <ReadinessSection data={data} org={org} nodeName={name} />
+
+          {/* Node Kitchen Testing */}
+          {org && name && (
+            <NodeKitchenSection
+              org={org}
+              nodeName={name}
+              targetVersions={targetVersions}
+            />
+          )}
+        </>
       )}
 
       {/* Converge Runs — ingested run telemetry (event-ingest) */}
-      {org && name && <NodeRunsSection org={org} nodeName={name} />}
+      {activeTab === "runs" && org && name && (
+        <NodeRunsSection org={org} nodeName={name} />
+      )}
     </div>
   );
 }
