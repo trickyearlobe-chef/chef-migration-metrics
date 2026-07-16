@@ -104,6 +104,13 @@ Probed but **left Review** (recorded so they are not re-swept):
 - Windows/Powershell helper cops (`WindowsVersionHelpers`, `PowershellCookbookHelpers`,
   `DeprecatedWindowsVersionCheck`) — can't validate from a Linux host; need Fauxhai.
 - All `Chef/Correctness/*` — advisory correctness/style patterns, no removed API.
+- `InSpec/Deprecations/AttributeHelper` + `AttributeDefault` — surfaced in real
+  customer data (106 each) so probed on the box (`probe_inspec_attribute.rb`): a real
+  `inspec exec` of `attribute('foo', default: 'bar')` on InSpec 7.0.107 **runs and
+  passes** (deprecation warning only). The `attribute` alias and the `default:` option
+  are deprecated, not removed → Review. (The InSpec/Deprecations department is outside
+  the Chef/Deprecations + Lint + Chef/Correctness sweep scope but was checked because it
+  appeared in real scans.)
 
 Scripts added this sweep: `enumerate_cops.rb`, `inspect_candidates.rb`,
 `probe_candidates.rb`, `probe_loose_ends.rb`, `showcops_desc.rb`.
