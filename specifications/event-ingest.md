@@ -107,6 +107,13 @@ Join `converge_runs.(organisation, node_name)` to `node_snapshots.(organisation,
 The Data Feed record carries **no `entity_uuid`**, so name + org is the only available key
 — there is no alternative to choose.
 
+**Ingest-only nodes are first-class, not an edge case.** The customer topology is mixed:
+a clustered Automate (2 orgs, ~50k nodes each) CMM *can* pull, **plus standalone Infra
+Servers on DMZs (~2–3k nodes each) whose APIs CMM CANNOT reach** — CMM never pulls them,
+so they have **no `node_snapshots`**. For those nodes ingest is the *only* source of data.
+Their runs MUST be identifiable and surfaceable by `(organisation, node_name)` alone.
+"Retained but invisible" is a defect for this population — see UI.
+
 ---
 
 ## UI
@@ -115,6 +122,13 @@ The Data Feed record carries **no `entity_uuid`**, so name + org is the only ava
   the node, most-recent first — time, status, chef_version, run_list, and on failure the
   error class/message + failing cookbook·recipe + backtrace (collapsible). Reuses the
   existing Node Detail panel pattern.
+- **Ingest-only nodes MUST be surfaced.** A Runs tab reachable only from *pulled* nodes is
+  insufficient — it silently hides the entire DMZ population (ingest-only, no
+  `node_snapshots`; see Node identity), which is a primary reason the feature exists. The
+  UI MUST expose nodes that have `converge_runs` but no `node_snapshots` (e.g. the node
+  list unions ingest-only nodes, or a dedicated ingest/runs view), so DMZ telemetry —
+  especially failures — is visible, not just stored. Ingest-only node views show only what
+  ingest carries (no pull-derived panels: disk, readiness, etc.).
 - Read path: a web API endpoint returns `converge_runs` for a node (org + name), bounded /
   paginated. See [web-api](web-api.md).
 

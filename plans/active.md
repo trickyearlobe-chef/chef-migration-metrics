@@ -24,31 +24,33 @@ Chef Server proxy `run_converge`, and Automate Data Feed per-node state), normal
 into a partitioned `converge_runs` table, surfaced on a new Node Detail **Runs** tab.
 **No auth** (tech debt). Key = (organisation, node_name); dedup on run_id.
 
-Landed (in git): **fixtures**, **migration** `0052_converge_runs`, **normaliser**
-(`internal/ingest`). Landed (working tree, pending commit): **config** (`IngestConfig`
-+ store registration + admin `PUT /api/v1/admin/config/ingest` toggle), **store**
-(`BulkUpsertConvergeRuns` dedup + `PurgeConvergeRunPartitions`, functional tests),
-**handler** `POST /api/v1/ingest` (gunzip, NDJSON, size/record caps, one-txn-per-body,
-200-and-drop, no auth). `converge_runs` decoupled: no FKs, `organisation` = delivered
-org name; PK `(run_id, end_time)`.
+**Topology drives this** (see `customer-topology-ingest` memory + spec Node identity):
+clustered Automate (2 orgs, ~50k each) CMM pulls + Data Feeds; **standalone DMZ Infra
+Servers (~2–3k each) CMM CANNOT pull — ingest-only → orphan nodes are first-class**.
+
+**Code-complete + committed:** fixtures, migration `0052_converge_runs`, normaliser
+(with real-shape fixes: `cookbooks` name→{version}, `chef_version` from node tree),
+config + admin toggle, store (dedup + partition purge), handler `POST /api/v1/ingest`,
+read API `GET /api/v1/nodes/runs/{org}/{node}`, Node Detail **Overview | Runs tabs**,
+retention ticker (hourly + startup). **Node-direct/run_converge path PROVEN LIVE.**
 
 Remaining:
 
-1. **Read API** — GET runs for a node (org+name), paginated (`web-api.md`). Needs a
-   `datastore` read method (+ interface/mock) and a `NodeDetail`-scoped route.
-2. **Frontend Runs tab** — `NodeDetailPage` new tab + panel + `api/nodes.ts`; renders
-   runs incl. collapsible failure detail. Reuse existing panel pattern.
-3. **Retention scheduler** — `PurgeConvergeRunPartitions` exists + tested but is NOT
-   wired to a periodic job yet; hook it into the app scheduler (cutoff = now −
-   `retention_days`). Low urgency at 2-day pilot scale.
-4. **E2E on lab** — enable `ingest.enabled`, point Automate Data Feed at the running app;
-   drive a success + a `ruby_block`-raise failure; confirm rows (via SQL until the Runs
-   tab lands) then the tab. `chef-load` for volume/firehose.
+1. **Surface ingest-only nodes (REQUIRED — the DMZ gap).** The Runs tab is reachable only
+   from *pulled* nodes; DMZ nodes have no `node_snapshots` so their runs are stored but
+   invisible. Per the (now-updated) spec UI section, the UI MUST expose nodes that have
+   `converge_runs` but no `node_snapshots` (node-list union, or a dedicated ingest/runs
+   view). Without this the strongest ingest value (DMZ failure telemetry) is DB-only.
+2. **Live-validate the other two shapes** — Automate Data Feed (customer's clustered-org
+   transport; fixtures are authored → fidelity risk) and Chef Server proxy (the DMZ
+   transport; same `run_converge` shape as the proven direct path). `chef-load` on
+   `dev.home.arpa` for a small firehose. Needs an Automate admin token (classifier blocks
+   me minting it — user runs it or adds a permission rule).
+3. **Lab cleanup** — node `data_collector.rb` + `ssl_verify_mode :verify_none` still set.
 
-Acceptance: fixtures normalise correctly; a gzip NDJSON batch yields the right deduped
-rows and a malformed body persists nothing; a converge failure shows on the node's
-Runs tab with error class/message + failing cookbook·recipe + backtrace; partitions
-older than the window drop cleanly; unauthenticated POST is accepted (tech-debt noted).
+Acceptance: a converge failure shows with error+backtrace+failing cookbook·recipe;
+partitions rotate; unauth POST accepted; **and a DMZ ingest-only node (no node_snapshots)
+is visible in the UI with its runs** (the topology-driven criterion I missed first pass).
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
