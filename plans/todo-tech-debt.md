@@ -142,6 +142,18 @@ Impact is accuracy, not verdicts (none are blockers): for the 3 renamed cops the
 correctly-named cop *does* fire but gets **no remediation doc** because our mapping sits
 under the dead name; the 5 removed-upstream entries are dead clutter.
 
+Provenance + safety of the rename/drop (established 2026-07-16): the 8 old names were
+seeded in the **initial hand-authored mapping** (commits `4b3b534`/`81ee14d`, 6 Mar
+2026; reformatted to three-part names in `cb92679`), and their error pattern
+(`WindowsPackageInstallerType` vs real `…TypeString`, wrong department for
+`DefaultMetadataMaintainer`, non-existent `ChefSpecifyDefaultAction`) marks them as
+doc/LLM **approximations, never captured from real scan output**. Confirmed against the
+customer DB (VDI): a shape-guarded query over `server_cookbook_cookstyle_results` +
+`git_repo_cookstyle_results` offences found **0** occurrences of all 8 old names — so
+they never matched real offences and no superseded-alias/back-compat mapping is needed.
+(Both Workstation 25 and 26 run Cookstyle 8.6.10 for scanning, which already emits the
+new names; only the WS26 standalone CLI is 8.7.6, also new names.)
+
 - [ ] **Rename (cop still exists under a new name/department):**
   `WindowsPackageInstallerType` → `Chef/Deprecations/WindowsPackageInstallerTypeString`;
   `IncludingXMLRubyCookbook` → `Chef/Deprecations/IncludingXMLRubyRecipe`;
