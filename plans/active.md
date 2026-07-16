@@ -12,15 +12,51 @@ Single source of truth for what is in flight. **Read this first at session start
   ship. Full state + resume steps in `plans/p3-node-list-perf.md`.
 - **Parked** `chore/spec-drift-report` — one-time spec↔code drift report;
   deprioritised behind feature delivery. Don't nag to merge (see [[spec-drift-parked]]).
+- **In flight** `feature/event-ingest-mvp` — Event Ingest MVP (see NOW).
 - No other branches in flight. Start new work on a fresh branch.
 
-## NOW — next up
+## NOW — Event Ingest MVP (`feature/event-ingest-mvp`)
 
-Nothing claimed. Saved Filters is complete on all four list views. Pick the next
-item from the queues below, or the Nodes filter-bar layout tidy-up (the row wraps
-raggedly: the Tags block carries a two-line help text its neighbours lack, and the
-Role/Readiness chips add height below their inputs, inside an `items-end`
-flex-wrap — pre-existing, user-flagged).
+Spec: `specifications/event-ingest.md`. Transport is empirically validated
+(`plans/proposal-event-ingest.md`, and the `automate-datafeed-behavior` finding):
+CMM is a passive `POST /api/v1/ingest` sink accepting three shapes (node direct /
+Chef Server proxy `run_converge`, and Automate Data Feed per-node state), normalised
+into a partitioned `converge_runs` table, surfaced on a new Node Detail **Runs** tab.
+**No auth** (tech debt). Key = (organisation, node_name); dedup on run_id.
+
+Landed (in git): **golden fixtures** (`testdata/event-ingest/`, authored from the
+`ff19f58e` field-report — not raw captures; validate against a live capture
+opportunistically) and the **migration** (`0052_converge_runs` — partitioned on
+`end_time`, PK `(run_id, end_time)` since PG requires the partition key in the PK,
+index `(organisation, node_name, end_time DESC)`, `converge_runs_ensure_partition(date)`
+helper). `converge_runs` is decoupled: no FKs, `organisation` = delivered org name.
+
+TDD order (may span sessions — pause on a clean step boundary):
+
+1. **Normaliser** (new `internal/ingest`) — detect shape by **structural top-level keys**
+   (`client_run` present → Data Feed; `message_type:"run_converge"` → converge; else
+   ignore) → `ConvergeRun`. **Contract test first** against the fixtures (run_id, node,
+   org, status, run_list, cookbooks, and failure `error`+backtrace+failed-resource);
+   `run_start` and attributes-only feed records → no row.
+2. **Ingest handler** — `POST /api/v1/ingest`: gunzip, NDJSON one-or-more, cap
+   records/bytes, **one txn per body**, 200-and-drop, no auth. Tests: gzip batch →
+   N rows; plain single; malformed → 0 rows; oversize/too-many-records handled.
+3. **Store** — upsert-dedup on `(run_id, end_time)`; call `ensure_partition` before
+   insert; retention purge by **dropping day partitions** (scheduled;
+   `ingest.retention_days` default 2). Tests inc. same run_id twice → 1.
+4. **Config** — `ingest.enabled|retention_days|max_body_bytes|max_records_per_body`
+   via live accessor (dynamic; default `enabled=false`).
+5. **Read API** — GET runs for a node (org+name), paginated (`web-api.md`).
+6. **Frontend Runs tab** — `NodeDetailPage` new tab + panel + `api/nodes.ts`; renders
+   runs incl. collapsible failure detail. Reuse existing panel pattern.
+7. **E2E on lab** — point node → server → Automate Data Feed at the running app;
+   drive a success + a `ruby_block`-raise failure; confirm rows + tab. `chef-load`
+   for volume/firehose.
+
+Acceptance: fixtures normalise correctly; a gzip NDJSON batch yields the right deduped
+rows and a malformed body persists nothing; a converge failure shows on the node's
+Runs tab with error class/message + failing cookbook·recipe + backtrace; partitions
+older than the window drop cleanly; unauthenticated POST is accepted (tech-debt noted).
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
@@ -35,11 +71,6 @@ copied-contract (`diagnostic-bundle`, `system-health-*`) — fold into E.
   (`handle_cookbook_remediation.go`, `handle_git_repo_remediation.go` — each is
   one ~480-line function). No shared extraction between them; they serve
   different sources.
-
-## Deferred proposal — event ingest (`plans/proposal-event-ingest.md`)
-
-Firehose ingest of Chef `data_collector` converge events. FOR DISCUSSION after the
-perf/feature work; not approved. Closes the active-only test blind spot.
 
 ## Parked — SAML config follow-ups (lower priority)
 

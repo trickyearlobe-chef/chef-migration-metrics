@@ -520,6 +520,20 @@ Recorded 2026-07-14 (cookbook detail redesign).
 
 - [ ] **`handle_cookbook_remediation.go` resolves a cookbook by name+version and never reads `organisation`**, though `server_cookbook_cookstyle_results` is keyed by `(organisation_name, cookbook_name, cookbook_version, target_chef_version)`. The same name+version in two organisations is therefore ambiguous on `/cookbooks/:name/:version/remediation` — whichever row the query returns first wins, silently. Pre-existing; surfaced (not caused) by the per-version detail page, which does carry the organisation. **Strategic fix:** thread `organisation` through the route and the query. Another instance of the cross-view record-selection family — the fix is to make the selection explicit, not to derive it.
 
+## Event Ingest Endpoint Is Unauthenticated (MVP)
+
+Recorded 2026-07-16 with `feature/event-ingest-mvp` (`specifications/event-ingest.md`).
+
+- [ ] **`POST /api/v1/ingest` accepts any POST and ignores `Authorization`.** Deliberate
+  MVP choice: adding auth on customer chef-clients / the Chef Server proxy / Automate's
+  Data Feed destination needs change control we deferred to prove value first. This is a
+  real exposure — an unauthenticated ingress can be flooded or fed spoofed run data, and
+  it is CMM's first inbound endpoint (everything else is pull-only). **Proper fix:** a
+  shared bearer token or basic-auth secret validated at the handler, stored in the
+  encrypted config store, with the value handed to the producer side. Automate's Data
+  Feed already sends basic-auth creds we currently ignore, so that shape needs no client
+  change; the node/proxy shapes do. Revisit before any non-lab exposure.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

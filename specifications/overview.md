@@ -24,6 +24,7 @@
 | [dual-compatibility-signals](dual-compatibility-signals.md) | Combining Test Kitchen and CookStyle signals into a compatibility verdict. |
 | [encrypted-config-store](encrypted-config-store.md) | Encrypted storage backend for configuration values. |
 | [enriched-metric-snapshots](enriched-metric-snapshots.md) | Periodic enriched metric snapshots for historical trending. |
+| [event-ingest](event-ingest.md) | Passive HTTP receiver for Chef run telemetry (node / Server proxy / Automate Data Feed) → partitioned `converge_runs` → Node Detail Runs tab. MVP, no auth. |
 | [filter-ux-overhaul](filter-ux-overhaul.md) | Dashboard filtering UX across org, environment, role, policy, platform, and owner. |
 | [git-repo-file-browser](git-repo-file-browser.md) | Browsing files within cloned git cookbook repositories. |
 | [kitchen-analyser](kitchen-analyser.md) | Analysis of Test Kitchen configurations and results. |
