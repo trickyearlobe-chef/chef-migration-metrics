@@ -36,11 +36,17 @@ retention ticker (hourly + startup). **Node-direct/run_converge path PROVEN LIVE
 
 Remaining:
 
-1. **Surface ingest-only nodes (REQUIRED — the DMZ gap).** The Runs tab is reachable only
-   from *pulled* nodes; DMZ nodes have no `node_snapshots` so their runs are stored but
-   invisible. Per the (now-updated) spec UI section, the UI MUST expose nodes that have
-   `converge_runs` but no `node_snapshots` (node-list union, or a dedicated ingest/runs
-   view). Without this the strongest ingest value (DMZ failure telemetry) is DB-only.
+1. **"Run events" top-level view (REQUIRED — the DMZ gap; DECIDED design).** A per-node
+   Runs tab reaches only pulled nodes, so DMZ ingest-only telemetry (no `node_snapshots`)
+   is stored-but-invisible. Decision: a run-centric **dedicated top-level "Run events"
+   view over `converge_runs`** (sibling of Nodes/Cookbooks/Git Repos) — list + run detail,
+   org filter + status/node/chef_version/time, default failures, own export. Reads
+   `converge_runs` directly (indexed, retention-bounded); does NOT fabricate node/org
+   records or touch pull aggregates. Node Detail Runs tab stays. Chosen over a virtual
+   node-list union (perf: DISTINCT over firehose + heavy node-list query) and an ingest
+   node registry (extra table to maintain) — see [[event-ingest-build-state]].
+   Build: nav entry + route + list page (reuse list-view/filter/saved-filter infra) +
+   run-detail page + `datastore` list/count/export methods + web API route + own export.
 2. **Live-validate the other two shapes** — Automate Data Feed (customer's clustered-org
    transport; fixtures are authored → fidelity risk) and Chef Server proxy (the DMZ
    transport; same `run_converge` shape as the proven direct path). `chef-load` on

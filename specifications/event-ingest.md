@@ -122,13 +122,19 @@ Their runs MUST be identifiable and surfaceable by `(organisation, node_name)` a
   the node, most-recent first — time, status, chef_version, run_list, and on failure the
   error class/message + failing cookbook·recipe + backtrace (collapsible). Reuses the
   existing Node Detail panel pattern.
-- **Ingest-only nodes MUST be surfaced.** A Runs tab reachable only from *pulled* nodes is
-  insufficient — it silently hides the entire DMZ population (ingest-only, no
-  `node_snapshots`; see Node identity), which is a primary reason the feature exists. The
-  UI MUST expose nodes that have `converge_runs` but no `node_snapshots` (e.g. the node
-  list unions ingest-only nodes, or a dedicated ingest/runs view), so DMZ telemetry —
-  especially failures — is visible, not just stored. Ingest-only node views show only what
-  ingest carries (no pull-derived panels: disk, readiness, etc.).
+- **Ingest-only telemetry surfaced via a run-centric top-level view (decided).** A per-node
+  Runs tab reaches only *pulled* nodes, hiding the DMZ ingest-only population (no
+  `node_snapshots`; see Node identity) — a primary reason the feature exists. Rather than
+  fabricate parent node/org records (which would pollute pull-derived fleet truth —
+  readiness, counts, version/platform distributions — and fight the org schema), CMM
+  surfaces the telemetry through a **dedicated top-level "Run events" view over
+  `converge_runs`** (run-centric, NOT node-centric), a sibling of Nodes / Cookbooks / Git
+  Repos: a filterable, paginated **list + run detail**, honouring the top **org** filter
+  plus status / node / chef_version / time, **defaulting to failures**. It reads
+  `converge_runs` directly (served by the `(organisation, node_name, end_time)` index,
+  retention-bounded), gets its **own export** on the run schema, and leaves
+  `node_snapshots` / `organisations` and their aggregates untouched. The **Node Detail Runs
+  tab stays** for pulled nodes (per-node context) — the two are complementary.
 - Read path: a web API endpoint returns `converge_runs` for a node (org + name), bounded /
   paginated. See [web-api](web-api.md).
 
