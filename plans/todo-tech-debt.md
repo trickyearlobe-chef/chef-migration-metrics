@@ -128,6 +128,35 @@ nicety. Do not present a clean CookStyle scan as "Ruby-3-safe".
   the authority for "does this actually run on CC19"; the readiness/verdict copy must
   not imply CookStyle alone proves Ruby-3 compatibility.
 
+## CookStyle — 8 stale curated cop names + a curation-linter blind spot
+
+Found 2026-07-16 while auditing sweep completeness: 8 `copmapping.go` entries name cops
+the CC19 binary does not emit (cross-checked against the live RuboCop registry). All 8
+have empty `RemovedIn` (Review-level), which is exactly why they were never caught — the
+**curation linter only stale-checks entries with `RemovedIn != ""`** (see
+`ValidateCuratedRemovals` in `cop_curation_lint.go`), so Review-level mappings are
+unvalidated. Root-cause fix is to extend the stale check (cop-emitted?) to **all**
+curated entries, not just verified-removals.
+
+Impact is accuracy, not verdicts (none are blockers): for the 3 renamed cops the
+correctly-named cop *does* fire but gets **no remediation doc** because our mapping sits
+under the dead name; the 5 removed-upstream entries are dead clutter.
+
+- [ ] **Rename (cop still exists under a new name/department):**
+  `WindowsPackageInstallerType` → `Chef/Deprecations/WindowsPackageInstallerTypeString`;
+  `IncludingXMLRubyCookbook` → `Chef/Deprecations/IncludingXMLRubyRecipe`;
+  `DefaultMetadataMaintainer` → `Chef/Sharing/DefaultMetadataMaintainer` (note: different
+  department — still Review by default).
+- [ ] **Drop (no cop emitted by CC19 — removed/renamed away):**
+  `DeprecatedChefSpecHelpers` (split into `ChefSpecCoverageReport` /
+  `ChefSpecLegacyRunner` / `DeprecatedChefSpecPlatform` — all ChefSpec = test-tooling =
+  structural Noise, so no remediation doc needed), `ChefSpecifyDefaultAction`,
+  `DependsOnChefHandlerCookbook`, `ResourceUsesOnlyIfNotIf`,
+  `RubyVersionConstraintInEnvironment`.
+- [ ] **Close the linter blind spot:** stale-check every curated cop name against the
+  live registry, independent of `RemovedIn`. This is the durable guard that would have
+  caught all 8 at CI.
+
 ## Security — CodeQL Path-injection / TLS Follow-ups
 
 Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dismissed).
