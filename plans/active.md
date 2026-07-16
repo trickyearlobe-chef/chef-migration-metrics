@@ -2,6 +2,35 @@
 
 Single source of truth for what is in flight. **Read this first at session start.**
 
+## ⛔ EVENT-INGEST — READ BEFORE YOU BUILD (do NOT build from memory or this summary alone)
+
+Active work is the **Event Ingest MVP** on `feature/event-ingest-mvp`. A prior session
+confidently built on a WRONG topology assumption because it worked from memory instead of
+reading the spec. Do not repeat that. **Before writing any Event-Ingest code, READ:**
+1. `specifications/event-ingest.md` — the authoritative spec (Node identity + UI sections
+   carry the load-bearing constraints below). This is mandatory, not optional.
+2. Memories `event-ingest-build-state` (what's built + open decisions) and
+   `customer-topology-ingest` (the topology). Then `plans/proposal-event-ingest.md`.
+
+**Three load-bearing facts you MUST hold (getting any wrong will send you down a wrong path):**
+- **Topology is MIXED.** Clustered Automate (2 orgs, ~50k nodes each) CMM pulls + Data
+  Feeds — PLUS standalone **DMZ Infra Servers (~2-3k nodes each) CMM CANNOT reach/pull**;
+  they only **push events**. DMZ nodes are **ingest-only → no `node_snapshots` → orphan by
+  nature, first-class**, NOT a lab edge case. (Do NOT say "Automate is the only chef server.")
+- **The orphan/DMZ UI fix is a NEW run-centric top-level "Run events" view over
+  `converge_runs`** (sibling of Nodes/Cookbooks/Git Repos). Do NOT fabricate node/org
+  parent records and do NOT touch `node_snapshots`/`organisations`/pull aggregates. Filters
+  are **view-level from `converge_runs`** (org via `DISTINCT organisation`) — **NOT** the
+  global org filter (it's `organisations`-table-driven → excludes DMZ orgs). Node Detail
+  Runs tab stays. Not built yet — this is the NOW work.
+- **CC19 report is an OPEN design, not decided.** "Nodes failing the prospective CC19 run"
+  = `chef_version=target ∧ status=failure`, but shaped as a **distinct-NODE rollup**, not a
+  raw run list. Design it deliberately (see the Run events item + memory), don't assume.
+
+Everything else in the ingest MVP core is built + committed (node-direct proven live). See
+the NOW section for exact done/open state. If any of the three facts above surprises you,
+STOP and re-read the spec before touching code.
+
 ## Branch map (2026-07-14)
 
 - `main` — holds all merged work. Released line: **v2.16.2**.
