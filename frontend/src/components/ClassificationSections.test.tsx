@@ -13,6 +13,7 @@ function group(
   count: number,
 ): OffenseGroup {
   return {
+    group_key: cop,
     cop_name: cop,
     severity: "warning",
     classification,

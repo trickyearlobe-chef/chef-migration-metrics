@@ -620,6 +620,9 @@ type storedOffense struct {
 	CopName   string `json:"cop_name"`
 	Severity  string `json:"severity"`
 	Corrected bool   `json:"corrected"`
+	// Message discriminates poly-method cops during message-aware classification
+	// (see specifications/cop-classification.md, Poly-method cops).
+	Message string `json:"message"`
 }
 
 // classifyOffenses parses the JSONB offenses byte slice and counts offenses

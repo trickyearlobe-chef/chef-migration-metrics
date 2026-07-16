@@ -48,19 +48,19 @@ func TestBuildCookstyleArgs_DropsOnly_FullRuleset(t *testing.T) {
 // drives the rollup to Blocked purely on its classification.
 func TestDeriveStatus_BlockerOutsideDepartments_Blocked(t *testing.T) {
 	offenses := []CookstyleOffense{
-		// File.exists? — curated Blocker at >= 18.0, severity is a mere warning,
+		// File.exists? — curated Blocker at >= 19.0, severity is a mere warning,
 		// so the default error/fatal rules alone would NOT catch it. Only the
 		// classification makes it block — and only if the scan produced it.
 		{Severity: "warning", CopName: "Lint/DeprecatedClassMethods", Message: "File.exists? is deprecated"},
 	}
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "18.0",
+		TargetChefVersion: "19.0",
 	}
 
 	// Sanity: the cop is classified Blocker by a curated default.
 	if got := resolver.Classify("Lint/DeprecatedClassMethods"); got != ClassificationBlocker {
-		t.Fatalf("Lint/DeprecatedClassMethods should classify as blocker at 18.0, got %q", got)
+		t.Fatalf("Lint/DeprecatedClassMethods should classify as blocker at 19.0, got %q", got)
 	}
 
 	status := DeriveCookstyleStatus(offenses, resolver)

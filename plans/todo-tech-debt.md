@@ -4,6 +4,171 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
+## CookStyle — Poly-method cop classification residuals (cop-name-keyed)
+
+Recorded 2026-07-15 with `fix/cookstyle-polymethod-cop` (per-message remediation +
+classification for poly-method cops, e.g. `Lint/DeprecatedClassMethods`). Scope was
+deliberately **live derivations only**; two paths still key on cop name:
+
+- [ ] **Trend recompute from stored fingerprints stays cop-name-keyed.**
+  `DeriveStatusFromFingerprint` / `ComplexityFromFingerprint`
+  (`internal/analysis/cookstyle_recompute.go`) resolve via `Classify(copName)`
+  because `FingerprintCopEntry` omits the offence message
+  (`internal/datastore/cookstyle_offence_fingerprints.go`). A poly-method cop's
+  deprecation-only variant may over-classify as Blocker in *recomputed historical*
+  trend points only — live current-state is correct. **Strategic fix (if trend
+  fidelity is needed):** add a message-derived variant discriminator to the
+  fingerprint grain (schema + `enriched-metric-snapshots.md` change) and key
+  recompute on it.
+- [ ] **Cop Analysis aggregation stays cop-name grain.**
+  `internal/webapi/handle_cookstyle_cops.go` aggregates by `cop_name` and resolves
+  `IsBlocker(copName)` / `Resolve(copName)` with no message, so a poly-method cop
+  shows as one Blocker row even though some variants are Review. It reads the
+  offences JSONB (messages available), so it *could* split by variant. **Strategic
+  fix:** aggregate by effective key (cop + variant) for the poly set, keeping the
+  header/drill-down invariant.
+
+## CookStyle — curated Blocker set needs empirical validation (self-classification spike)
+
+Recorded 2026-07-16. Lab-validated all 26 curated-Blocker cops against real
+CC19.3.14 (Ruby 3.4.8) via `chef-apply` introspection/converge probes. Results
+applied to `copmapping.go` on `fix/cookstyle-polymethod-cop`: `DeprecatedClassMethods`
+re-dated 18.0→19.0; **6 over-claims demoted Blocker→Review** (cleared `RemovedIn`):
+`RubyBlockCreateAction`, `DeprecatedYumRepositoryActions`, `WindowsTaskChangeAction`,
+`ResourceUsesProviderBaseMethod`, `UseInlineResourcesDefined`,
+`SearchUsesPositionalParameters` — all confirmed to still work on CC19.
+
+The **false-negative sweep** (2026-07-16, same branch) then hunted the dangerous
+direction — cops defaulting to Review that flag something genuinely removed on CC19 —
+and added **11 hidden blockers** to `copmapping.go` with tests (`Lint/BigDecimalNew`,
+`Lint/UnifiedInteger`, `Lint/DeprecatedConstants` poly, and the Chef cops
+`UsesChefRESTHelpers`, `ChefShellout`, `UsesDeprecatedMixins`,
+`ResourceUsesDslNameMethod`, `NodeSetWithoutLevel`, `PartialSearchClassUsage`,
+`PartialSearchHelperUsage`, `EpicFail`). Full reconciliation (incl. candidates left
+Review, e.g. `Lint/UriEscapeUnescape` which is disabled in cookstyle's default
+config) is in `scripts/cop-validation/README.md`.
+
+- [ ] **`LegacyNotifySyntax` + the two `CookbookDependsOn*` cops still need a
+  repo/ChefSpec harness.** The 2026-07-16 false-negative sweep closed the other loose
+  ends behaviourally (see `scripts/cop-validation/probe_loose_ends.rb`):
+  `DeprecatedPlatformMethods` **confirmed Blocker** — its four `Chef::Platform`
+  provider-resolution methods are all absent on CC19.3.15 (comment now in
+  `copmapping.go`); `ChefRewind` — `rewind`/`unwind` absent from the stock CC19 DSL,
+  Blocker defensible. Still open: `LegacyNotifySyntax` (the Hash notify probe was an
+  inconclusive nil-run_context artifact — needs a real ChefSpec run_context) and
+  `CookbookDependsOnCompatResource` / `CookbookDependsOnPartialSearch` (pure metadata
+  `depends` — not Ruby-introspectable; a converge-break is a repo-level question). All
+  three remain curated Blockers pending that harness.
+- [x] **Self-validation harness spike — feasibility PROVEN (2026-07-16).** Prototype
+  `cop_validator.rb` on [[cmm-validation-box]] auto-reproduced the manual 26-cop
+  verdict (15 confirmed blockers, 6 over-claims) by introspecting `RESTRICT_ON_SEND`
+  per cop and probing each target against live Chef 19.3.15 — one `chef exec ruby`
+  process. Auto-discovered targets the hand-curation missed (DeprecatedClassMethods
+  flags 8 methods, not 4). Lessons for a production harness: (1) probe **behaviourally**
+  (call + catch), not `respond_to?` — the latter false-positives on Chef::Node attr
+  methods (NodeSetUnless "ghost respond_to"); (2) **arg-form** deprecations (`attr :x, true`,
+  `depends 'compat_resource'`) are not method-removal — need arg-aware / ChefSpec
+  behavioural checks, not presence probes (the Kernel/Module poly probes for
+  attr/iterator? were unreliable); (3) resolve cop classes with `gsub`, and note
+  `chef exec` loads the client's vendored cookstyle 8.6.10, not the workstation 8.7.6.
+- [ ] **Productionise the harness.** Add the ChefSpec/behavioural layer for arg-form
+  + action + Windows cops; wire reconcile → auto-demote a curated Blocker whose target
+  is still present on the deployed chef-client + emit a curation-drift warning. This is
+  the durable replacement for hand-curated `RemovedIn`.
+
+---
+
+## CookStyle — static coverage of Ruby removals is incomplete (invisible blockers)
+
+Recorded 2026-07-16 (`fix/cookstyle-polymethod-cop`). The false-negative sweep closed
+hidden blockers *within the set of cops cookstyle emits*. But cookstyle/RuboCop is a
+**static linter**: it only flags a Ruby removal when an *enabled* cop with an explicit
+pattern exists. It is **not** an authoritative list of everything removed in the Ruby
+that the target Chef bundles, so a class of **invisible blockers** (constructs that
+crash on CC19 but produce **no offence at all**) is undetectable by the classification
+layer — worse than a Review-defaulted hidden blocker, because it never appears.
+
+Lab-verified on CC19.3.15 / Ruby 3.4.8 (2026-07-16, `scripts/cop-validation/`): of four
+genuinely-removed constructs, cookstyle's **default** config flagged **none** —
+
+| Construct | Removed in | cookstyle default flags? | Runtime on CC19 |
+|-----------|-----------|--------------------------|-----------------|
+| `URI.escape` / `unescape` / `encode` / `decode` | Ruby 3.0 | no — `Lint/UriEscapeUnescape` is `Enabled: false` | NoMethodError |
+| `String#taint` / `untaint` / `tainted?` | Ruby 3.2 | no — no cop exists | NoMethodError |
+| `$SAFE = n` | Ruby 3.0 | no cop | runs (no-op) |
+| removed default gems `require 'net/telnet'` / `xmlrpc` / `sdbm` / `dbm` / `gdbm` | Ruby 3.0–3.4 | no cop | LoadError (lab-verified) |
+
+Note (lab-verified 2026-07-16): `require 'webrick'` **loads** on this Workstation even
+though Ruby dropped webrick as a default gem in 3.0 — the Chef omnibus vendors it. So
+default-gem-removal breakage is **install-dependent** (the omnibus masks some removals),
+which is a further reason to verify behaviourally rather than assume from Ruby version
+history.
+
+Three gap classes: (1) **cop exists but disabled by default** (`Lint/UriEscapeUnescape`);
+(2) **no cop at all** (`taint`/`tainted?`, removed default gems); (3) **statically
+undetectable** (Ruby 3.0 keyword-argument separation, metaprogramming / `send` /
+`method_missing` DSLs, monkeypatches, type-dependent calls).
+
+Implication: the **CookStyle signal is necessarily incomplete** for Ruby-level removals;
+the **behavioural converge signal (Test Kitchen / ChefSpec) is the completeness
+backstop** — this is a first-class reason the dual CS ⊕ TK design exists, not just a
+nicety. Do not present a clean CookStyle scan as "Ruby-3-safe".
+
+- [ ] **Enable the disabled removal cops we control.** If the app owns the cookstyle
+  config it runs (`internal/analysis/cookstyle_invocation.go` /
+  `cookstyle_config_isolation`), enable `Lint/UriEscapeUnescape` (a real removed-API
+  cop that ships off) and add its `copmapping.go` Blocker entry — turns a proven crash
+  from invisible into a Blocker. Verify no false-positive blast radius first.
+- [ ] **Custom cops for the no-cop removals.** Use the spec's `custom_cop_definitions`
+  (regex) for high-value gaps with no upstream cop: `\.taint\b` / `\.tainted\?`,
+  `require ['"](net/telnet|xmlrpc|sdbm|dbm|gdbm)['"]` (exclude webrick — the omnibus
+  bundles it, so flagging it would be a false positive on this install). See
+  `specifications/cop-classification.md` (Custom Cop Scanning).
+- [ ] **Don't over-trust static for Ruby.** Keep the converge/Test Kitchen signal as
+  the authority for "does this actually run on CC19"; the readiness/verdict copy must
+  not imply CookStyle alone proves Ruby-3 compatibility.
+
+## CookStyle — 8 stale curated cop names + a curation-linter blind spot
+
+Found 2026-07-16 while auditing sweep completeness: 8 `copmapping.go` entries name cops
+the CC19 binary does not emit (cross-checked against the live RuboCop registry). All 8
+have empty `RemovedIn` (Review-level), which is exactly why they were never caught — the
+**curation linter only stale-checks entries with `RemovedIn != ""`** (see
+`ValidateCuratedRemovals` in `cop_curation_lint.go`), so Review-level mappings are
+unvalidated. Root-cause fix is to extend the stale check (cop-emitted?) to **all**
+curated entries, not just verified-removals.
+
+Impact is accuracy, not verdicts (none are blockers): for the 3 renamed cops the
+correctly-named cop *does* fire but gets **no remediation doc** because our mapping sits
+under the dead name; the 5 removed-upstream entries are dead clutter.
+
+Provenance + safety of the rename/drop (established 2026-07-16): the 8 old names were
+seeded in the **initial hand-authored mapping** (commits `4b3b534`/`81ee14d`, 6 Mar
+2026; reformatted to three-part names in `cb92679`), and their error pattern
+(`WindowsPackageInstallerType` vs real `…TypeString`, wrong department for
+`DefaultMetadataMaintainer`, non-existent `ChefSpecifyDefaultAction`) marks them as
+doc/LLM **approximations, never captured from real scan output**. Confirmed against the
+customer DB (VDI): a shape-guarded query over `server_cookbook_cookstyle_results` +
+`git_repo_cookstyle_results` offences found **0** occurrences of all 8 old names — so
+they never matched real offences and no superseded-alias/back-compat mapping is needed.
+(Both Workstation 25 and 26 run Cookstyle 8.6.10 for scanning, which already emits the
+new names; only the WS26 standalone CLI is 8.7.6, also new names.)
+
+- [ ] **Rename (cop still exists under a new name/department):**
+  `WindowsPackageInstallerType` → `Chef/Deprecations/WindowsPackageInstallerTypeString`;
+  `IncludingXMLRubyCookbook` → `Chef/Deprecations/IncludingXMLRubyRecipe`;
+  `DefaultMetadataMaintainer` → `Chef/Sharing/DefaultMetadataMaintainer` (note: different
+  department — still Review by default).
+- [ ] **Drop (no cop emitted by CC19 — removed/renamed away):**
+  `DeprecatedChefSpecHelpers` (split into `ChefSpecCoverageReport` /
+  `ChefSpecLegacyRunner` / `DeprecatedChefSpecPlatform` — all ChefSpec = test-tooling =
+  structural Noise, so no remediation doc needed), `ChefSpecifyDefaultAction`,
+  `DependsOnChefHandlerCookbook`, `ResourceUsesOnlyIfNotIf`,
+  `RubyVersionConstraintInEnvironment`.
+- [ ] **Close the linter blind spot:** stale-check every curated cop name against the
+  live registry, independent of `RemovedIn`. This is the durable guard that would have
+  caught all 8 at CI.
+
 ## Security — CodeQL Path-injection / TLS Follow-ups
 
 Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dismissed).

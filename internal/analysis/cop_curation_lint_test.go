@@ -55,6 +55,33 @@ func TestValidateCuratedRemovals_FlagsStaleEntry(t *testing.T) {
 	}
 }
 
+// A Review-level entry (empty RemovedIn) whose cop the binary no longer emits is
+// now flagged stale too — closing the blind spot the 2026-07-16 audit found (8
+// stale Review mappings that the RemovedIn-only check had skipped).
+func TestValidateCuratedRemovals_FlagsStaleReviewEntry(t *testing.T) {
+	mappings := []remediation.CopMapping{
+		{CopName: "Chef/Deprecations/RenamedAway", RemovedIn: ""}, // Review-level, no removal claim
+		{CopName: "Chef/Deprecations/StillEmitted", RemovedIn: ""},
+	}
+	reg := fakeCopLister{
+		"Chef/Deprecations/StillEmitted": "An advisory deprecation.",
+		// RenamedAway absent → stale despite empty RemovedIn.
+	}
+
+	issues := ValidateCuratedRemovals(mappings, reg)
+
+	got, ok := issueFor(issues, "Chef/Deprecations/RenamedAway")
+	if !ok {
+		t.Fatalf("expected a stale issue for the Review-level RenamedAway entry, got %+v", issues)
+	}
+	if got.Kind != CurationStale {
+		t.Errorf("kind = %q, want %q", got.Kind, CurationStale)
+	}
+	if _, present := issueFor(issues, "Chef/Deprecations/StillEmitted"); present {
+		t.Errorf("an emitted Review-level cop should not be flagged: %+v", issues)
+	}
+}
+
 // A description that names a removal version disagreeing with the curated
 // RemovedIn is flagged.
 func TestValidateCuratedRemovals_FlagsRemovalDisagreement(t *testing.T) {
