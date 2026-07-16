@@ -22,7 +22,7 @@
     ]
   },
   "cookbooks": {
-    "failcb": "0.1.0"
+    "failcb": { "version": "0.1.0" }
   },
   "total_resource_count": 1,
   "updated_resource_count": 0,

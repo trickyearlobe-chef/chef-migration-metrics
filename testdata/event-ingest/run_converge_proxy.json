@@ -22,7 +22,7 @@
     ]
   },
   "cookbooks": {
-    "base": "1.2.0"
+    "base": { "version": "1.2.0" }
   },
   "total_resource_count": 8,
   "updated_resource_count": 0,

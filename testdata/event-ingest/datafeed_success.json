@@ -27,8 +27,8 @@
       ]
     },
     "cookbooks": {
-      "base": "1.2.0",
-      "ntp": "3.4.0"
+      "base": { "version": "1.2.0" },
+      "ntp": { "version": "3.4.0" }
     },
     "versioned_cookbooks": [
       { "name": "base", "version": "1.2.0" },

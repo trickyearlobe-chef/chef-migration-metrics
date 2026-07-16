@@ -25,7 +25,7 @@
       ]
     },
     "cookbooks": {
-      "failcb": "0.1.0"
+      "failcb": { "version": "0.1.0" }
     },
     "versioned_cookbooks": [
       { "name": "failcb", "version": "0.1.0" }

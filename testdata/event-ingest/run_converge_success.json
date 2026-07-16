@@ -24,8 +24,8 @@
     ]
   },
   "cookbooks": {
-    "base": "1.2.0",
-    "ntp": "3.4.0"
+    "base": { "version": "1.2.0" },
+    "ntp": { "version": "3.4.0" }
   },
   "total_resource_count": 12,
   "updated_resource_count": 3,

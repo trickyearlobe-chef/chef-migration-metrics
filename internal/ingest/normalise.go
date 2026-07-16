@@ -96,17 +96,38 @@ type runBody struct {
 	Organization string `json:"organization"`
 	SourceFQDN   string `json:"source_fqdn"`
 	// shared run fields
-	Status               string            `json:"status"`
-	ChefVersion          string            `json:"chef_version"`
-	StartTime            time.Time         `json:"start_time"`
-	EndTime              time.Time         `json:"end_time"`
-	RunList              []string          `json:"run_list"`
-	ExpandedRunList      json.RawMessage   `json:"expanded_run_list"`
-	Cookbooks            map[string]string `json:"cookbooks"`
-	TotalResourceCount   int               `json:"total_resource_count"`
-	UpdatedResourceCount int               `json:"updated_resource_count"`
-	Resources            []resource        `json:"resources"`
-	Error                *runError         `json:"error"`
+	Status               string                     `json:"status"`
+	ChefVersion          string                     `json:"chef_version"`
+	StartTime            time.Time                  `json:"start_time"`
+	EndTime              time.Time                  `json:"end_time"`
+	RunList              []string                   `json:"run_list"`
+	ExpandedRunList      json.RawMessage            `json:"expanded_run_list"`
+	Cookbooks            map[string]json.RawMessage `json:"cookbooks"`
+	TotalResourceCount   int                        `json:"total_resource_count"`
+	UpdatedResourceCount int                        `json:"updated_resource_count"`
+	Resources            []resource                 `json:"resources"`
+	Error                *runError                  `json:"error"`
+}
+
+// cookbookVersions normalises the run's cookbooks map to name -> version. Chef
+// emits each entry as an object {"version": "x.y.z", ...} (measured against a real
+// run_converge); a bare version string is also tolerated for robustness.
+func cookbookVersions(raw map[string]json.RawMessage) map[string]string {
+	out := make(map[string]string, len(raw))
+	for name, v := range raw {
+		var obj struct {
+			Version string `json:"version"`
+		}
+		if err := json.Unmarshal(v, &obj); err == nil && obj.Version != "" {
+			out[name] = obj.Version
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(v, &s); err == nil {
+			out[name] = s
+		}
+	}
+	return out
 }
 
 // envelope peeks at the discriminating top-level keys without committing to a
@@ -151,7 +172,7 @@ func fromRunBody(raw json.RawMessage, shape string) (*ConvergeRun, error) {
 		EndTime:              b.EndTime,
 		RunList:              b.RunList,
 		ExpandedRunList:      b.ExpandedRunList,
-		Cookbooks:            b.Cookbooks,
+		Cookbooks:            cookbookVersions(b.Cookbooks),
 		TotalResourceCount:   b.TotalResourceCount,
 		UpdatedResourceCount: b.UpdatedResourceCount,
 		Shape:                shape,
