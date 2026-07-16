@@ -1,6 +1,13 @@
 # Git repo URL migration — collector doesn't follow a moved repo while the old remote stays reachable
 
-Handoff plan for a fresh thread. Analysis done 2026-07-16; no code written yet.
+Status: **Fix A implemented** on branch `fix/git-repo-origin-reconciliation`
+(`reconcileOrigin` in `internal/collector/git.go`, wired into `fetchGitCookbooks`,
+spec updated in `specifications/data-collection.md`, tests in `git_test.go`).
+Reconcile runs on **every** existing clone each cycle, so the already-pinned-to-Stash
+estate self-migrates the moment each repo appears on GitLab — **Fix B (stopgap bulk
+reset) is therefore not needed** and is left below only as historical context.
+
+Handoff plan below is the original analysis (2026-07-16).
 
 ## Problem
 
