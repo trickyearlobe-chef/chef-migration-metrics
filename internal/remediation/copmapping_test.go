@@ -4,6 +4,7 @@
 package remediation
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -272,14 +273,17 @@ func TestAllCopMappings_AllFieldsPopulated(t *testing.T) {
 func TestAllCopMappings_AllCopsInCorrectNamespace(t *testing.T) {
 	all := AllCopMappings()
 	for _, m := range all {
-		isDeprecation := len(m.CopName) > len("Chef/Deprecations/") && m.CopName[:len("Chef/Deprecations/")] == "Chef/Deprecations/"
-		isCorrectness := len(m.CopName) > len("Chef/Correctness/") && m.CopName[:len("Chef/Correctness/")] == "Chef/Correctness/"
+		isDeprecation := strings.HasPrefix(m.CopName, "Chef/Deprecations/")
+		isCorrectness := strings.HasPrefix(m.CopName, "Chef/Correctness/")
+		// Chef/Sharing/ holds cookbook-sharing hygiene cops (e.g.
+		// DefaultMetadataMaintainer) — a real Chef department, not Deprecations.
+		isSharing := strings.HasPrefix(m.CopName, "Chef/Sharing/")
 		// Generic-Ruby verified removals (e.g. Lint/DeprecatedClassMethods) live
 		// in the RuboCop Lint department, not a Chef namespace.
-		isGenericRuby := len(m.CopName) > len("Lint/") && m.CopName[:len("Lint/")] == "Lint/"
+		isGenericRuby := strings.HasPrefix(m.CopName, "Lint/")
 
-		if !isDeprecation && !isCorrectness && !isGenericRuby {
-			t.Errorf("cop %q is not in a recognised namespace (Chef/Deprecations, Chef/Correctness, or Lint/)", m.CopName)
+		if !isDeprecation && !isCorrectness && !isSharing && !isGenericRuby {
+			t.Errorf("cop %q is not in a recognised namespace (Chef/Deprecations, Chef/Correctness, Chef/Sharing, or Lint/)", m.CopName)
 		}
 	}
 }

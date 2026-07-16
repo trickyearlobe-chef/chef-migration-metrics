@@ -579,18 +579,6 @@ edit_resource(:package, 'nginx') do
 end`,
 	},
 	{
-		CopName:      "Chef/Deprecations/ChefSpecifyDefaultAction",
-		Description:  "Custom resources should specify a default_action instead of relying on the implicit first action.",
-		MigrationURL: "https://docs.chef.io/custom_resources/",
-		IntroducedIn: "12.0",
-		RemovedIn:    "",
-		ReplacementPattern: `# Before:
-actions :create, :delete
-
-# After:
-default_action :create`,
-	},
-	{
 		CopName:      "Chef/Deprecations/ChefSugarHelpers",
 		Description:  "Chef Sugar helpers were merged into Chef Infra Client 15.5+. Remove the chef-sugar gem dependency and use the built-in helpers directly.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
@@ -639,20 +627,6 @@ depends 'poise-service'
 
 # After:
 # Rewrite using custom resources with unified_mode true`,
-	},
-	{
-		CopName:      "Chef/Deprecations/DeprecatedChefSpecHelpers",
-		Description:  "Several ChefSpec helper methods have been deprecated. Use the updated method names.",
-		MigrationURL: "https://docs.chef.io/deprecations/",
-		IntroducedIn: "14.0",
-		RemovedIn:    "",
-		ReplacementPattern: `# Before:
-ChefSpec::Runner.new
-stub_command('...')
-
-# After:
-ChefSpec::SoloRunner.new
-stub_command('...')`,
 	},
 	{
 		// Lab-verified 2026-07-16 on CC19.3.15: the four methods this cop flags —
@@ -908,18 +882,6 @@ end
 provides :my_resource, platform: 'ubuntu'`,
 	},
 	{
-		CopName:      "Chef/Deprecations/ResourceUsesOnlyIfNotIf",
-		Description:  "Using only_if/not_if with a block that references @new_resource is deprecated. Use properties directly.",
-		MigrationURL: "https://docs.chef.io/deprecations/",
-		IntroducedIn: "12.0",
-		RemovedIn:    "",
-		ReplacementPattern: `# Before:
-only_if { @new_resource.install_flag }
-
-# After:
-only_if { new_resource.install_flag }`,
-	},
-	{
 		CopName:      "Chef/Deprecations/ResourceUsesProviderBaseMethod",
 		Description:  "Using Chef::Provider::LWRPBase as a base class for providers is deprecated. Convert to a custom resource.",
 		MigrationURL: "https://docs.chef.io/custom_resources/",
@@ -1036,7 +998,8 @@ windows_feature 'IIS' do
 end`,
 	},
 	{
-		CopName:      "Chef/Deprecations/WindowsPackageInstallerType",
+		// Renamed upstream from WindowsPackageInstallerType (2026-07-16 registry audit).
+		CopName:      "Chef/Deprecations/WindowsPackageInstallerTypeString",
 		Description:  "The :installer_type property for windows_package is deprecated in favour of the :source property's auto-detection.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
@@ -1074,7 +1037,9 @@ windows_task 'my_task' do
 end`,
 	},
 	{
-		CopName:      "Chef/Deprecations/DefaultMetadataMaintainer",
+		// Lives in the Chef/Sharing department, not Chef/Deprecations (2026-07-16
+		// registry audit corrected the stale name).
+		CopName:      "Chef/Sharing/DefaultMetadataMaintainer",
 		Description:  "The default metadata.rb maintainer and maintainer_email values should be updated from the template defaults.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
@@ -1251,7 +1216,8 @@ include_recipe 'yum::dnf_yum_compat'
 # Remove the include_recipe line.`,
 	},
 	{
-		CopName:      "Chef/Deprecations/IncludingXMLRubyCookbook",
+		// Renamed upstream from IncludingXMLRubyCookbook (2026-07-16 registry audit).
+		CopName:      "Chef/Deprecations/IncludingXMLRubyRecipe",
 		Description:  "The xml::ruby recipe is no longer needed. The nokogiri gem is included in Chef Infra Client.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "15.0",
@@ -1261,30 +1227,6 @@ include_recipe 'xml::ruby'
 
 # After:
 # Remove the include_recipe line.`,
-	},
-	{
-		CopName:      "Chef/Deprecations/DependsOnChefHandlerCookbook",
-		Description:  "The chef_handler cookbook is no longer needed. The chef_handler resource is built into Chef 14+.",
-		MigrationURL: "https://docs.chef.io/deprecations/",
-		IntroducedIn: "14.0",
-		RemovedIn:    "",
-		ReplacementPattern: `# Before (metadata.rb):
-depends 'chef_handler'
-
-# After:
-# Remove the dependency — use the built-in chef_handler resource.`,
-	},
-	{
-		CopName:      "Chef/Deprecations/RubyVersionConstraintInEnvironment",
-		Description:  "Specifying a Ruby version constraint in a Chef environment is deprecated.",
-		MigrationURL: "https://docs.chef.io/deprecations/",
-		IntroducedIn: "13.0",
-		RemovedIn:    "",
-		ReplacementPattern: `# Before (environment.rb):
-ruby_version '~> 2.5'
-
-# After:
-# Remove the ruby_version constraint.`,
 	},
 	{
 		CopName:      "Chef/Deprecations/ChefDKGenerators",
