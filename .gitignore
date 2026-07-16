@@ -211,3 +211,8 @@ docker-compose.override.yaml
 # CI artifacts
 junit.xml
 test-results/
+
+# json-event-catcher MCP local DB (dev-only, transient)
+events.db
+events.db-shm
+events.db-wal
