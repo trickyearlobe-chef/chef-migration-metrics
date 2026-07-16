@@ -106,7 +106,23 @@ Probed but **left Review** (recorded so they are not re-swept):
 - All `Chef/Correctness/*` — advisory correctness/style patterns, no removed API.
 
 Scripts added this sweep: `enumerate_cops.rb`, `inspect_candidates.rb`,
-`probe_candidates.rb`, `showcops_desc.rb`.
+`probe_candidates.rb`, `probe_loose_ends.rb`, `showcops_desc.rb`.
+
+### Coverage limit — cookstyle does NOT catch all Ruby removals
+
+The sweep also established (lab-verified, CC19.3.15 / Ruby 3.4.8) that cookstyle's
+default scan misses a whole class of Ruby removals: of `URI.escape` (removed Ruby 3.0),
+`String#taint`/`tainted?` (removed Ruby 3.2), and removed default gems
+(`net/telnet`/`xmlrpc`/`sdbm` — `require` → LoadError; note `webrick` is vendored by the
+omnibus and still loads, so gem-removal breakage is install-dependent), the default
+config flagged **none** — the Ruby-3.x ones break at runtime anyway. RuboCop only flags
+a removal when an *enabled* cop with an explicit pattern exists; it is not an
+authoritative list of what the target Ruby removed. So the CookStyle signal is a
+**necessary-but-incomplete** check for Ruby-level compatibility, and the behavioural
+converge signal (Test Kitchen / ChefSpec) is the completeness backstop. Full detail,
+gap classes, and follow-ups (enable `Lint/UriEscapeUnescape`; custom regex cops) are in
+`plans/todo-tech-debt.md` (“CookStyle — static coverage of Ruby removals is
+incomplete”).
 
 ## Known limitations (spike lessons — see plans/todo-tech-debt.md)
 
