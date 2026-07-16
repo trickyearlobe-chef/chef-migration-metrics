@@ -17,6 +17,7 @@ import type {
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge, DeploymentStateBadge, ConvergeBadge } from "../components/StatusBadge";
 import { DiskUsageBars, computeDiskBars } from "../components/DiskUsageBars";
+import { NodeRunsSection } from "../components/NodeRunsSection";
 import type { NodeSnapshot } from "../types";
 
 // Helper to build the disk detail link for a node.
@@ -997,6 +998,9 @@ export function NodeDetailPage() {
           targetVersions={targetVersions}
         />
       )}
+
+      {/* Converge Runs — ingested run telemetry (event-ingest) */}
+      {org && name && <NodeRunsSection org={org} nodeName={name} />}
     </div>
   );
 }
