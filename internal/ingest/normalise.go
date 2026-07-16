@@ -45,18 +45,18 @@ type ConvergeRun struct {
 // RunError is a normalised converge failure. Description is kept verbatim (its
 // shape varies by producer); Backtrace is bounded to maxBacktraceLines.
 type RunError struct {
-	Class       string
-	Message     string
-	Description json.RawMessage
-	Backtrace   []string
+	Class       string          `json:"class"`
+	Message     string          `json:"message"`
+	Description json.RawMessage `json:"description,omitempty"`
+	Backtrace   []string        `json:"backtrace,omitempty"`
 }
 
 // FailedResource identifies the resource whose action raised the failure.
 type FailedResource struct {
-	CookbookName string
-	RecipeName   string
-	Name         string
-	Type         string
+	CookbookName string `json:"cookbook_name"`
+	RecipeName   string `json:"recipe_name"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
 }
 
 // Shape constants for ConvergeRun.Shape / provenance.
