@@ -49,6 +49,65 @@ in `internal/remediation/copmapping.go`, which discovered `ENV.clone`/`dup`/`fre
 raise `TypeError` on Ruby 3.4 (Blocker, we were missing them) and `iterator?`/`attr`
 are still present (Review — a false-positive Blocker via fallback until added).
 
+## False-negative sweep (2026-07-16) — hidden-blocker discovery
+
+The prior work validated only **false positives** (curated Blockers that over-claim).
+This sweep hunts the dangerous direction: cops that flag something genuinely
+removed/broken on CC19 but were **not** curated, so they defaulted to Review — a
+hidden blocker (see `specifications/cop-classification.md`, asymmetric confidence).
+
+Method (scripts, run in order on `cmm.trickyearlobe.com`):
+
+1. `enumerate_cops.rb` — full inventory of `Chef/Deprecations/*`, `Lint/*`,
+   `Chef/Correctness/*` from the RuboCop registry (272 cops: 79 / 152 / 41).
+2. `inspect_candidates.rb` — pull each candidate's authoritative table / MSG.
+3. `probe_candidates.rb` — **behavioural** probe (call + catch) of each target
+   against CC19.3.15 / Ruby 3.4.8; a `NoMethodError`/`NameError` (gone) or
+   `TypeError`/`ArgumentError` (breaks) ⇒ Blocker, a clean run ⇒ Review.
+4. Cross-check the cop actually **fires** in a real cookbook layout (cookstyle
+   respects per-cop `Include` paths — a loose `.rb` misses resource/library cops).
+5. `showcops_desc.rb` — confirm each addition is emitted by `--show-cops` (not
+   stale) and its RemovedIn agrees with the description's "removed in N" (else the
+   curation linter flags it).
+
+Reconciliation — **11 hidden blockers found and added** to `copmapping.go`
+(cop → removed-on-CC19? → was-curated?):
+
+| Cop | Probe result on CC19.3.15 | RemovedIn |
+|-----|---------------------------|-----------|
+| `Chef/Deprecations/UsesChefRESTHelpers` | `Chef::REST` NameError | 13.0 |
+| `Chef/Deprecations/ChefShellout` | `Chef::ShellOut` NameError | 13.0 |
+| `Chef/Deprecations/UsesDeprecatedMixins` | 4 mixins NameError | 14.0 |
+| `Chef/Deprecations/ResourceUsesDslNameMethod` | `dsl_name` absent | 13.0 |
+| `Chef/Deprecations/NodeSetWithoutLevel` | `node['x']=y` raises read-only | 11.0 |
+| `Chef/Deprecations/PartialSearchClassUsage` | `Chef::PartialSearch` NameError | 19.0 |
+| `Chef/Deprecations/PartialSearchHelperUsage` | `partial_search` NoMethodError | 19.0 |
+| `Chef/Deprecations/EpicFail` | `epic_fail` NoMethodError | 19.0 |
+| `Lint/BigDecimalNew` | `BigDecimal.new` NoMethodError (Ruby 2.7) | 19.0 |
+| `Lint/UnifiedInteger` | `Fixnum`/`Bignum` NameError (Ruby 3.2) | 19.0 |
+| `Lint/DeprecatedConstants` (poly) | NIL/TRUE/FALSE/Random::DEFAULT/Struct::* NameError | 19.0 |
+
+Poly note: `Lint/DeprecatedConstants` base is Blocker; `Net::HTTPServerException`
+(still an alias on Ruby 3.4) is the one Review carve-out variant.
+
+Probed but **left Review** (recorded so they are not re-swept):
+
+- `Lint/UriEscapeUnescape` — URI.escape/unescape are removed on Ruby 3.4, **but the
+  cop is `Enabled: false` in cookstyle's default config**, so it never appears in a
+  scan → not classifiable. (The strongest-looking candidate; disabled ⇒ moot.)
+- `Lint/ErbNewArguments` — `ERB.new(str, safe_level, trim_mode)` still **runs** on
+  Ruby 3.4 (both nil and numeric safe_level) → Review, not a removal.
+- `Lint/UriRegexp`, `Lint/DeprecatedOpenSSLConstant` — targets present on Ruby 3.4.
+- `Chef/Deprecations/ResourceUsesOnlyResourceName` — failure is conditional at
+  resource *resolution* (CC16+), not reproducible from a static class-build probe;
+  needs a ChefSpec resolution test before promotion.
+- Windows/Powershell helper cops (`WindowsVersionHelpers`, `PowershellCookbookHelpers`,
+  `DeprecatedWindowsVersionCheck`) — can't validate from a Linux host; need Fauxhai.
+- All `Chef/Correctness/*` — advisory correctness/style patterns, no removed API.
+
+Scripts added this sweep: `enumerate_cops.rb`, `inspect_candidates.rb`,
+`probe_candidates.rb`, `showcops_desc.rb`.
+
 ## Known limitations (spike lessons — see plans/todo-tech-debt.md)
 
 - **Presence ≠ behaviour.** `respond_to?` false-positives on Chef::Node attr methods

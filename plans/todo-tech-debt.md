@@ -38,16 +38,27 @@ re-dated 18.0→19.0; **6 over-claims demoted Blocker→Review** (cleared `Remov
 `ResourceUsesProviderBaseMethod`, `UseInlineResourcesDefined`,
 `SearchUsesPositionalParameters` — all confirmed to still work on CC19.
 
-- [ ] **`DeprecatedPlatformMethods` unverified.** Spike introspection (2026-07-16)
-  resolved what it flags: `RESTRICT_ON_SEND=[:provider_for_resource, :find_provider,
-  :find_provider_for_node, :set]` (internal Chef::Platform provider-resolution
-  methods), not the `value_for_platform`/`platform?` helpers I'd guessed. Still need
-  to probe those four against Chef 19 to confirm removed vs present before deciding
-  its verdict. Do NOT demote until verified.
-- [ ] **4 non-symbol Blocker cops not validated by probe** (`ChefRewind`,
-  `CookbookDependsOnCompatResource`, `CookbookDependsOnPartialSearch`,
-  `LegacyNotifySyntax`) — cookbook-dependency / behavioural, not method removals.
-  Need a different validation (repo/behavioural).
+The **false-negative sweep** (2026-07-16, same branch) then hunted the dangerous
+direction — cops defaulting to Review that flag something genuinely removed on CC19 —
+and added **11 hidden blockers** to `copmapping.go` with tests (`Lint/BigDecimalNew`,
+`Lint/UnifiedInteger`, `Lint/DeprecatedConstants` poly, and the Chef cops
+`UsesChefRESTHelpers`, `ChefShellout`, `UsesDeprecatedMixins`,
+`ResourceUsesDslNameMethod`, `NodeSetWithoutLevel`, `PartialSearchClassUsage`,
+`PartialSearchHelperUsage`, `EpicFail`). Full reconciliation (incl. candidates left
+Review, e.g. `Lint/UriEscapeUnescape` which is disabled in cookstyle's default
+config) is in `scripts/cop-validation/README.md`.
+
+- [ ] **`LegacyNotifySyntax` + the two `CookbookDependsOn*` cops still need a
+  repo/ChefSpec harness.** The 2026-07-16 false-negative sweep closed the other loose
+  ends behaviourally (see `scripts/cop-validation/probe_loose_ends.rb`):
+  `DeprecatedPlatformMethods` **confirmed Blocker** — its four `Chef::Platform`
+  provider-resolution methods are all absent on CC19.3.15 (comment now in
+  `copmapping.go`); `ChefRewind` — `rewind`/`unwind` absent from the stock CC19 DSL,
+  Blocker defensible. Still open: `LegacyNotifySyntax` (the Hash notify probe was an
+  inconclusive nil-run_context artifact — needs a real ChefSpec run_context) and
+  `CookbookDependsOnCompatResource` / `CookbookDependsOnPartialSearch` (pure metadata
+  `depends` — not Ruby-introspectable; a converge-break is a repo-level question). All
+  three remain curated Blockers pending that harness.
 - [x] **Self-validation harness spike — feasibility PROVEN (2026-07-16).** Prototype
   `cop_validator.rb` on [[cmm-validation-box]] auto-reproduced the manual 26-cop
   verdict (15 confirmed blockers, 6 over-claims) by introspecting `RESTRICT_ON_SEND`
