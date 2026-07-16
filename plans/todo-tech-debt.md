@@ -38,20 +38,32 @@ re-dated 18.0→19.0; **6 over-claims demoted Blocker→Review** (cleared `Remov
 `ResourceUsesProviderBaseMethod`, `UseInlineResourcesDefined`,
 `SearchUsesPositionalParameters` — all confirmed to still work on CC19.
 
-- [ ] **`DeprecatedPlatformMethods` unverified.** Probe hit the wrong symbols
-  (common platform helpers all present). Left at `RemovedIn: 15.0` — needs the
-  cop-source (`RESTRICT_ON_SEND`) inspection to learn what it actually flags, then
-  re-probe. Do NOT demote until verified (demotion is the dangerous direction).
+- [ ] **`DeprecatedPlatformMethods` unverified.** Spike introspection (2026-07-16)
+  resolved what it flags: `RESTRICT_ON_SEND=[:provider_for_resource, :find_provider,
+  :find_provider_for_node, :set]` (internal Chef::Platform provider-resolution
+  methods), not the `value_for_platform`/`platform?` helpers I'd guessed. Still need
+  to probe those four against Chef 19 to confirm removed vs present before deciding
+  its verdict. Do NOT demote until verified.
 - [ ] **4 non-symbol Blocker cops not validated by probe** (`ChefRewind`,
   `CookbookDependsOnCompatResource`, `CookbookDependsOnPartialSearch`,
   `LegacyNotifySyntax`) — cookbook-dependency / behavioural, not method removals.
   Need a different validation (repo/behavioural).
-- [ ] **Build the self-validation harness (spike).** cookstyle is introspectable
-  (`RESTRICT_ON_SEND` + constant tables → probe target); chef-client probes removal;
-  ChefSpec (Workstation 26, RHEL box — not on Mac) simulates converge cross-platform.
-  Wire so a curated Blocker whose symbol is still present auto-demotes to Review +
-  raises a curation-drift warning. This is the durable replacement for hand-curated
-  `RemovedIn`. See the spike plan.
+- [x] **Self-validation harness spike — feasibility PROVEN (2026-07-16).** Prototype
+  `cop_validator.rb` on [[cmm-validation-box]] auto-reproduced the manual 26-cop
+  verdict (15 confirmed blockers, 6 over-claims) by introspecting `RESTRICT_ON_SEND`
+  per cop and probing each target against live Chef 19.3.15 — one `chef exec ruby`
+  process. Auto-discovered targets the hand-curation missed (DeprecatedClassMethods
+  flags 8 methods, not 4). Lessons for a production harness: (1) probe **behaviourally**
+  (call + catch), not `respond_to?` — the latter false-positives on Chef::Node attr
+  methods (NodeSetUnless "ghost respond_to"); (2) **arg-form** deprecations (`attr :x, true`,
+  `depends 'compat_resource'`) are not method-removal — need arg-aware / ChefSpec
+  behavioural checks, not presence probes (the Kernel/Module poly probes for
+  attr/iterator? were unreliable); (3) resolve cop classes with `gsub`, and note
+  `chef exec` loads the client's vendored cookstyle 8.6.10, not the workstation 8.7.6.
+- [ ] **Productionise the harness.** Add the ChefSpec/behavioural layer for arg-form
+  + action + Windows cops; wire reconcile → auto-demote a curated Blocker whose target
+  is still present on the deployed chef-client + emit a curation-drift warning. This is
+  the durable replacement for hand-curated `RemovedIn`.
 
 ---
 
