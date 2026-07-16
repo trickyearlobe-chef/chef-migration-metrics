@@ -173,6 +173,10 @@ const (
 	// ScopeBackup is used for backup and restore operations — creation,
 	// scheduling, pruning, verification, and restore execution.
 	ScopeBackup Scope = "backup"
+
+	// ScopeIngest is used for event-ingest telemetry — the converge_runs
+	// receiver and its retention (partition rotation).
+	ScopeIngest Scope = "ingest"
 )
 
 // validScopes is the set of recognised scope values. Used for validation.
@@ -193,6 +197,7 @@ var validScopes = map[Scope]bool{
 	ScopeOwnership:            true,
 	ScopePlatformCoverage:     true,
 	ScopeBackup:               true,
+	ScopeIngest:               true,
 }
 
 // IsValidScope returns true if s is a recognised scope value.
