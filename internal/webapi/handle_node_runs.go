@@ -1,0 +1,58 @@
+// Copyright 2025 Chef Migration Metrics Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package webapi
+
+import (
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+)
+
+// handleNodeRuns serves GET /api/v1/nodes/runs/{organisation}/{node} — the recent
+// converge runs for a node, most-recent first, for the Node Detail Runs panel.
+//
+// converge_runs keys on the delivered chef organization_name, which is the org's
+// OrgName (chef slug), NOT its CMM display Name — so we resolve the URL org name
+// and query by org.OrgName. A node with no runs returns an empty list, not 404
+// (short-retention telemetry may simply not exist yet).
+func (r *Router) handleNodeRuns(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+
+	segs := pathSegments(req.URL.Path, "/api/v1/nodes/runs/")
+	if len(segs) < 2 || segs[0] == "" || segs[1] == "" {
+		WriteBadRequest(w, "Expected /api/v1/nodes/runs/{organisation}/{node}.")
+		return
+	}
+	orgName := segs[0]
+	nodeName := strings.Join(segs[1:], "/")
+
+	ctx := req.Context()
+	org, err := r.db.GetOrganisationByName(ctx, orgName)
+	if err != nil {
+		if errors.Is(err, datastore.ErrNotFound) {
+			WriteError(w, http.StatusNotFound, ErrCodeNotFound, "Organisation not found.")
+			return
+		}
+		r.logf("ERROR", "node runs: get organisation %q: %v", orgName, err)
+		WriteInternalError(w, "Failed to load organisation.")
+		return
+	}
+
+	params := ParsePagination(req)
+	runs, err := r.db.ListConvergeRunsForNode(ctx, org.OrgName, nodeName, params.Limit())
+	if err != nil {
+		r.logf("ERROR", "node runs: list %s/%s: %v", org.OrgName, nodeName, err)
+		WriteInternalError(w, "Failed to load runs.")
+		return
+	}
+	if runs == nil {
+		runs = []datastore.ConvergeRunView{}
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{"data": runs})
+}

@@ -106,6 +106,43 @@ func TestFunctional_ConvergeRuns_UpsertDedupAndRetention(t *testing.T) {
 	}
 }
 
+// The read path returns a node's runs most-recent-first with failure detail
+// passed through verbatim.
+func TestFunctional_ConvergeRuns_ListForNode(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	t.Cleanup(func() { db.pool.ExecContext(ctx, `DROP TABLE IF EXISTS converge_runs_20400101`) })
+
+	early := run("list-r1", convD1, "success")
+	late := run("list-r2", convD1.Add(30*time.Minute), "failure")
+	late.Error = &ingest.RunError{Class: "RuntimeError", Message: "boom", Backtrace: []string{"a", "b"}}
+	if _, err := db.BulkUpsertConvergeRuns(ctx, []ingest.ConvergeRun{early, late}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	got, err := db.ListConvergeRunsForNode(ctx, "org-store-test", "node-store-test.example.com", 10)
+	if err != nil {
+		t.Fatalf("ListConvergeRunsForNode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d runs, want 2", len(got))
+	}
+	if got[0].RunID != "list-r2" {
+		t.Errorf("first run = %q, want list-r2 (most recent first)", got[0].RunID)
+	}
+	if got[0].Status != "failure" || len(got[0].Error) == 0 {
+		t.Errorf("first run failure detail missing: status=%q error=%s", got[0].Status, got[0].Error)
+	}
+	if got[0].Cookbooks["base"] != "1.2.0" {
+		t.Errorf("cookbooks = %v, want base=1.2.0", got[0].Cookbooks)
+	}
+	// A node with no runs returns empty, not an error.
+	none, err := db.ListConvergeRunsForNode(ctx, "org-store-test", "nonexistent", 10)
+	if err != nil || len(none) != 0 {
+		t.Errorf("empty case = (%v, %v), want (nil, empty)", none, err)
+	}
+}
+
 // Failure detail (error + failing resource) must round-trip through the JSONB
 // columns intact — it is the feature's whole point.
 func TestFunctional_ConvergeRuns_FailureRoundTrip(t *testing.T) {

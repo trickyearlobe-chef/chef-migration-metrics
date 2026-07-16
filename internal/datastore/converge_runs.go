@@ -119,6 +119,88 @@ func insertConvergeRun(ctx context.Context, tx *sql.Tx, r *ingest.ConvergeRun) (
 	return int(n), nil
 }
 
+// ConvergeRunView is a persisted converge run shaped for the Node Detail Runs
+// tab. Error and FailedResource are the stored JSONB, passed through verbatim
+// (nil when absent) so the read path never re-derives failure detail.
+type ConvergeRunView struct {
+	RunID                string            `json:"run_id"`
+	Status               string            `json:"status"`
+	ChefVersion          string            `json:"chef_version,omitempty"`
+	StartTime            time.Time         `json:"start_time"`
+	EndTime              time.Time         `json:"end_time"`
+	RunList              []string          `json:"run_list"`
+	Cookbooks            map[string]string `json:"cookbooks"`
+	TotalResourceCount   *int              `json:"total_resource_count,omitempty"`
+	UpdatedResourceCount *int              `json:"updated_resource_count,omitempty"`
+	Error                json.RawMessage   `json:"error,omitempty"`
+	FailedResource       json.RawMessage   `json:"failed_resource,omitempty"`
+	Shape                string            `json:"shape"`
+}
+
+// ListConvergeRunsForNode returns the most-recent converge runs for a node,
+// keyed by the delivered organisation NAME + node name (converge_runs is
+// decoupled from node_snapshots — see the migration). Bounded by limit.
+func (db *DB) ListConvergeRunsForNode(ctx context.Context, organisation, nodeName string, limit int) ([]ConvergeRunView, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	const q = `
+SELECT run_id, status, chef_version, start_time, end_time,
+       run_list, cookbooks, total_resource_count, updated_resource_count,
+       error, failed_resource, shape
+FROM converge_runs
+WHERE organisation = $1 AND node_name = $2
+ORDER BY end_time DESC
+LIMIT $3`
+	rows, err := db.pool.QueryContext(ctx, q, organisation, nodeName, limit)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing converge runs for %s/%s: %w", organisation, nodeName, err)
+	}
+	defer rows.Close()
+
+	var out []ConvergeRunView
+	for rows.Next() {
+		var v ConvergeRunView
+		var chefVersion sql.NullString
+		var startTime, endTime sql.NullTime
+		var runListJSON, cookbooksJSON, errorJSON, failedJSON []byte
+		var total, updated sql.NullInt64
+		if err := rows.Scan(&v.RunID, &v.Status, &chefVersion, &startTime, &endTime,
+			&runListJSON, &cookbooksJSON, &total, &updated, &errorJSON, &failedJSON, &v.Shape); err != nil {
+			return nil, fmt.Errorf("datastore: scanning converge run: %w", err)
+		}
+		v.ChefVersion = chefVersion.String
+		if startTime.Valid {
+			v.StartTime = startTime.Time
+		}
+		if endTime.Valid {
+			v.EndTime = endTime.Time
+		}
+		if total.Valid {
+			t := int(total.Int64)
+			v.TotalResourceCount = &t
+		}
+		if updated.Valid {
+			u := int(updated.Int64)
+			v.UpdatedResourceCount = &u
+		}
+		if len(runListJSON) > 0 {
+			_ = json.Unmarshal(runListJSON, &v.RunList)
+		}
+		if len(cookbooksJSON) > 0 {
+			_ = json.Unmarshal(cookbooksJSON, &v.Cookbooks)
+		}
+		if len(errorJSON) > 0 && string(errorJSON) != "null" {
+			v.Error = errorJSON
+		}
+		if len(failedJSON) > 0 && string(failedJSON) != "null" {
+			v.FailedResource = failedJSON
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 // PurgeConvergeRunPartitions drops every whole day partition of converge_runs
 // whose entire time range predates olderThan. Retention is by dropping
 // partitions, never row-level deletes on the hot path. Returns the number of

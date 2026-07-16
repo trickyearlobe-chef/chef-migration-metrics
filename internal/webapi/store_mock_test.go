@@ -18,6 +18,7 @@ import (
 type mockStore struct {
 	PingFn                                                 func(ctx context.Context) error
 	BulkUpsertConvergeRunsFn                               func(ctx context.Context, runs []ingest.ConvergeRun) (int, error)
+	ListConvergeRunsForNodeFn                             func(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error)
 	ListOrganisationsFn                                    func(ctx context.Context) ([]datastore.Organisation, error)
 	GetOrganisationByNameFn                                func(ctx context.Context, name string) (datastore.Organisation, error)
 	GetLatestCollectionRunFn                               func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
@@ -247,6 +248,13 @@ func (m *mockStore) BulkUpsertConvergeRuns(ctx context.Context, runs []ingest.Co
 		return m.BulkUpsertConvergeRunsFn(ctx, runs)
 	}
 	return 0, nil
+}
+
+func (m *mockStore) ListConvergeRunsForNode(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error) {
+	if m.ListConvergeRunsForNodeFn != nil {
+		return m.ListConvergeRunsForNodeFn(ctx, organisation, nodeName, limit)
+	}
+	return nil, nil
 }
 
 func (m *mockStore) ListOrganisations(ctx context.Context) ([]datastore.Organisation, error) {

@@ -403,6 +403,10 @@ type DataStore interface {
 	// transaction, deduped on (run_id, end_time). Returns the number inserted.
 	BulkUpsertConvergeRuns(ctx context.Context, runs []ingest.ConvergeRun) (int, error)
 
+	// ListConvergeRunsForNode returns a node's recent converge runs (most-recent
+	// first) by delivered organisation name + node name, bounded by limit.
+	ListConvergeRunsForNode(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error)
+
 	// DeleteCopClassification removes an operator override.
 	DeleteCopClassification(ctx context.Context, copName string) error
 
