@@ -44,13 +44,11 @@ For a given cop (against the single active target), classification resolves in p
 
 1. **Operator override** (stored in DB) — highest priority; the operator's confirmed verdict.
 2. **Custom/manual cop** → **Blocker**. A cop hand-defined in a migration tool is a blocker by intent.
-3. **Verified removal** → **Blocker**. A curated `RemovedIn` for the cop (`RemovedIn ≤ target`). Curated removal is human-asserted knowledge; the linter cross-checks it against the cop description and flags disagreements/staleness, but does not auto-demote.
+3. **Verified removal** → **Blocker**. A curated `RemovedIn` for the cop (`RemovedIn ≤ target`). Curated removal is human-asserted knowledge; the linter cross-checks it against the cop description and flags disagreements/staleness, but does not auto-demote. For a **poly-method cop** (one cop name, several unrelated deprecations — see Poly-method cops), this step keys on the offence **message**, each variant carrying its own `RemovedIn`.
 4. **Structural Noise** → **Noise**, only from a positive structural reason (longest match wins):
    - Cosmetic RuboCop departments: `Style/`, `Layout/`, `Chef/Style/` — non-functional *by RuboCop's own taxonomy*.
    - Test/CI-tooling-only cops (ChefSpec, Foodcritic, Delivery, Librarian/Berks) — cannot affect production convergence.
 5. **Review** (default) — everything else, including all `Chef/Deprecations/*`, `Chef/Correctness/*`, `Lint/*`, and any cop with no positive Blocker/Noise reason. Honest "unproven — operator decides".
-
-Removed from the old model: the `RemovedIn`-auto-seed-as-primary, the curated *exact/prefix classification* defaults that guessed Review/Noise for whole namespaces without a structural reason, and the **Unclassified→severity→Blocked fallback** entirely.
 
 ### Pass/Fail Determination
 
@@ -83,6 +81,7 @@ Invariants:
   `(offenses + resolved classification) → status`, and materialised. Every read
   path consumes the materialised value; the cop-analysis view and offense-group
   badges resolve from the same classification — the surfaces must never disagree.
+  **Poly-method exception:** live (current-state) derivations are message-aware and authoritative; the message-free fingerprint recompute path (`DeriveStatusFromFingerprint`, `ComplexityFromFingerprint`) keys on cop name, so a poly-method variant may over-classify in *recomputed historical* trend points only.
 - **Only knowledge produces red.** Blocked requires a Blocker offense from a
   positive source; there is no severity-derived red. An operator who does nothing
   sees an honest "N items to review", not a false alarm.
@@ -166,15 +165,23 @@ shipped cop descriptions:
 - Test/CI-tooling-only cops (ChefSpec / Foodcritic / Delivery / Librarian).
 
 Everything not covered by these is **Review** by default — no curated
-Review/Noise *guesses* for whole namespaces. (Cops like `HWRPWithoutUnifiedTrue`
-are simply Review, which is where the default already puts every unproven
-`Chef/Deprecations/*` cop.)
+Review/Noise *guesses* for whole namespaces (an unproven `Chef/Deprecations/*` cop
+is simply Review).
+
+**Poly-method cops.** A few cops flag several *unrelated* deprecations under one
+name with different impact per case. Canonical: `Lint/DeprecatedClassMethods` —
+`File.exists?`/`Dir.exists?` were **removed** (Ruby 3.2, Blocker), while
+`Socket.gethostbyname`/`Socket.gethostbyaddr` are **deprecation-only** (Review); the
+offence **message** (naming the method) is the only discriminator. For these cops
+the remediation mapping and the verified-removal step key on a message-selected
+**variant**, each with its own `RemovedIn`/description/Before-After (no `RemovedIn`
+→ Review). The variant table is compiled Go data (`copmapping.go`), is the SoT, and
+is linter-guarded; a message matching no variant falls back to the cop-name mapping.
 
 ## Data Provenance & Durability (decisions)
 
 Records where each input comes from and how the signal stays reliable as cookstyle
-evolves. Model agreed 2026-07-03 (trustworthy reds; supersedes the 2026-07-01
-auto-seed/DB-seed decisions).
+evolves. Model agreed 2026-07-03 (trustworthy reds; supersedes the 2026-07-01 auto-seed/DB-seed decisions).
 
 **Static (compiled Go, hand-maintained):** the `RemovedIn` verified-removal table
 and the structural-Noise rules. **Dynamic (runtime):** operator overrides + custom
@@ -186,8 +193,7 @@ the DB-seeded defaults table (chunk 3) is abandoned.
 `Enabled`/`Description`/`VersionAdded` (the *gem* version, not the Chef-Client
 removal), and does not even print default `Severity`. The Chef removal version
 exists only in free-text `Description`, and a 2026-07-03 spike showed it is only
-~30% cleanly parseable (a third absent, a fifth a deprecation-vs-removal trap). So
-removal knowledge stays **curated** — but validated by a linter, not assumed.
+~30% cleanly parseable. So removal knowledge stays **curated** — validated by a linter, not assumed.
 
 **Custom cops are Blockers by intent.** A cop hand-defined in a migration
 assessment tool is, by the act of defining it, a declared blocker. It resolves as

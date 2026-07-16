@@ -968,7 +968,7 @@ func enrichOffenses(offenses []CookstyleOffense) []remediation.EnrichedOffense {
 				LastLine:    off.Location.LastLine,
 				LastColumn:  off.Location.LastColumn,
 			},
-			Remediation: remediation.LookupCop(off.CopName),
+			Remediation: remediation.LookupCopForOffense(off.CopName, off.Message),
 		}
 	}
 	return enriched

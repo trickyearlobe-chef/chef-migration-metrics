@@ -88,11 +88,11 @@ func TestResolverCustomCop(t *testing.T) {
 func TestResolverVerifiedRemoval(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "18.0",
+		TargetChefVersion: "19.0",
 	}
 
 	// NodeSet RemovedIn=14.0, WindowsFeatureServermanagercmd=15.0,
-	// Lint/DeprecatedClassMethods=18.0 — all ≤ target 18.0.
+	// Lint/DeprecatedClassMethods=19.0 — all ≤ target 19.0.
 	for _, cop := range []string{
 		"Chef/Deprecations/NodeSet",
 		"Chef/Deprecations/WindowsFeatureServermanagercmd",

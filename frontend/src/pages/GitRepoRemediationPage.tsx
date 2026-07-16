@@ -92,13 +92,13 @@ export function GitRepoRemediationContent({
 
   // Expand/collapse state for offense groups.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const toggleGroup = (copName: string) => {
+  const toggleGroup = (groupKey: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(copName)) {
-        next.delete(copName);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
       } else {
-        next.add(copName);
+        next.add(groupKey);
       }
       return next;
     });
@@ -114,7 +114,7 @@ export function GitRepoRemediationContent({
     : [];
 
   const expandAll = () => {
-    setExpandedGroups(new Set(filteredGroups.map((g) => g.cop_name)));
+    setExpandedGroups(new Set(filteredGroups.map((g) => g.group_key)));
   };
   const collapseAll = () => setExpandedGroups(new Set());
 
@@ -262,10 +262,10 @@ export function GitRepoRemediationContent({
             classFilter={classFilter}
             renderGroup={(group) => (
               <OffenseGroupCard
-                key={group.cop_name}
+                key={group.group_key}
                 group={group}
-                expanded={expandedGroups.has(group.cop_name)}
-                onToggle={() => toggleGroup(group.cop_name)}
+                expanded={expandedGroups.has(group.group_key)}
+                onToggle={() => toggleGroup(group.group_key)}
               />
             )}
           />

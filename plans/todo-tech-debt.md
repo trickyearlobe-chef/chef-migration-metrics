@@ -4,6 +4,57 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
+## CookStyle — Poly-method cop classification residuals (cop-name-keyed)
+
+Recorded 2026-07-15 with `fix/cookstyle-polymethod-cop` (per-message remediation +
+classification for poly-method cops, e.g. `Lint/DeprecatedClassMethods`). Scope was
+deliberately **live derivations only**; two paths still key on cop name:
+
+- [ ] **Trend recompute from stored fingerprints stays cop-name-keyed.**
+  `DeriveStatusFromFingerprint` / `ComplexityFromFingerprint`
+  (`internal/analysis/cookstyle_recompute.go`) resolve via `Classify(copName)`
+  because `FingerprintCopEntry` omits the offence message
+  (`internal/datastore/cookstyle_offence_fingerprints.go`). A poly-method cop's
+  deprecation-only variant may over-classify as Blocker in *recomputed historical*
+  trend points only — live current-state is correct. **Strategic fix (if trend
+  fidelity is needed):** add a message-derived variant discriminator to the
+  fingerprint grain (schema + `enriched-metric-snapshots.md` change) and key
+  recompute on it.
+- [ ] **Cop Analysis aggregation stays cop-name grain.**
+  `internal/webapi/handle_cookstyle_cops.go` aggregates by `cop_name` and resolves
+  `IsBlocker(copName)` / `Resolve(copName)` with no message, so a poly-method cop
+  shows as one Blocker row even though some variants are Review. It reads the
+  offences JSONB (messages available), so it *could* split by variant. **Strategic
+  fix:** aggregate by effective key (cop + variant) for the poly set, keeping the
+  header/drill-down invariant.
+
+## CookStyle — curated Blocker set needs empirical validation (self-classification spike)
+
+Recorded 2026-07-16. Lab-validated all 26 curated-Blocker cops against real
+CC19.3.14 (Ruby 3.4.8) via `chef-apply` introspection/converge probes. Results
+applied to `copmapping.go` on `fix/cookstyle-polymethod-cop`: `DeprecatedClassMethods`
+re-dated 18.0→19.0; **6 over-claims demoted Blocker→Review** (cleared `RemovedIn`):
+`RubyBlockCreateAction`, `DeprecatedYumRepositoryActions`, `WindowsTaskChangeAction`,
+`ResourceUsesProviderBaseMethod`, `UseInlineResourcesDefined`,
+`SearchUsesPositionalParameters` — all confirmed to still work on CC19.
+
+- [ ] **`DeprecatedPlatformMethods` unverified.** Probe hit the wrong symbols
+  (common platform helpers all present). Left at `RemovedIn: 15.0` — needs the
+  cop-source (`RESTRICT_ON_SEND`) inspection to learn what it actually flags, then
+  re-probe. Do NOT demote until verified (demotion is the dangerous direction).
+- [ ] **4 non-symbol Blocker cops not validated by probe** (`ChefRewind`,
+  `CookbookDependsOnCompatResource`, `CookbookDependsOnPartialSearch`,
+  `LegacyNotifySyntax`) — cookbook-dependency / behavioural, not method removals.
+  Need a different validation (repo/behavioural).
+- [ ] **Build the self-validation harness (spike).** cookstyle is introspectable
+  (`RESTRICT_ON_SEND` + constant tables → probe target); chef-client probes removal;
+  ChefSpec (Workstation 26, RHEL box — not on Mac) simulates converge cross-platform.
+  Wire so a curated Blocker whose symbol is still present auto-demotes to Review +
+  raises a curation-drift warning. This is the durable replacement for hand-curated
+  `RemovedIn`. See the spike plan.
+
+---
+
 ## Security — CodeQL Path-injection / TLS Follow-ups
 
 Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dismissed).

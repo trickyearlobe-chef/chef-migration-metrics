@@ -6,6 +6,8 @@
 // Chef migration analysis pipeline.
 package remediation
 
+import "strings"
+
 // CopMapping describes a single CookStyle cop's migration documentation.
 // Each entry maps a cop_name to its human-readable description, migration
 // URL, version lifecycle information, and a brief code example showing the
@@ -74,6 +76,137 @@ func LookupCop(copName string) *CopMapping {
 	return copMappingIndex[copName]
 }
 
+// copVariant is one message-discriminated variant of a poly-method cop: a
+// single cop name (e.g. Lint/DeprecatedClassMethods) flags several unrelated
+// deprecations whose only distinguishing signal is the offence message. Token
+// is a substring of the offence message (the deprecated method name); Mapping
+// is that variant's own migration documentation and RemovedIn.
+type copVariant struct {
+	Token   string
+	Mapping CopMapping
+}
+
+// polyMethodCopVariants maps a poly-method cop name to its message-discriminated
+// variants. See specifications/cop-classification.md (Poly-method cops). This
+// table is the source of truth for per-message remediation + RemovedIn and is
+// linter-guarded alongside the rest of the curated removal set.
+var polyMethodCopVariants = map[string][]copVariant{
+	"Lint/DeprecatedClassMethods": {
+		{
+			// Removed in Ruby 3.4 (bundled with Chef 19) → Blocker. Lab-verified.
+			Token: "File.exists?",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "File.exists? was removed in Ruby 3.4 (bundled with Chef Infra Client 19). Calls raise NoMethodError at converge time. Use File.exist?.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "19.0",
+				ReplacementPattern: `# Before:
+File.exists?(path)
+
+# After:
+File.exist?(path)`,
+			},
+		},
+		{
+			// Removed in Ruby 3.4 (bundled with Chef 19) → Blocker. Lab-verified.
+			Token: "Dir.exists?",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "Dir.exists? was removed in Ruby 3.4 (bundled with Chef Infra Client 19). Calls raise NoMethodError at converge time. Use Dir.exist?.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "19.0",
+				ReplacementPattern: `# Before:
+Dir.exists?(path)
+
+# After:
+Dir.exist?(path)`,
+			},
+		},
+		{
+			// Deprecated only (not removed) → Review (no RemovedIn).
+			Token: "Socket.gethostbyname",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "Socket.gethostbyname is deprecated (not removed) and does not support IPv6. Use Addrinfo.getaddrinfo.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "",
+				ReplacementPattern: `# Before:
+Socket.gethostbyname('example.com')
+
+# After:
+Addrinfo.getaddrinfo('example.com', nil)`,
+			},
+		},
+		{
+			// Deprecated only (not removed) → Review (no RemovedIn).
+			Token: "Socket.gethostbyaddr",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "Socket.gethostbyaddr is deprecated (not removed) and does not support IPv6. Use Addrinfo#getnameinfo.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "",
+				ReplacementPattern: `# Before:
+Socket.gethostbyaddr(addr)
+
+# After:
+Addrinfo.tcp(ip, port).getnameinfo`,
+			},
+		},
+	},
+}
+
+// variantSeparators strips Ruby namespace/qualifier separators so one variant
+// token matches every namespace spelling of the same deprecated method: e.g.
+// token "File.exists?" matches "File.exists?", "::File.exists?", AND
+// "::File::exists?" (all seen in real cookstyle output). Without this the
+// double-colon method form would miss its variant and fall through to the base
+// cop mapping — a fragile accident that would re-introduce a false-positive
+// Blocker for a non-removed method spelled with "::". Scoped to poly-method
+// matching only.
+var variantSeparators = strings.NewReplacer(":", "", ".", "")
+
+// matchVariant returns the poly-method variant whose (separator-normalised)
+// token appears in the (separator-normalised) offence message, or nil when
+// copName is not a poly-method cop or no variant matches. First match wins.
+func matchVariant(copName, message string) *copVariant {
+	variants, ok := polyMethodCopVariants[copName]
+	if !ok {
+		return nil
+	}
+	msg := variantSeparators.Replace(message)
+	for i := range variants {
+		if strings.Contains(msg, variantSeparators.Replace(variants[i].Token)) {
+			return &variants[i]
+		}
+	}
+	return nil
+}
+
+// OffenseVariantToken returns the poly-method variant token matched by the
+// offence message (e.g. "Socket.gethostbyname"), or "" when copName is not a
+// poly-method cop or no variant matches. Callers group offences of the same cop
+// by variant so a Blocker variant and a Review variant render (and section)
+// separately. See specifications/cop-classification.md (Poly-method cops).
+func OffenseVariantToken(copName, message string) string {
+	if v := matchVariant(copName, message); v != nil {
+		return v.Token
+	}
+	return ""
+}
+
+// LookupCopForOffense returns the migration documentation for a specific
+// offence, discriminating poly-method cops by their message. For a poly-method
+// cop the matching variant's mapping (with its own RemovedIn) is returned; a
+// message matching no variant, or a non-poly cop, falls back to LookupCop.
+// See specifications/cop-classification.md (Poly-method cops).
+func LookupCopForOffense(copName, message string) *CopMapping {
+	if v := matchVariant(copName, message); v != nil {
+		m := v.Mapping
+		return &m
+	}
+	return LookupCop(copName)
+}
+
 // AllCopMappings returns a copy of the full mapping table. This is useful
 // for the web API to expose the complete mapping to the frontend.
 func AllCopMappings() []CopMapping {
@@ -108,11 +241,14 @@ var embeddedCopMappings = []CopMapping{
 	// crash on the target Chef Client's bundled Ruby.
 	// -----------------------------------------------------------------------
 	{
+		// RemovedIn 19.0 verified against CC19.3.14 (Ruby 3.4.8) in the lab
+		// 2026-07-16: File.exists?/Dir.exists? raise NoMethodError; present (with a
+		// deprecation warning) on CC18/Ruby 3.1.
 		CopName:      "Lint/DeprecatedClassMethods",
-		Description:  "File.exists? and Dir.exists? were removed in Ruby 3 (bundled with Chef 18+). Calls raise NoMethodError at converge time. Use File.exist? / Dir.exist?.",
+		Description:  "File.exists? and Dir.exists? were removed in Ruby 3.4 (bundled with Chef Infra Client 19). Calls raise NoMethodError at converge time. Use File.exist? / Dir.exist?.",
 		MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
 		IntroducedIn: "",
-		RemovedIn:    "18.0",
+		RemovedIn:    "19.0",
 		ReplacementPattern: `# Before:
 File.exists?(path)
 
@@ -284,7 +420,10 @@ if Gem::Version.new(node['platform_version']) >= Gem::Version.new('6.3')`,
 		Description:  "The :add and :remove actions for yum_repository were replaced by :create and :delete.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.14",
-		RemovedIn:    "14.0",
+		// No RemovedIn: lab-verified 2026-07-16 that yum_repository still allows
+		// action :add on CC19.3.14 (in allowed_actions; why-run converge ran) —
+		// deprecated, not removed.
+		RemovedIn: "",
 		ReplacementPattern: `# Before:
 yum_repository 'epel' do
   action :add
@@ -503,7 +642,9 @@ only_if { new_resource.install_flag }`,
 		Description:  "Using Chef::Provider::LWRPBase as a base class for providers is deprecated. Convert to a custom resource.",
 		MigrationURL: "https://docs.chef.io/custom_resources/",
 		IntroducedIn: "12.0",
-		RemovedIn:    "14.0",
+		// No RemovedIn: lab-verified 2026-07-16 that Chef::Provider::LWRPBase is
+		// still defined and subclassable on CC19.3.14 — deprecated, not removed.
+		RemovedIn: "",
 		ReplacementPattern: `# Before:
 class Chef::Provider::MyProvider < Chef::Provider::LWRPBase
   provides :my_resource
@@ -532,7 +673,10 @@ provides :my_resource`,
 		Description:  "The :create action for ruby_block is deprecated. Use :run instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
-		RemovedIn:    "14.0",
+		// No RemovedIn: lab-verified 2026-07-16 that ruby_block still accepts
+		// action :create on CC19.3.14 (converges without raising) — deprecated, not
+		// removed, so Review not Blocker.
+		RemovedIn: "",
 		ReplacementPattern: `# Before:
 ruby_block 'my_block' do
   action :create
@@ -554,7 +698,9 @@ end`,
 		Description:  "Positional parameters in search() calls are deprecated. Use named parameters instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
-		RemovedIn:    "14.0",
+		// No RemovedIn: lab-verified 2026-07-16 that Chef::Search::Query#search
+		// still accepts positional args on CC19.3.14 — deprecated, not removed.
+		RemovedIn: "",
 		ReplacementPattern: `# Before:
 search(:node, 'role:web', 'name', 0, 1000)
 
@@ -566,7 +712,9 @@ search(:node, 'role:web', filter_result: { 'name' => ['name'] })`,
 		Description:  "use_inline_resources is now the default in Chef 13+ and should be removed from LWRP/HWRP providers.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
-		RemovedIn:    "14.0",
+		// No RemovedIn: lab-verified 2026-07-16 that use_inline_resources is still
+		// callable on CC19.3.14 (no-op default) — a cleanup item, not a blocker.
+		RemovedIn: "",
 		ReplacementPattern: `# Before:
 use_inline_resources
 def whyrun_supported?
@@ -627,7 +775,10 @@ end`,
 		Description:  "The :change action for windows_task is deprecated. Use :create which now supports updating existing tasks.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
-		RemovedIn:    "14.0",
+		// No RemovedIn: lab-verified 2026-07-16 that windows_task still accepts
+		// action :change on CC19.3.15 (in allowed_actions, accepted at build) —
+		// deprecated, not removed.
+		RemovedIn: "",
 		ReplacementPattern: `# Before:
 windows_task 'my_task' do
   action :change

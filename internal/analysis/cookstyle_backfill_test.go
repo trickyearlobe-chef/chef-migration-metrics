@@ -58,7 +58,7 @@ func (s *fakeBackfillStore) UpdateGitRepoCookstyleVerdict(_ context.Context, nam
 // review-classified cop (Chef/Correctness/NodeNormal is Review at all targets).
 const reviewOffenceJSON = `[{"cop_name":"Chef/Correctness/NodeNormal","severity":"warning"}]`
 
-// blockerOffenceJSON is a single blocker-classified cop at target >= 18.
+// blockerOffenceJSON is a single blocker-classified cop at target >= 19.
 const blockerOffenceJSON = `[{"cop_name":"Lint/DeprecatedClassMethods","severity":"warning"}]`
 
 // TestBackfillCookstyleStatus_RederivesNeedsReview is the core case: a row the
@@ -105,7 +105,7 @@ func TestBackfillCookstyleStatus_Idempotent(t *testing.T) {
 		}},
 		gitRefs: []datastore.CookstyleResultRef{{
 			GitRepoName: "repo", GitRepoURL: "https://git.example.com/repo",
-			TargetChefVersion: "19", Passed: false, CookstyleStatus: "blocked",
+			TargetChefVersion: "19.3.15", Passed: false, CookstyleStatus: "blocked",
 			Offences: []byte(blockerOffenceJSON),
 		}},
 	}
@@ -131,7 +131,7 @@ func TestBackfillCookstyleStatus_BlockerAndGit(t *testing.T) {
 	store := &fakeBackfillStore{
 		gitRefs: []datastore.CookstyleResultRef{{
 			GitRepoName: "repo", GitRepoURL: "https://git.example.com/repo",
-			TargetChefVersion: "19", Passed: true, CookstyleStatus: "ready",
+			TargetChefVersion: "19.3.15", Passed: true, CookstyleStatus: "ready",
 			Offences: []byte(blockerOffenceJSON),
 		}},
 	}

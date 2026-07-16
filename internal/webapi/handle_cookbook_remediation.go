@@ -163,6 +163,12 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	}
 
 	type offenseGroup struct {
+		// GroupKey uniquely identifies a group. For an ordinary cop it equals
+		// CopName; for a poly-method cop it is CopName plus the message-selected
+		// variant token, so a Blocker variant and a Review variant of the same cop
+		// form distinct groups (and land in different classification sections). The
+		// frontend keys React elements and collapse state on this, not cop_name.
+		GroupKey             string          `json:"group_key"`
 		CopName              string          `json:"cop_name"`
 		Severity             string          `json:"severity"`
 		Classification       string          `json:"classification"`
@@ -296,21 +302,30 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		TargetChefVersion: targetVersion,
 	}
 
-	// Group offenses by cop name.
+	// Group offenses by effective key: cop name, plus the message-selected variant
+	// token for poly-method cops (one cop_name flagging several deprecations of
+	// differing impact). This keeps each group single-classification, so a Blocker
+	// variant and a Review variant of the same cop section separately. Resolution
+	// and remediation are message-aware (see specifications/cop-classification.md).
 	groupOrder := make([]string, 0)
 	groupMap := make(map[string]*offenseGroup)
 	for _, o := range flatOffenses {
-		g, ok := groupMap[o.CopName]
+		groupKey := o.CopName
+		if tok := remediation.OffenseVariantToken(o.CopName, o.Message); tok != "" {
+			groupKey = o.CopName + "#" + tok
+		}
+		g, ok := groupMap[groupKey]
 		if !ok {
-			resolved := resolver.Resolve(o.CopName)
+			resolved := resolver.ResolveOffense(o.CopName, o.Message)
 			g = &offenseGroup{
+				GroupKey:             groupKey,
 				CopName:              o.CopName,
 				Severity:             o.Severity,
 				Classification:       resolved.Classification,
 				ClassificationSource: resolved.Source,
 			}
-			// Look up remediation guidance from the embedded cop mapping.
-			if cm := remediation.LookupCop(o.CopName); cm != nil {
+			// Look up remediation guidance, message-aware for poly-method cops.
+			if cm := remediation.LookupCopForOffense(o.CopName, o.Message); cm != nil {
 				g.Remediation = &copRemediation{
 					CopName:            cm.CopName,
 					Description:        cm.Description,
@@ -321,8 +336,8 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 				}
 				g.RemovedIn = cm.RemovedIn
 			}
-			groupMap[o.CopName] = g
-			groupOrder = append(groupOrder, o.CopName)
+			groupMap[groupKey] = g
+			groupOrder = append(groupOrder, groupKey)
 		}
 		g.Count++
 		if o.Correctable {
@@ -335,8 +350,8 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	// effectively the order offenses appear in the cookstyle output).
 	groups := make([]offenseGroup, 0, len(groupOrder))
 	var blockerCount, reviewCount, noiseCount, unclassifiedCount int
-	for _, copName := range groupOrder {
-		g := *groupMap[copName]
+	for _, groupKey := range groupOrder {
+		g := *groupMap[groupKey]
 		groups = append(groups, g)
 		switch g.Classification {
 		case analysis.ClassificationBlocker:

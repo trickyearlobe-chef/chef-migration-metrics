@@ -16,6 +16,12 @@ func (m mapClassifier) Classify(cop string) string {
 	return classUnclassified
 }
 
+// ClassifyOffense ignores the message (this fake is cop-name keyed) so existing
+// cop-name-based complexity tests keep their expectations.
+func (m mapClassifier) ClassifyOffense(cop, _ string) string {
+	return m.Classify(cop)
+}
+
 func TestComputeCookstyleComplexity_ByClassification(t *testing.T) {
 	tests := []struct {
 		name     string
