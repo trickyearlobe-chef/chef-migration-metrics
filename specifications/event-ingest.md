@@ -129,10 +129,15 @@ Their runs MUST be identifiable and surfaceable by `(organisation, node_name)` a
   readiness, counts, version/platform distributions — and fight the org schema), CMM
   surfaces the telemetry through a **dedicated top-level "Run events" view over
   `converge_runs`** (run-centric, NOT node-centric), a sibling of Nodes / Cookbooks / Git
-  Repos: a filterable, paginated **list + run detail**, honouring the top **org** filter
-  plus status / node / chef_version / time, **defaulting to failures**. It reads
-  `converge_runs` directly (served by the `(organisation, node_name, end_time)` index,
-  retention-bounded), gets its **own export** on the run schema, and leaves
+  Repos: a filterable, paginated **list + run detail**, **defaulting to failures**. Its
+  filters are **view-level and sourced from `converge_runs` itself** — org / status / node
+  / chef_version / time. **It must NOT use the global org filter:** that dropdown is
+  populated from the `organisations` table, which never contains the ingest-only DMZ orgs,
+  so binding to it would make the entire DMZ population unselectable. The org options come
+  from `SELECT DISTINCT organisation FROM converge_runs` (leading-column index-only scan,
+  small result). It reads `converge_runs` directly (served by the
+  `(organisation, node_name, end_time)` index, retention-bounded), gets its **own export**
+  on the run schema, and leaves
   `node_snapshots` / `organisations` and their aggregates untouched. The **Node Detail Runs
   tab stays** for pulled nodes (per-node context) — the two are complementary.
 - Read path: a web API endpoint returns `converge_runs` for a node (org + name), bounded /

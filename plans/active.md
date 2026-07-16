@@ -40,7 +40,9 @@ Remaining:
    Runs tab reaches only pulled nodes, so DMZ ingest-only telemetry (no `node_snapshots`)
    is stored-but-invisible. Decision: a run-centric **dedicated top-level "Run events"
    view over `converge_runs`** (sibling of Nodes/Cookbooks/Git Repos) — list + run detail,
-   org filter + status/node/chef_version/time, default failures, own export. Reads
+   default failures, own export. **View-level filters sourced from `converge_runs` itself**
+   (org = `SELECT DISTINCT organisation`, status, node, chef_version, time) — must NOT use
+   the global org filter (organisations-table-driven → excludes DMZ orgs). Reads
    `converge_runs` directly (indexed, retention-bounded); does NOT fabricate node/org
    records or touch pull aggregates. Node Detail Runs tab stays. Chosen over a virtual
    node-list union (perf: DISTINCT over firehose + heavy node-list query) and an ingest
