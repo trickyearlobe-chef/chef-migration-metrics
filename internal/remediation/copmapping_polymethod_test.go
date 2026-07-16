@@ -108,6 +108,38 @@ func TestLookupCopForOffense_NamespaceQualifiedVariants(t *testing.T) {
 	}
 }
 
+// The full DeprecatedClassMethods surface (from the cop's PREFERRED_METHODS table,
+// behaviourally probed on CC19.3.15/Ruby 3.4.8): ENV.clone/dup/freeze raise
+// TypeError (Blocker); iterator?/attr are still present (Review). Guidance per cop.
+func TestLookupCopForOffense_DeprecatedClassMethods_EnvAndKernel(t *testing.T) {
+	cases := []struct {
+		name      string
+		message   string
+		wantRemIn string
+		wantGuide string
+	}{
+		{"ENV.clone", "`ENV.clone` is deprecated in favor of `ENV.to_h`.", "19.0", "ENV.to_h"},
+		{"ENV.dup", "`ENV.dup` is deprecated in favor of `ENV.to_h`.", "19.0", "ENV.to_h"},
+		{"ENV.freeze", "`ENV.freeze` is deprecated in favor of `ENV`.", "19.0", "cannot be frozen"},
+		{"iterator?", "`iterator?` is deprecated in favor of `block_given?`.", "", "block_given?"},
+		{"attr", "`attr :x, true` is deprecated in favor of `attr_accessor :x`.", "", "attr_accessor"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := LookupCopForOffense("Lint/DeprecatedClassMethods", tc.message)
+			if m == nil {
+				t.Fatal("expected a variant mapping, got nil")
+			}
+			if m.RemovedIn != tc.wantRemIn {
+				t.Errorf("RemovedIn = %q, want %q", m.RemovedIn, tc.wantRemIn)
+			}
+			if !strings.Contains(m.ReplacementPattern, tc.wantGuide) {
+				t.Errorf("ReplacementPattern %q does not mention %q", m.ReplacementPattern, tc.wantGuide)
+			}
+		})
+	}
+}
+
 func TestLookupCopForOffense_PolyCop_UnknownMessageFallsBackToBase(t *testing.T) {
 	// A poly cop message matching no variant falls back to the cop-name mapping.
 	m := LookupCopForOffense("Lint/DeprecatedClassMethods", "some unrecognised deprecation")

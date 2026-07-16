@@ -38,6 +38,17 @@ ssh root@<host> 'cd /tmp && LANG=en_US.UTF-8 chef exec ruby cop_validator.rb'
 Output is `COP|CURATED_REMOVEDIN|RESTRICT_ON_SEND|PRESENT|VERDICT` lines plus a poly
 breakdown.
 
+## poly_disambiguate.rb — poly-message cop disambiguation
+
+The viable way to classify a **poly-message** cop (one cop_name, several
+deprecations of differing impact — e.g. `Lint/DeprecatedClassMethods`): read the
+cop's authoritative table from cookstyle (not `RESTRICT_ON_SEND`, which
+over-approximates), then **behaviourally** probe each construct against the live
+Ruby/Chef. Used 2026-07-16 to complete the `DeprecatedClassMethods` variant table
+in `internal/remediation/copmapping.go`, which discovered `ENV.clone`/`dup`/`freeze`
+raise `TypeError` on Ruby 3.4 (Blocker, we were missing them) and `iterator?`/`attr`
+are still present (Review — a false-positive Blocker via fallback until added).
+
 ## Known limitations (spike lessons — see plans/todo-tech-debt.md)
 
 - **Presence ≠ behaviour.** `respond_to?` false-positives on Chef::Node attr methods

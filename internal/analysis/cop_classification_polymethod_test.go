@@ -24,6 +24,29 @@ func TestResolveOffense_PolyCop_DeprecationOnlyVariantIsReview(t *testing.T) {
 	}
 }
 
+func TestResolveOffense_DeprecatedClassMethods_EnvIsBlockerKernelIsReview(t *testing.T) {
+	r := &CopClassificationResolver{OperatorOverrides: map[string]string{}, TargetChefVersion: "19.3.15"}
+	// ENV.clone/dup/freeze break (TypeError) on Ruby 3.4 → Blocker.
+	for _, msg := range []string{
+		"`ENV.clone` is deprecated in favor of `ENV.to_h`.",
+		"`ENV.dup` is deprecated in favor of `ENV.to_h`.",
+		"`ENV.freeze` is deprecated in favor of `ENV`.",
+	} {
+		if got := r.ResolveOffense("Lint/DeprecatedClassMethods", msg); got.Classification != ClassificationBlocker {
+			t.Errorf("%q: got %s/%s, want blocker", msg, got.Classification, got.Source)
+		}
+	}
+	// iterator?/attr are still present on Ruby 3.4 → Review, not a false-positive Blocker.
+	for _, msg := range []string{
+		"`iterator?` is deprecated in favor of `block_given?`.",
+		"`attr :x, true` is deprecated in favor of `attr_accessor :x`.",
+	} {
+		if got := r.ResolveOffense("Lint/DeprecatedClassMethods", msg); got.Classification != ClassificationReview {
+			t.Errorf("%q: got %s/%s, want review", msg, got.Classification, got.Source)
+		}
+	}
+}
+
 func TestResolveOffense_EmptyMessageMatchesResolve(t *testing.T) {
 	// The message-free path must be identical to the legacy cop-name Resolve —
 	// this is the fingerprint-recompute / non-poly behaviour that must not change.

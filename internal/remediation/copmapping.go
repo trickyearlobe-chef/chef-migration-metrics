@@ -152,6 +152,80 @@ Socket.gethostbyaddr(addr)
 Addrinfo.tcp(ip, port).getnameinfo`,
 			},
 		},
+		{
+			// ENV.clone/ENV.dup raise TypeError on Ruby 3 (Chef 19) → Blocker.
+			// Lab-verified 2026-07-16 on CC19.3.15 (Ruby 3.4.8).
+			Token: "ENV.clone",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "ENV.clone raises TypeError on Ruby 3 (bundled with Chef Infra Client 19). Use ENV.to_h to copy the environment.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "19.0",
+				ReplacementPattern: `# Before:
+ENV.clone
+
+# After:
+ENV.to_h`,
+			},
+		},
+		{
+			Token: "ENV.dup",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "ENV.dup raises TypeError on Ruby 3 (bundled with Chef Infra Client 19). Use ENV.to_h to copy the environment.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "19.0",
+				ReplacementPattern: `# Before:
+ENV.dup
+
+# After:
+ENV.to_h`,
+			},
+		},
+		{
+			Token: "ENV.freeze",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "ENV.freeze raises TypeError on Ruby 3 (bundled with Chef Infra Client 19); ENV cannot be frozen. Remove the freeze call.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "19.0",
+				ReplacementPattern: `# Before:
+ENV.freeze
+
+# After:
+# Remove — ENV cannot be frozen on Ruby 3+`,
+			},
+		},
+		{
+			// Deprecated only, still present on Ruby 3.4 → Review (no RemovedIn).
+			Token: "iterator?",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "iterator? is deprecated (still present on Ruby 3.4). Use block_given?.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "",
+				ReplacementPattern: `# Before:
+iterator?
+
+# After:
+block_given?`,
+			},
+		},
+		{
+			// The 2-arg form attr(:name, true) is deprecated but still present → Review.
+			Token: "attr",
+			Mapping: CopMapping{
+				CopName:      "Lint/DeprecatedClassMethods",
+				Description:  "The 2-argument form attr(:name, true) is deprecated (still present on Ruby 3.4). Use attr_accessor.",
+				MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
+				RemovedIn:    "",
+				ReplacementPattern: `# Before:
+attr :name, true
+
+# After:
+attr_accessor :name`,
+			},
+		},
 	},
 }
 
