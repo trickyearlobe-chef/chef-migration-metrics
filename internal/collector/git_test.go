@@ -574,6 +574,165 @@ func TestCloneOrPull_Pull_ResetFails(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// GitCookbookManager — reconcileOrigin (origin migration to a preferred base)
+// ---------------------------------------------------------------------------
+
+// countCalls returns how many recorded calls contain the given substring in
+// their joined args.
+func (f *fakeGitExecutor) countCalls(substr string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		if strings.Contains(strings.Join(c.Args, " "), substr) {
+			n++
+		}
+	}
+	return n
+}
+
+const (
+	stashBase  = "https://stash.example.com/scm/cb"
+	gitlabBase = "https://gitlab.example.com/cookbooks"
+)
+
+// reconcileFixture creates an existing fake clone whose origin is originURL and
+// returns a manager wired to fake plus the cookbook's ordered candidate URLs
+// built from the given ordered base URLs (most-preferred first).
+func reconcileFixture(t *testing.T, fake *fakeGitExecutor, cbName, originURL string, orderedBases ...string) (*GitCookbookManager, []string) {
+	t.Helper()
+	baseDir := t.TempDir()
+	if err := createFakeGitDir(baseDir + "/" + cbName); err != nil {
+		t.Fatalf("failed to create fake .git dir: %v", err)
+	}
+	fake.addResponse("remote get-url origin", originURL, nil)
+	mgr := NewGitCookbookManager(baseDir, fake)
+	candidates := make([]string, len(orderedBases))
+	for i, b := range orderedBases {
+		candidates[i] = strings.TrimRight(b, "/") + "/" + cbName
+	}
+	return mgr, candidates
+}
+
+// TestReconcileOrigin_MigratesWhenPreferredHasRepo: origin is on the lower
+// priority base (Stash); the preferred base (GitLab) now has the repo, so the
+// origin is re-pointed there.
+func TestReconcileOrigin_MigratesWhenPreferredHasRepo(t *testing.T) {
+	fake := newFakeGitExecutor()
+	// GitLab candidate exists; ls-remote succeeds.
+	fake.addResponse("ls-remote "+gitlabBase, "refs...", nil)
+	mgr, candidates := reconcileFixture(t, fake, "mybook", stashBase+"/mybook", gitlabBase, stashBase)
+
+	migratedTo, err := mgr.reconcileOrigin(context.Background(), "mybook", candidates)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := gitlabBase + "/mybook"
+	if migratedTo != want {
+		t.Errorf("expected migration to %q, got %q", want, migratedTo)
+	}
+	if fake.countCalls("remote set-url origin "+want) != 1 {
+		t.Errorf("expected origin to be re-pointed to %q exactly once", want)
+	}
+}
+
+// TestReconcileOrigin_StaysWhenPreferredMissing: the preferred base does not
+// have the repo yet, so the clone stays on its current origin (no set-url).
+func TestReconcileOrigin_StaysWhenPreferredMissing(t *testing.T) {
+	fake := newFakeGitExecutor()
+	// GitLab candidate does not exist yet.
+	fake.addResponse("ls-remote "+gitlabBase, "", fmt.Errorf("repository not found"))
+	mgr, candidates := reconcileFixture(t, fake, "mybook", stashBase+"/mybook", gitlabBase, stashBase)
+
+	migratedTo, err := mgr.reconcileOrigin(context.Background(), "mybook", candidates)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if migratedTo != "" {
+		t.Errorf("expected no migration, got %q", migratedTo)
+	}
+	if fake.countCalls("remote set-url") != 0 {
+		t.Error("expected no set-url call when preferred base lacks the repo")
+	}
+}
+
+// TestReconcileOrigin_NoOpWhenAlreadyOnPreferred: origin is already the most
+// preferred candidate — no probing, no migration.
+func TestReconcileOrigin_NoOpWhenAlreadyOnPreferred(t *testing.T) {
+	fake := newFakeGitExecutor()
+	mgr, candidates := reconcileFixture(t, fake, "mybook", gitlabBase+"/mybook", gitlabBase, stashBase)
+
+	migratedTo, err := mgr.reconcileOrigin(context.Background(), "mybook", candidates)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if migratedTo != "" {
+		t.Errorf("expected no migration, got %q", migratedTo)
+	}
+	if fake.countCalls("ls-remote") != 0 {
+		t.Error("expected no ls-remote probe when already on the preferred base")
+	}
+}
+
+// TestReconcileOrigin_OriginBaseRemovedFromConfig: the current origin's base is
+// no longer in git_base_urls at all — every configured candidate is a preferred
+// target, so it migrates to the first one that has the repo.
+func TestReconcileOrigin_OriginBaseRemovedFromConfig(t *testing.T) {
+	fake := newFakeGitExecutor()
+	fake.addResponse("ls-remote "+gitlabBase, "refs...", nil)
+	// Only GitLab is configured now; origin is still on the removed Stash base.
+	mgr, candidates := reconcileFixture(t, fake, "mybook", stashBase+"/mybook", gitlabBase)
+
+	migratedTo, err := mgr.reconcileOrigin(context.Background(), "mybook", candidates)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := gitlabBase + "/mybook"
+	if migratedTo != want {
+		t.Errorf("expected migration to %q, got %q", want, migratedTo)
+	}
+}
+
+// TestReconcileOrigin_NoExistingClone: nothing on disk — reconcile is a no-op
+// and the normal clone path (which already tries preferred candidates first)
+// handles it.
+func TestReconcileOrigin_NoExistingClone(t *testing.T) {
+	fake := newFakeGitExecutor()
+	baseDir := t.TempDir()
+	mgr := NewGitCookbookManager(baseDir, fake)
+	candidates := []string{gitlabBase + "/mybook", stashBase + "/mybook"}
+
+	migratedTo, err := mgr.reconcileOrigin(context.Background(), "mybook", candidates)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if migratedTo != "" {
+		t.Errorf("expected no migration for a non-existent clone, got %q", migratedTo)
+	}
+	if fake.countCalls("ls-remote") != 0 {
+		t.Error("expected no probing when there is no existing clone")
+	}
+}
+
+// TestReconcileOrigin_SetURLFails: the repo exists on the preferred base but
+// re-pointing origin fails — surface the error so the caller can log it and
+// fall back to the current origin.
+func TestReconcileOrigin_SetURLFails(t *testing.T) {
+	fake := newFakeGitExecutor()
+	fake.addResponse("ls-remote "+gitlabBase, "refs...", nil)
+	fake.addResponse("remote set-url origin", "", fmt.Errorf("permission denied"))
+	mgr, candidates := reconcileFixture(t, fake, "mybook", stashBase+"/mybook", gitlabBase, stashBase)
+
+	migratedTo, err := mgr.reconcileOrigin(context.Background(), "mybook", candidates)
+	if err == nil {
+		t.Fatal("expected an error when set-url fails")
+	}
+	if migratedTo != "" {
+		t.Errorf("expected empty migratedTo on failure, got %q", migratedTo)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // GitCookbookManager — CloneOrPull with test suite detection
 // ---------------------------------------------------------------------------
 

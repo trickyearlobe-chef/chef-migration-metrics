@@ -327,6 +327,100 @@ func (m *GitCookbookManager) readRemoteURL(ctx context.Context, repoDir string) 
 	return out, nil
 }
 
+// remoteExists reports whether a git repository is reachable at url, using a
+// cheap `git ls-remote` (refs only, no working tree, no object download). Any
+// error — repo absent, host unreachable, auth failure — is treated as "not
+// present" so the caller falls back to the current origin.
+func (m *GitCookbookManager) remoteExists(ctx context.Context, url string) bool {
+	_, err := m.executor.Run(ctx, "", "ls-remote", url)
+	return err == nil
+}
+
+// setOriginURL runs: git remote set-url origin <url>
+func (m *GitCookbookManager) setOriginURL(ctx context.Context, repoDir, url string) error {
+	_, err := m.executor.Run(ctx, repoDir, "remote", "set-url", "origin", url)
+	return err
+}
+
+// reconcileOrigin migrates an existing clone's origin to a higher-priority base
+// URL once the cookbook appears there. git_base_urls is an ordered preference
+// list; during a slow estate migration (e.g. Stash → GitLab) a cookbook should
+// follow to the preferred base automatically the moment it exists there — no
+// manual reset, no flag day — and stay on its current base until then.
+//
+// orderedCandidateURLs are the full candidate repo URLs for this cookbook,
+// most-preferred first (base[i] + "/" + cookbookName).
+//
+// Behaviour:
+//   - No existing clone, or origin unreadable: no-op (the clone/pull path
+//     handles it, and a fresh clone already tries preferred candidates first).
+//   - Origin already at the most-preferred candidate, or its base is top of the
+//     list: no-op — nothing ranks above it, so nothing to probe.
+//   - Otherwise probe each candidate ranked above the current origin with a
+//     cheap ls-remote. The first that exists becomes the new origin (via
+//     `git remote set-url`); the subsequent pull fetches from it and the stale
+//     row for the old URL is cleaned up by DeleteStaleGitRepos. If none exist
+//     yet, the clone stays on its current origin.
+//
+// If the origin's base is absent from the list entirely (removed from config),
+// every configured candidate ranks above it, so it migrates to the first that
+// has the repo.
+//
+// Returns the new origin URL when a migration was performed, "" otherwise. A
+// non-nil error means the repo was found on a preferred base but re-pointing
+// origin failed; the caller should log it and proceed on the current origin.
+func (m *GitCookbookManager) reconcileOrigin(ctx context.Context, cookbookName string, orderedCandidateURLs []string) (string, error) {
+	if len(orderedCandidateURLs) == 0 {
+		return "", nil
+	}
+	repoDir := m.RepoDir(cookbookName)
+	if !isGitRepo(repoDir) {
+		return "", nil
+	}
+	origin, err := m.readRemoteURL(ctx, repoDir)
+	if err != nil {
+		return "", nil // broken clone — let CloneOrPull deal with it
+	}
+
+	// Rank of the current origin among the ordered candidates. If it is not in
+	// the list (its base was removed from config), treat every candidate as a
+	// preferred target by leaving cutoff at the full length.
+	cutoff := len(orderedCandidateURLs)
+	for i, cand := range orderedCandidateURLs {
+		if sameGitURL(cand, origin) {
+			cutoff = i
+			break
+		}
+	}
+	if cutoff == 0 {
+		return "", nil // already on the most-preferred base
+	}
+
+	for i := 0; i < cutoff; i++ {
+		cand := orderedCandidateURLs[i]
+		if !m.remoteExists(ctx, cand) {
+			continue
+		}
+		if err := m.setOriginURL(ctx, repoDir, cand); err != nil {
+			return "", fmt.Errorf("repointing origin to %s: %w", cand, err)
+		}
+		return cand, nil
+	}
+	return "", nil
+}
+
+// sameGitURL compares two git URLs ignoring a trailing slash or ".git" suffix.
+func sameGitURL(a, b string) bool {
+	return normalizeGitURL(a) == normalizeGitURL(b)
+}
+
+func normalizeGitURL(u string) string {
+	u = strings.TrimSpace(u)
+	u = strings.TrimRight(u, "/")
+	u = strings.TrimSuffix(u, ".git")
+	return u
+}
+
 // resetToRemote runs: git reset --hard origin/<branch>
 func (m *GitCookbookManager) resetToRemote(ctx context.Context, repoDir, branch string) error {
 	_, err := m.executor.Run(ctx, repoDir, "reset", "--hard", "origin/"+branch)
@@ -505,6 +599,21 @@ func fetchGitCookbooks(
 				defer func() { <-sem }()
 			case <-ctx.Done():
 				return
+			}
+
+			// Build this cookbook's ordered candidate URLs (most-preferred
+			// first) and reconcile an existing clone's origin against them.
+			// If the cookbook has appeared at a higher-priority base than the
+			// one it was originally cloned from, re-point origin so the pull
+			// below fetches from the new base — a self-completing migration.
+			candidateURLs := make([]string, len(trimmedURLs))
+			for i, baseURL := range trimmedURLs {
+				candidateURLs[i] = baseURL + "/" + cbName
+			}
+			if migratedTo, recErr := mgr.reconcileOrigin(ctx, cbName, candidateURLs); recErr != nil {
+				log.Warn(fmt.Sprintf("git cookbook %s: origin reconcile failed, staying on current origin: %v", cbName, recErr))
+			} else if migratedTo != "" {
+				log.Info(fmt.Sprintf("git cookbook %s: migrated origin to preferred base %s", cbName, migratedTo))
 			}
 
 			// Try each base URL in order until one succeeds.
