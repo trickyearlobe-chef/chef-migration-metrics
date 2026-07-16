@@ -47,8 +47,18 @@ Remaining:
    records or touch pull aggregates. Node Detail Runs tab stays. Chosen over a virtual
    node-list union (perf: DISTINCT over firehose + heavy node-list query) and an ingest
    node registry (extra table to maintain) — see [[event-ingest-build-state]].
-   Build: nav entry + route + list page (reuse list-view/filter/saved-filter infra) +
-   run-detail page + `datastore` list/count/export methods + web API route + own export.
+   Build: nav entry + route + list page (reuse list-view/filter infra; **NO saved filters
+   for MVP** — would need a `saved_filters.view_name` CHECK migration) + run-detail page +
+   `datastore` list/count/export methods + web API route + own export.
+   **OPEN DESIGN (not yet figured out):** a key extract is **"nodes failing the prospective
+   CC19 (target-version) run."** Discriminator = `chef_version` (prod run = current e.g.
+   18.x; speculative = target 19.x), so `chef_version=target ∧ status=failure`. But the
+   deliverable is a **distinct-NODE rollup** ("these N nodes fail on 19 + each one's latest
+   error/failing cookbook·recipe"), not a raw run list — likely a "target-version failures"
+   MODE of Run events. Open Qs: latest-run vs ever-failed; per-node columns; relationship to
+   the existing static readiness signal (this is the stronger empirical one; feeding it into
+   readiness is MVP-out-of-scope); confirm speculative runs ingest with `chef_version=target`.
+   Design deliberately before/within the Run events build.
 2. **Live-validate the other two shapes** — Automate Data Feed (customer's clustered-org
    transport; fixtures are authored → fidelity risk) and Chef Server proxy (the DMZ
    transport; same `run_converge` shape as the proven direct path). `chef-load` on
