@@ -107,6 +107,19 @@ type runBody struct {
 	UpdatedResourceCount int                        `json:"updated_resource_count"`
 	Resources            []resource                 `json:"resources"`
 	Error                *runError                  `json:"error"`
+
+	// Node carries the version fallback: a run_converge has no top-level
+	// chef_version (measured null); the value lives in the node attribute tree
+	// we otherwise discard. Only this one path is decoded, not the whole tree.
+	Node struct {
+		Automatic struct {
+			ChefPackages struct {
+				Chef struct {
+					Version string `json:"version"`
+				} `json:"chef"`
+			} `json:"chef_packages"`
+		} `json:"automatic"`
+	} `json:"node"`
 }
 
 // cookbookVersions normalises the run's cookbooks map to name -> version. Chef
@@ -165,9 +178,15 @@ func fromRunBody(raw json.RawMessage, shape string) (*ConvergeRun, error) {
 		return nil, fmt.Errorf("ingest: decoding %s body: %w", shape, err)
 	}
 
+	chefVersion := b.ChefVersion
+	if chefVersion == "" {
+		// run_converge has no top-level chef_version; fall back to the node tree.
+		chefVersion = b.Node.Automatic.ChefPackages.Chef.Version
+	}
+
 	run := &ConvergeRun{
 		Status:               b.Status,
-		ChefVersion:          b.ChefVersion,
+		ChefVersion:          chefVersion,
 		StartTime:            b.StartTime,
 		EndTime:              b.EndTime,
 		RunList:              b.RunList,

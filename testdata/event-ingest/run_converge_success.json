@@ -11,7 +11,7 @@
   "start_time": "2026-07-16T09:00:00Z",
   "end_time": "2026-07-16T09:01:12Z",
   "status": "success",
-  "chef_version": "18.9.4",
+  "chef_version": null,
   "run_list": [
     "recipe[base::default]",
     "recipe[ntp::default]"
@@ -55,6 +55,11 @@
     "run_list": [
       "recipe[base::default]",
       "recipe[ntp::default]"
-    ]
+    ],
+    "automatic": {
+      "chef_packages": {
+        "chef": { "version": "18.9.4" }
+      }
+    }
   }
 }
