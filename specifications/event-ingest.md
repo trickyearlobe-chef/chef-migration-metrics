@@ -122,26 +122,74 @@ Their runs MUST be identifiable and surfaceable by `(organisation, node_name)` a
   the node, most-recent first — time, status, chef_version, run_list, and on failure the
   error class/message + failing cookbook·recipe + backtrace (collapsible). Reuses the
   existing Node Detail panel pattern.
-- **Ingest-only telemetry surfaced via a run-centric top-level view (decided).** A per-node
-  Runs tab reaches only *pulled* nodes, hiding the DMZ ingest-only population (no
-  `node_snapshots`; see Node identity) — a primary reason the feature exists. Rather than
-  fabricate parent node/org records (which would pollute pull-derived fleet truth —
-  readiness, counts, version/platform distributions — and fight the org schema), CMM
-  surfaces the telemetry through a **dedicated top-level "Run events" view over
-  `converge_runs`** (run-centric, NOT node-centric), a sibling of Nodes / Cookbooks / Git
-  Repos: a filterable, paginated **list + run detail**, **defaulting to failures**. Its
-  filters are **view-level and sourced from `converge_runs` itself** — org / status / node
-  / chef_version / time. **It must NOT use the global org filter:** that dropdown is
-  populated from the `organisations` table, which never contains the ingest-only DMZ orgs,
-  so binding to it would make the entire DMZ population unselectable. The org options come
-  from `SELECT DISTINCT organisation FROM converge_runs` (leading-column index-only scan,
-  small result). It reads `converge_runs` directly (served by the
-  `(organisation, node_name, end_time)` index, retention-bounded), gets its **own export**
-  on the run schema, and leaves
-  `node_snapshots` / `organisations` and their aggregates untouched. The **Node Detail Runs
-  tab stays** for pulled nodes (per-node context) — the two are complementary.
+- **Ingest-only telemetry surfaced via a node-centric top-level "Run events" view
+  (decided; supersedes the earlier run-centric decision).** A per-node Runs tab reaches only
+  *pulled* nodes, hiding the DMZ ingest-only population (no `node_snapshots`; see Node
+  identity) — a primary reason the feature exists. Rather than fabricate parent node/org
+  records (which would pollute pull-derived fleet truth — readiness, counts,
+  version/platform distributions — and fight the org schema), CMM surfaces the telemetry
+  through a **dedicated top-level "Run events" view over `converge_runs`**, a sibling of
+  Nodes / Cookbooks / Git Repos. One nav entry, **two tabs** sharing one filter set:
+  - **Nodes tab (default) = distinct *nodes* derived from `converge_runs`** (`DISTINCT
+    (organisation, node_name)`), filterable and paginated, **defaulting to failures**. Filter
+    semantics are **EXISTS / "any matching run"**: a node appears iff it has at least one run
+    matching *all* active filters together, and the row shows that node's **latest matching
+    run**. Row → **detail = every run for that one node** (its full `converge_runs` history,
+    most-recent first), reusing the Node Detail run panel — so failures can be dug into.
+  - **Runs tab = the flat run list** (one row per run) — the event firehose, same filters.
+    A row **expands inline** to show that run's failure detail (error class/message, failing
+    cookbook·recipe, backtrace) rather than navigating — only the Nodes tab drills into a
+    node.
+
+  Its filters are **view-level and sourced from `converge_runs` itself** — org / status /
+  node / chef_version / cookbook / **failure_message** / time. The **failure_message** filter
+  is a substring match on the failure reason line (`error.message`, backtrace excluded — the
+  normaliser already separates them), which isolates authored prereq aborts ("not enough
+  space") from real errors without a schema change.
+
+  **As-of anchor (live firehose):** `converge_runs` is append-live, so naive
+  `LIMIT/OFFSET` paging would skew as new rows arrive. The UI pins an **upper `end_time`
+  bound (`until`) at view load** and carries it on every filter/page request, so the visible
+  dataset is a stable slice; a manual **Refresh** re-anchors to pull newer events. No backend
+  change — this is the `EndTimeTo` filter. **It must NOT use the global org filter:** that
+  dropdown is populated from the `organisations` table, which never contains the ingest-only
+  DMZ orgs, so binding to it would make the entire DMZ population unselectable. Org and
+  chef_version options come from `SELECT DISTINCT … FROM converge_runs`. Both levels read
+  `converge_runs` directly (the latest-run-per-node rollup is served by the
+  `(organisation, node_name, end_time DESC)` index; retention-bounded), get their **own
+  export**, and leave `node_snapshots` / `organisations` and their aggregates untouched. The
+  detail read path keys on the **delivered org name**, NOT `organisations.name` resolution,
+  so DMZ ingest-only nodes (absent from that table) still resolve. This is **not** the
+  rejected "virtual node-list union" (which folded ingest nodes into the heavy
+  `node_snapshots` list) — it is a self-contained rollup over `converge_runs` only. The
+  **Node Detail Runs tab stays** for pulled nodes (per-node context) — the two are
+  complementary.
 - Read path: a web API endpoint returns `converge_runs` for a node (org + name), bounded /
   paginated. See [web-api](web-api.md).
+
+### Upgrade run taxonomy (why the filters must be flexible)
+
+The customer's upgrade emits **several run classes per node** into `converge_runs`, all keyed
+the same but meaning different things on failure. **Everything except the speculative run
+executes on the active client** (13/16): the normal production converge *and* every override
+run list (patching, compliance, the CC19 prereq/installer, …). **Only the speculative
+converge runs on the dormant CC19 client**, fired daily to see whether the node would succeed
+on the target version.
+
+- **`chef_version` is the clean axis:** because nothing but the speculative run uses the
+  dormant client, `chef_version = target` unambiguously marks a **prospective-target run**.
+  So the readiness signal is `chef_version = target ∧ status = failure`.
+- **The active-client family is heterogeneous** (production + all overrides); only
+  `run_list` / `cookbooks` content distinguishes them, and the override set is open-ended and
+  customer-defined. Hence the **cookbook filter** and free-form node/version filtering, rather
+  than a hardcoded lens per override type.
+- A **failure** therefore means different things by class: a *speculative* fail = prospective
+  target failure; a *prereq/install* fail = intentional abort (unmet prerequisite) or real
+  install error; a *production* fail = pre-existing breakage. The MVP gives the operator the
+  filters to separate these; it does not pre-classify runs.
+
+Out of MVP: capturing the installer cookbook's active/dormant version node attributes into
+this view (already captured elsewhere for the CC19 deployment dashboard) — a later nice-to-have.
 
 ---
 
@@ -150,7 +198,14 @@ Their runs MUST be identifiable and surfaceable by `(organisation, node_name)` a
 Per the project config rule, read via a live accessor; changes take effect without
 restart.
 
-- `ingest.enabled` (default `false`)
+- `ingest.enabled` (default `false`) — the sink accepts telemetry (POST /api/v1/ingest).
+- `ingest.show_run_events` (default `false`) — gates the **display** surfaces: the Run
+  events view **and** the Node Detail Runs tab (and their read endpoints + export). Kept off
+  so the feature is dormant in reserve; **orthogonal to `enabled`** — telemetry can accrue
+  while the UI stays hidden. A viewer-readable `GET /api/v1/features` exposes this flag so the
+  frontend hides the nav entry / Runs tab (the surfaces 404 when off regardless).
+- `ingest.failures_only` (default `false`) — the sink **discards success events**, keeping
+  only failures. Firehose-relief valve for high-volume fleets.
 - `ingest.retention_days` (default `2`)
 - `ingest.max_body_bytes`, `ingest.max_records_per_body` (robustness bounds)
 

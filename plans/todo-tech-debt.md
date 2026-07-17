@@ -4,6 +4,24 @@ Status key: [ ] Not started | [~] In progress | [x] Done
 
 ---
 
+## Config UI — sprawl; needs a coherent redesign
+
+Recorded 2026-07-17 (`feature/event-ingest-mvp`). The admin config UI is a mess: one
+flat `/admin/config/*` page per section (Collection, Readiness, Logging, Exports, …),
+no grouping, inconsistent GET/PUT shapes (some return the section directly, some
+`{value:…}`), and no home for new settings.
+
+- [ ] **Event ingest settings are parked on the Collection page** (`AdminCollectionPage`,
+  a two-tab wrapper: Collection | Event ingest → `EventIngestSettings`). Ingest is
+  unrelated to collection — it landed there only because it was the least-bad existing
+  home. **Proper fix:** a redesigned config area (grouped nav / sections) with a
+  dedicated Ingest/Event-telemetry section, consistent load/save envelope, and a shared
+  form/toggle kit instead of per-page bespoke markup.
+- [ ] While refactoring, unify the admin-config GET/PUT response shape (direct vs
+  `{value}`) so the frontend `api/config.ts` helpers stop special-casing.
+
+---
+
 ## CookStyle — Poly-method cop classification residuals (cop-name-keyed)
 
 Recorded 2026-07-15 with `fix/cookstyle-polymethod-cop` (per-message remediation +
