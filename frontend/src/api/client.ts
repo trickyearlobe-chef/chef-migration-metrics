@@ -141,3 +141,21 @@ export interface GitRepoFilterQuery extends PaginationQuery {
   sort?: string;
   order?: string;
 }
+
+// RunEventFilterQuery is the view-level filter for the Run events tabs, sourced
+// from converge_runs itself (NOT the global organisations filter). `until` is
+// the as-of anchor: pinned at view load so live-appended rows don't skew paging.
+export interface RunEventFilterQuery extends PaginationQuery {
+  organisation?: string;
+  status?: string;
+  node?: string;
+  chef_version?: string;
+  cookbook?: string;
+  failure_message?: string;
+  /** RFC3339 lower bound on end_time. */
+  since?: string;
+  /** RFC3339 upper bound on end_time — the as-of anchor. */
+  until?: string;
+  sort?: string;
+  order?: string;
+}

@@ -2,17 +2,24 @@
 
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { fetchNodeRuns } from "../api";
-import type { ConvergeRun } from "../types";
+import type { ConvergeRun, NodeRunsResponse } from "../types";
 
 // NodeRunsSection renders recent converge runs for a node (event-ingest telemetry),
 // most-recent first. Failure rows expand to show the error class/message, the
 // failing cookbook·recipe, and the backtrace. Reuses the .card panel idiom.
+//
+// `fetchRuns` defaults to fetchNodeRuns (the org-table-resolving endpoint used by
+// pulled nodes). The Run events detail passes fetchRunEventNodeRuns instead, which
+// keys on the delivered org name so ingest-only DMZ nodes (no organisations row,
+// no node_snapshots) resolve too.
 export function NodeRunsSection({
   org,
   nodeName,
+  fetchRuns = fetchNodeRuns,
 }: {
   org: string;
   nodeName: string;
+  fetchRuns?: (org: string, nodeName: string) => Promise<NodeRunsResponse>;
 }) {
   const [runs, setRuns] = useState<ConvergeRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,14 +27,14 @@ export function NodeRunsSection({
 
   const load = useCallback(async () => {
     try {
-      const resp = await fetchNodeRuns(org, nodeName);
+      const resp = await fetchRuns(org, nodeName);
       setRuns(resp.data);
     } catch {
       /* panel stays empty on error — ingest is optional telemetry */
     } finally {
       setLoading(false);
     }
-  }, [org, nodeName]);
+  }, [org, nodeName, fetchRuns]);
 
   useEffect(() => {
     load();

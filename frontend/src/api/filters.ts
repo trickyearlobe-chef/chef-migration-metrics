@@ -60,3 +60,13 @@ export function fetchFilterTargetChefVersions(): Promise<FilterStringResponse> {
 export function fetchFilterComplexityLabels(): Promise<FilterStringResponse> {
   return apiFetch<FilterStringResponse>(buildUrl("/filters/complexity-labels"));
 }
+
+// Run events filter options — sourced from converge_runs, NOT the organisations
+// table, so ingest-only DMZ orgs are selectable.
+export function fetchFilterRunOrganisations(): Promise<FilterStringResponse> {
+  return apiFetch<FilterStringResponse>(buildUrl("/filters/run-organisations"));
+}
+
+export function fetchFilterRunChefVersions(): Promise<FilterStringResponse> {
+  return apiFetch<FilterStringResponse>(buildUrl("/filters/run-chef-versions"));
+}

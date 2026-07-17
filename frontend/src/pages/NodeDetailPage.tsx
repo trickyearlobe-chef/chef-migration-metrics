@@ -18,6 +18,7 @@ import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge, DeploymentStateBadge, ConvergeBadge } from "../components/StatusBadge";
 import { DiskUsageBars, computeDiskBars } from "../components/DiskUsageBars";
 import { NodeRunsSection } from "../components/NodeRunsSection";
+import { useFeatures } from "../hooks/useFeatures";
 import type { NodeSnapshot } from "../types";
 
 // Helper to build the disk detail link for a node.
@@ -866,6 +867,7 @@ export function NodeDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [targetVersions, setTargetVersions] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "runs">("overview");
+  const features = useFeatures(); // Runs tab is part of the gated Run events feature
 
   const load = useCallback(() => {
     if (!org || !name) return;
@@ -984,16 +986,18 @@ export function NodeDetailPage() {
           >
             Overview
           </button>
-          <button
-            onClick={() => setActiveTab("runs")}
-            className={`border-b-2 px-1 py-2 text-sm font-medium ${
-              activeTab === "runs"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            Runs
-          </button>
+          {features.run_events && (
+            <button
+              onClick={() => setActiveTab("runs")}
+              className={`border-b-2 px-1 py-2 text-sm font-medium ${
+                activeTab === "runs"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Runs
+            </button>
+          )}
         </nav>
       </div>
 
@@ -1030,8 +1034,8 @@ export function NodeDetailPage() {
         </>
       )}
 
-      {/* Converge Runs — ingested run telemetry (event-ingest) */}
-      {activeTab === "runs" && org && name && (
+      {/* Converge Runs — ingested run telemetry (event-ingest), gated feature */}
+      {features.run_events && activeTab === "runs" && org && name && (
         <NodeRunsSection org={org} nodeName={name} />
       )}
     </div>
