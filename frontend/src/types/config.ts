@@ -10,6 +10,18 @@ export interface CollectionConfig {
   delete_server_cookbooks_after_scan: boolean | null;
 }
 
+// IngestConfig mirrors the backend ingest section (snake_case). The three
+// booleans are *bool server-side, so GET may return null when unset (treat as
+// false in the UI). See specifications/event-ingest.md § Configuration.
+export interface IngestConfig {
+  enabled: boolean | null;
+  show_run_events: boolean | null;
+  failures_only: boolean | null;
+  retention_days: number;
+  max_body_bytes: number;
+  max_records_per_body: number;
+}
+
 export interface ConcurrencyConfig {
   organisation_collection: number;
   node_page_fetching: number;
