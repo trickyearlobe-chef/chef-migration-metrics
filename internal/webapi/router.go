@@ -777,6 +777,18 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/git-repos/", r.handleGitRepoDetail)
 
 	// -----------------------------------------------------------------
+	// Run events endpoints (viewer) — ingest telemetry over converge_runs.
+	// Two tabs (nodes rollup / flat runs) + per-node detail. See
+	// specifications/event-ingest.md and handle_run_events.go.
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/run-events/nodes", r.handleRunEventNodes)
+	r.protect("/api/v1/run-events/nodes/", r.handleRunEventNodeDetail)
+	r.protect("/api/v1/run-events/runs", r.handleRunEventRuns)
+
+	// Viewer-readable UI feature flags (so the frontend can hide gated surfaces).
+	r.protect("/api/v1/features", r.handleFeatures)
+
+	// -----------------------------------------------------------------
 	// Remediation endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/remediation/priority", r.handleRemediationPriority)
@@ -814,6 +826,10 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/filters/platforms", r.handleFilterPlatforms)
 	r.protect("/api/v1/filters/target-chef-versions", r.handleFilterTargetChefVersions)
 	r.protect("/api/v1/filters/complexity-labels", r.handleFilterComplexityLabels)
+	// Run events filter options — sourced from converge_runs, NOT the
+	// organisations table (so ingest-only DMZ orgs are selectable).
+	r.protect("/api/v1/filters/run-organisations", r.handleFilterRunOrganisations)
+	r.protect("/api/v1/filters/run-chef-versions", r.handleFilterRunChefVersions)
 
 	// -----------------------------------------------------------------
 	// Log endpoints (viewer)

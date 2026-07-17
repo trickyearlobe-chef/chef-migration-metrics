@@ -27,7 +27,7 @@ func TestHandleNodeRuns_HappyPath(t *testing.T) {
 			}, nil
 		},
 	}
-	r := newTestRouterWithMock(store)
+	r := newNodeRunsTestRouter(store)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/runs/org-a/node-a.example.com", nil)
 	r.ServeHTTP(w, req)
@@ -59,7 +59,7 @@ func TestHandleNodeRuns_OrgNotFound(t *testing.T) {
 			return datastore.Organisation{}, datastore.ErrNotFound
 		},
 	}
-	r := newTestRouterWithMock(store)
+	r := newNodeRunsTestRouter(store)
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/runs/ghost/node-a", nil)
 	r.ServeHTTP(w, req)
@@ -68,8 +68,19 @@ func TestHandleNodeRuns_OrgNotFound(t *testing.T) {
 	}
 }
 
+// newNodeRunsTestRouter builds a router with the Run events feature visible so
+// the Node Detail Runs endpoint is reachable (it is gated on show_run_events).
+func newNodeRunsTestRouter(store *mockStore) *Router {
+	cfg := testConfig()
+	on := true
+	cfg.Ingest.ShowRunEvents = &on
+	hub := NewEventHub()
+	go hub.Run()
+	return NewRouter(store, cfg, hub)
+}
+
 func TestHandleNodeRuns_MethodAndPath(t *testing.T) {
-	r := newTestRouterWithMock(&mockStore{})
+	r := newNodeRunsTestRouter(&mockStore{})
 	// non-GET
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/nodes/runs/org-a/node-a", nil))

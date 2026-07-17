@@ -22,6 +22,11 @@ func (r *Router) handleNodeRuns(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
 	}
+	// The Node Detail Runs tab is part of the Run events feature — hidden when
+	// ingest.show_run_events is off (feature in reserve).
+	if r.runEventsHidden(w) {
+		return
+	}
 
 	segs := pathSegments(req.URL.Path, "/api/v1/nodes/runs/")
 	if len(segs) < 2 || segs[0] == "" || segs[1] == "" {
