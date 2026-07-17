@@ -1,8 +1,47 @@
-# Proposal: Chef data_collector Firehose Event Ingest
+# Proposal: Chef Automate Data Feed Event Ingest
 
-**Status: DEFERRED / FOR DISCUSSION.** Not approved. To be reconsidered AFTER the
-current perf work (roles fix → diagnostics tooling → node_snapshots/coverage). This
-doc exists to decide *whether* we want it, not how to build it yet.
+**Status: FOR DISCUSSION.** Not approved to build. The transport question is now
+**empirically settled** (lab measurement 2026-07-16, Automate build 4.13.x); the
+sections below the line remain the original exploration/context for the *whether*.
+
+## Transport — empirically validated (2026-07-16)
+
+The customer runs **Automate as both Chef server and dashboard**, so the transport is
+settled: **CMM is a passive Automate Data Feed webhook destination** — no client changes,
+no proxy, no separate Chef server, one Automate→CMM connection. Measured Data Feed
+behaviour (drives the design):
+
+- **Native when Automate is the Chef server.** Nodes registered to Automate's embedded
+  Chef server reach ingest with NO client-side `data_collector` config; the Data Feed
+  then POSTs to CMM (gzip + NDJSON, basic auth, batched by `node_batch_size`, driven by
+  `feed_interval`).
+- **Emits only nodes with new run data** — an idle interval sends nothing (even with
+  `updated_nodes_only=false`). Not a periodic full-state re-push.
+- **Record = `node` + `client_run` + `attributes`.** `client_run` is the run
+  (`client_run.id` = per-run UUID; status, run_list, cookbooks, resources, error,
+  chef_version); `attributes` is the full node tree (~100 KB, the bulk). Extract
+  `client_run`, discard `attributes` (~5× shrink). Dedup/key the table on `client_run.id`.
+- **Coalescing is per-`feed_interval`**: two runs in one window → the latest only (earlier
+  dropped); runs in separate windows → all delivered. **Tunable** — set `feed_interval`
+  below the node run-cadence (~2 h) → effectively every run from the one transport, so it
+  serves BOTH failure-isolation AND the special-job blind spot.
+- **Failure isolation confirmed live:** a converge failure delivers `status=failure` +
+  `error{class,message,backtrace}` + the failing resource — exactly the payload Automate's
+  own filtering can't isolate at scale (the primary value).
+- **Gap (still needs the wrapper):** resolution/missing-cookbook and install/prereq aborts
+  arrive **attributes-only, no `client_run`** → invisible via the feed. Job 3
+  (install/prereq failures) still needs a cron-wrapper/exit-code POST.
+
+**MVP:** passive Data Feed sink → gunzip/NDJSON receiver (cap records-per-body, one txn
+per body, respond 200–204) → extract `client_run`, drop `attributes` → rolling 2-day
+partitioned `converge_runs` keyed on `client_run.id` → a new panel on `NodeDetailPage`
+(recent runs: status, error, failing cookbook·recipe, chef version). Throwaway: delete
+the panel + table + Data Feed destination. Pilot small (short retention / one org) first.
+
+This supersedes the raw-firehose sizing and the attribute-stamp / Server-proxy transport
+options below — kept for rationale only.
+
+---
 
 ## Why (value)
 
@@ -160,12 +199,13 @@ blind-spot value may be capturable far more cheaply than a firehose.
 
 ## Recommendation
 
-Don't decide now (deferred by design). The reframe both strengthens and shrinks the
-case: the compelling core is **low-volume failure telemetry** for the two CC19 run
-types (successes already free via node attributes), which has **no cheaper
-alternative** and includes high-value prereq/disk failures. Much smaller than a
-firehose. Key feasibility gate: **do hard-abort install failures actually emit a
-capturable data_collector event, or must the cron wrapper POST exit code/stderr?**
-The special-job-runlist discovery (firehose vs declaration) is a SEPARATE, lower
--priority decision — likely declaration (D) if pursued at all. Recommend: if we do
-anything, do the failure-telemetry stream; treat special-job discovery separately.
+Updated post-measurement. The transport is the **Automate Data Feed** (see validated
+section) — a single passive webhook destination, no client/proxy changes on the
+customer's Automate-as-Chef-server topology. The feasibility gate is answered: **converge
+failures DO emit a fully usable record** (status + error + backtrace + failing resource);
+**install/prereq/depsolve aborts do NOT** (attributes-only, no `client_run`) → that class
+still needs the cron-wrapper/exit-code POST. Special-job/blind-spot discovery no longer
+needs a separate declaration mechanism — it **falls out of tuning `feed_interval` below
+run cadence** (every run delivered). Recommend: build the Data Feed failure-telemetry MVP
+(sink → extract `client_run` → node-detail panel), pilot small, and treat the
+install/prereq wrapper as a separate follow-on for the attributes-only gap.

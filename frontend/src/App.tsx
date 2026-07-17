@@ -23,6 +23,8 @@ import { CookbookRemediationPage } from "./pages/CookbookRemediationPage";
 import { RolesPage } from "./pages/RolesPage";
 import { RoleDetailPage } from "./pages/RoleDetailPage";
 import { GitReposPage } from "./pages/GitReposPage";
+import { RunEventsPage } from "./pages/RunEventsPage";
+import { RunEventNodeDetailPage } from "./pages/RunEventNodeDetailPage";
 import { GitRepoDetailPage } from "./pages/GitRepoDetailPage";
 import { GitRepoRemediationPage } from "./pages/GitRepoRemediationPage";
 import { RemediationPage } from "./pages/RemediationPage";
@@ -213,6 +215,11 @@ export function App() {
               <Route
                 path="/git-repos/:name/:version/remediation"
                 element={<GitRepoRemediationPage />}
+              />
+              <Route path="/run-events" element={<RunEventsPage />} />
+              <Route
+                path="/run-events/nodes/:organisation/:node"
+                element={<RunEventNodeDetailPage />}
               />
               <Route path="/remediation" element={<RemediationPage />} />
               <Route path="/ownership" element={<OwnersPage />} />

@@ -9,6 +9,7 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ingest"
 )
 
 // mockStore implements DataStore for handler tests. Each method delegates to
@@ -16,6 +17,12 @@ import (
 // nil error) so tests only need to set the stubs they care about.
 type mockStore struct {
 	PingFn                                                 func(ctx context.Context) error
+	BulkUpsertConvergeRunsFn                               func(ctx context.Context, runs []ingest.ConvergeRun) (int, error)
+	ListConvergeRunsForNodeFn                             func(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error)
+	ListConvergeRunNodesFilteredFn                        func(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
+	ListConvergeRunsFilteredFn                            func(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
+	ListConvergeRunOrganisationsFn                        func(ctx context.Context) ([]string, error)
+	ListConvergeRunChefVersionsFn                         func(ctx context.Context) ([]string, error)
 	ListOrganisationsFn                                    func(ctx context.Context) ([]datastore.Organisation, error)
 	GetOrganisationByNameFn                                func(ctx context.Context, name string) (datastore.Organisation, error)
 	GetLatestCollectionRunFn                               func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
@@ -238,6 +245,48 @@ func (m *mockStore) Ping(ctx context.Context) error {
 		return m.PingFn(ctx)
 	}
 	return nil
+}
+
+func (m *mockStore) BulkUpsertConvergeRuns(ctx context.Context, runs []ingest.ConvergeRun) (int, error) {
+	if m.BulkUpsertConvergeRunsFn != nil {
+		return m.BulkUpsertConvergeRunsFn(ctx, runs)
+	}
+	return 0, nil
+}
+
+func (m *mockStore) ListConvergeRunsForNode(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error) {
+	if m.ListConvergeRunsForNodeFn != nil {
+		return m.ListConvergeRunsForNodeFn(ctx, organisation, nodeName, limit)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListConvergeRunNodesFiltered(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error) {
+	if m.ListConvergeRunNodesFilteredFn != nil {
+		return m.ListConvergeRunNodesFilteredFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) ListConvergeRunsFiltered(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error) {
+	if m.ListConvergeRunsFilteredFn != nil {
+		return m.ListConvergeRunsFilteredFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) ListConvergeRunOrganisations(ctx context.Context) ([]string, error) {
+	if m.ListConvergeRunOrganisationsFn != nil {
+		return m.ListConvergeRunOrganisationsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListConvergeRunChefVersions(ctx context.Context) ([]string, error) {
+	if m.ListConvergeRunChefVersionsFn != nil {
+		return m.ListConvergeRunChefVersionsFn(ctx)
+	}
+	return nil, nil
 }
 
 func (m *mockStore) ListOrganisations(ctx context.Context) ([]datastore.Organisation, error) {

@@ -10,6 +10,7 @@ import type {
   ConfigOrganisation,
   ServerConfig,
   AuthConfig,
+  IngestConfig,
 } from "../types/config";
 
 // Re-export config types so consumers importing from "../api" still find them.
@@ -29,6 +30,7 @@ export type {
   AcmeStatus,
   AuthConfig,
   AuthProvider,
+  IngestConfig,
 } from "../types/config";
 import { apiFetch, buildUrl } from "./client";
 
@@ -106,6 +108,19 @@ export function saveTargetVersions(
     buildUrl("/admin/config/target-versions"),
     versions,
   );
+}
+
+// Event ingest config (the ingest sink + Run events feature gates). Lives in its
+// own section; surfaced under the Collection page for now (see todo-tech-debt:
+// config UI refactor).
+export function fetchIngestConfig(): Promise<IngestConfig> {
+  return apiFetch<IngestConfig>(buildUrl("/admin/config/ingest"));
+}
+
+export function saveIngestConfig(
+  value: IngestConfig,
+): Promise<PutConfigResponse<IngestConfig>> {
+  return apiMutateConfig<IngestConfig>(buildUrl("/admin/config/ingest"), value);
 }
 
 export function fetchConcurrency(): Promise<ConcurrencyConfig> {

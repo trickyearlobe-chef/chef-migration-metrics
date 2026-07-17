@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ingest"
 )
 
 // DataStore is the interface consumed by the web API handlers. It abstracts
@@ -393,6 +394,35 @@ type DataStore interface {
 
 	// UpsertCopClassification creates or updates a cop classification.
 	UpsertCopClassification(ctx context.Context, copName, classification, reason, createdBy string) error
+
+	// -----------------------------------------------------------------
+	// Event ingest (converge_runs)
+	// -----------------------------------------------------------------
+
+	// BulkUpsertConvergeRuns persists a batch of normalised converge runs in one
+	// transaction, deduped on (run_id, end_time). Returns the number inserted.
+	BulkUpsertConvergeRuns(ctx context.Context, runs []ingest.ConvergeRun) (int, error)
+
+	// ListConvergeRunsForNode returns a node's recent converge runs (most-recent
+	// first) by delivered organisation name + node name, bounded by limit.
+	ListConvergeRunsForNode(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error)
+
+	// ListConvergeRunNodesFiltered returns the distinct-node rollup for the Run
+	// events Nodes tab (EXISTS semantics; one row per node = its latest matching
+	// run) with SQL-level pagination and the total distinct-node count.
+	ListConvergeRunNodesFiltered(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
+
+	// ListConvergeRunsFiltered returns the flat run list for the Run events Runs
+	// tab (one row per run) with SQL-level pagination and the total count.
+	ListConvergeRunsFiltered(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
+
+	// ListConvergeRunOrganisations returns the distinct delivered org names in
+	// converge_runs (the org filter's option source — NOT the organisations table).
+	ListConvergeRunOrganisations(ctx context.Context) ([]string, error)
+
+	// ListConvergeRunChefVersions returns the distinct chef_version values in
+	// converge_runs (the chef_version filter's option source).
+	ListConvergeRunChefVersions(ctx context.Context) ([]string, error)
 
 	// DeleteCopClassification removes an operator override.
 	DeleteCopClassification(ctx context.Context, copName string) error

@@ -45,6 +45,7 @@ type Config struct {
 	SystemHealth               SystemHealthConfig  `yaml:"system_health"`
 	Performance                PerformanceConfig   `yaml:"performance"`
 	Backup                     BackupConfig        `yaml:"backup"`
+	Ingest                     IngestConfig        `yaml:"ingest"`
 
 	// explicitExportsDir tracks whether the user explicitly set exports.output_directory.
 	explicitExportsDir bool
@@ -567,6 +568,58 @@ func (pc PerformanceConfig) IsEnabled() bool {
 }
 
 // ---------------------------------------------------------------------------
+// Event ingest
+// ---------------------------------------------------------------------------
+
+// IngestConfig controls the passive POST /api/v1/ingest receiver for Chef run
+// telemetry (see specifications/event-ingest.md). Disabled by default — it is
+// an unauthenticated inbound endpoint (MVP tech debt) and must be opt-in.
+type IngestConfig struct {
+	Enabled           *bool `yaml:"enabled"`
+	RetentionDays     int   `yaml:"retention_days"`
+	MaxBodyBytes      int64 `yaml:"max_body_bytes"`
+	MaxRecordsPerBody int   `yaml:"max_records_per_body"`
+
+	// ShowRunEvents gates the DISPLAY surfaces — the "Run events" top-level view
+	// and the Node Detail Runs tab (and their read endpoints). Independent of
+	// Enabled (the sink): telemetry can accrue in reserve while the UI stays
+	// hidden. Defaults to false so the feature is dormant until switched on.
+	ShowRunEvents *bool `yaml:"show_run_events"`
+
+	// FailuresOnly makes the sink discard success events and keep only failures
+	// — a firehose-relief valve for high-volume fleets. Defaults to false (keep
+	// all runs).
+	FailuresOnly *bool `yaml:"failures_only"`
+}
+
+// IsEnabled reports whether the ingest endpoint accepts telemetry. Defaults to
+// false when omitted — the endpoint stays closed until explicitly turned on.
+func (ic IngestConfig) IsEnabled() bool {
+	if ic.Enabled == nil {
+		return false
+	}
+	return *ic.Enabled
+}
+
+// ShowsRunEvents reports whether the Run events view and Node Detail Runs tab
+// are displayed. Defaults to false — the feature stays in reserve until enabled.
+func (ic IngestConfig) ShowsRunEvents() bool {
+	if ic.ShowRunEvents == nil {
+		return false
+	}
+	return *ic.ShowRunEvents
+}
+
+// IsFailuresOnly reports whether the sink discards success events. Defaults to
+// false (all runs retained).
+func (ic IngestConfig) IsFailuresOnly() bool {
+	if ic.FailuresOnly == nil {
+		return false
+	}
+	return *ic.FailuresOnly
+}
+
+// ---------------------------------------------------------------------------
 // Backup
 // ---------------------------------------------------------------------------
 
@@ -908,6 +961,20 @@ func (c *Config) setDefaults() {
 	if c.Collection.DeleteServerCookbooksAfterScan == nil {
 		f := false
 		c.Collection.DeleteServerCookbooksAfterScan = &f
+	}
+
+	// Ingest — Enabled stays nil (IsEnabled defaults false; opt-in).
+	if c.Ingest.RetentionDays == 0 {
+		c.Ingest.RetentionDays = 2
+	}
+	if c.Ingest.MaxBodyBytes == 0 {
+		// Post-gunzip cap. A default Data Feed batch (50 nodes × ~110 KB) is
+		// ~5.5 MB; 32 MiB leaves headroom for larger batches while bounding memory.
+		c.Ingest.MaxBodyBytes = 32 << 20
+	}
+	if c.Ingest.MaxRecordsPerBody == 0 {
+		// Well above Automate's default node_batch_size of 50.
+		c.Ingest.MaxRecordsPerBody = 500
 	}
 
 	// Concurrency

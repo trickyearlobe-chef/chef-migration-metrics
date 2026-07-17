@@ -1,0 +1,22 @@
+{
+  "attributes": {
+    "name": "node-a.example.com",
+    "node_id": "0f7d1e6a-2c3b-4d5e-8a9b-1c2d3e4f5a6b",
+    "chef_environment": "_default",
+    "run_list": [
+      "recipe[missingcb::default]"
+    ],
+    "automatic_value_count": 4108,
+    "default_value_count": 120,
+    "normal_value_count": 3,
+    "override_value_count": 0,
+    "automatic": {
+      "fqdn": "node-a.example.com",
+      "os": "linux",
+      "platform": "ubuntu"
+    },
+    "default": {},
+    "normal": { "tags": [] },
+    "override": {}
+  }
+}

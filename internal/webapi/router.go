@@ -681,6 +681,9 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.mux.HandleFunc("/api/v1/health", r.handleHealth)
 	r.mux.HandleFunc("/api/v1/version", r.handleVersion)
+	// Event ingest sink — INTENTIONALLY UNAUTHENTICATED (MVP tech debt). Passive
+	// receiver for Chef run telemetry; gated at runtime by ingest.enabled.
+	r.mux.HandleFunc("/api/v1/ingest", r.handleIngest)
 	r.mux.HandleFunc("/api/v1/server/tls-status", r.handleServerTLSStatus)
 
 	// -----------------------------------------------------------------
@@ -750,6 +753,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/nodes/by-version/", r.handleNodesByVersion)
 	r.protect("/api/v1/nodes/by-cookbook/", r.handleNodesByCookbook)
 	r.protect("/api/v1/nodes/disks/", r.handleNodeDisks)
+	r.protect("/api/v1/nodes/runs/", r.handleNodeRuns)
 	// Node detail: /api/v1/nodes/:organisation/:name — uses a prefix
 	// pattern and the handler extracts path segments.
 	r.protect("/api/v1/nodes/", r.handleNodeDetail)
@@ -771,6 +775,18 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/git-repos", r.handleGitRepos)
 	r.protect("/api/v1/git-repos/", r.handleGitRepoDetail)
+
+	// -----------------------------------------------------------------
+	// Run events endpoints (viewer) — ingest telemetry over converge_runs.
+	// Two tabs (nodes rollup / flat runs) + per-node detail. See
+	// specifications/event-ingest.md and handle_run_events.go.
+	// -----------------------------------------------------------------
+	r.protect("/api/v1/run-events/nodes", r.handleRunEventNodes)
+	r.protect("/api/v1/run-events/nodes/", r.handleRunEventNodeDetail)
+	r.protect("/api/v1/run-events/runs", r.handleRunEventRuns)
+
+	// Viewer-readable UI feature flags (so the frontend can hide gated surfaces).
+	r.protect("/api/v1/features", r.handleFeatures)
 
 	// -----------------------------------------------------------------
 	// Remediation endpoints (viewer)
@@ -810,6 +826,10 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/filters/platforms", r.handleFilterPlatforms)
 	r.protect("/api/v1/filters/target-chef-versions", r.handleFilterTargetChefVersions)
 	r.protect("/api/v1/filters/complexity-labels", r.handleFilterComplexityLabels)
+	// Run events filter options — sourced from converge_runs, NOT the
+	// organisations table (so ingest-only DMZ orgs are selectable).
+	r.protect("/api/v1/filters/run-organisations", r.handleFilterRunOrganisations)
+	r.protect("/api/v1/filters/run-chef-versions", r.handleFilterRunChefVersions)
 
 	// -----------------------------------------------------------------
 	// Log endpoints (viewer)
@@ -854,6 +874,7 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
 	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness)
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)
+	r.adminOnly("/api/v1/admin/config/ingest", r.handleAdminConfigIngest)
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
 	r.adminOnly("/api/v1/admin/saml/endpoints", r.handleSAMLEndpoints)

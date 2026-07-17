@@ -88,6 +88,7 @@ const (
 	KeySystemHealth               = "system_health"
 	KeyPerformance                = "performance"
 	KeyBackup                     = "backup"
+	KeyIngest                     = "ingest"
 	KeyCredentialEncryptionKeyEnv = "credential_encryption_key_env"
 
 	// DB cert_source TLS material. These are standalone config-store entries,
@@ -169,6 +170,7 @@ func AllConfigKeys() []string {
 		KeySystemHealth,
 		KeyPerformance,
 		KeyBackup,
+		KeyIngest,
 		KeyCredentialEncryptionKeyEnv,
 	}
 }
@@ -307,6 +309,8 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 		return yamlUnmarshalInto(&cfg.Performance, raw, key)
 	case KeyBackup:
 		return yamlUnmarshalInto(&cfg.Backup, raw, key)
+	case KeyIngest:
+		return yamlUnmarshalInto(&cfg.Ingest, raw, key)
 	case KeyCredentialEncryptionKeyEnv:
 		return yamlUnmarshalInto(&cfg.CredentialEncryptionKeyEnv, raw, key)
 	default:
@@ -368,6 +372,7 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 		KeySystemHealth:           cfg.SystemHealth,
 		KeyPerformance:            cfg.Performance,
 		KeyBackup:                 cfg.Backup,
+		KeyIngest:                 cfg.Ingest,
 	}
 
 	// Only include credential_encryption_key_env if it was explicitly set

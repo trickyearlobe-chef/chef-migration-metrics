@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-export type ExportType = "nodes" | "cookbooks" | "roles" | "git_repos";
+export type ExportType =
+  | "nodes"
+  | "cookbooks"
+  | "roles"
+  | "git_repos"
+  | "run_events";
 export type ExportFormat = "csv" | "json" | "chef_search_query";
 export type ExportJobStatus =
   | "pending"

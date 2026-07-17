@@ -2,6 +2,35 @@
 
 Single source of truth for what is in flight. **Read this first at session start.**
 
+## ⛔ EVENT-INGEST — READ BEFORE YOU BUILD (do NOT build from memory or this summary alone)
+
+Active work is the **Event Ingest MVP** on `feature/event-ingest-mvp`. A prior session
+confidently built on a WRONG topology assumption because it worked from memory instead of
+reading the spec. Do not repeat that. **Before writing any Event-Ingest code, READ:**
+1. `specifications/event-ingest.md` — the authoritative spec (Node identity + UI sections
+   carry the load-bearing constraints below). This is mandatory, not optional.
+2. Memories `event-ingest-build-state` (what's built + open decisions) and
+   `customer-topology-ingest` (the topology). Then `plans/proposal-event-ingest.md`.
+
+**Three load-bearing facts you MUST hold (getting any wrong will send you down a wrong path):**
+- **Topology is MIXED.** Clustered Automate (2 orgs, ~50k nodes each) CMM pulls + Data
+  Feeds — PLUS standalone **DMZ Infra Servers (~2-3k nodes each) CMM CANNOT reach/pull**;
+  they only **push events**. DMZ nodes are **ingest-only → no `node_snapshots` → orphan by
+  nature, first-class**, NOT a lab edge case. (Do NOT say "Automate is the only chef server.")
+- **The orphan/DMZ UI fix is a NEW run-centric top-level "Run events" view over
+  `converge_runs`** (sibling of Nodes/Cookbooks/Git Repos). Do NOT fabricate node/org
+  parent records and do NOT touch `node_snapshots`/`organisations`/pull aggregates. Filters
+  are **view-level from `converge_runs`** (org via `DISTINCT organisation`) — **NOT** the
+  global org filter (it's `organisations`-table-driven → excludes DMZ orgs). Node Detail
+  Runs tab stays. Not built yet — this is the NOW work.
+- **CC19 report is an OPEN design, not decided.** "Nodes failing the prospective CC19 run"
+  = `chef_version=target ∧ status=failure`, but shaped as a **distinct-NODE rollup**, not a
+  raw run list. Design it deliberately (see the Run events item + memory), don't assume.
+
+Everything else in the ingest MVP core is built + committed (node-direct proven live). See
+the NOW section for exact done/open state. If any of the three facts above surprises you,
+STOP and re-read the spec before touching code.
+
 ## Branch map (2026-07-14)
 
 - `main` — holds all merged work. Released line: **v2.16.2**.
@@ -12,15 +41,63 @@ Single source of truth for what is in flight. **Read this first at session start
   ship. Full state + resume steps in `plans/p3-node-list-perf.md`.
 - **Parked** `chore/spec-drift-report` — one-time spec↔code drift report;
   deprioritised behind feature delivery. Don't nag to merge (see [[spec-drift-parked]]).
+- **In flight** `feature/event-ingest-mvp` — Event Ingest MVP (see NOW).
 - No other branches in flight. Start new work on a fresh branch.
 
-## NOW — next up
+## NOW — Event Ingest MVP (`feature/event-ingest-mvp`)
 
-Nothing claimed. Saved Filters is complete on all four list views. Pick the next
-item from the queues below, or the Nodes filter-bar layout tidy-up (the row wraps
-raggedly: the Tags block carries a two-line help text its neighbours lack, and the
-Role/Readiness chips add height below their inputs, inside an `items-end`
-flex-wrap — pre-existing, user-flagged).
+Spec: `specifications/event-ingest.md`. Transport is empirically validated
+(`plans/proposal-event-ingest.md`, and the `automate-datafeed-behavior` finding):
+CMM is a passive `POST /api/v1/ingest` sink accepting three shapes (node direct /
+Chef Server proxy `run_converge`, and Automate Data Feed per-node state), normalised
+into a partitioned `converge_runs` table, surfaced on a new Node Detail **Runs** tab.
+**No auth** (tech debt). Key = (organisation, node_name); dedup on run_id.
+
+**Topology drives this** (see `customer-topology-ingest` memory + spec Node identity):
+clustered Automate (2 orgs, ~50k each) CMM pulls + Data Feeds; **standalone DMZ Infra
+Servers (~2–3k each) CMM CANNOT pull — ingest-only → orphan nodes are first-class**.
+
+**Code-complete + committed:** fixtures, migration `0052_converge_runs`, normaliser
+(with real-shape fixes: `cookbooks` name→{version}, `chef_version` from node tree),
+config + admin toggle, store (dedup + partition purge), handler `POST /api/v1/ingest`,
+read API `GET /api/v1/nodes/runs/{org}/{node}`, Node Detail **Overview | Runs tabs**,
+retention ticker (hourly + startup). **Node-direct/run_converge path PROVEN LIVE.**
+
+Remaining:
+
+1. **"Run events" top-level view (REQUIRED — the DMZ gap; DECIDED design).** A per-node
+   Runs tab reaches only pulled nodes, so DMZ ingest-only telemetry (no `node_snapshots`)
+   is stored-but-invisible. Decision: a run-centric **dedicated top-level "Run events"
+   view over `converge_runs`** (sibling of Nodes/Cookbooks/Git Repos) — list + run detail,
+   default failures, own export. **View-level filters sourced from `converge_runs` itself**
+   (org = `SELECT DISTINCT organisation`, status, node, chef_version, time) — must NOT use
+   the global org filter (organisations-table-driven → excludes DMZ orgs). Reads
+   `converge_runs` directly (indexed, retention-bounded); does NOT fabricate node/org
+   records or touch pull aggregates. Node Detail Runs tab stays. Chosen over a virtual
+   node-list union (perf: DISTINCT over firehose + heavy node-list query) and an ingest
+   node registry (extra table to maintain) — see [[event-ingest-build-state]].
+   Build: nav entry + route + list page (reuse list-view/filter infra; **NO saved filters
+   for MVP** — would need a `saved_filters.view_name` CHECK migration) + run-detail page +
+   `datastore` list/count/export methods + web API route + own export.
+   **OPEN DESIGN (not yet figured out):** a key extract is **"nodes failing the prospective
+   CC19 (target-version) run."** Discriminator = `chef_version` (prod run = current e.g.
+   18.x; speculative = target 19.x), so `chef_version=target ∧ status=failure`. But the
+   deliverable is a **distinct-NODE rollup** ("these N nodes fail on 19 + each one's latest
+   error/failing cookbook·recipe"), not a raw run list — likely a "target-version failures"
+   MODE of Run events. Open Qs: latest-run vs ever-failed; per-node columns; relationship to
+   the existing static readiness signal (this is the stronger empirical one; feeding it into
+   readiness is MVP-out-of-scope); confirm speculative runs ingest with `chef_version=target`.
+   Design deliberately before/within the Run events build.
+2. **Live-validate the other two shapes** — Automate Data Feed (customer's clustered-org
+   transport; fixtures are authored → fidelity risk) and Chef Server proxy (the DMZ
+   transport; same `run_converge` shape as the proven direct path). `chef-load` on
+   `dev.home.arpa` for a small firehose. Needs an Automate admin token (classifier blocks
+   me minting it — user runs it or adds a permission rule).
+3. **Lab cleanup** — node `data_collector.rb` + `ssl_verify_mode :verify_none` still set.
+
+Acceptance: a converge failure shows with error+backtrace+failing cookbook·recipe;
+partitions rotate; unauth POST accepted; **and a DMZ ingest-only node (no node_snapshots)
+is visible in the UI with its runs** (the topology-driven criterion I missed first pass).
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
@@ -35,11 +112,6 @@ copied-contract (`diagnostic-bundle`, `system-health-*`) — fold into E.
   (`handle_cookbook_remediation.go`, `handle_git_repo_remediation.go` — each is
   one ~480-line function). No shared extraction between them; they serve
   different sources.
-
-## Deferred proposal — event ingest (`plans/proposal-event-ingest.md`)
-
-Firehose ingest of Chef `data_collector` converge events. FOR DISCUSSION after the
-perf/feature work; not approved. Closes the active-only test blind spot.
 
 ## Parked — SAML config follow-ups (lower priority)
 

@@ -7,6 +7,8 @@ export * from "./dashboard";
 export * from "./nodes";
 export * from "./cookbooks";
 export * from "./git-repos";
+export * from "./run-events";
+export * from "./features";
 export * from "./remediation";
 export * from "./filters";
 export * from "./logs";
