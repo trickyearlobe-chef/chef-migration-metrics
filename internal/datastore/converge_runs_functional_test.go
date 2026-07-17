@@ -183,3 +183,232 @@ func TestFunctional_ConvergeRuns_FailureRoundTrip(t *testing.T) {
 		t.Errorf("backtrace length = %d, want 2", backtraceLen)
 	}
 }
+
+// runNode is like run() but lets a test vary the node name and org so the
+// run-centric list view can be exercised across nodes/orgs (incl. an
+// ingest-only org that has no node_snapshots — the DMZ case).
+func runNode(id, org, node string, end time.Time, status, chefVersion string) ingest.ConvergeRun {
+	r := run(id, end, status)
+	r.Organisation = org
+	r.NodeName = node
+	r.ChefVersion = chefVersion
+	return r
+}
+
+// The run-centric list view filters and paginates across nodes and orgs,
+// reading converge_runs directly — including an ingest-only org with no
+// node_snapshots (the DMZ population the view exists to surface).
+func TestFunctional_ConvergeRuns_ListFiltered(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	t.Cleanup(func() { db.pool.ExecContext(ctx, `DROP TABLE IF EXISTS converge_runs_20400101`) })
+
+	seed := []ingest.ConvergeRun{
+		runNode("f-r1", "org-store-test", "web01.example.com", convD1, "success", "18.9.4"),
+		runNode("f-r2", "org-store-test", "web02.example.com", convD1.Add(10*time.Minute), "failure", "18.9.4"),
+		// A DMZ ingest-only org (never pulled → no node_snapshots).
+		runNode("f-r3", "dmz-org-store-test", "dmz01.example.com", convD1.Add(20*time.Minute), "failure", "19.0.12"),
+		runNode("f-r4", "dmz-org-store-test", "dmz02.example.com", convD1.Add(30*time.Minute), "success", "19.0.12"),
+	}
+	if _, err := db.BulkUpsertConvergeRuns(ctx, seed); err != nil {
+		t.Fatalf("seed insert: %v", err)
+	}
+	t.Cleanup(func() {
+		db.pool.ExecContext(ctx, `DELETE FROM converge_runs WHERE organisation IN ('org-store-test','dmz-org-store-test')`)
+	})
+
+	// Default (no filters here, but bound to our two test orgs via org filter one at a time).
+	// Status filter: all failures across both orgs.
+	fails, total, err := db.ListConvergeRunsFiltered(ctx, ConvergeRunFilter{Status: "failure", NodeName: ""})
+	if err != nil {
+		t.Fatalf("ListConvergeRunsFiltered(status=failure): %v", err)
+	}
+	// Filter may catch unrelated rows in the shared DB — assert our two are present.
+	seenFail := map[string]bool{}
+	for _, r := range fails {
+		seenFail[r.RunID] = true
+	}
+	if !seenFail["f-r2"] || !seenFail["f-r3"] {
+		t.Errorf("status=failure missing f-r2/f-r3; got %v (total=%d)", seenFail, total)
+	}
+	if seenFail["f-r1"] || seenFail["f-r4"] {
+		t.Errorf("status=failure should exclude successes f-r1/f-r4; got %v", seenFail)
+	}
+
+	// Org filter surfaces the DMZ ingest-only org (no node_snapshots needed).
+	dmz, total, err := db.ListConvergeRunsFiltered(ctx, ConvergeRunFilter{Organisation: "dmz-org-store-test"})
+	if err != nil {
+		t.Fatalf("ListConvergeRunsFiltered(org=dmz): %v", err)
+	}
+	if total != 2 || len(dmz) != 2 {
+		t.Errorf("dmz org list = %d rows (total %d), want 2/2", len(dmz), total)
+	}
+	// Default sort is recency DESC → f-r4 (latest) first.
+	if dmz[0].RunID != "f-r4" {
+		t.Errorf("dmz first row = %q, want f-r4 (recency DESC)", dmz[0].RunID)
+	}
+	if dmz[0].NodeName == "" || dmz[0].Organisation != "dmz-org-store-test" {
+		t.Errorf("list item missing org/node: %+v", dmz[0])
+	}
+
+	// chef_version discriminator (the CC19 target-version signal): 19.0.12 ∧ failure.
+	cc, _, err := db.ListConvergeRunsFiltered(ctx, ConvergeRunFilter{ChefVersion: "19.0.12", Status: "failure"})
+	if err != nil {
+		t.Fatalf("ListConvergeRunsFiltered(cc19): %v", err)
+	}
+	if len(cc) != 1 || cc[0].RunID != "f-r3" {
+		t.Errorf("cc19 failure filter = %v, want [f-r3]", runIDs(cc))
+	}
+
+	// Node substring.
+	web, _, err := db.ListConvergeRunsFiltered(ctx, ConvergeRunFilter{Organisation: "org-store-test", NodeName: "web01"})
+	if err != nil {
+		t.Fatalf("ListConvergeRunsFiltered(node=web01): %v", err)
+	}
+	if len(web) != 1 || web[0].RunID != "f-r1" {
+		t.Errorf("node substring = %v, want [f-r1]", runIDs(web))
+	}
+
+	// Pagination: per-org total is exact even when a page is smaller.
+	page1, total, err := db.ListConvergeRunsFiltered(ctx, ConvergeRunFilter{Organisation: "dmz-org-store-test", Limit: 1, Offset: 0})
+	if err != nil {
+		t.Fatalf("paginated list: %v", err)
+	}
+	if len(page1) != 1 || total != 2 {
+		t.Errorf("page1 = %d rows total %d, want 1 row total 2", len(page1), total)
+	}
+}
+
+func runIDs(rows []ConvergeRunListItem) []string {
+	ids := make([]string, len(rows))
+	for i := range rows {
+		ids[i] = rows[i].RunID
+	}
+	return ids
+}
+
+// The org options come from converge_runs itself (DISTINCT), NOT the
+// organisations table — so DMZ ingest-only orgs are selectable.
+func TestFunctional_ConvergeRuns_ListOrganisations(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		db.pool.ExecContext(ctx, `DROP TABLE IF EXISTS converge_runs_20400101`)
+		db.pool.ExecContext(ctx, `DELETE FROM converge_runs WHERE organisation IN ('org-store-test','dmz-org-store-test')`)
+	})
+	if _, err := db.BulkUpsertConvergeRuns(ctx, []ingest.ConvergeRun{
+		runNode("o-r1", "org-store-test", "n1.example.com", convD1, "success", "18.9.4"),
+		runNode("o-r2", "dmz-org-store-test", "n2.example.com", convD1, "failure", "19.0.12"),
+	}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	orgs, err := db.ListConvergeRunOrganisations(ctx)
+	if err != nil {
+		t.Fatalf("ListConvergeRunOrganisations: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, o := range orgs {
+		seen[o] = true
+	}
+	if !seen["org-store-test"] || !seen["dmz-org-store-test"] {
+		t.Errorf("org options missing test orgs; got %v", orgs)
+	}
+}
+
+// The node rollup (top-level Nodes tab) uses EXISTS / "any matching run"
+// semantics: a node qualifies if it has ANY single run matching all filters,
+// and the row shows that node's LATEST matching run — NOT its latest overall
+// run. This is the case that distinguishes semantics B from A.
+func TestFunctional_ConvergeRuns_NodeRollupExistsSemantics(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		db.pool.ExecContext(ctx, `DROP TABLE IF EXISTS converge_runs_20400101`)
+		db.pool.ExecContext(ctx, `DELETE FROM converge_runs WHERE organisation = 'org-store-test'`)
+	})
+
+	// web-mixed: a FAILED speculative-19 run, then a LATER green production-18 run.
+	specFail := runNode("nr-spec-fail", "org-store-test", "web-mixed.example.com", convD1, "failure", "19.0.12")
+	specFail.Error = &ingest.RunError{Class: "Mixlib::ShellOut::CommandTimeout", Message: "not enough space on /var"}
+	prodOK := runNode("nr-prod-ok", "org-store-test", "web-mixed.example.com", convD1.Add(time.Hour), "success", "18.9.4")
+	// web-clean: only a green production-18 run — must NOT match the failure filter.
+	clean := runNode("nr-clean", "org-store-test", "web-clean.example.com", convD1.Add(2*time.Hour), "success", "18.9.4")
+
+	if _, err := db.BulkUpsertConvergeRuns(ctx, []ingest.ConvergeRun{specFail, prodOK, clean}); err != nil {
+		t.Fatalf("seed insert: %v", err)
+	}
+
+	// Filter: failed 19.x runs. web-mixed qualifies via its speculative fail even
+	// though its LATEST overall run is green; web-clean does not qualify at all.
+	got, total, err := db.ListConvergeRunNodesFiltered(ctx, ConvergeRunFilter{
+		Organisation: "org-store-test",
+		Status:       "failure",
+		ChefVersion:  "19.0.12",
+	})
+	if err != nil {
+		t.Fatalf("ListConvergeRunNodesFiltered: %v", err)
+	}
+	if len(got) != 1 || total != 1 {
+		t.Fatalf("distinct nodes = %d (total %d), want 1/1: %+v", len(got), total, got)
+	}
+	if got[0].NodeName != "web-mixed.example.com" {
+		t.Errorf("node = %q, want web-mixed.example.com", got[0].NodeName)
+	}
+	// Row is the latest MATCHING run (the failed 19 run), not the later green run.
+	if got[0].RunID != "nr-spec-fail" || got[0].Status != "failure" {
+		t.Errorf("row = %q/%s, want nr-spec-fail/failure (latest matching, not latest overall)", got[0].RunID, got[0].Status)
+	}
+
+	// Failure-message substring isolates the authored abort reason.
+	msg, _, err := db.ListConvergeRunNodesFiltered(ctx, ConvergeRunFilter{
+		Organisation:   "org-store-test",
+		FailureMessage: "not enough space",
+	})
+	if err != nil {
+		t.Fatalf("failure-message filter: %v", err)
+	}
+	if len(msg) != 1 || msg[0].NodeName != "web-mixed.example.com" {
+		t.Errorf("failure-message filter = %v, want [web-mixed]", runIDs(msg))
+	}
+
+	// Without filters, both nodes appear once each (latest overall run).
+	all, total, err := db.ListConvergeRunNodesFiltered(ctx, ConvergeRunFilter{Organisation: "org-store-test"})
+	if err != nil {
+		t.Fatalf("unfiltered node rollup: %v", err)
+	}
+	if len(all) != 2 || total != 2 {
+		t.Errorf("unfiltered nodes = %d (total %d), want 2/2", len(all), total)
+	}
+	for _, n := range all {
+		if n.NodeName == "web-mixed.example.com" && n.RunID != "nr-prod-ok" {
+			t.Errorf("unfiltered web-mixed row = %q, want nr-prod-ok (latest overall)", n.RunID)
+		}
+	}
+}
+
+// GetConvergeRunByID fetches a single run for the detail view; ErrNotFound
+// when retention has dropped it.
+func TestFunctional_ConvergeRuns_GetByID(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	t.Cleanup(func() { db.pool.ExecContext(ctx, `DROP TABLE IF EXISTS converge_runs_20400101`) })
+
+	r := runNode("get-r1", "org-store-test", "web01.example.com", convD1, "failure", "19.0.12")
+	r.Error = &ingest.RunError{Class: "RuntimeError", Message: "boom", Backtrace: []string{"a", "b"}}
+	if _, err := db.BulkUpsertConvergeRuns(ctx, []ingest.ConvergeRun{r}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	got, err := db.GetConvergeRunByID(ctx, "get-r1")
+	if err != nil {
+		t.Fatalf("GetConvergeRunByID: %v", err)
+	}
+	if got.NodeName != "web01.example.com" || got.Organisation != "org-store-test" {
+		t.Errorf("run identity wrong: %+v", got)
+	}
+	if len(got.Error) == 0 {
+		t.Errorf("failure detail missing on detail fetch")
+	}
+	if _, err := db.GetConvergeRunByID(ctx, "does-not-exist"); err != ErrNotFound {
+		t.Errorf("missing run err = %v, want ErrNotFound", err)
+	}
+}
