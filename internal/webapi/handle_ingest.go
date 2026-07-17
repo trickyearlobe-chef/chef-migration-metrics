@@ -71,6 +71,7 @@ func (r *Router) handleIngest(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	failuresOnly := ic.IsFailuresOnly()
 	runs := make([]ingest.ConvergeRun, 0, len(records))
 	for _, rec := range records {
 		run, err := ingest.Normalise(rec)
@@ -81,9 +82,15 @@ func (r *Router) handleIngest(w http.ResponseWriter, req *http.Request) {
 			writeIngestAccepted(w, len(records), 0)
 			return
 		}
-		if run != nil { // nil == accepted-but-ignored shape (run_start, attributes-only)
-			runs = append(runs, *run)
+		if run == nil { // nil == accepted-but-ignored shape (run_start, attributes-only)
+			continue
 		}
+		// Firehose-relief valve: when failures_only is set, discard success events
+		// and keep only failures.
+		if failuresOnly && run.Status != "failure" {
+			continue
+		}
+		runs = append(runs, *run)
 	}
 
 	stored := 0

@@ -23,6 +23,30 @@ func TestIngestConfig_IsEnabledDefaultsFalse(t *testing.T) {
 	}
 }
 
+// Both new toggles default OFF: the feature stays in reserve (views hidden) and
+// the sink keeps all runs unless explicitly told to drop successes.
+func TestIngestConfig_ShowRunEventsAndFailuresOnlyDefaultFalse(t *testing.T) {
+	var ic IngestConfig
+	if ic.ShowsRunEvents() {
+		t.Error("ShowsRunEvents() = true for zero value, want false (feature in reserve)")
+	}
+	if ic.IsFailuresOnly() {
+		t.Error("IsFailuresOnly() = true for zero value, want false (keep all runs)")
+	}
+	on := true
+	ic.ShowRunEvents = &on
+	ic.FailuresOnly = &on
+	if !ic.ShowsRunEvents() || !ic.IsFailuresOnly() {
+		t.Error("accessors did not reflect explicit true")
+	}
+	off := false
+	ic.ShowRunEvents = &off
+	ic.FailuresOnly = &off
+	if ic.ShowsRunEvents() || ic.IsFailuresOnly() {
+		t.Error("accessors did not reflect explicit false")
+	}
+}
+
 func TestIngestConfig_Defaults(t *testing.T) {
 	var c Config
 	c.ApplyDefaults()

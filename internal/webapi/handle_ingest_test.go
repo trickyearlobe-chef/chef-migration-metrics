@@ -112,6 +112,40 @@ func TestHandleIngest_GzipNDJSONBatch(t *testing.T) {
 	}
 }
 
+// failures_only makes the sink discard success events and keep only failures —
+// the firehose-relief valve. The same batch keeps both runs when the flag is off.
+func TestHandleIngest_FailuresOnlyDiscardsSuccess(t *testing.T) {
+	batch := func(t *testing.T) []byte {
+		nd := append(append([]byte{}, bytes.TrimSpace(fixture(t, "run_converge_success.json"))...), '\n')
+		return append(nd, bytes.TrimSpace(fixture(t, "run_converge_failure.json"))...)
+	}
+
+	// Flag ON → only the failure is persisted.
+	on := true
+	r, captured, _ := ingestRouter(t, func(ic *config.IngestConfig) { ic.FailuresOnly = &on })
+	w := postIngest(r, batch(t), false)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	received, stored := decodeReceipt(t, w)
+	if received != 2 {
+		t.Errorf("received = %d, want 2 (both records seen)", received)
+	}
+	if stored != 1 || len(*captured) != 1 {
+		t.Fatalf("stored = %d / captured %d, want 1 (success dropped)", stored, len(*captured))
+	}
+	if (*captured)[0].Status != "failure" {
+		t.Errorf("captured run status = %q, want failure", (*captured)[0].Status)
+	}
+
+	// Flag OFF (default) → both persisted.
+	r2, captured2, _ := ingestRouter(t, nil)
+	postIngest(r2, batch(t), false)
+	if len(*captured2) != 2 {
+		t.Errorf("failures_only off: captured %d, want 2 (both kept)", len(*captured2))
+	}
+}
+
 // A plain (uncompressed) single object body → one stored run.
 func TestHandleIngest_PlainSingleObject(t *testing.T) {
 	r, captured, _ := ingestRouter(t, nil)

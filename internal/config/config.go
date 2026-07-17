@@ -579,6 +579,17 @@ type IngestConfig struct {
 	RetentionDays     int   `yaml:"retention_days"`
 	MaxBodyBytes      int64 `yaml:"max_body_bytes"`
 	MaxRecordsPerBody int   `yaml:"max_records_per_body"`
+
+	// ShowRunEvents gates the DISPLAY surfaces — the "Run events" top-level view
+	// and the Node Detail Runs tab (and their read endpoints). Independent of
+	// Enabled (the sink): telemetry can accrue in reserve while the UI stays
+	// hidden. Defaults to false so the feature is dormant until switched on.
+	ShowRunEvents *bool `yaml:"show_run_events"`
+
+	// FailuresOnly makes the sink discard success events and keep only failures
+	// — a firehose-relief valve for high-volume fleets. Defaults to false (keep
+	// all runs).
+	FailuresOnly *bool `yaml:"failures_only"`
 }
 
 // IsEnabled reports whether the ingest endpoint accepts telemetry. Defaults to
@@ -588,6 +599,24 @@ func (ic IngestConfig) IsEnabled() bool {
 		return false
 	}
 	return *ic.Enabled
+}
+
+// ShowsRunEvents reports whether the Run events view and Node Detail Runs tab
+// are displayed. Defaults to false — the feature stays in reserve until enabled.
+func (ic IngestConfig) ShowsRunEvents() bool {
+	if ic.ShowRunEvents == nil {
+		return false
+	}
+	return *ic.ShowRunEvents
+}
+
+// IsFailuresOnly reports whether the sink discards success events. Defaults to
+// false (all runs retained).
+func (ic IngestConfig) IsFailuresOnly() bool {
+	if ic.FailuresOnly == nil {
+		return false
+	}
+	return *ic.FailuresOnly
 }
 
 // ---------------------------------------------------------------------------
