@@ -9,10 +9,68 @@
 package ingest
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"time"
 )
+
+// runTime is a run timestamp decoded from either encoding Chef producers use:
+//   - an RFC3339 string ("2026-07-16T09:01:12Z") — raw run_converge (node-direct
+//     and Chef Server proxy), and
+//   - a protobuf Timestamp object {"seconds":N,"nanos":M} — the Chef Automate
+//     Data Feed's client_run (measured live 2026-07-18; the authored fixtures
+//     wrongly used a string, so every real Data Feed record was silently dropped
+//     on the zero-value end_time guard).
+//
+// A bare numeric epoch is also tolerated defensively. null / absent / empty
+// decode to the zero time.
+type runTime struct{ time.Time }
+
+func (t *runTime) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		return nil
+	}
+	switch b[0] {
+	case '"': // RFC3339 string
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		if s == "" {
+			return nil
+		}
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			// Tolerate fractional seconds.
+			if parsed, err = time.Parse(time.RFC3339Nano, s); err != nil {
+				return fmt.Errorf("ingest: parsing run timestamp %q: %w", s, err)
+			}
+		}
+		t.Time = parsed
+	case '{': // protobuf Timestamp {"seconds":N,"nanos":M}
+		var ts struct {
+			Seconds int64 `json:"seconds"`
+			Nanos   int64 `json:"nanos"`
+		}
+		if err := json.Unmarshal(b, &ts); err != nil {
+			return err
+		}
+		if ts.Seconds != 0 || ts.Nanos != 0 {
+			t.Time = time.Unix(ts.Seconds, ts.Nanos).UTC()
+		}
+	default: // bare numeric epoch seconds
+		var n int64
+		if err := json.Unmarshal(b, &n); err != nil {
+			return fmt.Errorf("ingest: unrecognised run timestamp %s", string(b))
+		}
+		if n != 0 {
+			t.Time = time.Unix(n, 0).UTC()
+		}
+	}
+	return nil
+}
 
 // maxBacktraceLines bounds a stored backtrace. Customer converge backtraces are
 // typically ~40 lines; the cap guards against a pathological producer without
@@ -98,8 +156,8 @@ type runBody struct {
 	// shared run fields
 	Status               string                     `json:"status"`
 	ChefVersion          string                     `json:"chef_version"`
-	StartTime            time.Time                  `json:"start_time"`
-	EndTime              time.Time                  `json:"end_time"`
+	StartTime            runTime                    `json:"start_time"`
+	EndTime              runTime                    `json:"end_time"`
 	RunList              []string                   `json:"run_list"`
 	ExpandedRunList      json.RawMessage            `json:"expanded_run_list"`
 	Cookbooks            map[string]json.RawMessage `json:"cookbooks"`
@@ -187,8 +245,8 @@ func fromRunBody(raw json.RawMessage, shape string) (*ConvergeRun, error) {
 	run := &ConvergeRun{
 		Status:               b.Status,
 		ChefVersion:          chefVersion,
-		StartTime:            b.StartTime,
-		EndTime:              b.EndTime,
+		StartTime:            b.StartTime.Time,
+		EndTime:              b.EndTime.Time,
 		RunList:              b.RunList,
 		ExpandedRunList:      b.ExpandedRunList,
 		Cookbooks:            cookbookVersions(b.Cookbooks),
