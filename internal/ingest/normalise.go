@@ -140,36 +140,49 @@ type runError struct {
 	Backtrace   []string        `json:"backtrace"`
 }
 
-// runBody is the common run payload — a raw run_converge at top level, or the
-// client_run section of a Data Feed record. The two carry the same run under
-// different envelopes and a couple of differently-named identity fields.
-type runBody struct {
-	// run_converge identity
-	RunID            string `json:"run_id"`
-	NodeName         string `json:"node_name"`
-	OrganizationName string `json:"organization_name"`
-	ChefServerFQDN   string `json:"chef_server_fqdn"`
-	// Data Feed client_run identity
-	ID           string `json:"id"`
-	Organization string `json:"organization"`
-	SourceFQDN   string `json:"source_fqdn"`
-	// shared run fields
-	Status               string                     `json:"status"`
-	ChefVersion          string                     `json:"chef_version"`
-	StartTime            runTime                    `json:"start_time"`
-	EndTime              runTime                    `json:"end_time"`
-	RunList              []string                   `json:"run_list"`
-	ExpandedRunList      json.RawMessage            `json:"expanded_run_list"`
-	Cookbooks            map[string]json.RawMessage `json:"cookbooks"`
-	TotalResourceCount   int                        `json:"total_resource_count"`
-	UpdatedResourceCount int                        `json:"updated_resource_count"`
-	Resources            []resource                 `json:"resources"`
-	Error                *runError                  `json:"error"`
+// The run payload — a raw run_converge at top level, or the client_run section of
+// a Data Feed record — is NOT decoded into a fixed struct. Chef node data is
+// freeform and producers vary field shapes (cookbooks object-vs-list, timestamps
+// string-vs-protobuf-object, counts, …); a struct decode fails the WHOLE record
+// on the first mismatched field and drops it. Instead the body is read as
+// map[string]json.RawMessage and each field we keep is extracted best-effort (see
+// fromRunBody), so an unexpected shape yields a zero value rather than dropping a
+// real converge. Only a missing end_time (the partition key) rejects a record.
 
-	// Node carries the version fallback: a run_converge has no top-level
-	// chef_version (measured null); the value lives in the node attribute tree
-	// we otherwise discard. Only this one path is decoded, not the whole tree.
-	Node struct {
+// strField / intField best-effort-extract a scalar; a wrong shape yields the zero
+// value (never an error), so one odd field cannot drop the record.
+func strField(f map[string]json.RawMessage, key string) string {
+	var s string
+	_ = json.Unmarshal(f[key], &s)
+	return s
+}
+
+func intField(f map[string]json.RawMessage, key string) int {
+	var n int
+	_ = json.Unmarshal(f[key], &n)
+	return n
+}
+
+// rawField returns a present, non-null raw value, else nil.
+func rawField(f map[string]json.RawMessage, key string) json.RawMessage {
+	if v, ok := f[key]; ok && len(v) > 0 && string(v) != "null" {
+		return v
+	}
+	return nil
+}
+
+// parseRunTime decodes a run timestamp (RFC3339 string or protobuf object) from
+// raw, returning the zero time on any unrecognised shape.
+func parseRunTime(raw json.RawMessage) time.Time {
+	var t runTime
+	_ = json.Unmarshal(raw, &t)
+	return t.Time
+}
+
+// chefVersionFromNode digs chef_version out of the node attribute tree
+// (run_converge has no top-level chef_version). Best-effort; "" on any shape.
+func chefVersionFromNode(raw json.RawMessage) string {
+	var n struct {
 		Automatic struct {
 			ChefPackages struct {
 				Chef struct {
@@ -177,25 +190,82 @@ type runBody struct {
 				} `json:"chef"`
 			} `json:"chef_packages"`
 		} `json:"automatic"`
-	} `json:"node"`
+	}
+	_ = json.Unmarshal(raw, &n)
+	return n.Automatic.ChefPackages.Chef.Version
+}
+
+// parseRunError decodes the failure detail, returning nil for an absent, empty
+// ({}), or unrecognised error (so a success with error:{} is not a failure).
+func parseRunError(raw json.RawMessage) *RunError {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var e runError
+	if json.Unmarshal(raw, &e) != nil {
+		return nil
+	}
+	if e.Class == "" && e.Message == "" && len(e.Backtrace) == 0 {
+		return nil
+	}
+	bt := e.Backtrace
+	if len(bt) > maxBacktraceLines {
+		bt = bt[:maxBacktraceLines]
+	}
+	return &RunError{Class: e.Class, Message: e.Message, Description: e.Description, Backtrace: bt}
+}
+
+// firstFailedFrom decodes resources best-effort and returns the first failed one.
+func firstFailedFrom(raw json.RawMessage) *FailedResource {
+	var rs []resource
+	_ = json.Unmarshal(raw, &rs)
+	return firstFailed(rs)
 }
 
 // cookbookVersions normalises the run's cookbooks map to name -> version. Chef
 // emits each entry as an object {"version": "x.y.z", ...} (measured against a real
 // run_converge); a bare version string is also tolerated for robustness.
-func cookbookVersions(raw map[string]json.RawMessage) map[string]string {
-	out := make(map[string]string, len(raw))
-	for name, v := range raw {
-		var obj struct {
-			Version string `json:"version"`
+// cookbookVersions normalises the run's cookbooks to name -> version from either
+// producer shape: run_converge / Server proxy send `cookbooks` as an OBJECT
+// (name -> {"version":"x"} — a bare string is tolerated); the Automate Data Feed
+// sends `cookbooks` as a LIST of names and the versions in `versioned_cookbooks`
+// ([{name,version}]). The object shape wins when present; otherwise
+// versioned_cookbooks is used. Both inputs are raw so an unexpected shape yields
+// an empty map rather than failing the whole record decode.
+func cookbookVersions(cookbooks, versioned json.RawMessage) map[string]string {
+	out := map[string]string{}
+
+	// run_converge / Server proxy: cookbooks is an object (name -> {version}).
+	var asMap map[string]json.RawMessage
+	if len(cookbooks) > 0 && json.Unmarshal(cookbooks, &asMap) == nil {
+		for name, v := range asMap {
+			var obj struct {
+				Version string `json:"version"`
+			}
+			if err := json.Unmarshal(v, &obj); err == nil && obj.Version != "" {
+				out[name] = obj.Version
+				continue
+			}
+			var s string
+			if err := json.Unmarshal(v, &s); err == nil {
+				out[name] = s
+			}
 		}
-		if err := json.Unmarshal(v, &obj); err == nil && obj.Version != "" {
-			out[name] = obj.Version
-			continue
+		if len(out) > 0 {
+			return out
 		}
-		var s string
-		if err := json.Unmarshal(v, &s); err == nil {
-			out[name] = s
+	}
+
+	// Data Feed: versioned_cookbooks is a list of {name, version}.
+	var vc []struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	if len(versioned) > 0 && json.Unmarshal(versioned, &vc) == nil {
+		for _, c := range vc {
+			if c.Name != "" {
+				out[c.Name] = c.Version
+			}
 		}
 	}
 	return out
@@ -231,42 +301,48 @@ func Normalise(raw json.RawMessage) (*ConvergeRun, error) {
 }
 
 func fromRunBody(raw json.RawMessage, shape string) (*ConvergeRun, error) {
-	var b runBody
-	if err := json.Unmarshal(raw, &b); err != nil {
+	// Read the body as a field map — this only fails if it is not a JSON object.
+	// Every field below is extracted best-effort so a producer's unexpected shape
+	// on any single field cannot drop an otherwise-valid converge.
+	var f map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &f); err != nil {
 		return nil, fmt.Errorf("ingest: decoding %s body: %w", shape, err)
 	}
 
-	chefVersion := b.ChefVersion
+	chefVersion := strField(f, "chef_version")
 	if chefVersion == "" {
 		// run_converge has no top-level chef_version; fall back to the node tree.
-		chefVersion = b.Node.Automatic.ChefPackages.Chef.Version
+		chefVersion = chefVersionFromNode(f["node"])
 	}
 
+	var runList []string
+	_ = json.Unmarshal(f["run_list"], &runList) // wrong shape -> nil
+
 	run := &ConvergeRun{
-		Status:               b.Status,
+		Status:               strField(f, "status"),
 		ChefVersion:          chefVersion,
-		StartTime:            b.StartTime.Time,
-		EndTime:              b.EndTime.Time,
-		RunList:              b.RunList,
-		ExpandedRunList:      b.ExpandedRunList,
-		Cookbooks:            cookbookVersions(b.Cookbooks),
-		TotalResourceCount:   b.TotalResourceCount,
-		UpdatedResourceCount: b.UpdatedResourceCount,
+		StartTime:            parseRunTime(f["start_time"]),
+		EndTime:              parseRunTime(f["end_time"]),
+		RunList:              runList,
+		ExpandedRunList:      rawField(f, "expanded_run_list"),
+		Cookbooks:            cookbookVersions(f["cookbooks"], f["versioned_cookbooks"]),
+		TotalResourceCount:   intField(f, "total_resource_count"),
+		UpdatedResourceCount: intField(f, "updated_resource_count"),
 		Shape:                shape,
 	}
 
 	// Identity fields differ by envelope.
 	switch shape {
 	case ShapeDataFeed:
-		run.RunID = b.ID
-		run.NodeName = b.NodeName
-		run.Organisation = b.Organization
-		run.SourceFQDN = b.SourceFQDN
+		run.RunID = strField(f, "id")
+		run.NodeName = strField(f, "node_name")
+		run.Organisation = strField(f, "organization")
+		run.SourceFQDN = strField(f, "source_fqdn")
 	default: // run_converge (direct or proxy relay)
-		run.RunID = b.RunID
-		run.NodeName = b.NodeName
-		run.Organisation = b.OrganizationName
-		run.ChefServerFQDN = b.ChefServerFQDN
+		run.RunID = strField(f, "run_id")
+		run.NodeName = strField(f, "node_name")
+		run.Organisation = strField(f, "organization_name")
+		run.ChefServerFQDN = strField(f, "chef_server_fqdn")
 	}
 
 	if run.Cookbooks == nil {
@@ -276,18 +352,10 @@ func fromRunBody(raw json.RawMessage, shape string) (*ConvergeRun, error) {
 		return nil, fmt.Errorf("ingest: %s run %q has no end_time (cannot partition)", shape, run.RunID)
 	}
 
-	if b.Error != nil {
-		bt := b.Error.Backtrace
-		if len(bt) > maxBacktraceLines {
-			bt = bt[:maxBacktraceLines]
-		}
-		run.Error = &RunError{
-			Class:       b.Error.Class,
-			Message:     b.Error.Message,
-			Description: b.Error.Description,
-			Backtrace:   bt,
-		}
-		run.FailedResource = firstFailed(b.Resources)
+	// Failure detail — best-effort; a success (error absent or {}) yields nil.
+	if e := parseRunError(f["error"]); e != nil {
+		run.Error = e
+		run.FailedResource = firstFailedFrom(f["resources"])
 	}
 
 	return run, nil

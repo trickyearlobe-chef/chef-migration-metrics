@@ -24,9 +24,7 @@
         { "type": "recipe", "name": "failcb::default", "version": "0.1.0", "skipped": false }
       ]
     },
-    "cookbooks": {
-      "failcb": { "version": "0.1.0" }
-    },
+    "cookbooks": ["failcb"],
     "versioned_cookbooks": [
       { "name": "failcb", "version": "0.1.0" }
     ],
