@@ -148,6 +148,52 @@ func TestNormalise_DataFeedProtobufTimestamps(t *testing.T) {
 	}
 }
 
+// The Automate Data Feed sends client_run.cookbooks as a LIST of names with the
+// versions in versioned_cookbooks; the old map-only decoder failed the whole
+// record on the list (live-found 2026-07-20 — every real Data Feed record
+// dropped). Verify it normalises and cookbook name->version comes from
+// versioned_cookbooks.
+func TestNormalise_DataFeedCookbooksList(t *testing.T) {
+	rec := []byte(`{"node":{"automate_fqdn":"a"},"client_run":{"id":"r1","node_name":"n1",` +
+		`"organization":"o","status":"success","end_time":{"seconds":1784192472},` +
+		`"cookbooks":["cron","chef-client"],` +
+		`"versioned_cookbooks":[{"name":"cron","version":"7.0.29"},{"name":"chef-client","version":"18.0.0"}]}}`)
+	run, err := Normalise(rec)
+	if err != nil {
+		t.Fatalf("Normalise errored (record would be dropped): %v", err)
+	}
+	if run == nil {
+		t.Fatal("record dropped (nil) for a valid Data Feed run with list cookbooks")
+	}
+	if run.Cookbooks["cron"] != "7.0.29" || run.Cookbooks["chef-client"] != "18.0.0" {
+		t.Errorf("cookbooks = %v, want cron=7.0.29 chef-client=18.0.0", run.Cookbooks)
+	}
+}
+
+// Freeform resilience: a record whose non-key fields arrive in shapes we don't
+// expect (counts as strings, cookbooks as a number, chef_version as an array)
+// must still normalise — those fields degrade to zero, only a missing end_time
+// drops a record. Guards against the drop-the-whole-record fragility that hid
+// the timestamp and cookbooks bugs.
+func TestNormalise_ResilientToWeirdFieldShapes(t *testing.T) {
+	rec := []byte(`{"client_run":{"id":"r1","node_name":"n1","organization":"o","status":"success",` +
+		`"end_time":{"seconds":1784192472},"total_resource_count":"lots","cookbooks":42,` +
+		`"chef_version":["nope"],"error":"not-an-object"}}`)
+	run, err := Normalise(rec)
+	if err != nil {
+		t.Fatalf("Normalise errored on weird field shapes (would drop the record): %v", err)
+	}
+	if run == nil {
+		t.Fatal("record dropped over weird non-key field shapes")
+	}
+	if run.RunID != "r1" || run.Status != "success" || run.EndTime.IsZero() {
+		t.Errorf("core fields lost: %+v", run)
+	}
+	if run.TotalResourceCount != 0 || len(run.Cookbooks) != 0 || run.Error != nil {
+		t.Errorf("weird fields should degrade to zero, got %+v", run)
+	}
+}
+
 func TestNormalise_RunListAndCookbooks(t *testing.T) {
 	run := mustLoad(t, "run_converge_success.json")
 	wantRL := []string{"recipe[base::default]", "recipe[ntp::default]"}

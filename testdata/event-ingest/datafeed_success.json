@@ -26,10 +26,7 @@
         { "type": "recipe", "name": "ntp::default", "version": "3.4.0", "skipped": false }
       ]
     },
-    "cookbooks": {
-      "base": { "version": "1.2.0" },
-      "ntp": { "version": "3.4.0" }
-    },
+    "cookbooks": ["base", "ntp"],
     "versioned_cookbooks": [
       { "name": "base", "version": "1.2.0" },
       { "name": "ntp", "version": "3.4.0" }
