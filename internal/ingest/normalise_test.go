@@ -94,6 +94,60 @@ func TestNormalise_Shapes(t *testing.T) {
 	}
 }
 
+// runTime must accept both wire encodings: the RFC3339 string a raw
+// run_converge sends, and the protobuf Timestamp object {"seconds":N,"nanos":M}
+// the Automate Data Feed's client_run sends (measured live 2026-07-18 — the
+// prior string-only assumption dropped every real Data Feed record).
+func TestRunTime_UnmarshalJSON(t *testing.T) {
+	want := time.Date(2026, 7, 16, 9, 1, 12, 0, time.UTC)
+	cases := []struct {
+		name string
+		in   string
+		want time.Time
+	}{
+		{"rfc3339 string", `"2026-07-16T09:01:12Z"`, want},
+		{"rfc3339 nanos", `"2026-07-16T09:01:12.5Z"`, want.Add(500 * time.Millisecond)},
+		{"protobuf seconds", `{"seconds":1784192472}`, want},
+		{"protobuf seconds+nanos", `{"seconds":1784192472,"nanos":500000000}`, want.Add(500 * time.Millisecond)},
+		{"bare epoch", `1784192472`, want},
+		{"null", `null`, time.Time{}},
+		{"empty string", `""`, time.Time{}},
+		{"zero protobuf", `{"seconds":0}`, time.Time{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var rt runTime
+			if err := json.Unmarshal([]byte(tc.in), &rt); err != nil {
+				t.Fatalf("unmarshal %s: %v", tc.in, err)
+			}
+			if !rt.Time.UTC().Equal(tc.want) {
+				t.Errorf("got %v, want %v", rt.Time.UTC(), tc.want)
+			}
+		})
+	}
+}
+
+// A Data Feed record whose client_run carries protobuf-object timestamps must
+// normalise (not be dropped on the end_time guard) — the live-found bug.
+func TestNormalise_DataFeedProtobufTimestamps(t *testing.T) {
+	rec := []byte(`{"node":{"automate_fqdn":"a"},"client_run":{` +
+		`"id":"r1","node_name":"n1","organization":"demo","status":"success",` +
+		`"start_time":{"seconds":1784192400},"end_time":{"seconds":1784192472}}}`)
+	run, err := Normalise(rec)
+	if err != nil {
+		t.Fatalf("Normalise returned error (record would be dropped): %v", err)
+	}
+	if run == nil {
+		t.Fatal("Normalise returned nil (record dropped) for a valid Data Feed run")
+	}
+	if run.Shape != ShapeDataFeed || run.RunID != "r1" || run.NodeName != "n1" {
+		t.Errorf("mapping wrong: %+v", run)
+	}
+	if !run.EndTime.Equal(time.Date(2026, 7, 16, 9, 1, 12, 0, time.UTC)) {
+		t.Errorf("EndTime = %v, want 2026-07-16T09:01:12Z (from protobuf seconds)", run.EndTime)
+	}
+}
+
 func TestNormalise_RunListAndCookbooks(t *testing.T) {
 	run := mustLoad(t, "run_converge_success.json")
 	wantRL := []string{"recipe[base::default]", "recipe[ntp::default]"}
