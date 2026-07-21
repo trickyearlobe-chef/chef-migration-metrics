@@ -1,4 +1,3 @@
 # Platform Mapping UI — ToDo
 
-- [ ] End-to-end manual test: save mapping → re-fetch status → verify unmapped count updates
-- [ ] Verify backward compatibility with existing platform_map configs
+- Feature shipped and unit-tested (status endpoint returns unmapped_count; backward-compat covered by omitempty fields + validation). Only residual is manual end-to-end UI verification.

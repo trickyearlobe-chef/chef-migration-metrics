@@ -1,9 +1,5 @@
 # Data Visualisation — ToDo
 
-## Dashboard
-
-- [ ] Ensure dashboard performs acceptably with many thousands of nodes
-
 ## Dependency Graph View
 
 - [~] Colour-code cookbook nodes by compatibility status (green=compatible, red=incompatible, grey=untested, amber=CookStyle-only) — ForceGraph component now supports `compatibility_status` colouring; role dependency graph uses it. Org-level dependency graph still needs backend to supply compatibility data on nodes.
