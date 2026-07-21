@@ -1,5 +1,46 @@
 # P3 — Node-list heavy path: split the COUNT(*) OVER() (node_snapshots)
 
+## RESUME — 2026-07-21 (validation restarted)
+
+**Where we are.** Branch is current with `main` (clean merge, no conflicts).
+Verified: **no DB migration** in this change (pure Go query-builder); the index it
+relies on, `idx_node_snapshots_node_name`, **already exists on main** (migration
+0001); rollback = revert the commit, no data impact.
+
+**Tier 1 (build + builder unit tests): DONE, green, committed `0b63217`.** The two
+never-run builder tests were both test-side and are fixed: deleted the stale
+`CountOverAlwaysPresent` (rows query no longer carries the window), and made
+`AppliesSameFilters` compare args by value (`reflect.DeepEqual`) instead of `%v`
+(pq.Array returns a fresh pointer per call). Impl unchanged — count and rows share
+`buildNodeSnapshotFilterParts`, so predicates/args are identical by construction.
+
+**Decisions locked (user, 2026-07-21):**
+- Count/rows are now two statements → under a concurrent collection commit the
+  total can differ from the paged set by ±(one run's churn). Collection upserts in
+  one txn + guarded orphan-delete (never a whole-org wipe), so the skew is a few
+  rows, transient, self-correcting. **Accepted — do NOT add a REPEATABLE READ
+  wrapper.** Just document the behaviour (already noted below).
+- Perf/scale proof uses **synthetic seed data** (customer DB is VDI/file-transfer
+  only; a sanitised dump is impractical).
+
+**Functional DB ready.** `cmm_test` exists in docker `docker-compose-db-1`
+(postgres:16), reachable. Set `CMM_TEST_DATABASE_URL` to a
+`postgres://<user>:<pass>@localhost:5432/cmm_test?sslmode=disable` DSN (dev
+creds are the compose defaults in `deploy/docker-compose/`) to run the
+functional suite.
+
+**NEXT — Tiers 2 & 3 (all on this branch):**
+1. Functional seed helper (`//go:build functional`): nodes across 2–3 orgs, varied
+   env/platform/chef_version/stale/tags; small set for parity + an opt-in ~120k set
+   for perf.
+2. Parity suite: `total == independent SELECT COUNT(*)`; rows == fully-ordered set
+   sliced by LIMIT/OFFSET; across filter × sort × pagination matrix; + export path.
+3. EXPLAIN test at ~120k: default-sort rows query is index-served (no
+   Seq-Scan→Sort→temp-spill); count query is a lean aggregate. Reuse
+   `query_explain.go` `RunExplain`, mirror the P1 index test.
+
+---
+
 ## STATUS — PARKED (branch `fix/node-list-count-split`), as of 2026-07-13
 
 **Purpose.** Split the node-list query's `COUNT(*) OVER()` into a separate
