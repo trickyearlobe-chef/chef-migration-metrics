@@ -1,0 +1,74 @@
+{
+  "chef_server_fqdn": "chef.example.com",
+  "entity_uuid": "0f7d1e6a-2c3b-4d5e-8a9b-1c2d3e4f5a6b",
+  "id": "a3333333-3333-4333-8333-333333333333",
+  "message_type": "run_converge",
+  "message_version": "1.1.0",
+  "node_name": "node-a.example.com",
+  "organization_name": "org-a",
+  "source": "chef_client",
+  "run_id": "b4444444-4444-4444-8444-444444444444",
+  "start_time": "2026-07-16T10:00:00Z",
+  "end_time": "2026-07-16T10:00:41Z",
+  "status": "failure",
+  "chef_version": "18.9.4",
+  "run_list": [
+    "recipe[failcb::default]"
+  ],
+  "expanded_run_list": {
+    "id": "org-a",
+    "run_list": [
+      { "type": "recipe", "name": "failcb::default", "version": "0.1.0", "skipped": false }
+    ]
+  },
+  "cookbooks": {
+    "failcb": { "version": "0.1.0" }
+  },
+  "total_resource_count": 1,
+  "updated_resource_count": 0,
+  "deprecations": [],
+  "policy_name": null,
+  "policy_group": null,
+  "resources": [
+    {
+      "type": "ruby_block",
+      "name": "explode",
+      "id": "explode",
+      "cookbook_name": "failcb",
+      "cookbook_version": "0.1.0",
+      "recipe_name": "default",
+      "result": "run",
+      "status": "failed",
+      "duration": "2",
+      "delta": "",
+      "ignore_failure": false,
+      "before": null,
+      "after": null
+    }
+  ],
+  "error": {
+    "class": "RuntimeError",
+    "message": "boom from failcb",
+    "backtrace": [
+      "/var/chef/cache/cookbooks/failcb/recipes/default.rb:3:in `block in from_file'",
+      "/opt/chef/embedded/lib/ruby/gems/3.1.0/gems/chef-18.9.4/lib/chef/mixin/why_run.rb:340:in `instance_eval'",
+      "/opt/chef/embedded/lib/ruby/gems/3.1.0/gems/chef-18.9.4/lib/chef/provider/ruby_block.rb:41:in `block in action_run'",
+      "/opt/chef/embedded/lib/ruby/gems/3.1.0/gems/chef-18.9.4/lib/chef/runner.rb:60:in `run_action'"
+    ],
+    "description": {
+      "title": "Error executing action `run` on resource 'ruby_block[explode]'",
+      "sections": [
+        {
+          "Ruby block explode failed": "RuntimeError: boom from failcb"
+        }
+      ]
+    }
+  },
+  "node": {
+    "name": "node-a.example.com",
+    "chef_environment": "_default",
+    "run_list": [
+      "recipe[failcb::default]"
+    ]
+  }
+}

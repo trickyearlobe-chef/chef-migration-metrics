@@ -16,7 +16,6 @@ import (
 // offences. Occurrence count collapses in the fingerprint but does not change
 // status (one blocker blocks; one review needs review).
 func TestDeriveStatusFromFingerprint_MatchesScanDerivation(t *testing.T) {
-	rules := DefaultFailureRules()
 	resolver := resolverAt("18.0", map[string]string{
 		"Op/Blocker": ClassificationBlocker,
 		"Op/Review":  ClassificationReview,
@@ -48,9 +47,9 @@ func TestDeriveStatusFromFingerprint_MatchesScanDerivation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			want := DeriveCookstyleStatus(tc.offenses, rules, resolver)
+			want := DeriveCookstyleStatus(tc.offenses, resolver)
 			cops, _ := BuildOffenceFingerprint(tc.offenses)
-			got := DeriveStatusFromFingerprint(cops, rules, resolver)
+			got := DeriveStatusFromFingerprint(cops, resolver)
 			if got != want {
 				t.Errorf("DeriveStatusFromFingerprint = %q, want %q (scan derivation)", got, want)
 			}
@@ -92,12 +91,11 @@ func TestComplexityFromFingerprint_NilClassifier(t *testing.T) {
 // to a DIFFERENT status/complexity once a cop is reclassified. A trend point
 // captured before the reclassification recomputes under today's criteria.
 func TestRecompute_ReflectsReclassification(t *testing.T) {
-	rules := DefaultFailureRules()
 	cops := []datastore.FingerprintCopEntry{{CopName: "Op/X", Count: 4, Severity: "warning"}}
 
 	// Before: X is a review-level cop.
 	before := resolverAt("18.0", map[string]string{"Op/X": ClassificationReview})
-	if got := DeriveStatusFromFingerprint(cops, rules, before); got != StatusNeedsReview {
+	if got := DeriveStatusFromFingerprint(cops, before); got != StatusNeedsReview {
 		t.Fatalf("before reclassification: status = %q, want %q", got, StatusNeedsReview)
 	}
 	if got := ComplexityFromFingerprint(cops, before); got != 4*remediation.WeightReview {
@@ -107,7 +105,7 @@ func TestRecompute_ReflectsReclassification(t *testing.T) {
 	// After: an operator reclassifies X as a blocker. The frozen fingerprint now
 	// recomputes to Blocked with blocker weighting — no rescan required.
 	after := resolverAt("18.0", map[string]string{"Op/X": ClassificationBlocker})
-	if got := DeriveStatusFromFingerprint(cops, rules, after); got != StatusBlocked {
+	if got := DeriveStatusFromFingerprint(cops, after); got != StatusBlocked {
 		t.Fatalf("after reclassification: status = %q, want %q", got, StatusBlocked)
 	}
 	if got := ComplexityFromFingerprint(cops, after); got != 4*remediation.WeightBlocker {

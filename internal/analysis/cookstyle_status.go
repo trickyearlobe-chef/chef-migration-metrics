@@ -3,8 +3,6 @@
 
 package analysis
 
-import "github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
-
 // CookStyle rollup status — the classification-derived, single-source-of-truth
 // verdict for a cookbook / repo / node × target version. These wire values are
 // consumed by every read surface (lists, summary cards, detail headers, node
@@ -52,18 +50,27 @@ func OffensesWontParse(offenses []CookstyleOffense) bool {
 //
 // An empty offense slice is Ready (a scan that found nothing). Untested is the
 // caller's concern when no scan result exists at all.
-func DeriveCookstyleStatus(offenses []CookstyleOffense, rules CookstyleFailureRules, resolver *CopClassificationResolver) string {
-	// Project to the same minimal per-offence shape the stored fingerprint keeps
-	// (cop_name + severity is all status needs) and delegate to the single core,
-	// so the scan path and the trend-recompute path can never drift. Count is
-	// irrelevant to status, so each offence is one count-1 entry.
-	entries := make([]datastore.FingerprintCopEntry, len(offenses))
+func DeriveCookstyleStatus(offenses []CookstyleOffense, resolver *CopClassificationResolver) string {
+	// LIVE derivation: resolve each offence WITH its message so poly-method cops
+	// (one cop_name, several deprecations of differing impact) classify per
+	// variant — e.g. Socket.gethostbyname is Review, File.exists? is a Blocker.
+	// This is the authoritative current-state status. The message-free
+	// fingerprint recompute path (DeriveStatusFromFingerprint) keys on cop name
+	// and is the documented poly-method exception for recomputed historical trend
+	// points only (see specifications/cop-classification.md, Poly-method cops).
+	hasReview := false
 	for i := range offenses {
-		entries[i] = datastore.FingerprintCopEntry{
-			CopName:  offenses[i].CopName,
-			Severity: offenses[i].Severity,
-			Count:    1,
+		switch resolver.ResolveOffense(offenses[i].CopName, offenses[i].Message).Classification {
+		case ClassificationBlocker:
+			return StatusBlocked
+		case ClassificationReview:
+			hasReview = true
+		case ClassificationNoise:
+			// Noise contributes nothing to the rollup.
 		}
 	}
-	return DeriveStatusFromFingerprint(entries, rules, resolver)
+	if hasReview {
+		return StatusNeedsReview
+	}
+	return StatusReady
 }

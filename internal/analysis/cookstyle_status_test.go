@@ -15,8 +15,6 @@ func resolverAt(target string, overrides map[string]string) *CopClassificationRe
 }
 
 func TestDeriveCookstyleStatus_TruthTable(t *testing.T) {
-	rules := DefaultFailureRules()
-
 	tests := []struct {
 		name      string
 		offenses  []CookstyleOffense
@@ -104,12 +102,12 @@ func TestDeriveCookstyleStatus_TruthTable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resolver := resolverAt("18.0", tt.overrides)
-			got := DeriveCookstyleStatus(tt.offenses, rules, resolver)
+			got := DeriveCookstyleStatus(tt.offenses, resolver)
 			if got != tt.want {
 				t.Errorf("DeriveCookstyleStatus = %q, want %q", got, tt.want)
 			}
 			// passed is the derived convenience: passed = status != Blocked.
-			passed := EvaluatePassFailWithClassification(tt.offenses, rules, resolver)
+			passed := EvaluatePassFailWithClassification(tt.offenses, resolver)
 			wantPassed := tt.want != StatusBlocked
 			if passed != wantPassed {
 				t.Errorf("passed = %v, want %v (status %q)", passed, wantPassed, tt.want)
@@ -124,16 +122,15 @@ func TestDeriveCookstyleStatus_TruthTable(t *testing.T) {
 // 19.3.15 must roll up to Needs review (not Blocked / "failing"), and passed
 // must be true.
 func TestDeriveCookstyleStatus_KubernetesClusterCase(t *testing.T) {
-	rules := DefaultFailureRules()
 	resolver := resolverAt("19.3.15", nil)
 	offenses := []CookstyleOffense{
 		{CopName: "Chef/Deprecations/ResourceWithoutUnifiedTrue", Severity: "refactor"},
 	}
 
-	if got := DeriveCookstyleStatus(offenses, rules, resolver); got != StatusNeedsReview {
+	if got := DeriveCookstyleStatus(offenses, resolver); got != StatusNeedsReview {
 		t.Fatalf("kubernetes-cluster case: status = %q, want %q", got, StatusNeedsReview)
 	}
-	if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
+	if !EvaluatePassFailWithClassification(offenses, resolver) {
 		t.Error("kubernetes-cluster case: expected passed=true for a review-only repo")
 	}
 }

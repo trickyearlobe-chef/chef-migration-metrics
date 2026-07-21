@@ -139,6 +139,41 @@ export interface NodeDetailResponse {
   total_disk_mb?: number | null;
 }
 
+// A converge run surfaced on the Node Detail Runs panel (from the event-ingest
+// converge_runs table). error/failed_resource are present only on failures.
+export interface ConvergeRunError {
+  class?: string;
+  message?: string;
+  description?: unknown;
+  backtrace?: string[];
+}
+
+export interface ConvergeRunFailedResource {
+  cookbook_name?: string;
+  recipe_name?: string;
+  name?: string;
+  type?: string;
+}
+
+export interface ConvergeRun {
+  run_id: string;
+  status: string;
+  chef_version?: string;
+  start_time: string;
+  end_time: string;
+  run_list: string[];
+  cookbooks: Record<string, string>;
+  total_resource_count?: number;
+  updated_resource_count?: number;
+  error?: ConvergeRunError;
+  failed_resource?: ConvergeRunFailedResource;
+  shape: string;
+}
+
+export interface NodeRunsResponse {
+  data: ConvergeRun[];
+}
+
 export interface NodesByVersionResponse {
   chef_version: string;
   total: number;

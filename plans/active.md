@@ -1,58 +1,55 @@
 # Active Plan
 
-## In flight — CookStyle Reliability / Trustworthy Reds (`plans/cookstyle-reliability.md`)
+Single source of truth for what is in flight. **Read this first at session start.**
 
-Pivot after the durability work: make CookStyle a reliable migration indicator
-(reds = "we know", Review = "operator decides", Noise = "provably harmless"),
-strip the non-existent per-target dimension, back out chunk 3 (done). Durability
-#1 (dept defaults, reframed as Review-worklist) + #2 (drift) stay; #3 (DB seed)
-abandoned. Spec revision gated on user approval (Phase 1). See the plan for the
-phased breakdown + acceptance criteria.
+## Branch map (2026-07-20)
+
+- `main` — holds all merged work. Released line: **v2.18.4**.
+- **Event Ingest MVP is MERGED** (`25551f4` + Data Feed fixes `f6161e6`/`3b11111`) and
+  released. `feature/event-ingest-mvp` is gone. Post-MVP follow-ups → `todo-event-ingest.md`.
+- **Parked** `fix/node-list-count-split` — P3: split the node-list `COUNT(*) OVER()`
+  into a separate count query (WIP, compiles, tests NOT run). **Low urgency,
+  deploy-risky** (shared node-list + export read path) → the nodes page is not
+  user-slow, this is just the heaviest DB query; test thoroughly before any customer
+  ship. Full state + resume steps in `plans/p3-node-list-perf.md`.
+- **Parked** `chore/spec-drift-report` — one-time spec↔code drift report;
+  deprioritised behind feature delivery. Don't nag to merge (see [[spec-drift-parked]]).
+- No feature branch in flight. Pull the next chunk from Queued/backlog onto a fresh branch.
+
+## NOW — (nothing active)
+
+No chunk is in flight. Pick the next deliberately from Queued below or a `todo-*.md`
+backlog, start it on a fresh branch, and record the chunk (scope/steps/acceptance) here.
+
+## Queued — Event Ingest follow-ups (`plans/todo-event-ingest.md`)
+
+MVP shipped; these are post-MVP. Highest-value first:
+
+- **CC19 target-version failing-nodes preset.** The generic distinct-node rollup and
+  `chef_version ∧ status=failure` filters are built and tested; Run events defaults
+  status to `failure`. Missing: the auto-wired "prospective target-version" preset —
+  `useTargetChefVersion` exists but is unused on `RunEventsPage`, so the target version
+  must be picked by hand. Design is largely decided (generic rollup); this is the wiring.
+- **Live-fidelity validation** of Data Feed (fixtures still authored) + Chef Server proxy.
+- Lab cleanup; depsolve/attributes-only gap. See `todo-event-ingest.md` for detail.
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
-Chunks A (lint) + B/D (rules) landed in `main`. Open:
-- **E — drift sweep** (approved; multi-agent spec↔code audit → report).
-- **C — criteria↔test linkage** (stable IDs on acceptance criteria + coverage
-  script). Prioritise from E's findings.
-- Copied-contract backlog: 5 specs still WARN (`diagnostic-bundle`,
-  `system-health-{package-layout,frontend,api-endpoint,configuration}`) —
-  reference-don't-copy conversion, fold into E.
+Chunks A/B/D landed. Open: **E** (drift sweep — the parked `chore/spec-drift-report`
+branch is its output); **C** (criteria↔test linkage). 5 specs still WARN on
+copied-contract (`diagnostic-bundle`, `system-health-*`) — fold into E.
 
-## Queued — List-view / node_snapshots perf (`plans/list-view-perf.md`)
+## Queued — structural refactors (own branches, `todo-tech-debt.md`)
 
-Delivery order: (1) roles fix, (2) data-layer query diagnostics, (3) node_snapshots
-big problem with real diags.
-
-- **P2 roles — diagnosed + design APPROVED** (`plans/roles-perf-design.md`,
-  2026-07-07). Root cause: query-time derived aggregation over all ~37k roles
-  (`node_count` containment + `role_compat` expansion). Fix: materialise
-  `role_summary` (structural cols at collection; compat/tk via existing
-  `cookstyle_propagation`). Read path now reads/rolls up `role_summary` (no
-  recursive CTE, no seeded path). The O(N²) `array_position` lived only in the
-  seeded path and is gone with it; `work_mem` tuning is moot now the recursive
-  expansion is off the request path. NEXT: measure list p50 at customer scale to
-  confirm the fix, then close P2 and start P1 coverage full-scan.
-- **P1 coverage full-scan hotspot — proven** (5.6M unindexed `node_snapshots`
-  scans); fix after roles + tooling.
-- **P3** — 6 s `node_snapshots` full-row fetches; caller unknown (tooling from step
-  2 will identify it).
-
-## Deferred proposal — event ingest (`plans/proposal-event-ingest.md`)
-
-Firehose ingest of Chef `data_collector` converge events. FOR DISCUSSION, after the
-perf work. Value: closes the active-only test blind spot (special-job runlist
-cookbooks are invisible → untested). Key undecided fork: automatic discovery
-(firehose) vs declared special-job runlists (no firehose). Not approved.
-
-## Queued — post-merge structural refactors (own branches, `todo-tech-debt.md`)
-
-- `CookstyleStore` sub-interface split (DataStore at 190 methods).
-- Split the 978-line `handle_cookstyle_cops.go` god-handler per REST resource.
+- `CookstyleStore` sub-interface split (`webapi.DataStore` at **210** methods and growing).
+- Extract pipeline stages from the two remediation god-handlers
+  (`handle_cookbook_remediation.go` ~499 lines, `handle_git_repo_remediation.go` ~486
+  lines — each is one oversized function). No shared extraction between them; they serve
+  different sources.
 
 ## Parked — SAML config follow-ups (lower priority)
 
-- Warn when a SAML provider has empty `username_attr` (transient-NameID footgun;
-  breaks login anchoring + ownership matching — `plans/todo-ownership.md`).
+- Warn when a SAML provider has empty `username_attr` (transient-NameID footgun —
+  `plans/todo-ownership.md`).
 - Turn the local-user username collision (`ErrAlreadyExists` → opaque 500) into a
   clear, actionable message.

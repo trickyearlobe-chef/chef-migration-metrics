@@ -40,6 +40,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ingest"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
@@ -144,6 +145,8 @@ type serverApp struct {
 
 	// Export cleanup stop function.
 	stopExportCleanup func()
+	// stopIngestRetention stops the converge_runs partition-retention ticker.
+	stopIngestRetention func()
 
 	// Kitchen queue manager (bounded concurrency for TK runs).
 	kitchenQueue *kitchenqueue.Manager
@@ -987,8 +990,7 @@ func (app *serverApp) backfillCookstyleStatus(ctx context.Context) {
 	}
 
 	cfg := app.configHolder.Get()
-	rules := analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
-	res, err := analysis.BackfillCookstyleStatus(ctx, app.db, rules)
+	res, err := analysis.BackfillCookstyleStatus(ctx, app.db)
 	if err != nil {
 		app.startup.Warn(fmt.Sprintf("cookstyle status backfill failed (will retry next boot): %v", err))
 		return
@@ -1181,10 +1183,6 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		app.db,
 		cxScorer,
 		readinessEval,
-		func() analysis.CookstyleFailureRules {
-			cfg := app.configHolder.Get()
-			return analysis.EffectiveRules(cfg.AnalysisTools.CookstyleFailurePreset, cfg.AnalysisTools.CookstyleFailureRules)
-		},
 		func(level, msg string) {
 			switch level {
 			case "DEBUG":
@@ -1350,6 +1348,31 @@ func (app *serverApp) setupExports() error {
 	}
 	app.stopExportCleanup = export.StartCleanupTicker(app.db, 1*time.Hour, exportCleanupLog)
 	app.startup.Info("export cleanup ticker started (interval: 1h)")
+
+	// Converge-runs retention: drop day partitions older than ingest.retention_days
+	// (read live). Runs regardless of ingest.enabled so leftover partitions are
+	// still reaped after the feature is turned off.
+	ingestRetentionLog := func(level, msg string) {
+		scoped := app.logger.WithScope(logging.ScopeIngest)
+		switch level {
+		case "DEBUG":
+			scoped.Debug(msg)
+		case "WARN":
+			scoped.Warn(msg)
+		case "ERROR":
+			scoped.Error(msg)
+		default:
+			scoped.Info(msg)
+		}
+	}
+	retentionDays := func() int {
+		if app.configHolder != nil {
+			return app.configHolder.Get().Ingest.RetentionDays
+		}
+		return app.cfg.Ingest.RetentionDays
+	}
+	app.stopIngestRetention = ingest.StartRetentionTicker(app.db, retentionDays, 1*time.Hour, ingestRetentionLog)
+	app.startup.Info("converge_runs retention ticker started (interval: 1h)")
 	return nil
 }
 
@@ -1777,6 +1800,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 						if app.stopExportCleanup != nil {
 							app.startup.Info("restore: stopping export cleanup")
 							app.stopExportCleanup()
+						}
+						if app.stopIngestRetention != nil {
+							app.startup.Info("restore: stopping converge_runs retention")
+							app.stopIngestRetention()
 						}
 						app.startup.Info("restore: all background workers stopped")
 					}))
@@ -2909,6 +2936,11 @@ func run() int {
 		return 1
 	}
 	defer app.stopExportCleanup()
+	defer func() {
+		if app.stopIngestRetention != nil {
+			app.stopIngestRetention()
+		}
+	}()
 	defer func() {
 		if app.stopKitchenQueueCleanup != nil {
 			app.stopKitchenQueueCleanup()

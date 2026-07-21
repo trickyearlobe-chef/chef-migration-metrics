@@ -84,7 +84,19 @@ type CopClassificationResolver struct {
 // No severity fallback: severity is the signal this feature exists to distrust,
 // so it never produces a red.
 func (r *CopClassificationResolver) Resolve(copName string) ResolvedClassification {
-	// 1. Operator override (highest priority).
+	return r.ResolveOffense(copName, "")
+}
+
+// ResolveOffense is the message-aware form of Resolve. It is identical except
+// that the verified-removal step consults the message-discriminated variant of a
+// poly-method cop (see specifications/cop-classification.md, Poly-method cops):
+// e.g. a Lint/DeprecatedClassMethods offence for Socket.gethostbyname (no
+// RemovedIn) resolves to Review, while one for File.exists? (RemovedIn 18.0)
+// resolves to Blocker. An empty message falls back to the cop-name mapping, so
+// ResolveOffense(cop, "") == Resolve(cop) for every cop. Operator overrides,
+// custom cops, and structural noise are cop-name concepts and ignore the message.
+func (r *CopClassificationResolver) ResolveOffense(copName, message string) ResolvedClassification {
+	// 1. Operator override (highest priority; keyed by cop_name).
 	if class, ok := r.OperatorOverrides[copName]; ok {
 		return ResolvedClassification{Classification: class, Source: SourceOperatorOverride}
 	}
@@ -94,8 +106,9 @@ func (r *CopClassificationResolver) Resolve(copName string) ResolvedClassificati
 		return ResolvedClassification{Classification: ClassificationBlocker, Source: SourceCustomCop}
 	}
 
-	// 3. Verified removal → Blocker (curated RemovedIn ≤ target).
-	if mapping := remediation.LookupCop(copName); mapping != nil && mapping.RemovedIn != "" {
+	// 3. Verified removal → Blocker (curated RemovedIn ≤ target). Message-aware
+	// for poly-method cops; cop-name mapping otherwise.
+	if mapping := remediation.LookupCopForOffense(copName, message); mapping != nil && mapping.RemovedIn != "" {
 		if versionLessOrEqual(mapping.RemovedIn, r.TargetChefVersion) {
 			return ResolvedClassification{Classification: ClassificationBlocker, Source: SourceVerifiedRemoval}
 		}
@@ -123,13 +136,19 @@ func (r *CopClassificationResolver) Classify(copName string) string {
 	return r.Resolve(copName).Classification
 }
 
-// EvaluatePassFailWithClassification evaluates whether a set of offenses
-// passes, using cop classification when available and falling back to
-// severity-based failure rules for unclassified cops. The boolean is a
-// back-compat convenience derived from the single source of truth:
-// passed = status != Blocked.
-func EvaluatePassFailWithClassification(offenses []CookstyleOffense, rules CookstyleFailureRules, resolver *CopClassificationResolver) bool {
-	return DeriveCookstyleStatus(offenses, rules, resolver) != StatusBlocked
+// ClassifyOffense is the message-aware form of Classify, used by
+// classification-weighted complexity scoring over live offences (which carry a
+// message). It satisfies remediation.CopClassifier. ClassifyOffense(cop, "")
+// == Classify(cop).
+func (r *CopClassificationResolver) ClassifyOffense(copName, message string) string {
+	return r.ResolveOffense(copName, message).Classification
+}
+
+// EvaluatePassFailWithClassification evaluates whether a set of offenses passes,
+// using cop classification alone. The boolean is a convenience derived from the
+// single source of truth: passed = status != Blocked.
+func EvaluatePassFailWithClassification(offenses []CookstyleOffense, resolver *CopClassificationResolver) bool {
+	return DeriveCookstyleStatus(offenses, resolver) != StatusBlocked
 }
 
 // versionLessOrEqual compares two Chef version strings. Returns true if a <= b.

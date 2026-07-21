@@ -1,0 +1,12 @@
+{
+  "chef_server_fqdn": "chef.example.com",
+  "entity_uuid": "0f7d1e6a-2c3b-4d5e-8a9b-1c2d3e4f5a6b",
+  "id": "a7777777-7777-4777-8777-777777777777",
+  "message_type": "run_start",
+  "message_version": "1.0.0",
+  "node_name": "node-a.example.com",
+  "organization_name": "org-a",
+  "run_id": "b2222222-2222-4222-8222-222222222222",
+  "source": "chef_client",
+  "start_time": "2026-07-16T09:00:00Z"
+}

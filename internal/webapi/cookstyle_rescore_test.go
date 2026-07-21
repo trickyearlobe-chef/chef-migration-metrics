@@ -80,9 +80,8 @@ var _ CookstyleRescoreStore = (*mockRescoreStore)(nil)
 
 func TestRescoreCookstyleResults_NoResults(t *testing.T) {
 	store := &mockRescoreStore{}
-	rules := analysis.DefaultFailureRules()
 
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -124,9 +123,7 @@ func TestRescoreCookstyleResults_ConsistentStatusNoChange(t *testing.T) {
 		},
 	}
 
-	// Rules are inert under the trustworthy-reds model — passed but ignored.
-	rules := analysis.DefaultFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,9 +182,8 @@ func TestRescoreCookstyleResults_ClassificationFlipsVerdict(t *testing.T) {
 		},
 	}
 
-	// Rules are inert — the flip is driven purely by classification.
-	rules := analysis.DefaultFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	// The flip is driven purely by classification.
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,8 +240,7 @@ func TestRescoreCookstyleResults_SkipsErrorMessageRows(t *testing.T) {
 		},
 	}
 
-	rules := analysis.StrictFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -268,8 +263,7 @@ func TestRescoreCookstyleResults_SkipsNilOffences(t *testing.T) {
 		},
 	}
 
-	rules := analysis.StrictFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -278,41 +272,8 @@ func TestRescoreCookstyleResults_SkipsNilOffences(t *testing.T) {
 	}
 }
 
-func TestRescoreCookstyleResults_RelaxedAllowsPreviouslyFailing(t *testing.T) {
-	// Style offense at error level was failing under default, now relaxed ignores Style
-	offenses := []analysis.CookstyleOffense{
-		{Severity: "error", CopName: "Chef/Style/SomeRule"},
-	}
-	offJSON, _ := json.Marshal(offenses)
-
-	store := &mockRescoreStore{
-		serverResults: []datastore.CookstyleRescoreRow{
-			{
-				ID:       "org1|cb1|1.0.0|18",
-				Offences: offJSON,
-				Passed:   false, // was failing under default rules
-			},
-		},
-	}
-
-	rules := analysis.RelaxedFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Changed != 1 {
-		t.Errorf("changed = %d, want 1", result.Changed)
-	}
-	if len(store.serverUpdates) != 1 {
-		t.Fatalf("serverUpdates = %d, want 1", len(store.serverUpdates))
-	}
-	if store.serverUpdates[0].Passed != true {
-		t.Errorf("serverUpdates[0].Passed = %v, want true", store.serverUpdates[0].Passed)
-	}
-}
-
 func TestRescoreCookstyleResults_ClassificationBlocksDespiteRules(t *testing.T) {
-	// A warning-severity offense that severity rules would PASS, but the cop is
+	// A warning-severity offense is passed at the offense level, but the cop is
 	// classified as a blocker for this target — rescore must flip passed=false.
 	offenses := []analysis.CookstyleOffense{
 		{Severity: "warning", CopName: "Chef/Style/SomeRule"},
@@ -328,9 +289,7 @@ func TestRescoreCookstyleResults_ClassificationBlocksDespiteRules(t *testing.T) 
 		},
 	}
 
-	// Relaxed rules would NOT fail a Style warning — only the classification does.
-	rules := analysis.RelaxedFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -343,7 +302,7 @@ func TestRescoreCookstyleResults_ClassificationBlocksDespiteRules(t *testing.T) 
 }
 
 func TestRescoreCookstyleResults_NoiseClassificationPasses(t *testing.T) {
-	// An error-severity offense that severity rules would FAIL, but the cop is
+	// An error-severity offense is failed at the offense level, but the cop is
 	// classified as noise — rescore must flip passed=true.
 	offenses := []analysis.CookstyleOffense{
 		{Severity: "error", CopName: "Chef/Style/SomeRule"},
@@ -359,8 +318,7 @@ func TestRescoreCookstyleResults_NoiseClassificationPasses(t *testing.T) {
 		},
 	}
 
-	rules := analysis.DefaultFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -385,8 +343,7 @@ func TestRescoreCookstyleResults_EmptyOffencesArrayPasses(t *testing.T) {
 		},
 	}
 
-	rules := analysis.DefaultFailureRules()
-	result, err := RescoreCookstyleResults(context.Background(), store, rules, nil)
+	result, err := RescoreCookstyleResults(context.Background(), store, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -45,25 +45,25 @@ func TestBuildCookstyleArgs_DropsOnly_FullRuleset(t *testing.T) {
 // TestDeriveStatus_BlockerOutsideDepartments_Blocked proves that once the
 // scan stops hiding it, a Blocker-classified cop OUTSIDE Deprecations/
 // Correctness (Lint/DeprecatedClassMethods, curated Blocker at target >= 18)
-// drives the rollup to Blocked under the default failure rules.
+// drives the rollup to Blocked purely on its classification.
 func TestDeriveStatus_BlockerOutsideDepartments_Blocked(t *testing.T) {
 	offenses := []CookstyleOffense{
-		// File.exists? — curated Blocker at >= 18.0, severity is a mere warning,
+		// File.exists? — curated Blocker at >= 19.0, severity is a mere warning,
 		// so the default error/fatal rules alone would NOT catch it. Only the
 		// classification makes it block — and only if the scan produced it.
 		{Severity: "warning", CopName: "Lint/DeprecatedClassMethods", Message: "File.exists? is deprecated"},
 	}
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "18.0",
+		TargetChefVersion: "19.0",
 	}
 
 	// Sanity: the cop is classified Blocker by a curated default.
 	if got := resolver.Classify("Lint/DeprecatedClassMethods"); got != ClassificationBlocker {
-		t.Fatalf("Lint/DeprecatedClassMethods should classify as blocker at 18.0, got %q", got)
+		t.Fatalf("Lint/DeprecatedClassMethods should classify as blocker at 19.0, got %q", got)
 	}
 
-	status := DeriveCookstyleStatus(offenses, DefaultFailureRules(), resolver)
+	status := DeriveCookstyleStatus(offenses, resolver)
 	if status != StatusBlocked {
 		t.Errorf("a Blocker cop outside the two departments should yield blocked, got %q", status)
 	}
@@ -86,7 +86,7 @@ func TestDeriveStatus_CosmeticStyleCop_Ready(t *testing.T) {
 		t.Fatalf("a generic Style cop should seed to noise via the curated prefix, got %q", got)
 	}
 
-	status := DeriveCookstyleStatus(offenses, DefaultFailureRules(), resolver)
+	status := DeriveCookstyleStatus(offenses, resolver)
 	if status != StatusReady {
 		t.Errorf("a cosmetic convention-severity cop must not block, want %q got %q", StatusReady, status)
 	}

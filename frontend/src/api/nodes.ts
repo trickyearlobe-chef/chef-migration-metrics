@@ -7,6 +7,7 @@ import type {
   NodesByVersionResponse,
   NodesByCookbookResponse,
   NodeDependencyGraphResponse,
+  NodeRunsResponse,
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
 import type { NodeFilterQuery } from "./client";
@@ -42,6 +43,17 @@ export function fetchNodeDisks(
     buildUrl(
       `/nodes/disks/${encodeURIComponent(orgName)}/${encodeURIComponent(nodeName)}`,
       { show_all: showAll ? "true" : undefined },
+    ),
+  );
+}
+
+export function fetchNodeRuns(
+  orgName: string,
+  nodeName: string,
+): Promise<NodeRunsResponse> {
+  return apiFetch<NodeRunsResponse>(
+    buildUrl(
+      `/nodes/runs/${encodeURIComponent(orgName)}/${encodeURIComponent(nodeName)}`,
     ),
   );
 }

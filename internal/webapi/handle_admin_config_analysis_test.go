@@ -51,15 +51,6 @@ func TestAdminConfigAnalysisTools_GET(t *testing.T) {
 	if value["cookstyle_timeout_minutes"] != float64(10) {
 		t.Errorf("cookstyle_timeout_minutes = %v, want 10", value["cookstyle_timeout_minutes"])
 	}
-
-	// Effective failure rules should be present (default preset).
-	efr, ok := got["effective_failure_rules"].(map[string]any)
-	if !ok {
-		t.Fatalf("effective_failure_rules missing or not an object")
-	}
-	if _, hasCatchAll := efr["*"]; !hasCatchAll {
-		t.Errorf("effective_failure_rules should contain '*' catch-all; got: %v", efr)
-	}
 }
 
 func TestAdminConfigAnalysisTools_GET_NilStore(t *testing.T) {
@@ -259,94 +250,15 @@ func TestAdminConfigAnalysisTools_PUT_405_WrongMethod(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Cookstyle failure rules — GET effective_failure_rules + PUT verdicts_changed
+// PUT verdicts_changed (cookstyle rescore-on-save)
 // ---------------------------------------------------------------------------
-
-func TestAdminConfigAnalysisTools_GET_EffectiveRulesDefaultPreset(t *testing.T) {
-	cfg := testConfig()
-	cfg.AnalysisTools.CookstyleTimeoutMinutes = 10
-	// No explicit preset or rules → defaults to "default"
-	r := newTestRouterForAdminConfig(cfg, nil, nil)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/analysis-tools", nil)
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusOK)
-	var got map[string]any
-	decodeBody(t, w, &got)
-	efr, ok := got["effective_failure_rules"].(map[string]any)
-	if !ok {
-		t.Fatalf("effective_failure_rules missing or not object")
-	}
-	// Default preset: {"*": ["error","fatal"]}
-	catchAll, ok := efr["*"].([]any)
-	if !ok || len(catchAll) != 2 {
-		t.Errorf("expected '*' → [error, fatal], got: %v", efr["*"])
-	}
-}
-
-func TestAdminConfigAnalysisTools_GET_EffectiveRulesStrictPreset(t *testing.T) {
-	cfg := testConfig()
-	cfg.AnalysisTools.CookstyleTimeoutMinutes = 10
-	cfg.AnalysisTools.CookstyleFailurePreset = "strict"
-	r := newTestRouterForAdminConfig(cfg, nil, nil)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/analysis-tools", nil)
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusOK)
-	var got map[string]any
-	decodeBody(t, w, &got)
-	efr, ok := got["effective_failure_rules"].(map[string]any)
-	if !ok {
-		t.Fatalf("effective_failure_rules missing")
-	}
-	// Strict adds Chef/Deprecations/ and Chef/Correctness/
-	if _, ok := efr["Chef/Deprecations/"]; !ok {
-		t.Errorf("strict should include Chef/Deprecations/; got: %v", efr)
-	}
-	if _, ok := efr["Chef/Correctness/"]; !ok {
-		t.Errorf("strict should include Chef/Correctness/; got: %v", efr)
-	}
-}
-
-func TestAdminConfigAnalysisTools_GET_EffectiveRulesExplicitOverride(t *testing.T) {
-	cfg := testConfig()
-	cfg.AnalysisTools.CookstyleTimeoutMinutes = 10
-	cfg.AnalysisTools.CookstyleFailurePreset = "strict"
-	cfg.AnalysisTools.CookstyleFailureRules = map[string][]string{
-		"Chef/Style/": {"error"},
-	}
-	r := newTestRouterForAdminConfig(cfg, nil, nil)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/config/analysis-tools", nil)
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusOK)
-	var got map[string]any
-	decodeBody(t, w, &got)
-	efr, ok := got["effective_failure_rules"].(map[string]any)
-	if !ok {
-		t.Fatalf("effective_failure_rules missing")
-	}
-	// Explicit rules override preset entirely
-	if _, ok := efr["Chef/Style/"]; !ok {
-		t.Errorf("explicit rules should include Chef/Style/; got: %v", efr)
-	}
-	if _, ok := efr["Chef/Deprecations/"]; ok {
-		t.Errorf("explicit rules should NOT include Chef/Deprecations/ (overrides preset); got: %v", efr)
-	}
-}
 
 func TestAdminConfigAnalysisTools_PUT_VerdictsChangedInResponse(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	// PUT with a preset — the mock store has no results so verdicts_changed = 0
-	body := `{"cookstyle_timeout_minutes": 10, "cookstyle_failure_preset": "strict", "test_kitchen": {"driver": "vcenter"}}`
+	// PUT triggers a rescore — the mock store has no results so verdicts_changed = 0
+	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter"}}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -365,36 +277,6 @@ func TestAdminConfigAnalysisTools_PUT_VerdictsChangedInResponse(t *testing.T) {
 	if resp.Reload != "subsystem" {
 		t.Errorf("reload = %q, want 'subsystem'", resp.Reload)
 	}
-}
-
-func TestAdminConfigAnalysisTools_PUT_422_InvalidPreset(t *testing.T) {
-	store := newTestConfigStore(t)
-	cfg := testConfig()
-	holder := newTestConfigHolder(t, store, cfg)
-	r := newTestRouterForAdminConfig(cfg, store, holder)
-
-	body := `{"cookstyle_timeout_minutes": 10, "cookstyle_failure_preset": "bogus", "test_kitchen": {"driver": "vcenter"}}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusUnprocessableEntity)
-	assertErrorCode(t, w, ErrCodeValidationError)
-}
-
-func TestAdminConfigAnalysisTools_PUT_422_InvalidSeverity(t *testing.T) {
-	store := newTestConfigStore(t)
-	cfg := testConfig()
-	holder := newTestConfigHolder(t, store, cfg)
-	r := newTestRouterForAdminConfig(cfg, store, holder)
-
-	body := `{"cookstyle_timeout_minutes": 10, "cookstyle_failure_rules": {"*": ["error", "bogus_severity"]}, "test_kitchen": {"driver": "vcenter"}}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusUnprocessableEntity)
-	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
 // ---------------------------------------------------------------------------

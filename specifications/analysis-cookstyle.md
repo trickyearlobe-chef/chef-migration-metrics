@@ -78,8 +78,8 @@ Chef Workstation must be installed on the host for CookStyle scanning to be avai
    The persisted **CookStyle rollup status** (Ready / Needs review / Blocked) and
    the classification-weighted complexity score are derived by one function over
    the offenses and the resolved cop classification for the target version, **not**
-   by severity alone. Severity-based failure rules apply only as the Unclassified
-   fallback. The same derivation runs on initial scan and on every criteria-change
+   by severity, which is never a source of a verdict. The same derivation runs on
+   initial scan and on every criteria-change
    re-evaluation. See [cop-classification.md](cop-classification.md) (CookStyle
    Rollup Status, Re-evaluation & Propagation) for the rules.
 

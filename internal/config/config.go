@@ -45,6 +45,7 @@ type Config struct {
 	SystemHealth               SystemHealthConfig  `yaml:"system_health"`
 	Performance                PerformanceConfig   `yaml:"performance"`
 	Backup                     BackupConfig        `yaml:"backup"`
+	Ingest                     IngestConfig        `yaml:"ingest"`
 
 	// explicitExportsDir tracks whether the user explicitly set exports.output_directory.
 	explicitExportsDir bool
@@ -152,10 +153,8 @@ type ConcurrencyConfig struct {
 // cookstyle/kitchen binaries are resolved from PATH (provided by Chef
 // Workstation); they are not bundled.
 type AnalysisToolsConfig struct {
-	CookstyleEnabled        *bool               `yaml:"cookstyle_enabled"`
-	CookstyleTimeoutMinutes int                 `yaml:"cookstyle_timeout_minutes"`
-	CookstyleFailurePreset  string              `yaml:"cookstyle_failure_preset" json:"cookstyle_failure_preset"`
-	CookstyleFailureRules   map[string][]string `yaml:"cookstyle_failure_rules" json:"cookstyle_failure_rules"`
+	CookstyleEnabled        *bool `yaml:"cookstyle_enabled"`
+	CookstyleTimeoutMinutes int   `yaml:"cookstyle_timeout_minutes"`
 	// CookstyleAddonCopPaths lists operator-supplied RuboCop cop files (real .rb
 	// cop classes) on the app host to load into every scan. Entries may be
 	// files, directories (expanded to *.rb), or globs. Trust boundary is
@@ -569,6 +568,58 @@ func (pc PerformanceConfig) IsEnabled() bool {
 }
 
 // ---------------------------------------------------------------------------
+// Event ingest
+// ---------------------------------------------------------------------------
+
+// IngestConfig controls the passive POST /api/v1/ingest receiver for Chef run
+// telemetry (see specifications/event-ingest.md). Disabled by default — it is
+// an unauthenticated inbound endpoint (MVP tech debt) and must be opt-in.
+type IngestConfig struct {
+	Enabled           *bool `yaml:"enabled"`
+	RetentionDays     int   `yaml:"retention_days"`
+	MaxBodyBytes      int64 `yaml:"max_body_bytes"`
+	MaxRecordsPerBody int   `yaml:"max_records_per_body"`
+
+	// ShowRunEvents gates the DISPLAY surfaces — the "Run events" top-level view
+	// and the Node Detail Runs tab (and their read endpoints). Independent of
+	// Enabled (the sink): telemetry can accrue in reserve while the UI stays
+	// hidden. Defaults to false so the feature is dormant until switched on.
+	ShowRunEvents *bool `yaml:"show_run_events"`
+
+	// FailuresOnly makes the sink discard success events and keep only failures
+	// — a firehose-relief valve for high-volume fleets. Defaults to false (keep
+	// all runs).
+	FailuresOnly *bool `yaml:"failures_only"`
+}
+
+// IsEnabled reports whether the ingest endpoint accepts telemetry. Defaults to
+// false when omitted — the endpoint stays closed until explicitly turned on.
+func (ic IngestConfig) IsEnabled() bool {
+	if ic.Enabled == nil {
+		return false
+	}
+	return *ic.Enabled
+}
+
+// ShowsRunEvents reports whether the Run events view and Node Detail Runs tab
+// are displayed. Defaults to false — the feature stays in reserve until enabled.
+func (ic IngestConfig) ShowsRunEvents() bool {
+	if ic.ShowRunEvents == nil {
+		return false
+	}
+	return *ic.ShowRunEvents
+}
+
+// IsFailuresOnly reports whether the sink discards success events. Defaults to
+// false (all runs retained).
+func (ic IngestConfig) IsFailuresOnly() bool {
+	if ic.FailuresOnly == nil {
+		return false
+	}
+	return *ic.FailuresOnly
+}
+
+// ---------------------------------------------------------------------------
 // Backup
 // ---------------------------------------------------------------------------
 
@@ -912,6 +963,20 @@ func (c *Config) setDefaults() {
 		c.Collection.DeleteServerCookbooksAfterScan = &f
 	}
 
+	// Ingest — Enabled stays nil (IsEnabled defaults false; opt-in).
+	if c.Ingest.RetentionDays == 0 {
+		c.Ingest.RetentionDays = 2
+	}
+	if c.Ingest.MaxBodyBytes == 0 {
+		// Post-gunzip cap. A default Data Feed batch (50 nodes × ~110 KB) is
+		// ~5.5 MB; 32 MiB leaves headroom for larger batches while bounding memory.
+		c.Ingest.MaxBodyBytes = 32 << 20
+	}
+	if c.Ingest.MaxRecordsPerBody == 0 {
+		// Well above Automate's default node_batch_size of 50.
+		c.Ingest.MaxRecordsPerBody = 500
+	}
+
 	// Concurrency
 	if c.Concurrency.OrganisationCollection == 0 {
 		c.Concurrency.OrganisationCollection = 5
@@ -950,9 +1015,6 @@ func (c *Config) setDefaults() {
 	if c.AnalysisTools.CookstyleEnabled == nil {
 		t := true
 		c.AnalysisTools.CookstyleEnabled = &t
-	}
-	if c.AnalysisTools.CookstyleFailurePreset == "" {
-		c.AnalysisTools.CookstyleFailurePreset = "default"
 	}
 	if c.AnalysisTools.TestKitchen.Enabled == nil {
 		t := true
@@ -1436,9 +1498,6 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		ve.add("analysis_tools.cookstyle_timeout_minutes must be >= 1")
 	}
 
-	// Validate cookstyle failure rules.
-	c.validateCookstyleFailureRules(ve)
-
 	// Addon cop paths must be non-empty and syntactically valid glob patterns.
 	// Whether each path actually resolves to .rb files is checked at scan time
 	// and surfaced as a non-fatal problem, not here — the path may legitimately
@@ -1584,35 +1643,6 @@ func (c *Config) validateAnalysisTools(ve *ValidationError, w *Warnings) {
 		}
 		if !allCovered {
 			w.addf("analysis_tools.test_kitchen: target version %q requires chef_license_key_credential or per-image chef_download_urls for Chef 19+ installation", v)
-		}
-	}
-}
-
-// validCookstyleSeverities is the set of valid RuboCop severity levels.
-var validCookstyleSeverities = map[string]bool{
-	"convention": true,
-	"refactor":   true,
-	"warning":    true,
-	"error":      true,
-	"fatal":      true,
-}
-
-func (c *Config) validateCookstyleFailureRules(ve *ValidationError) {
-	preset := c.AnalysisTools.CookstyleFailurePreset
-	validPresets := map[string]bool{"strict": true, "default": true, "relaxed": true}
-	if preset != "" && !validPresets[preset] {
-		ve.addf("analysis_tools.cookstyle_failure_preset must be one of strict, default, relaxed; got %q", preset)
-	}
-
-	for key, severities := range c.AnalysisTools.CookstyleFailureRules {
-		if key == "" {
-			ve.add("analysis_tools.cookstyle_failure_rules: keys must be non-empty")
-			continue
-		}
-		for _, sev := range severities {
-			if !validCookstyleSeverities[sev] {
-				ve.addf("analysis_tools.cookstyle_failure_rules[%q]: invalid severity %q", key, sev)
-			}
 		}
 	}
 }

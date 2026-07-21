@@ -227,7 +227,7 @@ func (p *CopRegistryProvider) Registry(ctx context.Context) (*CopRegistry, error
 	if p.cached != nil {
 		return p.cached, nil
 	}
-	stdout, _, _, err := p.executor.Run(ctx, "--show-cops")
+	stdout, _, _, err := p.executor.Run(ctx, "", "--show-cops")
 	if err != nil {
 		return nil, err
 	}

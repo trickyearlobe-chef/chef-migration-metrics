@@ -69,6 +69,11 @@ export interface CopRemediation {
 }
 
 export interface OffenseGroup {
+  // group_key uniquely identifies a group. For an ordinary cop it equals
+  // cop_name; for a poly-method cop it is cop_name plus a message-selected
+  // variant token, so a Blocker variant and a Review variant of the same cop are
+  // distinct groups. Use it (not cop_name) for React keys and collapse state.
+  group_key: string;
   cop_name: string;
   severity: string;
   classification: string;

@@ -34,8 +34,9 @@ type putConfigResponse struct {
 	// stored anyway (e.g. an incomplete TLS certificate chain — tls-static.md
 	// § 2.2). Omitted when empty.
 	Warnings []string `json:"warnings,omitempty"`
-	// VerdictsChanged reports how many cookstyle verdicts were flipped by a
-	// failure-rules re-score. Omitted (zero) for endpoints that don't re-score.
+	// VerdictsChanged reports how many cookstyle verdicts were flipped by the
+	// re-score a config save triggers (the active target moves the
+	// verified-removal verdict). Omitted (zero) for endpoints that don't re-score.
 	VerdictsChanged int `json:"verdicts_changed,omitempty"`
 }
 
@@ -275,6 +276,59 @@ func (r *Router) putAdminConfigConcurrency(w http.ResponseWriter, req *http.Requ
 	// node-kitchen factory now read their pool size live (Chunk G). The semaphores
 	// are rebuilt per batch, so there is no persistent pool to resize — applied.
 	r.storeAdminConfigSection(w, req, &config.Config{Concurrency: input}, configstore.KeyConcurrency, appliedApplier)
+}
+
+// ---------------------------------------------------------------------------
+// GET/PUT /api/v1/admin/config/ingest
+// ---------------------------------------------------------------------------
+
+func (r *Router) handleAdminConfigIngest(w http.ResponseWriter, req *http.Request) {
+	switch req.Method {
+	case http.MethodGet:
+		cfg := r.liveConfig()
+		r.writeAdminConfigSection(w, &config.Config{Ingest: cfg.Ingest}, configstore.KeyIngest)
+	case http.MethodPut:
+		r.putAdminConfigIngest(w, req)
+	default:
+		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
+			"This endpoint supports GET and PUT.")
+	}
+}
+
+func (r *Router) putAdminConfigIngest(w http.ResponseWriter, req *http.Request) {
+	if r.configStore == nil {
+		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
+			"Config storage is not configured. Set CMM_CREDENTIAL_ENCRYPTION_KEY to enable.")
+		return
+	}
+
+	var input config.IngestConfig
+	if !decodeAdminConfigBody(w, req, &input) {
+		return
+	}
+
+	// Fill unset numeric knobs from defaults so the stored section is complete;
+	// Enabled is left exactly as sent (nil == disabled, the opt-in default).
+	tmp := config.Config{Ingest: input}
+	tmp.ApplyDefaults()
+	stored := tmp.Ingest
+	stored.Enabled = input.Enabled
+
+	switch {
+	case stored.RetentionDays < 1:
+		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError, "ingest.retention_days: must be >= 1.")
+		return
+	case stored.MaxBodyBytes < 1:
+		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError, "ingest.max_body_bytes: must be >= 1.")
+		return
+	case stored.MaxRecordsPerBody < 1:
+		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError, "ingest.max_records_per_body: must be >= 1.")
+		return
+	}
+
+	// The ingest handler reads its config live per request (r.liveConfig().Ingest),
+	// so a saved change takes effect on the next POST — applied, no restart.
+	r.storeAdminConfigSection(w, req, &config.Config{Ingest: stored}, configstore.KeyIngest, appliedApplier)
 }
 
 // ---------------------------------------------------------------------------

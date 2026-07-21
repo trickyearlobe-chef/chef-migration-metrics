@@ -115,8 +115,6 @@ func offJSONForCop(cop, severity string) []byte {
 	return b
 }
 
-func defaultRulesFn() analysis.CookstyleFailureRules { return analysis.DefaultFailureRules() }
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -134,7 +132,7 @@ func TestPropagate_FlipsServerVerdictAndRecomputes(t *testing.T) {
 	}
 	scorer := &mockComplexityRescorer{}
 	readiness := &mockReadinessRecomputer{}
-	p := NewCookstylePropagator(store, scorer, readiness, defaultRulesFn, nil)
+	p := NewCookstylePropagator(store, scorer, readiness, nil)
 
 	res, err := p.PropagateReclassification(context.Background(), "Chef/Style/Foo", "18")
 	if err != nil {
@@ -175,7 +173,7 @@ func TestPropagate_RescoreEvenWhenVerdictUnchanged(t *testing.T) {
 		},
 	}
 	scorer := &mockComplexityRescorer{}
-	p := NewCookstylePropagator(store, scorer, nil, defaultRulesFn, nil)
+	p := NewCookstylePropagator(store, scorer, nil, nil)
 
 	res, err := p.PropagateReclassification(context.Background(), "Chef/Style/Foo", "18")
 	if err != nil {
@@ -206,7 +204,7 @@ func TestPropagate_StatusChangeWithoutPassedFlip(t *testing.T) {
 		},
 	}
 	scorer := &mockComplexityRescorer{}
-	p := NewCookstylePropagator(store, scorer, nil, defaultRulesFn, nil)
+	p := NewCookstylePropagator(store, scorer, nil, nil)
 
 	res, err := p.PropagateReclassification(context.Background(), "Chef/Style/Foo", "18")
 	if err != nil {
@@ -231,7 +229,7 @@ func TestPropagate_GitFlipRecomputesCompat(t *testing.T) {
 		orgs: []datastore.Organisation{{Name: "org-a"}},
 	}
 	scorer := &mockComplexityRescorer{}
-	p := NewCookstylePropagator(store, scorer, nil, defaultRulesFn, nil)
+	p := NewCookstylePropagator(store, scorer, nil, nil)
 
 	res, err := p.PropagateReclassification(context.Background(), "Chef/Style/Foo", "18")
 	if err != nil {
@@ -258,7 +256,7 @@ func TestPropagate_NilScorerAndReadinessSafe(t *testing.T) {
 			"18": {{CopName: "Chef/Style/Foo", Classification: "noise"}},
 		},
 	}
-	p := NewCookstylePropagator(store, nil, nil, defaultRulesFn, nil)
+	p := NewCookstylePropagator(store, nil, nil, nil)
 
 	res, err := p.PropagateReclassification(context.Background(), "Chef/Style/Foo", "18")
 	if err != nil {
@@ -284,7 +282,7 @@ func TestPropagate_SkipsErrorMessageRows(t *testing.T) {
 	}
 	scorer := &mockComplexityRescorer{}
 	readiness := &mockReadinessRecomputer{}
-	p := NewCookstylePropagator(store, scorer, readiness, defaultRulesFn, nil)
+	p := NewCookstylePropagator(store, scorer, readiness, nil)
 
 	res, err := p.PropagateReclassification(context.Background(), "Chef/Style/Foo", "18")
 	if err != nil {

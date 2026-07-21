@@ -6,11 +6,50 @@ import {
   LoadingSpinner,
 } from "../components/Feedback";
 import { CronDescription } from "../components/CronDescription";
+import { EventIngestSettings } from "../components/EventIngestSettings";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
 
+// AdminCollectionPage groups two unrelated config sections under tabs. Config UI
+// is due a broader refactor (see plans/todo-tech-debt.md); this is the natural
+// home for the ingest toggles for now.
 export function AdminCollectionPage() {
+  const [tab, setTab] = useState<"collection" | "ingest">("collection");
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-4">
+          <button
+            type="button"
+            onClick={() => setTab("collection")}
+            className={`border-b-2 px-1 py-2 text-sm font-medium ${
+              tab === "collection"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Collection
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("ingest")}
+            className={`border-b-2 px-1 py-2 text-sm font-medium ${
+              tab === "ingest"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Event ingest
+          </button>
+        </nav>
+      </div>
+      {tab === "collection" ? <CollectionSettingsForm /> : <EventIngestSettings />}
+    </div>
+  );
+}
+
+function CollectionSettingsForm() {
   const [config, setConfig] = useState<CollectionConfig>({
     schedule: "",
     stale_node_threshold_days: 30,

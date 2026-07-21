@@ -1,0 +1,88 @@
+{
+  "node": {
+    "automate_fqdn": "automate.example.com",
+    "hostname": "node-a.example.com",
+    "ipaddress": "10.0.0.1",
+    "macaddress": "00:11:22:33:44:55",
+    "serial_number": "ABC123"
+  },
+  "client_run": {
+    "id": "c1111111-1111-4111-8111-111111111111",
+    "node_id": "0f7d1e6a-2c3b-4d5e-8a9b-1c2d3e4f5a6b",
+    "node_name": "node-a.example.com",
+    "organization": "org-a",
+    "source": "chef_client",
+    "source_fqdn": "automate.example.com",
+    "status": "success",
+    "chef_version": "18.9.4",
+    "run_list": [
+      "recipe[base::default]",
+      "recipe[ntp::default]"
+    ],
+    "expanded_run_list": {
+      "id": "org-a",
+      "run_list": [
+        { "type": "recipe", "name": "base::default", "version": "1.2.0", "skipped": false },
+        { "type": "recipe", "name": "ntp::default", "version": "3.4.0", "skipped": false }
+      ]
+    },
+    "cookbooks": ["base", "ntp"],
+    "versioned_cookbooks": [
+      { "name": "base", "version": "1.2.0" },
+      { "name": "ntp", "version": "3.4.0" }
+    ],
+    "resources": [
+      {
+        "type": "service",
+        "name": "ntp",
+        "id": "ntp",
+        "cookbook_name": "ntp",
+        "cookbook_version": "3.4.0",
+        "recipe_name": "default",
+        "result": "enable",
+        "status": "updated",
+        "duration": "18",
+        "ignore_failure": false
+      }
+    ],
+    "resource_names": [ "ntp" ],
+    "recipes": [ "base::default", "ntp::default" ],
+    "total_resource_count": 12,
+    "start_time": { "seconds": 1784192400 },
+    "end_time": { "seconds": 1784192472 },
+    "fqdn": "node-a.example.com",
+    "hostname": "node-a.example.com",
+    "ipaddress": "10.0.0.1",
+    "ip6address": null,
+    "macaddress": "00:11:22:33:44:55",
+    "platform": "ubuntu",
+    "platform_family": "debian",
+    "platform_version": "24.04",
+    "kernel_release": "6.8.0-generic",
+    "memory_total": "8039152kB",
+    "uptime_seconds": 123456,
+    "timezone": "UTC",
+    "environment": "_default"
+  },
+  "attributes": {
+    "name": "node-a.example.com",
+    "node_id": "0f7d1e6a-2c3b-4d5e-8a9b-1c2d3e4f5a6b",
+    "chef_environment": "_default",
+    "run_list": [
+      "recipe[base::default]",
+      "recipe[ntp::default]"
+    ],
+    "automatic_value_count": 4210,
+    "default_value_count": 120,
+    "normal_value_count": 3,
+    "override_value_count": 0,
+    "automatic": {
+      "fqdn": "node-a.example.com",
+      "os": "linux",
+      "platform": "ubuntu"
+    },
+    "default": {},
+    "normal": { "tags": [] },
+    "override": {}
+  }
+}

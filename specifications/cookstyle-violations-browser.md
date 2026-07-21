@@ -30,7 +30,7 @@ The view consumes the same data as existing cookbook/git-repo detail pages:
 
 Each row contains:
 
-- `passed` (boolean) — verdict under current failure rules
+- `passed` (boolean) — back-compat convenience: `cookstyle_status != blocked`
 - `offence_count`, `deprecation_count`, `correctness_count` — pre-computed counts
 - `offences` (JSONB) — full offense array, each with `cop_name`, `severity`, `message`, `corrected`
 - `error_message` — non-null when scan was inconclusive
@@ -156,10 +156,11 @@ Added as a **"CookStyle Violations"** tab on the existing Remediation page (`/re
 - No target versions configured: show a message linking to the target versions admin page
 - No results for selected filters: empty state with "No violations match the current filters"
 - Scan errors (non-null `error_message`): shown with an "Error" badge, no offense counts
-- Cookbooks with zero offenses but `passed=false` (legacy data before failure rules): shown as "Failed" with 0 offenses
+- Cookbooks with zero offenses but `passed=false` (legacy rows predating the
+  classification-derived verdict): shown as "Failed" with 0 offenses
 
 ## Related
 
-- [cookstyle-failure-rules.md](cookstyle-failure-rules.md) — Configurable pass/fail thresholds
+- [cop-classification.md](cop-classification.md) — Classification is the only source of a verdict
 - [analysis.md](analysis.md) — CookStyle invocation and output parsing
 - [server-side-pagination.md](server-side-pagination.md) — Pagination conventions

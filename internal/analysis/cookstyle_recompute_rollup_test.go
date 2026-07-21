@@ -55,7 +55,6 @@ func TestFingerprintValidAt(t *testing.T) {
 // RecomputeRollupAt rolls up re-derived status + complexity across current
 // membership at time T. Members with no fingerprint valid at T are Untested.
 func TestRecomputeRollupAt(t *testing.T) {
-	rules := DefaultFailureRules()
 	resolver := resolverAt("18.0", map[string]string{
 		"Op/Blocker": ClassificationBlocker,
 		"Op/Review":  ClassificationReview,
@@ -80,7 +79,7 @@ func TestRecomputeRollupAt(t *testing.T) {
 		}},
 	}
 
-	got := RecomputeRollupAt(histories, ts(15), rules, resolver)
+	got := RecomputeRollupAt(histories, ts(15), resolver)
 
 	if got.Ready != 1 || got.NeedsReview != 1 || got.Blocked != 1 || got.Untested != 1 {
 		t.Errorf("rollup counts = %+v, want ready=1 review=1 blocked=1 untested=1", got)
@@ -144,7 +143,6 @@ func TestDistinctScanTimes(t *testing.T) {
 // RecomputeTrend produces one point per supplied time, and the series reflects a
 // reclassification applied to the CURRENT resolver across every historical point.
 func TestRecomputeTrend_ReclassificationAffectsWholeSeries(t *testing.T) {
-	rules := DefaultFailureRules()
 	histories := []ResultFingerprintHistory{
 		{Key: "r", Rows: []datastore.CookstyleOffenceFingerprint{
 			fpRow(10, datastore.FingerprintCopEntry{CopName: "Op/X", Count: 1, Severity: "warning"}),
@@ -154,7 +152,7 @@ func TestRecomputeTrend_ReclassificationAffectsWholeSeries(t *testing.T) {
 
 	// Under the review classification, every post-boundary point is Needs review.
 	reviewResolver := resolverAt("18.0", map[string]string{"Op/X": ClassificationReview})
-	pts := RecomputeTrend(histories, times, rules, reviewResolver)
+	pts := RecomputeTrend(histories, times, reviewResolver)
 	if len(pts) != 1 || pts[0].Rollup.NeedsReview != 1 {
 		t.Fatalf("review series = %+v, want one NeedsReview point", pts)
 	}
@@ -162,7 +160,7 @@ func TestRecomputeTrend_ReclassificationAffectsWholeSeries(t *testing.T) {
 	// Reclassify to blocker: the same frozen fingerprints now recompute to Blocked
 	// across the whole series — recompute uses TODAY's criteria for past points.
 	blockerResolver := resolverAt("18.0", map[string]string{"Op/X": ClassificationBlocker})
-	pts = RecomputeTrend(histories, times, rules, blockerResolver)
+	pts = RecomputeTrend(histories, times, blockerResolver)
 	if len(pts) != 1 || pts[0].Rollup.Blocked != 1 {
 		t.Fatalf("blocker series = %+v, want one Blocked point", pts)
 	}

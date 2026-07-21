@@ -19,3 +19,4 @@ export * from "./config";
 export * from "./roles";
 export * from "./aliases";
 export * from "./cookstyle-violations";
+export * from "./savedFilters";

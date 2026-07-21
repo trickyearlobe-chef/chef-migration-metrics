@@ -10,6 +10,18 @@ export interface CollectionConfig {
   delete_server_cookbooks_after_scan: boolean | null;
 }
 
+// IngestConfig mirrors the backend ingest section (snake_case). The three
+// booleans are *bool server-side, so GET may return null when unset (treat as
+// false in the UI). See specifications/event-ingest.md § Configuration.
+export interface IngestConfig {
+  enabled: boolean | null;
+  show_run_events: boolean | null;
+  failures_only: boolean | null;
+  retention_days: number;
+  max_body_bytes: number;
+  max_records_per_body: number;
+}
+
 export interface ConcurrencyConfig {
   organisation_collection: number;
   node_page_fetching: number;
@@ -23,61 +35,10 @@ export interface AnalysisToolsConfig {
   embedded_bin_dir: string;
   cookstyle_enabled: boolean | null;
   cookstyle_timeout_minutes: number;
-  cookstyle_failure_preset?: string;
-  cookstyle_failure_rules?: Record<string, string[]>;
   // On-disk RuboCop addon cop files (files, directories, or globs on the app
   // host) loaded into every scan. Trust boundary is deploying the app.
   cookstyle_addon_cop_paths?: string[];
 }
-
-export type CookstyleFailurePreset = "strict" | "default" | "relaxed" | "custom";
-
-export const COOKSTYLE_SEVERITIES = [
-  "convention",
-  "refactor",
-  "warning",
-  "error",
-  "fatal",
-] as const;
-
-export type CookstyleSeverity = (typeof COOKSTYLE_SEVERITIES)[number];
-
-export const COOKSTYLE_NAMESPACES = [
-  "Chef/Deprecations/",
-  "Chef/Correctness/",
-  "Chef/Style/",
-  "Chef/Modernize/",
-  "*",
-] as const;
-
-export const COOKSTYLE_NAMESPACE_LABELS: Record<string, string> = {
-  "Chef/Deprecations/": "Chef/Deprecations",
-  "Chef/Correctness/": "Chef/Correctness",
-  "Chef/Style/": "Chef/Style",
-  "Chef/Modernize/": "Chef/Modernize",
-  "*": "Other (catch-all)",
-};
-
-export const COOKSTYLE_PRESETS: Record<
-  Exclude<CookstyleFailurePreset, "custom">,
-  Record<string, string[]>
-> = {
-  strict: {
-    "Chef/Deprecations/": ["warning", "error", "fatal"],
-    "Chef/Correctness/": ["warning", "error", "fatal"],
-    "*": ["error", "fatal"],
-  },
-  default: {
-    "*": ["error", "fatal"],
-  },
-  relaxed: {
-    "Chef/Deprecations/": ["error", "fatal"],
-    "Chef/Correctness/": ["error", "fatal"],
-    "Chef/Style/": [],
-    "Chef/Modernize/": [],
-    "*": [],
-  },
-};
 
 export interface LoggingConfig {
   level: string;

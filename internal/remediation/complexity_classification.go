@@ -11,8 +11,16 @@ import "encoding/json"
 // classification-aware complexity scoring stays free of an import cycle on the
 // analysis package (analysis already imports remediation).
 type CopClassifier interface {
-	// Classify returns the resolved classification level for a cop name.
+	// Classify returns the resolved classification level for a cop name. Used by
+	// the message-free fingerprint recompute path (a fingerprint entry has no
+	// message).
 	Classify(copName string) string
+	// ClassifyOffense returns the resolved classification level for a specific
+	// offence, discriminating poly-method cops by their message (see
+	// specifications/cop-classification.md, Poly-method cops). Live derivations —
+	// which have the offence message — use this. ClassifyOffense(cop, "") ==
+	// Classify(cop).
+	ClassifyOffense(copName, message string) string
 }
 
 // Classification level values — mirror the constants in
@@ -130,9 +138,11 @@ func classifyOffensesForComplexity(offencesJSON []byte, classifier CopClassifier
 	out := make([]ClassifiedOffense, 0, len(offenses))
 	for _, off := range offenses {
 		out = append(out, ClassifiedOffense{
-			CopName:        off.CopName,
-			Severity:       off.Severity,
-			Classification: classifier.Classify(off.CopName),
+			CopName:  off.CopName,
+			Severity: off.Severity,
+			// Message-aware: a poly-method cop's deprecation-only variant scores as
+			// Review, not Blocker (see Poly-method cops in the spec).
+			Classification: classifier.ClassifyOffense(off.CopName, off.Message),
 		})
 	}
 	return out

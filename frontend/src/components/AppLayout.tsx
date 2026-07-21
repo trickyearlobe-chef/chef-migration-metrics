@@ -5,6 +5,7 @@ import { TLSDegradedBanner } from "./TLSDegradedBanner";
 import { FilterMultiCheckbox } from "./FilterMultiCheckbox";
 import { useAuth } from "../context/AuthContext";
 import { useGlobalFilters } from "../context/GlobalFilterContext";
+import { useFeatures } from "../hooks/useFeatures";
 
 const STALENESS_OPTIONS = [
   { value: "fresh", label: "Fresh" },
@@ -83,6 +84,11 @@ const navItems = [
     label: "Git Repos",
     icon: "M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5",
   },
+  {
+    to: "/run-events",
+    label: "Run events",
+    icon: "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z",
+  },
 
   {
     to: "/remediation",
@@ -151,6 +157,12 @@ const settingsNavItems = [
 
 export function AppLayout() {
   const { user, isAdmin, logout } = useAuth();
+  const features = useFeatures();
+
+  // Hide the Run events entry unless the feature is switched on (kept in reserve).
+  const visibleNavItems = navItems.filter(
+    (item) => item.to !== "/run-events" || features.run_events,
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -177,7 +189,7 @@ export function AppLayout() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -41,9 +41,10 @@ type exportSpec struct {
 // specs can close over the Router (db access, config, platform mappings).
 func (r *Router) exportRegistry() map[string]exportSpec {
 	return map[string]exportSpec{
-		"nodes":     r.nodesExportSpec(),
-		"cookbooks": r.cookbooksExportSpec(),
-		"roles":     r.rolesExportSpec(),
-		"git_repos": r.gitReposExportSpec(),
+		"nodes":      r.nodesExportSpec(),
+		"cookbooks":  r.cookbooksExportSpec(),
+		"roles":      r.rolesExportSpec(),
+		"git_repos":  r.gitReposExportSpec(),
+		"run_events": r.runEventsExportSpec(),
 	}
 }

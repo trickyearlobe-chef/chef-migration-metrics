@@ -21,7 +21,6 @@ const mockAnalysisToolsResponse = {
     cookstyle_enabled: true,
     cookstyle_timeout_minutes: 30,
   },
-  effective_failure_rules: { "*": ["error", "fatal"] },
 };
 
 describe("AdminAnalysisToolsPage", () => {

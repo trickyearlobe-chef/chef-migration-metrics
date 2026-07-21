@@ -1,0 +1,100 @@
+{
+  "node": {
+    "automate_fqdn": "automate.example.com",
+    "hostname": "node-a.example.com",
+    "ipaddress": "10.0.0.1",
+    "macaddress": "00:11:22:33:44:55",
+    "serial_number": "ABC123"
+  },
+  "client_run": {
+    "id": "c2222222-2222-4222-8222-222222222222",
+    "node_id": "0f7d1e6a-2c3b-4d5e-8a9b-1c2d3e4f5a6b",
+    "node_name": "node-a.example.com",
+    "organization": "org-a",
+    "source": "chef_client",
+    "source_fqdn": "automate.example.com",
+    "status": "failure",
+    "chef_version": "18.9.4",
+    "run_list": [
+      "recipe[failcb::default]"
+    ],
+    "expanded_run_list": {
+      "id": "org-a",
+      "run_list": [
+        { "type": "recipe", "name": "failcb::default", "version": "0.1.0", "skipped": false }
+      ]
+    },
+    "cookbooks": ["failcb"],
+    "versioned_cookbooks": [
+      { "name": "failcb", "version": "0.1.0" }
+    ],
+    "resources": [
+      {
+        "type": "ruby_block",
+        "name": "explode",
+        "id": "explode",
+        "cookbook_name": "failcb",
+        "cookbook_version": "0.1.0",
+        "recipe_name": "default",
+        "result": "run",
+        "status": "failed",
+        "duration": "2",
+        "ignore_failure": false
+      }
+    ],
+    "resource_names": [ "explode" ],
+    "recipes": [ "failcb::default" ],
+    "total_resource_count": 1,
+    "start_time": { "seconds": 1784196000 },
+    "end_time": { "seconds": 1784196041 },
+    "fqdn": "node-a.example.com",
+    "hostname": "node-a.example.com",
+    "ipaddress": "10.0.0.1",
+    "ip6address": null,
+    "macaddress": "00:11:22:33:44:55",
+    "platform": "ubuntu",
+    "platform_family": "debian",
+    "platform_version": "24.04",
+    "kernel_release": "6.8.0-generic",
+    "memory_total": "8039152kB",
+    "uptime_seconds": 123890,
+    "timezone": "UTC",
+    "environment": "_default",
+    "error": {
+      "class": "RuntimeError",
+      "message": "boom from failcb",
+      "backtrace": [
+        "/var/chef/cache/cookbooks/failcb/recipes/default.rb:3:in `block in from_file'",
+        "/opt/chef/embedded/lib/ruby/gems/3.1.0/gems/chef-18.9.4/lib/chef/mixin/why_run.rb:340:in `instance_eval'",
+        "/opt/chef/embedded/lib/ruby/gems/3.1.0/gems/chef-18.9.4/lib/chef/provider/ruby_block.rb:41:in `block in action_run'",
+        "/opt/chef/embedded/lib/ruby/gems/3.1.0/gems/chef-18.9.4/lib/chef/runner.rb:60:in `run_action'"
+      ],
+      "description": {
+        "title": "Error executing action `run` on resource 'ruby_block[explode]'",
+        "sections": [
+          { "Ruby block explode failed": "RuntimeError: boom from failcb" }
+        ]
+      }
+    }
+  },
+  "attributes": {
+    "name": "node-a.example.com",
+    "node_id": "0f7d1e6a-2c3b-4d5e-8a9b-1c2d3e4f5a6b",
+    "chef_environment": "_default",
+    "run_list": [
+      "recipe[failcb::default]"
+    ],
+    "automatic_value_count": 4211,
+    "default_value_count": 120,
+    "normal_value_count": 3,
+    "override_value_count": 0,
+    "automatic": {
+      "fqdn": "node-a.example.com",
+      "os": "linux",
+      "platform": "ubuntu"
+    },
+    "default": {},
+    "normal": { "tags": [] },
+    "override": {}
+  }
+}

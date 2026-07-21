@@ -88,11 +88,11 @@ func TestResolverCustomCop(t *testing.T) {
 func TestResolverVerifiedRemoval(t *testing.T) {
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
-		TargetChefVersion: "18.0",
+		TargetChefVersion: "19.0",
 	}
 
 	// NodeSet RemovedIn=14.0, WindowsFeatureServermanagercmd=15.0,
-	// Lint/DeprecatedClassMethods=18.0 — all ≤ target 18.0.
+	// Lint/DeprecatedClassMethods=19.0 — all ≤ target 19.0.
 	for _, cop := range []string{
 		"Chef/Deprecations/NodeSet",
 		"Chef/Deprecations/WindowsFeatureServermanagercmd",
@@ -209,7 +209,6 @@ func TestResolverOperatorOverrideBeatsStructuralNoise(t *testing.T) {
 }
 
 func TestEvaluatePassFailWithClassification(t *testing.T) {
-	rules := DefaultFailureRules()
 	resolver := &CopClassificationResolver{
 		OperatorOverrides: map[string]string{},
 		TargetChefVersion: "18.0",
@@ -219,7 +218,7 @@ func TestEvaluatePassFailWithClassification(t *testing.T) {
 		offenses := []CookstyleOffense{
 			{CopName: "Chef/Deprecations/NodeSet", Severity: "warning"},
 		}
-		if EvaluatePassFailWithClassification(offenses, rules, resolver) {
+		if EvaluatePassFailWithClassification(offenses, resolver) {
 			t.Error("expected fail: NodeSet is a blocker (removed in 14.0, target 18.0)")
 		}
 	})
@@ -228,7 +227,7 @@ func TestEvaluatePassFailWithClassification(t *testing.T) {
 		offenses := []CookstyleOffense{
 			{CopName: "Chef/Deprecations/ChefSpecLegacyRunner", Severity: "warning"},
 		}
-		if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
+		if !EvaluatePassFailWithClassification(offenses, resolver) {
 			t.Error("expected pass: ChefSpec cop is noise")
 		}
 	})
@@ -237,7 +236,7 @@ func TestEvaluatePassFailWithClassification(t *testing.T) {
 		offenses := []CookstyleOffense{
 			{CopName: "Lint/SomeUnknownCop", Severity: "warning"},
 		}
-		if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
+		if !EvaluatePassFailWithClassification(offenses, resolver) {
 			t.Error("expected pass: unknown cop resolves to Review, which never blocks")
 		}
 	})
@@ -248,7 +247,7 @@ func TestEvaluatePassFailWithClassification(t *testing.T) {
 		offenses := []CookstyleOffense{
 			{CopName: "Lint/Syntax", Severity: "fatal"},
 		}
-		if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
+		if !EvaluatePassFailWithClassification(offenses, resolver) {
 			t.Error("expected pass: severity is inert, Lint/Syntax resolves to Review not Blocker")
 		}
 	})
@@ -263,7 +262,7 @@ func TestEvaluatePassFailWithClassification(t *testing.T) {
 		offenses := []CookstyleOffense{
 			{CopName: "SomeCop", Severity: "error"},
 		}
-		if !EvaluatePassFailWithClassification(offenses, rules, resolver) {
+		if !EvaluatePassFailWithClassification(offenses, resolver) {
 			t.Error("expected pass: cop classified as review should not fail regardless of severity")
 		}
 	})

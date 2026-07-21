@@ -28,13 +28,10 @@ No wiring, cancellation, progress-endpoint, or restart-resilience work remains.
 
 ## Orphan Sweep
 
-- [ ] Implement scheduled orphan sweep background goroutine (interval from `test_kitchen.orphan_sweep_interval`, default 30m)
-- [ ] Implement `POST /api/v1/kitchen/orphan-sweep` manual trigger with `?dry_run=true` support
 - [ ] Extend `ListManagedVMs` with optional folder filter parameter (vSphere `?folders=` param)
 - [ ] Scoping: only touch VMs in configured `driver_settings.targetfolder`, matching prefix, older than age threshold
 - [ ] Inter-instance orphan sweep: after a `timed_out`/`network_timeout` instance, sweep that VM before starting next
-- [ ] Sweep reports: log at INFO, broadcast `orphan_sweep_complete` WebSocket event, expose on admin TK config page ("last sweep: N VMs cleaned, time ago")
-- [ ] Sweep does nothing when TK is disabled or no hypervisor configured
+- [ ] Sweep reports: log at INFO, expose on admin TK config page ("last sweep: N VMs cleaned, time ago")
 
 ## DHCP / Network Timeout Classification (DONE)
 
@@ -86,7 +83,6 @@ See `todo-tech-debt.md` § Test Kitchen — IP-Release pre_destroy Hook for the 
 ## Tests
 
 - [x] Unit tests for rate limiter — never exceeds max per trailing window; paced gap; dynamic window/max change mid-run; ctx cancel; disabled pass-through (`ratelimiter_test.go`, `manager_test.go` gate test)
-- [ ] Unit tests for global concurrency dynamic change (`SetWorkerCount` on live config)
 - [ ] Unit tests for orphan sweep — scoping rules (folder, prefix, age threshold)
 - [x] Unit tests for overlay lifecycle-hook composition — repo hooks preserved, CMM `pre_destroy` injected, arrays merged not clobbered (`overlay_test.go`, `executor_test.go`)
 - [x] Unit tests for IP-release hook failure isolation (by construction) — injected command always `exit 0`, detached, stdio redirected (`overlay_test.go`); live simulated-failure verification remains empirical

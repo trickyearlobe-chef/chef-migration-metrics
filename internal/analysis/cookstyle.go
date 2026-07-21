@@ -195,11 +195,18 @@ type CookstyleExecutor interface {
 	// Run executes cookstyle with the given arguments and returns
 	// stdout, stderr, the exit code, and any execution error.
 	//
+	// dir is the working directory for the process. It MUST be set to the
+	// cookbook/repo directory being scanned: RuboCop reports offence file
+	// paths relative to the process CWD, so an empty dir under the systemd
+	// default CWD of "/" makes it strip the leading two characters off every
+	// absolute path (/var/lib → ar/lib). Pass "" only for invocations that do
+	// not scan a cookbook (e.g. --show-cops).
+	//
 	// A non-zero exit code is NOT returned as an error when the process
 	// ran to completion — CookStyle exits non-zero when offenses are
 	// found. An error is returned only for failures to start the
 	// process, context cancellation, or signal-based termination.
-	Run(ctx context.Context, args ...string) (stdout, stderr string, exitCode int, err error)
+	Run(ctx context.Context, dir string, args ...string) (stdout, stderr string, exitCode int, err error)
 }
 
 // ---------------------------------------------------------------------------
@@ -219,10 +226,6 @@ type CookstyleScanner struct {
 	// at the start of each batch so a config change takes effect on the next
 	// collection run without a restart. Falls back to the baked concurrency.
 	concurrencyFn func() int
-	// failureRulesFn, when set, returns the live failure rules, read at scan
-	// time so a config change takes effect on the next scan without a restart.
-	// Falls back to DefaultFailureRules().
-	failureRulesFn func() CookstyleFailureRules
 	// classificationOverridesFn, when set, returns the operator classification
 	// overrides for a target version, read at scan time. Falls back to loading
 	// from the datastore (or empty overrides when no db is configured).
@@ -250,13 +253,6 @@ func WithCookstyleConcurrencyFunc(fn func() int) CookstyleScannerOption {
 	return func(s *CookstyleScanner) { s.concurrencyFn = fn }
 }
 
-// WithCookstyleFailureRulesFn sets a live provider for the failure rules.
-// When set, the scanner reads the rules at scan time so a config change takes
-// effect on the next scan without a restart.
-func WithCookstyleFailureRulesFn(fn func() CookstyleFailureRules) CookstyleScannerOption {
-	return func(s *CookstyleScanner) { s.failureRulesFn = fn }
-}
-
 // WithCookstyleClassificationOverridesFn wires a live provider of operator
 // classification overrides (cop_name → classification) for a target version,
 // read at scan time. When unset, overrides are loaded from the datastore.
@@ -280,15 +276,6 @@ func (s *CookstyleScanner) effectiveConcurrency() int {
 		}
 	}
 	return s.concurrency
-}
-
-// effectiveFailureRules returns the live failure rules when a provider is
-// wired, otherwise the default rules.
-func (s *CookstyleScanner) effectiveFailureRules() CookstyleFailureRules {
-	if s.failureRulesFn != nil {
-		return s.failureRulesFn()
-	}
-	return DefaultFailureRules()
 }
 
 // buildResolver constructs a cop classification resolver for the given target
@@ -627,7 +614,7 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	}
 
 	resolver := s.buildResolver(ctx, targetChefVersion)
-	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, resolver)
 	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.
@@ -775,7 +762,7 @@ func (s *CookstyleScanner) scanOneGitRepo(
 	}
 
 	resolver := s.buildResolver(ctx, targetChefVersion)
-	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, s.effectiveFailureRules(), resolver)
+	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, resolver)
 	sr.Passed = sr.CookstyleStatus != StatusBlocked
 
 	// Step 7: log outcome.
@@ -901,14 +888,14 @@ func (s *CookstyleScanner) runScanWithAddonIsolation(
 	info.requires = addonCops
 
 	args := buildCookstyleArgsWithAddons(cookbookDir, targetChefVersion, addonCops)
-	stdout, stderr, exitCode, execErr = s.executor.Run(scanCtx, args...)
+	stdout, stderr, exitCode, execErr = s.executor.Run(scanCtx, cookbookDir, args...)
 
 	// Only attempt isolation when addons were actually injected and cookstyle
 	// ran to completion with an error exit (a start/timeout failure is not an
 	// addon problem and must surface as-is).
 	if len(addonCops) > 0 && execErr == nil && exitCode >= 2 {
 		cleanArgs := buildCookstyleArgs(cookbookDir, targetChefVersion)
-		cStdout, cStderr, cExit, cErr := s.executor.Run(scanCtx, cleanArgs...)
+		cStdout, cStderr, cExit, cErr := s.executor.Run(scanCtx, cookbookDir, cleanArgs...)
 		if cErr == nil && cExit < 2 {
 			info.loadFailed = true
 			info.addonExit = exitCode
@@ -981,7 +968,7 @@ func enrichOffenses(offenses []CookstyleOffense) []remediation.EnrichedOffense {
 				LastLine:    off.Location.LastLine,
 				LastColumn:  off.Location.LastColumn,
 			},
-			Remediation: remediation.LookupCop(off.CopName),
+			Remediation: remediation.LookupCopForOffense(off.CopName, off.Message),
 		}
 	}
 	return enriched
@@ -1149,16 +1136,23 @@ type defaultCookstyleExecutor struct {
 	path string
 }
 
-func (e *defaultCookstyleExecutor) Run(ctx context.Context, args ...string) (string, string, int, error) {
-	return executeCommand(ctx, e.path, args...)
+func (e *defaultCookstyleExecutor) Run(ctx context.Context, dir string, args ...string) (string, string, int, error) {
+	return executeCommand(ctx, e.path, dir, args...)
 }
 
 // executeCommand runs an external command and returns stdout, stderr, exit
 // code, and error. A non-zero exit code from a process that ran to
 // completion is NOT returned as an error — the caller inspects the exit
 // code and stdout/stderr separately.
-func executeCommand(ctx context.Context, name string, args ...string) (string, string, int, error) {
+//
+// dir, when non-empty, is set as the process working directory. This anchors
+// RuboCop's CWD-relative offence path reporting to the scanned cookbook (see
+// the CookstyleExecutor.Run doc comment).
+func executeCommand(ctx context.Context, name, dir string, args ...string) (string, string, int, error) {
 	cmd := makeCommand(ctx, name, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 
 	var stdoutBuf, stderrBuf strings.Builder
 	cmd.Stdout = &stdoutBuf

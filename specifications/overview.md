@@ -13,7 +13,6 @@
 | [chef-api](chef-api.md) | Chef Infra Server API client and reference used by data collection. |
 | [configuration](configuration.md) | The application's full configuration surface, live-reloadable without restart. |
 | [cop-classification](cop-classification.md) | Per-cop migration impact classification (Blocker/Review/Noise), auto-seeded from RemovedIn, with operator overrides and custom cops. |
-| [cookstyle-failure-rules](cookstyle-failure-rules.md) | Configurable per-namespace severity thresholds for CookStyle pass/fail, with presets and auto re-score. Becomes fallback for unclassified cops — see cop-classification. |
 | [cookstyle-full-ruleset](cookstyle-full-ruleset.md) | Run the full CookStyle ruleset (drop `--only`) and let classification decide the verdict; load operator-supplied addon RuboCop cop files from disk; seed Noise defaults. |
 | [cookstyle-violations-browser](cookstyle-violations-browser.md) | ⚠️ Superseded by cop-classification. API endpoint retained; flat-list UI replaced by Cop Analysis view. |
 | [data-collection](data-collection.md) | Collecting node, cookbook, and git-repo data from Chef servers and Git. |
@@ -25,6 +24,7 @@
 | [dual-compatibility-signals](dual-compatibility-signals.md) | Combining Test Kitchen and CookStyle signals into a compatibility verdict. |
 | [encrypted-config-store](encrypted-config-store.md) | Encrypted storage backend for configuration values. |
 | [enriched-metric-snapshots](enriched-metric-snapshots.md) | Periodic enriched metric snapshots for historical trending. |
+| [event-ingest](event-ingest.md) | Passive HTTP receiver for Chef run telemetry (node / Server proxy / Automate Data Feed) → partitioned `converge_runs` → Node Detail Runs tab. MVP, no auth. |
 | [filter-ux-overhaul](filter-ux-overhaul.md) | Dashboard filtering UX across org, environment, role, policy, platform, and owner. |
 | [git-repo-file-browser](git-repo-file-browser.md) | Browsing files within cloned git cookbook repositories. |
 | [kitchen-analyser](kitchen-analyser.md) | Analysis of Test Kitchen configurations and results. |
@@ -42,6 +42,7 @@
 | [platform-display-names](platform-display-names.md) | Friendly display names for platforms. |
 | [platform-mapping-ui](platform-mapping-ui.md) | UI for mapping platforms to Test Kitchen images. |
 | [roles](roles.md) | Chef roles and their cookbook references. |
+| [saved-filters](saved-filters.md) | Named, owned, shareable filter selections on list views (e.g. a 20-role "All Windows OS" cohort on Nodes). |
 | [secrets-storage](secrets-storage.md) | Credential storage, encryption, master key management, and rotation. |
 | [semantic-contracts](semantic-contracts.md) | Semantic API/data contracts between components. |
 | [server-side-pagination](server-side-pagination.md) | Server-side pagination for list endpoints. |

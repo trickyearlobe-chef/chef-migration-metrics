@@ -23,8 +23,8 @@ classification system and now causes two problems:
   with AST matchers / autocorrect.
 
 The classification system already separates *detection* from *blocking*: status
-blocks only Blockers (plus unclassified offences that severity-fail), and
-complexity weights cosmetic offences at 0. So the department filter is a blunt,
+blocks only Blockers, and complexity weights cosmetic offences at 0. So the
+department filter is a blunt,
 redundant pre-filter that hides classified blockers. Removing it and relying on
 classification is simpler and more correct.
 
@@ -32,10 +32,10 @@ classification is simpler and more correct.
 
 - **Full ruleset.** Drop `--only`; run every cop (Chef + generic RuboCop + addon).
   Classification drives verdict + complexity.
-- **Blocking principle unchanged.** Only Blockers block; unclassified blocks only
-  at `error`/`fatal` (default failure rules). The cosmetic long tail
-  (Style/Layout) is weight-0 and non-blocking, so widening does **not** turn
-  cookbooks red or inflate scores.
+- **Blocking principle unchanged.** Only Blockers block; anything unproven is
+  Review (a worklist item, non-blocking) — severity never blocks. The cosmetic
+  long tail (Style/Layout) is weight-0 and non-blocking, so widening does **not**
+  turn cookbooks red or inflate scores.
 - **Addon cops** are operator-supplied `.rb` RuboCop cop files on the app host,
   referenced by config and `require:`d into the scan. Trust boundary = deploying
   the app; **not** web-uploaded.
@@ -57,10 +57,8 @@ classification is simpler and more correct.
 - Verdict + complexity derive from `(offences + resolved classification)`, never
   from the department filter. SoT: `DeriveCookstyleStatus`,
   `ComputeCookstyleComplexity`.
-- A cop outside Deprecations/Correctness/Modernize at non-error severity
-  contributes complexity weight 0 (`complexity_classification.go`
-  `unclassifiedWeight`) and does not block (default rules `*: {error,fatal}`,
-  `failure_rules.go`).
+- A cop resolving to Noise contributes complexity weight 0
+  (`complexity_classification.go`) and does not block. Nothing blocks on severity.
 - Addon-cop offences are ordinary offences keyed by `cop_name`; they flow through
   classification resolution, the rollup, complexity, propagation, and fingerprint
   history with no special-casing.
@@ -102,10 +100,10 @@ enabling; handled as an in-chunk detail, not config surface.)
 ## Operator Workflow
 
 Scan surfaces every cop → the detail view's **Blockers** section (expanded) is the
-must-fix list; Noise/Unclassified start collapsed. Operators bulk-classify the
-unclassified tail via the Cop Analysis / Cop Classifications admin surfaces;
-reclassification propagates without a rescan. Over time the Blockers section stays
-clean and the tail shrinks.
+must-fix list; Noise starts collapsed. Operators triage the Review worklist via
+the Cop Analysis / Cop Classifications admin surfaces; reclassification propagates
+without a rescan. Over time the Blockers section stays clean and the Review tail
+shrinks.
 
 ## Performance
 
@@ -118,7 +116,5 @@ per-file AST work proportional to cop count.
 - [cop-classification](cop-classification.md) — classification levels, resolution,
   rollup status, complexity weighting, custom (pattern) cops.
 - [analysis-cookstyle](analysis-cookstyle.md) — CookStyle invocation / parsing.
-- [cookstyle-failure-rules](cookstyle-failure-rules.md) — severity fallback for
-  unclassified cops.
 - [dual-compatibility-signals](dual-compatibility-signals.md) — CS vs TK
   separation (unaffected).

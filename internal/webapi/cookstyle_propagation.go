@@ -63,28 +63,20 @@ type CookstylePropagator struct {
 	store     CookstylePropagationStore
 	scorer    ComplexityRescorer
 	readiness ReadinessRecomputer
-	rulesFn   func() analysis.CookstyleFailureRules
 	logger    func(level, msg string)
 }
 
-// NewCookstylePropagator builds a propagator. rulesFn must return the live
-// failure rules (fallback for unclassified cops); a nil rulesFn defaults to
-// analysis.DefaultFailureRules.
+// NewCookstylePropagator builds a propagator.
 func NewCookstylePropagator(
 	store CookstylePropagationStore,
 	scorer ComplexityRescorer,
 	readiness ReadinessRecomputer,
-	rulesFn func() analysis.CookstyleFailureRules,
 	logger func(level, msg string),
 ) *CookstylePropagator {
-	if rulesFn == nil {
-		rulesFn = analysis.DefaultFailureRules
-	}
 	return &CookstylePropagator{
 		store:     store,
 		scorer:    scorer,
 		readiness: readiness,
-		rulesFn:   rulesFn,
 		logger:    logger,
 	}
 }
@@ -109,7 +101,6 @@ func (p *CookstylePropagator) PropagateReclassification(ctx context.Context, cop
 	}
 
 	resolver := p.buildResolver(ctx, targetChefVersion)
-	rules := p.rulesFn()
 
 	// --- Affected server cookbook results: re-derive passed. ---
 	serverRefs, err := p.store.ListServerCookbookCookstyleResultsWithCop(ctx, copName, targetChefVersion)
@@ -127,7 +118,7 @@ func (p *CookstylePropagator) PropagateReclassification(ctx context.Context, cop
 		if ref.ErrorMessage != "" {
 			continue // inconclusive scan — not a verdict
 		}
-		newStatus, newPassed := deriveRefStatus(ref, rules, resolver)
+		newStatus, newPassed := deriveRefStatus(ref, resolver)
 		if newStatus != ref.CookstyleStatus {
 			if uerr := p.store.UpdateServerCookbookCookstyleVerdict(ctx, ref.OrganisationName, ref.CookbookName, ref.CookbookVersion, ref.TargetChefVersion, newPassed, newStatus); uerr != nil {
 				p.logf("ERROR", "propagation: updating server verdict for %s/%s: %v", ref.OrganisationName, ref.CookbookName, uerr)
@@ -155,7 +146,7 @@ func (p *CookstylePropagator) PropagateReclassification(ctx context.Context, cop
 		if ref.ErrorMessage != "" {
 			continue
 		}
-		newStatus, newPassed := deriveRefStatus(ref, rules, resolver)
+		newStatus, newPassed := deriveRefStatus(ref, resolver)
 		if newStatus != ref.CookstyleStatus {
 			if uerr := p.store.UpdateGitRepoCookstyleVerdict(ctx, ref.GitRepoName, ref.GitRepoURL, ref.TargetChefVersion, newPassed, newStatus); uerr != nil {
 				p.logf("ERROR", "propagation: updating git verdict for %s: %v", ref.GitRepoName, uerr)
@@ -252,9 +243,9 @@ func (p *CookstylePropagator) buildResolver(ctx context.Context, target string) 
 // deriveRefStatus re-derives the classification rollup status for a result from
 // its stored offences using the single-source-of-truth derivation. The
 // back-compat passed boolean is status != blocked.
-func deriveRefStatus(ref *datastore.CookstyleResultRef, rules analysis.CookstyleFailureRules, resolver *analysis.CopClassificationResolver) (status string, passed bool) {
+func deriveRefStatus(ref *datastore.CookstyleResultRef, resolver *analysis.CopClassificationResolver) (status string, passed bool) {
 	offenses := refOffenses(ref.Offences)
-	status = analysis.DeriveCookstyleStatus(offenses, rules, resolver)
+	status = analysis.DeriveCookstyleStatus(offenses, resolver)
 	return status, status != analysis.StatusBlocked
 }
 
