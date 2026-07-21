@@ -22,9 +22,10 @@ type NodeSnapshotCursor struct {
 // ordered by the unique (organisation_name, node_name) tuple. It deliberately
 // ignores f.Sort/f.SortOrder/f.Limit/f.Offset and f.IncludeHeavyJSON: streamed
 // exports use a fixed unique order with an explicit page limit and never load
-// heavy JSONB. It omits COUNT(*) OVER() (which would re-scan every page) and
-// instead emits a constant 0 as total_count so scanFilteredNodeSnapshots can
-// scan the rows unchanged. A valid cursor restricts to rows strictly after it.
+// heavy JSONB. It carries no total_count column — scanFilteredNodeSnapshots
+// scans the light projection only (the P3 count split removed the trailing
+// total, so emitting one here would over-supply the scan). A valid cursor
+// restricts to rows strictly after it.
 func buildNodeSnapshotExportQuery(f NodeSnapshotFilter, after NodeSnapshotCursor, limit int) (string, []interface{}) {
 	f.IncludeHeavyJSON = false
 	cte, join, where, args := buildNodeSnapshotFilterParts(f)
@@ -43,7 +44,7 @@ func buildNodeSnapshotExportQuery(f NodeSnapshotFilter, after NodeSnapshotCursor
 	sb.WriteString(cte)
 	sb.WriteString("\nSELECT ")
 	sb.WriteString(nodeSnapshotLightCols)
-	sb.WriteString(", 0 AS total_count\n  FROM current_nodes cn")
+	sb.WriteString("\n  FROM current_nodes cn")
 	sb.WriteString(join)
 	sb.WriteString(where)
 	sb.WriteString("\n ORDER BY cn.organisation_name ASC, cn.node_name ASC")
