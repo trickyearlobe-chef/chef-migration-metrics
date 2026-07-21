@@ -1,68 +1,58 @@
 # Secrets Storage — ToDo
 
+The feature is IMPLEMENTED and in use: config-store-backed credential store
+(`internal/configstore/credential_adapter.go`), `CredentialResolver`
+(`internal/secrets/resolver.go`, DB→env→file precedence), encryption + zeroing,
+admin-status reporting, packaging perms (nfpm), and spec docs
+(`specifications/secrets-storage*.md`). Remaining = tests, doc-surfacing, startup
+hardening, and one display-only bug. Sourcing model: only minimal values come from
+env/`config.yaml`; client keys live in the DB via the UI (see
+[[credential-sourcing-model]]) — env-var sourcing for client keys is out of scope.
+
 ## Bugs
 
-- [ ] **Operational status page mislabels config-synced orgs' credential source as "file".** `handle_admin_status.go:185-188` derives the source solely from the DB column `ClientKeyCredentialName` (empty → "file", non-empty → "database"). But the startup org sync at `main.go:877-882` never copies `org.ClientKeyCredential` (config) into `UpsertOrganisationParams.ClientKeyCredentialName`, so for **all config-synced orgs** that column is always NULL — the field is effectively hardcoded to "file" regardless of whether the YAML uses `client_key_credential:` (DB/encrypted store) or `client_key_path:` (real file). Only API-created orgs (`handle_organisations.go`) report "database" correctly. **Display-only bug** — runtime resolution is unaffected (collector.go:1582-1592 and main.go:1375-1383 fall back to live config). **Fix options:** (a) populate `ClientKeyCredentialName` in the sync params from `org.ClientKeyCredential` (smaller; only fixes the cred-name case); or (b) have the status handler consult live config with the same precedence the collector/ClientFactory use — DB cred name → config cred name → config file path — to report file/database truthfully (more accurate, distinguishes real file vs store). (Found 2026-06-19.)
+- [ ] **Status page mislabels config-synced orgs' credential source as "file"**
+  (display-only, low priority). `handle_admin_status.go:185-188` derives source solely
+  from DB column `ClientKeyCredentialName` (empty→"file"); startup sync
+  `main.go:896-901` never copies `org.ClientKeyCredential` (config) into the upsert
+  params, so orgs using YAML `client_key_credential:` always report "file". Runtime
+  resolution is unaffected. Fix: populate `ClientKeyCredentialName` in the sync params,
+  or have the status handler consult live config with the resolver's precedence.
 
-## Credential Store
+## Tests (implementation exists; coverage is the gap)
 
-- [ ] Write functional tests for `DBCredentialStore` SQL paths against real PostgreSQL (build-tagged `//go:build functional`)
+- [ ] Functional PostgreSQL tests (`//go:build functional`) for the credential store —
+  `CredentialStoreAdapter` (configstore-backed; there is no `DBCredentialStore` type).
+  Adapter is unit-tested only (`credential_adapter_test.go`).
+- [ ] `chef_client_key` live test — optionally make a real Chef API call with the key.
+  Currently offline PEM validation only (`credential_adapter.go:359`,
+  `secrets/validation.go:100`).
+- [ ] Unit tests for the live credential-test function (mocked external services).
+- [ ] Integration tests for Chef API signing per credential source (DB / file). Signing
+  is tested with a directly-supplied key only (`chefapi/client_test.go:346-473`).
+- [ ] Log-capture test asserting no credential plaintext/ciphertext reaches log output.
+  Leak-prevention is currently proven only indirectly (`encryption_test.go`,
+  `credential_store_test.go`); no test captures log output.
 
-## Credential Testing
+## Startup validation
 
-- [ ] Implement `chef_client_key` live test: optionally test Chef API call with the key
-- [ ] Write unit tests for live credential test functions (with mocked external services)
+- [ ] Warn if keys directory permissions > `0700`.
+- [ ] Warn if env file permissions > `0640`.
+- [ ] Unit tests for the two warnings above (only the TLS key_path 0600 check is tested
+  today — `config_test.go:1066-1099`).
 
-## Startup Validation
+## Documentation / deploy
 
-- [ ] Warn if keys directory permissions > `0700`
-- [ ] Warn if env file permissions > `0640` (RPM/DEB)
-- [ ] Write unit tests for startup validation (all pass, various failure modes)
+- [ ] Surface a secrets-management section in the top-level `README.md`. Today it covers
+  commit-prevention only and links out to the spec (`README.md:507-532`); the runtime
+  model + procedures live in `specifications/secrets-storage-*.md` but aren't surfaced.
+- [ ] `deploy/docker-compose`: add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to
+  `.env.example` and a key-generation command to `README.md` (the RPM/DEB `env-file`
+  already has the placeholder — `deploy/pkg/env-file:20`).
 
-> TLS key-file permission warning (>0600) is **done**: `config.go` startup
-> validation (`server.tls.key_path`) and `tls/certmanager.go checkKeyPermissions`.
-> The two items above are about the credential key material (keys dir / env
-> file), not TLS, and are still open.
+## Decision (no code unless we change our mind)
 
-## Consumer Integration
-
-- [ ] Update `internal/chefapi/` to resolve Chef API keys via `CredentialResolver`
-- [ ] Verify plaintext is zeroed after use in all consumer call sites
-- [ ] Write integration tests for Chef API signing with each credential source
-
-## Configuration Integration
-
-- [ ] Add `client_key_env` field to organisation config schema
-
-## System Status
-
-- [ ] Add `credential_storage` section to `GET /api/v1/admin/status` response
-- [ ] Report `encryption_key_configured` boolean
-- [ ] Report `total_credentials` count
-- [ ] Report `credential_types` breakdown
-- [ ] Report `orphaned_credentials` count (credentials not referenced by any entity)
-- [ ] Write tests for status endpoint credential storage section
-
-## Logging
-
-- [ ] Verify no log statement includes credential plaintext, ciphertext, or encoded values
-- [ ] Write tests to confirm no plaintext leaks into log output
-
-## Packaging
-
-- [ ] Verify RPM `postinstall.sh` sets `/etc/chef-migration-metrics/keys/` to `0700`
-- [ ] Verify RPM `postinstall.sh` sets env file to `0640`
-- [ ] Verify DEB `postinstall.sh` sets `/etc/chef-migration-metrics/keys/` to `0700`
-- [ ] Verify DEB `postinstall.sh` sets env file to `0640`
-- [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to `deploy/pkg/env-file`
-- [ ] Add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to `deploy/docker-compose/.env.example`
-- [ ] Document key generation command in `deploy/docker-compose/README.md`
-
-## Documentation
-
-- [ ] Add secrets management section to top-level `README.md`
-- [ ] Document credential storage options and trade-offs
-- [ ] Document master key generation procedure
-- [ ] Document master key rotation procedure
-- [ ] Document credential value rotation procedure
-- [ ] Document RPM/DEB credential file setup
+- `internal/chefapi/` takes injected private-key bytes; resolution via `CredentialResolver`
+  happens at call sites (`collector.go:1612-1648`, `main.go:1613-1630`), not inside
+  chefapi. This is the current design and acceptable — recorded so it isn't re-raised as
+  "chefapi doesn't use the resolver."
