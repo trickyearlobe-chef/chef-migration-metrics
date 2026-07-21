@@ -77,18 +77,6 @@ config) is in `scripts/cop-validation/README.md`.
   `CookbookDependsOnCompatResource` / `CookbookDependsOnPartialSearch` (pure metadata
   `depends` — not Ruby-introspectable; a converge-break is a repo-level question). All
   three remain curated Blockers pending that harness.
-- [x] **Self-validation harness spike — feasibility PROVEN (2026-07-16).** Prototype
-  `cop_validator.rb` on [[cmm-validation-box]] auto-reproduced the manual 26-cop
-  verdict (15 confirmed blockers, 6 over-claims) by introspecting `RESTRICT_ON_SEND`
-  per cop and probing each target against live Chef 19.3.15 — one `chef exec ruby`
-  process. Auto-discovered targets the hand-curation missed (DeprecatedClassMethods
-  flags 8 methods, not 4). Lessons for a production harness: (1) probe **behaviourally**
-  (call + catch), not `respond_to?` — the latter false-positives on Chef::Node attr
-  methods (NodeSetUnless "ghost respond_to"); (2) **arg-form** deprecations (`attr :x, true`,
-  `depends 'compat_resource'`) are not method-removal — need arg-aware / ChefSpec
-  behavioural checks, not presence probes (the Kernel/Module poly probes for
-  attr/iterator? were unreliable); (3) resolve cop classes with `gsub`, and note
-  `chef exec` loads the client's vendored cookstyle 8.6.10, not the workstation 8.7.6.
 - [ ] **Productionise the harness.** Add the ChefSpec/behavioural layer for arg-form
   + action + Windows cops; wire reconcile → auto-demote a curated Blocker whose target
   is still present on the deployed chef-client + emit a curation-drift warning. This is
@@ -146,47 +134,6 @@ nicety. Do not present a clean CookStyle scan as "Ruby-3-safe".
   the authority for "does this actually run on CC19"; the readiness/verdict copy must
   not imply CookStyle alone proves Ruby-3 compatibility.
 
-## CookStyle — 8 stale curated cop names + a curation-linter blind spot
-
-Found 2026-07-16 while auditing sweep completeness: 8 `copmapping.go` entries name cops
-the CC19 binary does not emit (cross-checked against the live RuboCop registry). All 8
-have empty `RemovedIn` (Review-level), which is exactly why they were never caught — the
-**curation linter only stale-checks entries with `RemovedIn != ""`** (see
-`ValidateCuratedRemovals` in `cop_curation_lint.go`), so Review-level mappings are
-unvalidated. Root-cause fix is to extend the stale check (cop-emitted?) to **all**
-curated entries, not just verified-removals.
-
-Impact is accuracy, not verdicts (none are blockers): for the 3 renamed cops the
-correctly-named cop *does* fire but gets **no remediation doc** because our mapping sits
-under the dead name; the 5 removed-upstream entries are dead clutter.
-
-Provenance + safety of the rename/drop (established 2026-07-16): the 8 old names were
-seeded in the **initial hand-authored mapping** (commits `4b3b534`/`81ee14d`, 6 Mar
-2026; reformatted to three-part names in `cb92679`), and their error pattern
-(`WindowsPackageInstallerType` vs real `…TypeString`, wrong department for
-`DefaultMetadataMaintainer`, non-existent `ChefSpecifyDefaultAction`) marks them as
-doc/LLM **approximations, never captured from real scan output**. Confirmed against the
-customer DB (VDI): a shape-guarded query over `server_cookbook_cookstyle_results` +
-`git_repo_cookstyle_results` offences found **0** occurrences of all 8 old names — so
-they never matched real offences and no superseded-alias/back-compat mapping is needed.
-(Both Workstation 25 and 26 run Cookstyle 8.6.10 for scanning, which already emits the
-new names; only the WS26 standalone CLI is 8.7.6, also new names.)
-
-- [ ] **Rename (cop still exists under a new name/department):**
-  `WindowsPackageInstallerType` → `Chef/Deprecations/WindowsPackageInstallerTypeString`;
-  `IncludingXMLRubyCookbook` → `Chef/Deprecations/IncludingXMLRubyRecipe`;
-  `DefaultMetadataMaintainer` → `Chef/Sharing/DefaultMetadataMaintainer` (note: different
-  department — still Review by default).
-- [ ] **Drop (no cop emitted by CC19 — removed/renamed away):**
-  `DeprecatedChefSpecHelpers` (split into `ChefSpecCoverageReport` /
-  `ChefSpecLegacyRunner` / `DeprecatedChefSpecPlatform` — all ChefSpec = test-tooling =
-  structural Noise, so no remediation doc needed), `ChefSpecifyDefaultAction`,
-  `DependsOnChefHandlerCookbook`, `ResourceUsesOnlyIfNotIf`,
-  `RubyVersionConstraintInEnvironment`.
-- [ ] **Close the linter blind spot:** stale-check every curated cop name against the
-  live registry, independent of `RemovedIn`. This is the durable guard that would have
-  caught all 8 at CI.
-
 ## Security — CodeQL Path-injection / TLS Follow-ups
 
 Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dismissed).
@@ -229,7 +176,7 @@ Recorded 2026-06-19 (`feature/orphan-sweep-ticker`).
 
 - [ ] **Client-side filtering/sorting/dashboarding is fragile** — derived values like blast radius scores, complexity calculations, and TK pass/fail/partial statuses are computed independently in multiple places (API handlers, frontend sort comparators, dashboard aggregation, export formatters). When the calculation logic drifts between copies, filters disagree with dashboards and sort order doesn't match displayed values. **Strategic fix:** push derived calculations into the database as materialised columns or summary tables, computed once at collection time. API surfaces then filter/sort/aggregate on pre-computed values rather than re-deriving them. This also enables server-side pagination with correct sort order and eliminates the class of paging bugs caused by client-side recomputation. Relates to the platform filter tree multiselect item (server-side group filtering). **Note (Phase 2 caption):** adding `platform_caption` introduces a 4th input to `ResolveInfo` that is re-derived at 6 call sites — increases urgency of materialising platform display/group into DB columns.
 
-- [ ] **Disk verdict is version-invariant but stored per (node, target_chef_version).** `evaluateOne` (`internal/analysis/readiness.go`) computes `sufficient_disk_space` from platform install size + node free space only — it does not depend on `target_chef_version` — yet writes the identical verdict into every per-target `node_readiness` row. This duplication caused a list-vs-detail disagreement (list showed "Disk Unknown", detail showed "Sufficient") when the globally-selected target version had no readiness row for a node: the list's version-scoped `LEFT JOIN` turned "no row for this target" into `NULL` = "unknown". **RESOLVED (branch `fix/disk-readiness-decouple-target`, 2026-06-12):** the strategic fix landed — the verdict is now computed once at collection time and stored per node on `node_snapshots` (`sufficient_disk_space`/`available_disk_mb`/`required_disk_mb`, migration 0037), via the shared pure `analysis.EvaluateDisk`. Display (list `disk_status` + detail `DiskSpacePanel`) and the `disk_blocked`/`disk_unknown` filter all read this node-level value, so disk status is correct even with **no target version configured** and **no readiness rows** (the original symptom). **Remaining cleanup (new residual):** the per-target `node_readiness` disk columns are now vestigial — `evaluateOne` still computes the verdict via `EvaluateDisk` for its `is_ready` gate and writes the (now duplicate) columns. Drop `node_readiness.{sufficient_disk_space,available_disk_mb,required_disk_mb}` and have readiness read the node-level verdict, leaving a single source of truth. **Prevention lesson:** the source-of-truth revamp unified *derivation* across views but not *which record represents a node*; consistency required moving the verdict off the per-target record entirely.
+- [ ] Drop vestigial `node_readiness.{sufficient_disk_space,available_disk_mb,required_disk_mb}` columns — readiness should read the node-level verdict (single source of truth).
 
 ## Frontend — Large Files
 
@@ -238,7 +185,6 @@ Recorded 2026-06-19 (`feature/orphan-sweep-ticker`).
 
 ## Frontend — Inconsistency
 
-- [ ] `RemediationPage.tsx` uses hand-rolled sort logic (L67–68, L151–164) instead of `useSort` hook + `SortableColumnHeader` that every other sortable page uses.
 - [ ] `DownloadStatusBadge` (CookbooksPage) and `CloneStatusBadge` (GitReposPage) are near-identical — unify into a shared component.
 - [ ] **Platform filter is flat multiselect** — should be a tree-based multiselect allowing selection at group level (e.g. "RHEL 8") or individual version level (e.g. "RHEL 8.10"). Requires deciding whether group expansion happens client-side or server-side (API accepts `group_key` filter and resolves in SQL). Server-side is preferred to avoid paging instability. Part of a broader design around server-side vs client-side data processing.
 
@@ -254,13 +200,10 @@ Recorded 2026-06-19 (`feature/orphan-sweep-ticker`).
 **Strategic fix:** extract the pipeline stages of each into named helpers. There is no shared extraction to make: they now serve genuinely different sources, and the only thing they had in common was the copy that has been removed.
 
 - [ ] **SAML provider validation duplicated between `config.validateAuth` and `webapi.putAdminConfigAuth`** — the saml-provider rules (metadata source one-of/mutual-exclusion, sp_entity_id/credentials required, role_mapping, and now `sp_base_url`) are implemented twice: once in `internal/config/config.go` (`validateAuth`, the YAML/load-time path) and again in `internal/webapi/handle_admin_config_auth.go` (`putAdminConfigAuth`, the admin-save path), with separately-maintained message strings. They drift easily — the admin-save fast-fail checks already lag `validateAuth` (no https-only/1MB/duration checks). (Partially mitigated 2026-06-15 by sharing `config.IsValidSPBaseURL`.) **Lockout risk now closed (2026-06-17):** `storeAdminConfigSection` runs the full `config.Validate()` on the prospective assembled config *before* `configStore.Set`, so a section that only `validateAuth` would reject is no longer persisted-then-rejected-on-reload (which left invalid, encrypted, non-hand-editable config that bricked the next reload/startup). What remains is pure cleanup, lower priority: the `putAdminConfigAuth` fast-fail block now duplicates rules the pre-persist validation already enforces, with separate message strings. **Strategic fix:** extract a single `config.ValidateAuthProvider(p) []error` and have the fast-fail path use it (or drop the redundant fast-fail checks and rely on the pre-persist validation for precise messages). Added 2026-06-15 with the SAML config improvements.
-- [ ] **`target_chef_versions` is a list but only one target is ever active** — config stores `TargetChefVersions []string` and code picks the highest via `config.HighestVersion()`. This is confusing and error-prone (users may add multiple values thinking they'll all be tested). **Strategic fix:** change config to `target_chef_version: "18.5.0"` (scalar string), update `config.Config`, admin API PUT/GET, frontend admin page, and all call sites that index into the slice. Remove `HighestVersion()` helper.
 
 ## Database
 
 - [ ] Migrations 0001–0009 establish natural composite keys; migrations 0013–0016 reintroduce UUID PKs for `vm_tracking`, `node_kitchen_runs`, `kitchen_batches`, `git_kitchen_results`. This is a deliberate choice (these tables model ephemeral operational records, not domain entities) but should be documented in `project-conventions.md` under a "Primary Key Strategy" section.
-- [ ] **Roles compat summary not pre-computed** — `GetRoleCompatSummary` runs a full recursive CTE over all roles on every cache miss (60s TTL). At 67k+ roles this is slow. **Strategic fix:** write `(org, target_chef_version, compatible, incompatible, untested, total)` rows to a `role_compat_summary` table at the end of each collection run. The summary bar and compat-filter fast path read from that table (O(1)) instead of re-expanding the dep graph. The dashboard cookbook-compatibility card has the same problem.
-- [ ] **Roles list slow for non-name sort fields** — sorting by `node_count` or `incompatible_cookbook_count` still uses the single-query slow path (full recursive CTE over all roles before sorting). **Strategic fix:** store pre-computed node counts and compat counts per role in a summary table (same as above), enabling O(1) sorts.
 - [ ] **Cross-org aggregations may produce incorrect counts** — API responses for roles and cookbooks aggregate entities across organisations (e.g. `RoleDetail.Organisations []string`). If downstream logic counts array lengths to derive totals (e.g. "number of affected roles"), it may be counting orgs-per-entity rather than entities. **Investigate during Phase 1 (Semantic Contracts):** trace each metric calculation back to its source query and verify that cross-org grouping does not inflate or deflate counts. Particularly check `affected_role_count`, `affected_node_count`, and any dashboard card that sums across the org dimension.
 - [ ] **`git_repo_name` + `git_repo_url` composite FK repeated across many tables** — `git_repo_complexity`, `git_repo_cookstyle_results`, `git_repo_autocorrect_previews`, `kitchen_analysis_results`, `git_kitchen_results`, `kitchen_instance_exclusions` all carry both columns as composite FK to `git_repos`. This bloats storage and complicates joins. **Strategic fix:** consider a surrogate `git_repo_id` PK on `git_repos` with child tables referencing it.
 - [ ] **`collection_run_org` denormalised across tables** — appears in `node_snapshots`, `metric_snapshots`, `cookbook_usage_analysis`, `log_entries`. Purpose unclear — may be stale from an earlier design. **Investigate:** determine if this is still needed or can be removed.
@@ -355,10 +298,6 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 - [ ] `GetOwnerEmailsForGitRepo` marks a committer as `is_owner` by matching the committer's `author_email` against the owner's single `contact_email`. When two committer emails map to the same `owner_name` (e.g. `user@example` and `user@example.com` both produce owner_name `user`), only the first email is stored as `contact_email`. The second committer never shows as "Owner" in the UI despite sharing the same owner identity. **Strategic fix:** either (a) store multiple contact emails per owner (many-to-one), or (b) match `is_owner` by owner_name derivation (email prefix) rather than exact contact_email comparison.
 - [ ] **`maintainer_email` from `metadata.rb` not used for ownership** — cookbook metadata contains `maintainer` and `maintainer_email` fields explicitly declared by the author. This is a stronger ownership signal than git commit email heuristics. We store `maintainer` in `server_cookbooks` but not `maintainer_email`. **Strategic fix:** collect `maintainer_email`, use it as an ownership auto-assignment source (`assignment_source: "metadata"`, `confidence: "definitive"`). Also available in git repo `metadata.rb`/`metadata.json`.
 
-## Git — Committers Not Populated
-
-- [x] **Git repo committers no longer being collected** — Root cause: committer extraction was gated behind `Ownership.Enabled` which defaulted to `false` with no UI toggle. Fixed by removing the flag entirely — ownership (and committer collection) is now always active.
-
 ## Backup — Scheduled Cron Not Firing at Customer
 
 - [ ] **Backup cron schedule not triggering** — customer has `0 2 * * *` configured with "Enable scheduled backups" checked, but no scheduled backups are being created. Manual "Create Backup Now" works (2.3 GB backup succeeded 21/05/2026). Only one backup exists, implying cron has never fired since deployment. **Root cause (suspected):** config was changed via admin UI but the app was not restarted; the backup scheduler goroutine reads config only at startup and does not re-read on config-store changes. **Strategic fix:** the backup scheduler must subscribe to config-store change notifications (or re-read config on each tick) so that enable/disable and schedule changes take effect immediately. See configuration spec § Live Reload Requirement.
@@ -373,7 +312,7 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 ## UI — Redundant Target Version Selector
 
-- [~] **Target version dropdown is dead weight** — the project uses a single-target model where changing the target invalidates all previous analysis (cookstyle, TK, readiness) and the startup reconciliation purges live-state data for old versions. This means there's only ever one version of live data. The UI showed a `<select>` dropdown (via `GlobalFilterContext.targetChefVersion`) with a single unchangeable option. **DONE (2026-06-13, branch `fix/node-filter-url-desync`):** the selector is now hidden when `targetVersions.length <= 1` (`AppLayout.tsx` GlobalFilterBar — condition changed `> 0` → `> 1`). The underlying `targetChefVersion` still auto-resolves to the single version and scopes readiness/compatibility analysis app-wide, so nothing depending on it broke; the dropdown reappears only if multiple versions are configured. **Remaining (longer term):** align with the scalar config change (`target_chef_version: string` instead of `target_chef_versions: []string`) tracked under "Backend — Code Smells", which would let the global-target mechanism be removed entirely.
+- [~] **Target version dropdown is dead weight** — the single-target model means there's only ever one version of live data, and the selector is already hidden when `targetVersions.length <= 1` (`AppLayout.tsx` GlobalFilterBar). **Residual (minor, near-complete):** config is already scalar (`target_chef_version`), so the global-target mechanism (`GlobalFilterContext.targetChefVersion`) could now be removed entirely rather than just hidden.
 
 ## Specifications — Stub / Incomplete
 
@@ -394,7 +333,6 @@ Recorded 2026-06-12 (listener-rebind H2: in-place `listen_address`/`port` rebind
 
 Recorded 2026-06-12 (listener-rebind H4a: in-place off↔static mode transition).
 
-- [x] **RESOLVED (H4b-3, pending removal confirmation) — auto-443 lifeboat re-plan.** The controller is now adopted at boot when auto-443 is active (`https443Ln != nil`); a same-mode static change re-plans HTTPS-on-the-lifeboat-port + its redirects in place via `effectiveTLSTopology`. Residual (leaving the topology — mode/listen_address change — stays restart-required) is folded into the ACME item above.
 - [ ] **static→off leaves a stale `tlsReload` pointer.** `buildTLSInstance` re-points `app.tlsReload` at each new HTTPS CertManager, but `buildPlainInstance` (static→off) does not clear it, so a later db-cert save in `off` mode calls Reload on the drained listener's CertManager (best-effort, logged warn; harmless as `off` serves no TLS). **Fix:** clear tlsReload when rebinding to a plain listener.
 
 ## Config Live-Reload — ACME Rebind Scope Gaps (H4c-2a)
@@ -450,12 +388,6 @@ Recorded 2026-06-13. Surfaced in the v2.12.2 release run log.
   the new commit SHA, and supply-chain check the bump (per CLAUDE.md). Stop-gap if the
   bump can't land in time: set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` on the runner.
 
-## Testing — Datastore Functional Tests Not Run in CI
-
-Recorded 2026-06-13 (while fixing the failed-batch delete bug).
-
-- [ ] **The `-tags functional` datastore suite (`CMM_TEST_DATABASE_URL`) is not wired into CI.** Because nothing runs it, it silently rotted: the `CookbookPlatformCoverage`/`GitRepo` natural-key migration left the `TestFunctional_CookbookPlatformCoverage_*` tests referencing removed fields (`result.ID`/`repo.ID`/`GitRepoID`) so the whole package failed to compile, and a drifted org cleanup (`DELETE … WHERE id = <name>`) leaked rows that collided with the disk tests' shared `(chef_server_url, org_name)` key. Both were fixed on `fix/delete-failed-kitchen-batch` (2026-06-13) so the suite is green again — but it will rot the same way without a gate. **Fix:** add a CI job (or `make` target) that spins up a throwaway Postgres and runs `go test -tags functional ./internal/datastore/` so compile drift and isolation bugs fail fast.
-
 ## Testing — Frontend Test Files Not Type-Checked
 
 Recorded 2026-06-17.
@@ -467,12 +399,6 @@ Recorded 2026-06-17.
 Recorded 2026-06-18 (`fix/pin-harness-blocked-deps`).
 
 - [ ] **Several frontend deps are pinned below latest to dodge the Harness Artifact Registry quarantine.** The registry returns `403 Forbidden` on tarball download for *very recently published* versions (a scan/approval window — confirmed: e.g. `undici@7.27.2` blocked, `7.27.0` permitted; `typescript-eslint@8.61.0` blocked, `8.60.1` permitted). This broke `npm ci` in the build. As a tactical fix, 7 packages were pinned to the highest *permitted* version — `typescript-eslint` 8.60.1 + `@types/react` 19.2.16 (exact devDeps), and `overrides` for `undici` 7.27.0 / `semver` 7.8.1 / `caniuse-lite` 1.0.30001793 / `electron-to-chromium` 1.5.366 / `baseline-browser-mapping` 2.10.33. **Why tactical:** the versions aren't vulnerable — they're just newer than the quarantine window — so this is working around registry policy, not a real dep problem. Dependabot will keep proposing the blocked latest versions and re-break the build, and the pins drift further behind over time. **Strategic fix (Harness side, needs admin):** shorten or auto-approve the quarantine window (or enable on-demand upstream fetch) so recent versions resolve, then remove these pins/overrides and let the deps float again. Re-run the tarball scan (probe each lockfile `version`'s tarball for 403) after any registry-policy change to confirm.
-
-## Frontend — undici CVE-2026-12151 (high) blocked by quarantine
-
-Recorded 2026-06-24.
-
-- [ ] **`undici@7.28.0` fixes CVE-2026-12151 (SameSite cookie substring matching) but is in the Harness 14-day quarantine.** The vuln is test-only (jsdom → undici, not shipped to production). The override in `package.json` pins `undici` to `7.27.0`; bump to `7.28.0` once the quarantine clears (~2026-07-08). Then run `npm install --ignore-scripts && npm audit` to confirm clean.
 
 ## CookStyle — Scan-Time Classification Override Query Is Per-Item
 
