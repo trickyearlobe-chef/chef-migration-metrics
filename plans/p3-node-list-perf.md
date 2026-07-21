@@ -1,47 +1,40 @@
 # P3 — Node-list heavy path: split the COUNT(*) OVER() (node_snapshots)
 
-## RESUME — 2026-07-21 (validation restarted)
+## RESUME — 2026-07-21 (validation complete, awaiting merge)
 
-**Where we are.** Branch is current with `main` (clean merge, no conflicts).
-Verified: **no DB migration** in this change (pure Go query-builder); the index it
-relies on, `idx_node_snapshots_node_name`, **already exists on main** (migration
-0001); rollback = revert the commit, no data impact.
+**Where we are.** All tiers green on `fix/node-list-count-split` (current with
+`main`). No DB migration; relies on `idx_node_snapshots_node_name` (already on
+main, migration 0001); rollback = revert.
 
-**Tier 1 (build + builder unit tests): DONE, green, committed `0b63217`.** The two
-never-run builder tests were both test-side and are fixed: deleted the stale
-`CountOverAlwaysPresent` (rows query no longer carries the window), and made
-`AppliesSameFilters` compare args by value (`reflect.DeepEqual`) instead of `%v`
-(pq.Array returns a fresh pointer per call). Impl unchanged — count and rows share
-`buildNodeSnapshotFilterParts`, so predicates/args are identical by construction.
+- **Tier 1** (build + builder unit tests): green.
+- **Tier 2** (functional parity): `node_snapshot_parity_functional_test.go` —
+  seed helper (54 nodes / 3 orgs, varied env/platform/version/stale/tags/state) +
+  a filter × sort × pagination matrix asserting split-count == independent
+  `SELECT COUNT(*)` == rows-query length, pages == fully-ordered set sliced by
+  LIMIT/OFFSET, and export-path set/count parity.
+- **Tier 3** (scale/EXPLAIN, opt-in `CMM_TEST_PERF=1`, ~120k rows):
+  `node_snapshot_perf_functional_test.go` — default-sort rows query is index-served
+  (`idx_node_snapshots_node_name`, no Seq Scan / Sort / WindowAgg); count query is a
+  lean aggregate (no WindowAgg / Sort).
 
-**Decisions locked (user, 2026-07-21):**
-- Count/rows are now two statements → under a concurrent collection commit the
-  total can differ from the paged set by ±(one run's churn). Collection upserts in
-  one txn + guarded orphan-delete (never a whole-org wipe), so the skew is a few
-  rows, transient, self-correcting. **Accepted — do NOT add a REPEATABLE READ
-  wrapper.** Just document the behaviour (already noted below).
-- Perf/scale proof uses **synthetic seed data** (customer DB is VDI/file-transfer
-  only; a sanitised dump is impractical).
+**Bug the parity suite caught (fixed):** the export builder still emitted
+`, 0 AS total_count` (29 cols) after Tier 1 dropped the trailing total from
+`scanFilteredNodeSnapshots` (28 cols) → every export page errored
+("expected 29 destination arguments … not 28"). Removed the column from
+`buildNodeSnapshotExportQuery`; inverted its stale builder test.
 
-**Functional DB ready.** `cmm_test` exists in docker `docker-compose-db-1`
-(postgres:16), reachable. Set `CMM_TEST_DATABASE_URL` to a
-`postgres://<user>:<pass>@localhost:5432/cmm_test?sslmode=disable` DSN (dev
-creds are the compose defaults in `deploy/docker-compose/`) to run the
-functional suite.
+**Decisions locked (user, 2026-07-21):** count/rows are two statements → a few
+rows of transient, self-correcting skew under concurrent collection is
+**accepted — no REPEATABLE READ wrapper**. Perf proof uses synthetic seed data.
 
-**NEXT — Tiers 2 & 3 (all on this branch):**
-1. Functional seed helper (`//go:build functional`): nodes across 2–3 orgs, varied
-   env/platform/chef_version/stale/tags; small set for parity + an opt-in ~120k set
-   for perf.
-2. Parity suite: `total == independent SELECT COUNT(*)`; rows == fully-ordered set
-   sliced by LIMIT/OFFSET; across filter × sort × pagination matrix; + export path.
-3. EXPLAIN test at ~120k: default-sort rows query is index-served (no
-   Seq-Scan→Sort→temp-spill); count query is a lean aggregate. Reuse
-   `query_explain.go` `RunExplain`, mirror the P1 index test.
+**Run:** builder `go test ./internal/datastore/`; functional
+`CMM_TEST_DATABASE_URL=postgres://<user>:<pass>@localhost:5432/cmm_test?sslmode=disable
+go test -tags functional ./internal/datastore/` (add `CMM_TEST_PERF=1` for the
+scale test). Dev creds = compose defaults in `deploy/docker-compose/`.
 
 ---
 
-## STATUS — PARKED (branch `fix/node-list-count-split`), as of 2026-07-13
+## Purpose (branch `fix/node-list-count-split`)
 
 **Purpose.** Split the node-list query's `COUNT(*) OVER()` into a separate
 `COUNT(*)` so the rows query can use an index (`node_name`) + `LIMIT` instead of
@@ -54,29 +47,7 @@ export, so it is **deploy-risky and must be thoroughly tested** (identical rows,
 identical EXACT pagination total, every filter/sort/page case) before shipping.
 Cop Analysis tabs ship first.
 
-**State: implemented, COMPILES, tests NOT yet run.** On this branch:
-- `buildNodeSnapshotFilterQuery` — dropped `COUNT(*) OVER()` from the rows query.
-- `buildNodeSnapshotCountQuery` — new single-source count-query builder;
-  `CountNodeSnapshotsFiltered` refactored to use it (removed a pre-existing
-  duplicate inline query — this method already existed).
-- `scanFilteredNodeSnapshots` — signature now `([]NodeSnapshot, error)` (no
-  trailing total scan); both callers updated (`ListNodeSnapshotsFiltered` now
-  fetches the total via `CountNodeSnapshotsFiltered`; `ListNodeSnapshotsForExport`
-  updated to the 2-value return).
-- Builder tests updated: rows query asserts NO `COUNT(*) OVER()`; added
-  count-query builder tests.
-
-**To resume:** `git checkout fix/node-list-count-split`, re-read this doc, then:
-1. `go test ./internal/datastore/ ./internal/webapi/` (builder + handler).
-2. Functional: `CMM_TEST_DATABASE_URL=... go test -tags functional ./internal/datastore/`
-   — assert rows + EXACT total unchanged for all filter/sort/pagination cases.
-3. Add the functional EXPLAIN test (default-sort rows query uses
-   `idx_node_snapshots_node_name`, no full sort/temp spill) — pattern as P1.
-4. Confirm frontend pagination unaffected (exact total preserved).
-5. Representative-scale check before any customer deploy.
-
 ---
-
 
 ## Problem (proven, customer EXPLAIN)
 
