@@ -5,6 +5,7 @@ package datastore
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -104,7 +105,10 @@ func TestBuildNodeSnapshotCountQuery_AppliesSameFilters(t *testing.T) {
 	if len(countArgs) != len(rowsArgs) {
 		t.Errorf("count args (%d) should match rows filter args (%d) minus pagination", len(countArgs), len(rowsArgs))
 	}
-	if fmt.Sprintf("%v", countArgs) != fmt.Sprintf("%v", rowsArgs) {
+	// Compare by value, not by printed form: filter args include pq.Array(...)
+	// which returns a fresh pointer each call, so %v prints different addresses
+	// for equal contents. reflect.DeepEqual dereferences and compares values.
+	if !reflect.DeepEqual(countArgs, rowsArgs) {
 		t.Errorf("count args %v should equal rows filter args %v (no pagination args here)", countArgs, rowsArgs)
 	}
 }
@@ -809,20 +813,8 @@ func TestBuildNodeSnapshotFilterQuery_WhereAlwaysStartsWith1Eq1(t *testing.T) {
 	}
 }
 
-func TestBuildNodeSnapshotFilterQuery_CountOverAlwaysPresent(t *testing.T) {
-	tests := []NodeSnapshotFilter{
-		{},
-		{NodeName: "test", Limit: 10},
-		{OrganisationNames: []string{"org-1"}, Stale: boolPtr(true)},
-	}
-
-	for i, f := range tests {
-		q, _ := buildNodeSnapshotFilterQuery(f)
-		if !strings.Contains(q, "COUNT(*) OVER () AS total_count") {
-			t.Errorf("test[%d]: query missing COUNT(*) OVER () AS total_count", i)
-		}
-	}
-}
+// The rows query no longer carries COUNT(*) OVER () — the total now comes from
+// buildNodeSnapshotCountQuery (see TestBuildNodeSnapshotCountQuery_* above).
 
 // ---------------------------------------------------------------------------
 // Readiness filter push-down tests
