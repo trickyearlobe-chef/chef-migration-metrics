@@ -199,12 +199,16 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	// Reuse the shared CTE + JOIN + WHERE clause builder.
 	cte, join, where, args := buildNodeSnapshotFilterParts(f)
 
-	// Build the full query with COUNT(*) OVER() for total count.
+	// Build the rows query. The total count is computed separately by
+	// buildNodeSnapshotCountQuery — deliberately NOT via COUNT(*) OVER() here,
+	// which would force materialising every matching row before LIMIT (the P3
+	// hotspot). Without the window, the default ORDER BY node_name is servable by
+	// idx_node_snapshots_node_name as an index scan + LIMIT.
 	var sb strings.Builder
 	sb.WriteString(cte)
 	sb.WriteString("\nSELECT ")
 	sb.WriteString(cols)
-	sb.WriteString(", COUNT(*) OVER () AS total_count\n  FROM current_nodes cn")
+	sb.WriteString("\n  FROM current_nodes cn")
 	sb.WriteString(join)
 	sb.WriteString(where)
 
@@ -250,6 +254,26 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 	return sb.String(), args
 }
 
+// buildNodeSnapshotCountQuery constructs the exact-count query for
+// ListNodeSnapshotsFiltered, reusing the same CTE/JOIN/WHERE parts as the rows
+// query so the filter predicates can never drift between them. It is a plain
+// COUNT(*) — no ORDER BY, no LIMIT, no heavy projection — so PostgreSQL counts
+// matching rows without materialising or sorting them.
+//
+// It returns the count query and its positional args (the filter args only;
+// there are no pagination args).
+func buildNodeSnapshotCountQuery(f NodeSnapshotFilter) (countQuery string, args []interface{}) {
+	cte, join, where, args := buildNodeSnapshotFilterParts(f)
+
+	var sb strings.Builder
+	sb.WriteString(cte)
+	sb.WriteString("\nSELECT COUNT(*)\n  FROM current_nodes cn")
+	sb.WriteString(join)
+	sb.WriteString(where)
+
+	return sb.String(), args
+}
+
 // ListNodeSnapshotsFiltered retrieves node snapshots matching the given
 // filter, ordered by node_name ascending. It returns:
 //   - the page of matching snapshots,
@@ -260,23 +284,37 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 // When IncludeHeavyJSON is false, the filesystem, cookbooks, and
 // custom_attributes fields will be nil in the returned snapshots.
 func (db *DB) ListNodeSnapshotsFiltered(ctx context.Context, f NodeSnapshotFilter) ([]NodeSnapshot, int, error) {
-	query, args := buildNodeSnapshotFilterQuery(f)
-	return db.scanFilteredNodeSnapshots(ctx, query, args, f.IncludeHeavyJSON)
+	rowsQuery, rowsArgs := buildNodeSnapshotFilterQuery(f)
+	snapshots, err := db.scanFilteredNodeSnapshots(ctx, rowsQuery, rowsArgs, f.IncludeHeavyJSON)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Exact total from the existing lean COUNT(*) path (reuses the same filter
+	// parts, so it can't drift from the rows). Two statements (not one snapshot),
+	// so under concurrent writes the count can differ from the page by a row;
+	// acceptable for a periodic-collection list.
+	total, err := db.CountNodeSnapshotsFiltered(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return snapshots, total, nil
 }
 
-// scanFilteredNodeSnapshots executes the given query and scans results into
-// NodeSnapshot structs. It handles both the lightweight and full projection
-// based on the includeHeavy flag. The query must include a trailing
-// total_count column from COUNT(*) OVER().
-func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args []interface{}, includeHeavy bool) ([]NodeSnapshot, int, error) {
+// scanFilteredNodeSnapshots executes the given rows query and scans results
+// into NodeSnapshot structs. It handles both the lightweight and full
+// projection based on the includeHeavy flag. The total count is obtained
+// separately (buildNodeSnapshotCountQuery), so the rows query must NOT carry a
+// trailing total_count column.
+func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args []interface{}, includeHeavy bool) ([]NodeSnapshot, error) {
 	rows, err := db.pool.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("datastore: querying filtered node snapshots: %w", err)
+		return nil, fmt.Errorf("datastore: querying filtered node snapshots: %w", err)
 	}
 	defer rows.Close()
 
 	var snapshots []NodeSnapshot
-	totalCount := 0
 
 	for rows.Next() {
 		var ns NodeSnapshot
@@ -287,7 +325,6 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		var ohaiTime sql.NullFloat64
 		var runList, roles []byte
 		var tags pq.StringArray
-		var rowTotal int
 		var migrationState, activeChefVer, dormantChefVer sql.NullString
 		var dormantInstalled sql.NullBool
 		var targetVer, targetExecTime, targetConvergeStatus sql.NullString
@@ -328,9 +365,8 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&availableDiskMB,
 				&requiredDiskMB,
 				&tags,
-				&rowTotal,
 			); err != nil {
-				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (heavy): %w", err)
+				return nil, fmt.Errorf("datastore: scanning filtered node snapshot row (heavy): %w", err)
 			}
 			ns.Filesystem = jsonFromNullBytes(filesystem)
 			ns.Cookbooks = jsonFromNullBytes(cookbooks)
@@ -365,9 +401,8 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 				&availableDiskMB,
 				&requiredDiskMB,
 				&tags,
-				&rowTotal,
 			); err != nil {
-				return nil, 0, fmt.Errorf("datastore: scanning filtered node snapshot row (light): %w", err)
+				return nil, fmt.Errorf("datastore: scanning filtered node snapshot row (light): %w", err)
 			}
 		}
 
@@ -395,14 +430,13 @@ func (db *DB) scanFilteredNodeSnapshots(ctx context.Context, query string, args 
 		ns.AvailableDiskMB = intPtrFromNull(availableDiskMB)
 		ns.RequiredDiskMB = intPtrFromNull(requiredDiskMB)
 
-		totalCount = rowTotal
 		snapshots = append(snapshots, ns)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("datastore: iterating filtered node snapshot rows: %w", err)
+		return nil, fmt.Errorf("datastore: iterating filtered node snapshot rows: %w", err)
 	}
 
-	return snapshots, totalCount, nil
+	return snapshots, nil
 }
 
 // ---------------------------------------------------------------------------

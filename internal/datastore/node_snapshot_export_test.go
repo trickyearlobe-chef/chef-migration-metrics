@@ -29,14 +29,16 @@ func TestBuildNodeSnapshotExportQuery_FixedKeysetOrder(t *testing.T) {
 	}
 }
 
-func TestBuildNodeSnapshotExportQuery_NoWindowCount(t *testing.T) {
-	// Streaming must not pay for COUNT(*) OVER() on every page.
+func TestBuildNodeSnapshotExportQuery_NoTrailingCount(t *testing.T) {
+	// Streaming must not pay for COUNT(*) OVER() on every page, and — since the
+	// P3 count split removed the trailing total from scanFilteredNodeSnapshots —
+	// must not emit any total_count column either (over-supplying the scan).
 	q, _ := buildNodeSnapshotExportQuery(NodeSnapshotFilter{}, NodeSnapshotCursor{}, 500)
 	if strings.Contains(q, "COUNT(*) OVER") {
 		t.Errorf("export query must not include a window count; got:\n%s", q)
 	}
-	if !strings.Contains(q, "0 AS total_count") {
-		t.Errorf("export query must emit a constant total_count for the shared scanner; got:\n%s", q)
+	if strings.Contains(q, "total_count") {
+		t.Errorf("export query must not carry a total_count column (scanner no longer reads it); got:\n%s", q)
 	}
 }
 
