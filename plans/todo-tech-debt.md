@@ -162,6 +162,27 @@ status surface landed — that sub-item resolved and removed).
 
 - [ ] **Frontend held at Tailwind CSS v3 (3.4.19); v4 upgrade deferred.** Dependabot PR #45 (dev-tooling group) bumped `tailwindcss` 3→4 alongside several safe tool bumps. The safe bumps (eslint 10, typescript 6, globals 17, typescript-eslint, vite/postcss/autoprefixer/plugin-react) were applied to `main` on 2026-06-09, but tailwindcss was rolled back to the latest v3 because **v4 is a breaking migration**, not a drop-in bump: the PostCSS plugin moves to a separate `@tailwindcss/postcss` package (`postcss.config.js` must change), the `@tailwind base/components/utilities` directives in `src/index.css` become a single `@import "tailwindcss"`, configuration goes CSS-first (the JS `tailwind.config.js` theme/keyframes/content model changes, optionally kept via `@config`), `@tailwindcss/typography` needs a v4-compatible wiring, and v4 changes default styles/utilities so the upgrade carries **visual-regression risk that the vitest/jsdom suite cannot catch**. **Strategic fix:** do the v4 migration deliberately — migrate config + PostCSS + CSS entry, update the typography plugin, and visually QA the dashboard/pages before merging. Staying on v3.4.19 is fully supported and secure in the meantime. (Tracked from the supply-chain cleanup on 2026-06-09; TS 6 `baseUrl` deprecation was fixed at the same time by removing `baseUrl` and making the `@/*` path alias relative.)
 
+## Dependencies — react-router 8.3.0 upgrade (registry-quarantined)
+
+Recorded 2026-07-27 (`chore/frontend-dep-cves`). Frontend `react-router-dom` was
+bumped 6.30.4 → **7.18.0** (and `postcss` 8.5.15 → 8.5.18) to clear
+`GHSA-r28c-9q8g-f849` (postcss HIGH) and the three react-router MEDIUMs
+(`CVE-2026-53666/-53668/-53669`, open-redirect/XSS/SSR-hydration) that were
+reachable. 7.18.0 then surfaces `GHSA-qwww-vcr4-c8h2` (HIGH, "RSC Mode CSRF
+bypass"), fixed only in **react-router 8.3.0**.
+
+- [ ] **Upgrade to react-router 8.3.0 and drop the `.trivyignore` entry.** Blocked
+  today because 8.3.0's tarball is **403 Forbidden on the org Harness proxy**
+  (recent-version quarantine — see [[harness-npm-registry]]). The CVE is **RSC-mode
+  only and not reachable** in this client-side `BrowserRouter` Vite SPA (no React
+  Server Components / framework mode / server actions), so it is temporarily
+  suppressed in `/.trivyignore`. **When 8.3.0 clears quarantine:** bump the dep
+  (note v8 removes the `react-router-dom` package — everything moves to
+  `react-router`, so the ~49 `react-router-dom` imports must be rewritten
+  structurally with ast-grep / the refactor MCP, verified with LSP references),
+  build + test, remove the `.trivyignore` line, and confirm `make trivy-npm` is
+  clean. Versions 8.0–8.2 install but do **not** fix the CVE; 7.18.1 doesn't either.
+
 ## Backup — Restore Exits 0 But Unit Is `Restart=on-failure`
 
 - [ ] **Post-restore restart may not happen.** `executeRestore` (`internal/webapi/handle_admin_backups.go:288-292`) terminates the process with `exitFn(0)` and `backup-restore.md` assumes "systemd/supervisor restarts app". But the packaged unit (`deploy/pkg/chef-migration-metrics.service`) sets `Restart=on-failure`, which does **not** restart on a clean exit 0 — so after a restore the service would stay down until manually started. Discovered 2026-06-08 while adding the Apply & Restart action (Chunk 4), which deliberately exits non-zero (`exitCodeRestart=2`) so the existing unit restarts it. **Strategic fix:** make restore use the same non-zero restart exit code (or otherwise guarantee a restart under the shipped unit), and unify the "exit-to-restart" path so restart and restore agree. Pairs with the Chunk 5 systemd-unit work (consider `RestartForceExitStatus`/`SuccessExitStatus` for an explicit restart code).

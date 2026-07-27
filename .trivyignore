@@ -1,0 +1,15 @@
+# Trivy suppressions for the frontend npm supply-chain scan (`make trivy-npm`).
+# Every entry MUST state why the vuln is unreachable here and how to remove it.
+# Keep this list short-lived — a suppression is a debt, tracked in
+# plans/todo-tech-debt.md.
+
+# GHSA-qwww-vcr4-c8h2 — react-router 7.18.0 "RSC Mode CSRF Bypass Allows Action
+# Execution Before 400 Response".
+# NOT REACHABLE: this frontend is a client-side BrowserRouter SPA built by Vite,
+# with no React Server Components / framework mode / server actions — the code
+# path the advisory exploits does not exist in this app.
+# Fixed in react-router 8.3.0, currently 403/quarantined on the org Harness proxy
+# (recent-version quarantine). REMOVE this line and upgrade to react-router 8.3.0
+# (v8 drops react-router-dom → structural import rewrite) once it clears quarantine.
+# Added 2026-07-27 (chore/frontend-dep-cves). Tracked in plans/todo-tech-debt.md.
+GHSA-qwww-vcr4-c8h2
