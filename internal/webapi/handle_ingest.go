@@ -127,7 +127,7 @@ func readCappedBody(w http.ResponseWriter, req *http.Request, max int64) (body [
 		if gerr != nil {
 			return nil, false, gerr
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }() // read path — Close only re-checks CRC of an already-read body
 		reader = io.LimitReader(gz, max+1)
 	}
 
