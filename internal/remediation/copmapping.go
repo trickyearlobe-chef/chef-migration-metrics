@@ -45,6 +45,12 @@ type EnrichedOffense struct {
 	Message  string          `json:"message"`
 	Location OffenseLocation `json:"location"`
 
+	// Correctable is CookStyle's static capability flag for this cop. It is
+	// persisted because the read-side handlers key auto-correctability off
+	// it; before it was carried here they decoded a key that was never
+	// written, so every offense read as not correctable.
+	Correctable bool `json:"correctable"`
+
 	// Remediation is the migration documentation for this cop, or nil if
 	// no mapping exists.
 	Remediation *CopMapping `json:"remediation,omitempty"`

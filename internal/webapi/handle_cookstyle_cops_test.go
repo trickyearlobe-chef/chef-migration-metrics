@@ -30,14 +30,20 @@ func testConfigWithTargetVersions(version string) *config.Config {
 // GET /api/v1/cookstyle/cops — basic aggregation
 // ---------------------------------------------------------------------------
 
+// These tests fabricate the stored offence JSON. They previously injected a
+// "corrected" key, which the pipeline never wrote — that is how the
+// auto-correctable-always-zero bug stayed green in CI. The canonical persisted
+// key is "correctable"; the contract test in the analysis package pins the
+// marshalled shape against what these handlers decode.
+
 func TestHandleCookstyleCops_BasicAggregation(t *testing.T) {
 	offences := mustMarshalCops(t, []map[string]any{
 		{
 			"path": "recipes/default.rb",
 			"offenses": []map[string]any{
-				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "corrected": true},
-				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "corrected": false},
-				{"cop_name": "Lint/DeprecatedClassMethods", "severity": "warning", "corrected": true},
+				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "correctable": true},
+				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "correctable": false},
+				{"cop_name": "Lint/DeprecatedClassMethods", "severity": "warning", "correctable": true},
 			},
 		},
 	})
@@ -121,7 +127,7 @@ func TestHandleCookstyleCops_FullUniverse_IncludesUnscannedCuratedCop(t *testing
 		{
 			"path": "recipes/default.rb",
 			"offenses": []map[string]any{
-				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "corrected": false},
+				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "correctable": false},
 			},
 		},
 	})
@@ -262,8 +268,8 @@ func TestHandleCookstyleCops_ClassificationFilter(t *testing.T) {
 		{
 			"path": "recipes/default.rb",
 			"offenses": []map[string]any{
-				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "corrected": false},
-				{"cop_name": "Chef/Style/FileMode", "severity": "convention", "corrected": false},
+				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "correctable": false},
+				{"cop_name": "Chef/Style/FileMode", "severity": "convention", "correctable": false},
 			},
 		},
 	})
@@ -337,9 +343,9 @@ func TestHandleCookstyleCopCookbooks_DrillDown(t *testing.T) {
 		{
 			"path": "recipes/default.rb",
 			"offenses": []map[string]any{
-				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "corrected": true},
-				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "corrected": false},
-				{"cop_name": "Chef/Style/FileMode", "severity": "convention", "corrected": false},
+				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "correctable": true},
+				{"cop_name": "Chef/Deprecations/NodeSet", "severity": "warning", "correctable": false},
+				{"cop_name": "Chef/Style/FileMode", "severity": "convention", "correctable": false},
 			},
 		},
 	})
@@ -403,7 +409,7 @@ func TestHandleCookstyleCopCookbooks_ServerGroupedByName(t *testing.T) {
 	mk := func(n int) []byte {
 		offs := make([]map[string]any, 0, n)
 		for i := range n {
-			offs = append(offs, map[string]any{"cop_name": cop, "severity": "warning", "corrected": i == 0})
+			offs = append(offs, map[string]any{"cop_name": cop, "severity": "warning", "correctable": i == 0})
 		}
 		return mustMarshalCops(t, []map[string]any{{"path": "recipes/default.rb", "offenses": offs}})
 	}
@@ -476,7 +482,7 @@ func TestHandleCookstyleCopCookbooks_ServerGroupedByName(t *testing.T) {
 func TestHandleCookstyleCopCookbooks_ServerGroupPaginatesByName(t *testing.T) {
 	cop := "Chef/Deprecations/NodeSet"
 	off := mustMarshalCops(t, []map[string]any{{"path": "r.rb", "offenses": []map[string]any{
-		{"cop_name": cop, "severity": "warning", "corrected": false},
+		{"cop_name": cop, "severity": "warning", "correctable": false},
 	}}})
 
 	store := &mockStore{
@@ -528,7 +534,7 @@ func TestHandleCookstyleCopCookbooks_ServerHeaderMatchesDrillDownTotal(t *testin
 	cop := "Chef/Deprecations/NodeSet"
 	off := func(corrected bool) []byte {
 		return mustMarshalCops(t, []map[string]any{{"path": "r.rb", "offenses": []map[string]any{
-			{"cop_name": cop, "severity": "warning", "corrected": corrected},
+			{"cop_name": cop, "severity": "warning", "correctable": corrected},
 		}}})
 	}
 	// Two distinct names; cb-a has two versions across two orgs. The header must

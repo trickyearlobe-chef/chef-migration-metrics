@@ -167,6 +167,30 @@ Frontend is a faithful pass-through — no fix needed there.
   cookbook" is not in the repo and no location is given, and the Symptom section
   describes a different, three-offence cookbook.
 
+## Verified locally against the lab (2026-07-30)
+
+Reproduced the bug and confirmed the fix end to end on the dev database, scanning
+real cookbooks with Cookstyle 8.6.10.
+
+Before: 8 scan results, **0** containing the `correctable` key; 7 previews totalling
+**293 offences with 0 correctable** — the customer symptom exactly.
+
+After a rebuild and re-scan (results, previews and complexity cleared first, as
+`rescan-all-cookstyle` does):
+
+- `correctable` persisted in every result that has offences (the one without it is a
+  cookbook with zero offences and a null `offences` column).
+- Previews: **123 total, 105 correctable, 18 remaining, 23 files modified**.
+- `total == correctable + remaining` holds for every row.
+- Complexity records carry real `auto_correctable_count` values, so **Quick Wins fire
+  again** — two cookbooks qualify (`auto_correctable_count > 0 && manual_fix_count == 0`),
+  which was unsatisfiable while the count was always zero.
+
+**The static/actual divergence is real, not theoretical:** kubernetes-cluster is 83
+statically correctable but 82 actually fixed; cron is 12 against 10. Wiring the headline
+card to the static flag would have shown "83 auto-correctable" beside a diff fixing 82 —
+the contradictory header this fix exists to remove.
+
 ## Chunk 1 — carry the flag end to end, and build the reset trigger
 
 Add `Correctable` to `analysis.CookstyleOffense` and to `remediation.EnrichedOffense`,

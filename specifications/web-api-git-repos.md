@@ -54,6 +54,10 @@ Returns a paginated list of all known git repos with optional filtering.
 }
 ```
 
+> Illustrative only. The offence-level correctability key is `correctable`; a
+> previous version of this file showed `corrected_by_autocorrect`, which the code has
+> never emitted.
+
 **TK Status values:**
 
 | Value | Meaning |
@@ -281,13 +285,11 @@ Returns the full remediation guidance for a specific git repo version, including
           "message": "Set unified_mode true in Chef Infra Client 15.3+",
           "file": "resources/my_resource.rb",
           "location": { "start_line": 10, "start_column": 1, "last_line": 10, "last_column": 30 },
-          "corrected_by_autocorrect": true
         },
         {
           "message": "Set unified_mode true in Chef Infra Client 15.3+",
           "file": "resources/other_resource.rb",
           "location": { "start_line": 5, "start_column": 1, "last_line": 5, "last_column": 28 },
-          "corrected_by_autocorrect": true
         }
       ],
       "remediation": {
@@ -308,7 +310,6 @@ Returns the full remediation guidance for a specific git repo version, including
           "message": "Cheffile is deprecated. Use a Policyfile or Berkshelf instead.",
           "file": "Cheffile",
           "location": { "start_line": 1, "start_column": 1, "last_line": 1, "last_column": 1 },
-          "corrected_by_autocorrect": false
         }
       ],
       "remediation": {

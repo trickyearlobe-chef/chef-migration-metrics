@@ -617,9 +617,8 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 // for classification. The offences column in cookstyle_results stores
 // the full CookStyle offense JSON array.
 type storedOffense struct {
-	CopName   string `json:"cop_name"`
-	Severity  string `json:"severity"`
-	Corrected bool   `json:"corrected"`
+	CopName  string `json:"cop_name"`
+	Severity string `json:"severity"`
 	// Message discriminates poly-method cops during message-aware classification
 	// (see specifications/cop-classification.md, Poly-method cops).
 	Message string `json:"message"`

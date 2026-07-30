@@ -20,7 +20,7 @@ import (
 type fullOffense struct {
 	CopName     string `json:"cop_name"`
 	Severity    string `json:"severity"`
-	Correctable bool   `json:"corrected"`
+	Correctable bool   `json:"correctable"`
 }
 
 // parseFullOffenses parses the offences JSONB into a flat list that includes
@@ -34,7 +34,7 @@ func parseFullOffenses(data []byte) []fullOffense {
 	type fileOffense struct {
 		CopName     string `json:"cop_name"`
 		Severity    string `json:"severity"`
-		Correctable bool   `json:"corrected"`
+		Correctable bool   `json:"correctable"`
 	}
 	type fileEntry struct {
 		Path     string        `json:"path"`

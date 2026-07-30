@@ -309,8 +309,13 @@ function StatisticsCards({ stats }: { stats: RemediationStatistics }) {
     },
     {
       label: "Auto-Correctable",
-      value: stats.correctable_offenses,
-      sub: `${stats.total_offenses > 0 ? Math.round((stats.correctable_offenses / stats.total_offenses) * 100) : 0}% of total`,
+      // What the auto-correct run actually fixes, not the cops' static
+      // capability. CMM runs `cookstyle --auto-correct`, which leaves
+      // corrections RuboCop deems unsafe alone — so a cop can be correctable
+      // in principle yet never fixed here. Using the static count would make
+      // this card disagree with the diff shown below it.
+      value: stats.auto_correctable_count,
+      sub: `${stats.total_offenses > 0 ? Math.round((stats.auto_correctable_count / stats.total_offenses) * 100) : 0}% of total`,
       color: "text-green-700",
       icon: (
         <svg
@@ -330,10 +335,13 @@ function StatisticsCards({ stats }: { stats: RemediationStatistics }) {
     },
     {
       label: "Manual Fix Required",
-      value: stats.remaining_offenses,
+      // Derived so that auto-correctable + manual always equals the total.
+      // With no preview this reads as "all manual", which is conservative and
+      // true: nothing has been shown to be auto-fixable.
+      value: Math.max(stats.total_offenses - stats.auto_correctable_count, 0),
       sub:
-        stats.manual_fix_count > 0
-          ? `${stats.manual_fix_count} complexity-counted`
+        stats.correctable_offenses > stats.auto_correctable_count
+          ? `${stats.correctable_offenses - stats.auto_correctable_count} correctable only by an unsafe fix`
           : undefined,
       color: "text-amber-700",
       icon: (
