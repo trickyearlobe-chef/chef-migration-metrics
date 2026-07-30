@@ -144,28 +144,45 @@ func TestEvaluateDisk_ByPairOnlyLinux(t *testing.T) {
 }
 
 func TestEvaluateDisk_ByPairOnlyWindows(t *testing.T) {
-	// Real Ohai shape on Windows: by_pair keys are ",C:" — the device half is
-	// empty, so the key never matches the drive letter and the verdict depends
-	// entirely on the entry's "mount" field.
+	// Verbatim payload as stored in node_snapshots.filesystem for a Windows
+	// Server 2022 node, captured after a full collection run through the
+	// narrowed partial search. Not hand-authored: it carries the fields Ohai
+	// actually emits (device, drive_type, volume_name, ...), so it also covers
+	// the parser tolerating unknown keys.
+	//
+	// The by_pair keys are ",C:" — the device half is empty on Windows, so the
+	// key never matches the drive letter and findBestMountWindows can only
+	// resolve via each entry's "mount" field. That fallback is the whole reason
+	// by_pair is usable here; a shape without "mount" would yield no verdict.
 	raw := json.RawMessage(`{
-		",C:": {"mount": "C:", "kb_size": 41940988, "kb_used": 23648000, "kb_available": 18292989, "percent_used": 56},
-		",Z:": {"mount": "Z:", "kb_size": 0, "kb_used": 0, "kb_available": 0},
-		"new volume,D:": {"mount": "D:", "kb_size": 52427260, "kb_available": 32937435}
+		",C:": {"mount": "C:", "device": "", "fs_type": "ntfs", "kb_size": 33685499, "kb_used": 15392510,
+			"drive_type": 3, "volume_name": "", "kb_available": 18292989, "percent_used": 45,
+			"drive_type_human": "Local Fixed Disk", "drive_type_string": "local"},
+		",Z:": {"mount": "Z:", "device": "", "fs_type": "", "kb_size": 0, "kb_used": 0,
+			"drive_type": 5, "volume_name": "", "kb_available": 0, "percent_used": 0,
+			"drive_type_human": "CD-ROM Disc", "drive_type_string": "cd"},
+		"new volume,D:": {"mount": "D:", "device": "new volume", "fs_type": "ntfs", "kb_size": 34340859,
+			"kb_used": 1403424, "drive_type": 3, "volume_name": "New Volume", "kb_available": 32937435,
+			"percent_used": 4, "drive_type_human": "Local Fixed Disk", "drive_type_string": "local"}
 	}`)
 
 	v := EvaluateDisk(raw, "windows", DiskConfig{
 		InstallPathLinux:     "/hab",
-		InstallSizeMBLinux:   2048,
+		InstallSizeMBLinux:   1500,
 		InstallPathWindows:   `C:\hab`,
-		InstallSizeMBWindows: 2048,
+		InstallSizeMBWindows: 5000,
 	})
 
 	if v.AvailableMB == nil {
 		t.Fatal("expected an available-MB reading for C: from the by_pair section")
 	}
-	// C: has 18292989 KB available -> ~17864 MB.
-	if got := *v.AvailableMB; got < 17800 || got > 17900 {
-		t.Errorf("AvailableMB = %d, want ~17864 (from C:)", got)
+	// C: has 18292989 KB available -> 17864 MB. Must pick C:, not the roomier
+	// D: (32937435 KB) nor the empty CD-ROM Z:.
+	if got := *v.AvailableMB; got != 17864 {
+		t.Errorf("AvailableMB = %d, want 17864 (from C:)", got)
+	}
+	if v.Sufficient == nil || !*v.Sufficient {
+		t.Error("expected 17864MB free to satisfy a 5000MB install")
 	}
 }
 
