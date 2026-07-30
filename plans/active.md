@@ -41,10 +41,12 @@ Release preconditions — the bump target runs no tests:
 ## Queued — collector performance (`plans/collector-performance.md`)
 
 Measured baselines, the invariants learned during the incident, the ruled-out list, and
-the open items. Scope decision (2026-07-30): everything **except collector streaming**,
-which is parked — it touches the shared collection path with silent-corruption failure
-modes and conflicts with runtime-observability Chunk 4. Remaining, in order: log-retention
-decoupling, collection history, the early `completed_at` stamp, the Node 20 action bump.
+the open items. Scope decision (2026-07-30): **collector streaming** is parked (shared
+collection path, silent-corruption failure modes, conflicts with runtime-observability
+Chunk 4), and **collection history** with it (`plans/collection-history.md`) — complex and
+risky for a small gain, and the duration question is answerable from logs today. The early
+`completed_at` stamp rides with collection history and is parked with it. Remaining:
+the Node 20 action bump.
 
 ## Queued — cookstyle correctable flag (`plans/cookstyle-correctable-fix.md`)
 

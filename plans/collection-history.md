@@ -1,5 +1,12 @@
 # Retain Collection History
 
+**Parked (2026-07-30) — do not propose picking this up.** Complex and risky for a small,
+non-user-facing gain. The diagnostic question that motivated it ("is the cycle getting
+slower?") is answerable today from logs: per-org and total durations are already logged
+(`collector.go:677`, `:685`) into `log_entries`, which now retains 90 days. Revisit only
+when `semantic-contracts.md` § 10 becomes the goal — misleading trend dips from partial
+runs — because that needs the `run_id` this plan creates and log parsing cannot supply it.
+
 Verified against `main` @ `7d2277e`. Revised after an adversarial review; the first draft
 would have destroyed the history it exists to create (see Fatal flaw below).
 
