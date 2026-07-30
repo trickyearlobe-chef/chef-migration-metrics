@@ -42,6 +42,7 @@ type orgResult struct {
 	OrgName   string
 	Nodes     int
 	Cookbooks int
+	Duration  time.Duration
 	Err       error
 }
 
@@ -451,8 +452,9 @@ func (c *Collector) runForOrganisations(ctx context.Context, orgs map[string]dat
 	log.Info(fmt.Sprintf("starting resumed collection run for %d organisation(s)", len(orgList)))
 
 	result := &RunResult{
-		TotalOrgs: len(orgList),
-		Errors:    make(map[string]error, len(orgList)),
+		TotalOrgs:    len(orgList),
+		Errors:       make(map[string]error, len(orgList)),
+		OrgDurations: make(map[string]time.Duration, len(orgList)),
 	}
 
 	// Collect organisations in parallel, bounded by the configured
@@ -479,11 +481,13 @@ func (c *Collector) runForOrganisations(ctx context.Context, orgs map[string]dat
 				return
 			}
 
+			orgStart := time.Now()
 			nodes, cookbooks, orgErr := c.collectOrganisation(ctx, org)
 			resultsCh <- orgResult{
 				OrgName:   org.Name,
 				Nodes:     nodes,
 				Cookbooks: cookbooks,
+				Duration:  time.Since(orgStart),
 				Err:       orgErr,
 			}
 		}(org)
@@ -495,16 +499,18 @@ func (c *Collector) runForOrganisations(ctx context.Context, orgs map[string]dat
 	}()
 
 	for or := range resultsCh {
+		result.OrgDurations[or.OrgName] = or.Duration
 		if or.Err != nil {
 			result.FailedOrgs++
 			result.Errors[or.OrgName] = or.Err
-			log.Error(fmt.Sprintf("organisation %q: resumed collection failed: %v", or.OrgName, or.Err))
+			log.Error(fmt.Sprintf("organisation %q: resumed collection failed after %s: %v",
+				or.OrgName, or.Duration.Round(time.Millisecond), or.Err))
 		} else {
 			result.SucceededOrgs++
 			result.TotalNodes += or.Nodes
 			result.TotalCookbooks += or.Cookbooks
-			log.Info(fmt.Sprintf("organisation %q: resumed collection completed — %d nodes, %d cookbook versions",
-				or.OrgName, or.Nodes, or.Cookbooks))
+			log.Info(fmt.Sprintf("organisation %q: resumed collection completed — %d nodes, %d cookbook versions in %s",
+				or.OrgName, or.Nodes, or.Cookbooks, or.Duration.Round(time.Millisecond)))
 		}
 	}
 
@@ -548,6 +554,13 @@ type RunResult struct {
 
 	// Errors contains per-organisation errors, keyed by organisation name.
 	Errors map[string]error
+
+	// OrgDurations is the wall-clock time each organisation took, keyed by
+	// organisation name. This covers the whole per-org pipeline (Steps 1-16),
+	// unlike collection_runs.completed_at which is stamped early at Step 4b
+	// once node snapshots persist and so excludes cookbook, cookstyle, role
+	// and readiness work — usually the bulk of the time.
+	OrgDurations map[string]time.Duration
 }
 
 // Run executes a single collection run across all configured organisations.
@@ -601,8 +614,9 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 	log.Info(fmt.Sprintf("starting collection run for %d organisation(s)", len(orgs)))
 
 	result := &RunResult{
-		TotalOrgs: len(orgs),
-		Errors:    make(map[string]error, len(orgs)),
+		TotalOrgs:    len(orgs),
+		Errors:       make(map[string]error, len(orgs)),
+		OrgDurations: make(map[string]time.Duration, len(orgs)),
 	}
 
 	// Collect organisations in parallel, bounded by the configured
@@ -630,11 +644,13 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 				return
 			}
 
+			orgStart := time.Now()
 			nodes, cookbooks, orgErr := c.collectOrganisation(ctx, org)
 			resultsCh <- orgResult{
 				OrgName:   org.Name,
 				Nodes:     nodes,
 				Cookbooks: cookbooks,
+				Duration:  time.Since(orgStart),
 				Err:       orgErr,
 			}
 		}(org)
@@ -648,16 +664,18 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 
 	// Collect results.
 	for or := range resultsCh {
+		result.OrgDurations[or.OrgName] = or.Duration
 		if or.Err != nil {
 			result.FailedOrgs++
 			result.Errors[or.OrgName] = or.Err
-			log.Error(fmt.Sprintf("organisation %q: collection failed: %v", or.OrgName, or.Err))
+			log.Error(fmt.Sprintf("organisation %q: collection failed after %s: %v",
+				or.OrgName, or.Duration.Round(time.Millisecond), or.Err))
 		} else {
 			result.SucceededOrgs++
 			result.TotalNodes += or.Nodes
 			result.TotalCookbooks += or.Cookbooks
-			log.Info(fmt.Sprintf("organisation %q: collected %d nodes, %d cookbook versions",
-				or.OrgName, or.Nodes, or.Cookbooks))
+			log.Info(fmt.Sprintf("organisation %q: collected %d nodes, %d cookbook versions in %s",
+				or.OrgName, or.Nodes, or.Cookbooks, or.Duration.Round(time.Millisecond)))
 		}
 	}
 
@@ -768,6 +786,13 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 
 	log.Info(fmt.Sprintf("collection run %s started", run.OrganisationName),
 		logging.WithCollectionRunID(run.OrganisationName))
+
+	// Timers for the two phases an organisation splits into. The snapshot
+	// phase ends at Step 4b, which is also where collection_runs.completed_at
+	// is stamped — so that column reports only this first phase. The tail
+	// (Steps 5-16: cookbooks, CookStyle, roles, readiness) is usually the
+	// larger share and was previously invisible in both the logs and the DB.
+	orgStart := time.Now()
 
 	// runCompleted is set to true once the collection run has been marked
 	// as completed in Step 4b (after node snapshots are persisted). Once
@@ -1033,8 +1058,9 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		// mark the run appropriately on exit.
 	} else {
 		runCompleted = true
-		log.Info(fmt.Sprintf("collection run %s marked completed with %d nodes (continuing with cookbook operations)",
-			run.OrganisationName, inserted),
+		snapshotPhase := time.Since(orgStart)
+		log.Info(fmt.Sprintf("collection run %s marked completed with %d nodes in %s (continuing with cookbook operations)",
+			run.OrganisationName, inserted, snapshotPhase.Round(time.Millisecond)),
 			logging.WithCollectionRunID(run.OrganisationName))
 	}
 
@@ -1587,8 +1613,8 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 	// Step 16: The collection run was already marked completed in Step 4b
 	// after node snapshots were persisted, so the UI could show fresh data
 	// while cookbook operations continued. Log final summary.
-	log.Info(fmt.Sprintf("collection run %s post-completion processing finished: %d nodes, %d cookbook versions",
-		run.OrganisationName, inserted, upserted),
+	log.Info(fmt.Sprintf("collection run %s post-completion processing finished: %d nodes, %d cookbook versions (organisation total %s)",
+		run.OrganisationName, inserted, upserted, time.Since(orgStart).Round(time.Millisecond)),
 		logging.WithCollectionRunID(run.OrganisationName))
 
 	// Clear the deferred failure handler since we completed successfully.

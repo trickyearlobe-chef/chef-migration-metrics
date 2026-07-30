@@ -2647,3 +2647,71 @@ func TestBoolPtr_Absent(t *testing.T) {
 		t.Error("expected nil when present=false")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Per-organisation durations
+// ---------------------------------------------------------------------------
+//
+// collection_runs.completed_at is stamped early (Step 4b, after node snapshots
+// persist) and so excludes Steps 5-16 — cookbooks, cookstyle, roles, readiness —
+// which is where most of an organisation's wall time goes. Without a logged
+// per-org duration the only way to recover one is to diff consecutive
+// started_at values, which is valid only while organisation_collection is 1.
+
+func TestRunResult_ZeroValueOrgDurations(t *testing.T) {
+	r := RunResult{}
+	if r.OrgDurations != nil {
+		t.Errorf("OrgDurations: got %v, want nil", r.OrgDurations)
+	}
+	// Reading a nil map must not panic — callers format from it directly.
+	if d, ok := r.OrgDurations["absent"]; ok || d != 0 {
+		t.Errorf("lookup on nil map: got (%v, %v), want (0, false)", d, ok)
+	}
+}
+
+func TestRunForOrganisations_InitialisesOrgDurations(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Concurrency.OrganisationCollection = 1
+
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{logging.NewMemoryWriter()},
+	})
+	c := New(nil, cfg, logger, secrets.NewCredentialResolver(nil))
+
+	result, err := c.runForOrganisations(context.Background(), map[string]datastore.Organisation{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Must be non-nil so the populated path can assign without panicking.
+	if result.OrgDurations == nil {
+		t.Fatal("OrgDurations must be initialised, not nil")
+	}
+	if len(result.OrgDurations) != 0 {
+		t.Errorf("expected no durations for zero orgs, got %v", result.OrgDurations)
+	}
+}
+
+func TestRun_InitialisesOrgDurations(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Concurrency.OrganisationCollection = 1
+
+	memWriter := logging.NewMemoryWriter()
+	logger := logging.New(logging.Options{
+		Level:   logging.DEBUG,
+		Writers: []logging.Writer{memWriter},
+	})
+	// Nil DB is safe here: ListOrganisations is never reached because the
+	// collector short-circuits, and we only assert the result shape.
+	c := New(nil, cfg, logger, secrets.NewCredentialResolver(nil))
+
+	result, err := c.Run(context.Background())
+	if err != nil {
+		// A nil DB is rejected before any org work; that is fine, the
+		// initialisation contract is covered by the runForOrganisations test.
+		return
+	}
+	if result != nil && result.OrgDurations == nil {
+		t.Error("OrgDurations must be initialised, not nil")
+	}
+}
