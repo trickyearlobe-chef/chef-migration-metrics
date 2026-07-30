@@ -53,11 +53,23 @@ type CookstyleFile struct {
 // struct mirrors the RuboCop JSON formatter output exactly so that
 // json.Unmarshal works without any transformation.
 type CookstyleOffense struct {
-	Severity  string                   `json:"severity"`
-	Message   string                   `json:"message"`
-	CopName   string                   `json:"cop_name"`
-	Corrected bool                     `json:"corrected"`
-	Location  CookstyleOffenseLocation `json:"location"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	CopName  string `json:"cop_name"`
+
+	// Correctable is the cop's static capability: whether CookStyle is able
+	// to fix this offense at all. It is reported on every scan, correcting
+	// or not.
+	//
+	// Corrected reports whether a correcting run actually changed the file.
+	// It is always false on a plain scan, and stays false for corrections
+	// RuboCop considers unsafe, because CMM runs --auto-correct rather than
+	// --auto-correct-all. The two are therefore independent: neither can be
+	// derived from the other. See internal/analysis/testdata/README.md.
+	Correctable bool `json:"correctable"`
+	Corrected   bool `json:"corrected"`
+
+	Location CookstyleOffenseLocation `json:"location"`
 	// File is the source file path. Not part of the RuboCop per-offense
 	// JSON — it comes from the parent CookstyleFile.Path and is set by
 	// the scan pipeline after unmarshalling.
@@ -147,7 +159,8 @@ type CookstyleScanResult struct {
 	// CorrectnessCount is the number of ChefCorrectness/* offenses.
 	CorrectnessCount int
 
-	// CorrectableCount is the number of offenses marked corrected/correctable.
+	// CorrectableCount is the number of offenses CookStyle reports as
+	// correctable — the static capability, not what a correcting run fixed.
 	CorrectableCount int
 
 	// Offenses is the full offense list exactly as CookStyle reported it.
@@ -600,7 +613,7 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 			if isCorrectness(off.CopName) {
 				sr.CorrectnessCount++
 			}
-			if off.Corrected {
+			if off.Correctable {
 				sr.CorrectableCount++
 			}
 		}
@@ -748,7 +761,7 @@ func (s *CookstyleScanner) scanOneGitRepo(
 			if isCorrectness(off.CopName) {
 				sr.CorrectnessCount++
 			}
-			if off.Corrected {
+			if off.Correctable {
 				sr.CorrectableCount++
 			}
 		}
@@ -958,9 +971,10 @@ func enrichOffenses(offenses []CookstyleOffense) []remediation.EnrichedOffense {
 	enriched := make([]remediation.EnrichedOffense, len(offenses))
 	for i, off := range offenses {
 		enriched[i] = remediation.EnrichedOffense{
-			CopName:  off.CopName,
-			Severity: off.Severity,
-			Message:  off.Message,
+			CopName:     off.CopName,
+			Severity:    off.Severity,
+			Message:     off.Message,
+			Correctable: off.Correctable,
 			Location: remediation.OffenseLocation{
 				File:        off.File,
 				StartLine:   off.Location.StartLine,
