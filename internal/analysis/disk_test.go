@@ -92,3 +92,99 @@ func TestEvaluateDisk_Windows(t *testing.T) {
 		t.Fatalf("expected sufficient=true on windows C:, got %v", v.Sufficient)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Contract: partial search delivers ONLY the by_pair section
+// ---------------------------------------------------------------------------
+//
+// The node partial search requests ["filesystem","by_pair"] rather than the
+// whole filesystem subtree, because by_device/by_mountpoint roughly triple the
+// payload for no benefit (measured on a real Ohai 18 Linux node: by_pair 4496
+// bytes, by_mountpoint 3498, by_device 3246).
+//
+// by_pair is the only section that can be used: its entries carry a "mount"
+// field, which findBestMountLinux requires and skips entries without. Real
+// by_mountpoint entries key on the mount and omit the field entirely, so
+// narrowing to that section would silently make every Linux disk verdict
+// unknown. These tests pin that contract — the JSON below is the real shape
+// returned by Ohai, not a synthetic fixture.
+
+func TestEvaluateDisk_ByPairOnlyLinux(t *testing.T) {
+	// Real Ohai 18 shape: the value delivered under "filesystem" is the
+	// by_pair map itself, keyed "device,mount".
+	raw := json.RawMessage(`{
+		"/dev/mapper/ubuntu--vg-ubuntu--lv,/": {
+			"mount": "/", "fs_type": "ext4",
+			"kb_size": 50633164, "kb_used": 12000000, "kb_available": 36000000, "percent_used": 25
+		},
+		"/dev/sda,": {"fs_type": "ext4"},
+		"/dev/sda2,/boot": {
+			"mount": "/boot", "fs_type": "ext4",
+			"kb_size": 1992552, "kb_used": 200000, "kb_available": 1700000, "percent_used": 11
+		}
+	}`)
+
+	v := EvaluateDisk(raw, "ubuntu", DiskConfig{
+		InstallPathLinux:     "/hab",
+		InstallSizeMBLinux:   2048,
+		InstallPathWindows:   `C:\hab`,
+		InstallSizeMBWindows: 2048,
+	})
+
+	if v.AvailableMB == nil {
+		t.Fatal("expected an available-MB reading from the by_pair section; a nil result means the disk verdict silently broke")
+	}
+	// / has 36000000 KB available -> ~35156 MB.
+	if got := *v.AvailableMB; got < 35000 || got > 35200 {
+		t.Errorf("AvailableMB = %d, want ~35156 (from the / mount)", got)
+	}
+	if v.Sufficient == nil || !*v.Sufficient {
+		t.Error("expected sufficient disk space for a 2048MB install on 35GB free")
+	}
+}
+
+func TestEvaluateDisk_ByPairOnlyWindows(t *testing.T) {
+	// Real Ohai shape on Windows: by_pair keys are ",C:" — the device half is
+	// empty, so the key never matches the drive letter and the verdict depends
+	// entirely on the entry's "mount" field.
+	raw := json.RawMessage(`{
+		",C:": {"mount": "C:", "kb_size": 41940988, "kb_used": 23648000, "kb_available": 18292989, "percent_used": 56},
+		",Z:": {"mount": "Z:", "kb_size": 0, "kb_used": 0, "kb_available": 0},
+		"new volume,D:": {"mount": "D:", "kb_size": 52427260, "kb_available": 32937435}
+	}`)
+
+	v := EvaluateDisk(raw, "windows", DiskConfig{
+		InstallPathLinux:     "/hab",
+		InstallSizeMBLinux:   2048,
+		InstallPathWindows:   `C:\hab`,
+		InstallSizeMBWindows: 2048,
+	})
+
+	if v.AvailableMB == nil {
+		t.Fatal("expected an available-MB reading for C: from the by_pair section")
+	}
+	// C: has 18292989 KB available -> ~17864 MB.
+	if got := *v.AvailableMB; got < 17800 || got > 17900 {
+		t.Errorf("AvailableMB = %d, want ~17864 (from C:)", got)
+	}
+}
+
+func TestEvaluateDisk_ByMountpointShapeIsUnusable(t *testing.T) {
+	// Documents WHY the search requests by_pair and not by_mountpoint: real
+	// by_mountpoint entries omit "mount", so no entry can be matched. If a
+	// future change points the search at by_mountpoint, this test explains
+	// the resulting silent "unknown" verdicts.
+	raw := json.RawMessage(`{
+		"/":     {"devices": ["/dev/mapper/ubuntu--vg-ubuntu--lv"], "kb_size": 50633164, "kb_available": 36000000},
+		"/boot": {"devices": ["/dev/sda2"], "kb_size": 1992552, "kb_available": 1700000}
+	}`)
+
+	v := EvaluateDisk(raw, "ubuntu", DiskConfig{
+		InstallPathLinux:   "/hab",
+		InstallSizeMBLinux: 2048,
+	})
+
+	if v.AvailableMB != nil {
+		t.Errorf("by_mountpoint entries have no mount field, so no verdict is possible; got AvailableMB = %d", *v.AvailableMB)
+	}
+}
