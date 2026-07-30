@@ -2769,15 +2769,21 @@ func TestNodeSearchAttributes_FilesystemIsNotNarrowed(t *testing.T) {
 	// The filesystem attribute must be requested as a whole subtree.
 	//
 	// Narrowing it to ["filesystem","by_pair"] (v2.18.6) destroyed filesystem
-	// data for every Windows node: Ohai on Windows emits no by_pair /
-	// by_device / by_mountpoint sections at all — automatic.filesystem is a
-	// flat map keyed by drive letter — so the sub-path does not resolve and
-	// partial search returns nothing. 55,488 of 55,489 Windows nodes lost
-	// their filesystem attribute and their disk verdict with it, silently.
+	// data for every Windows node: 55,488 of 55,489 lost the attribute — and
+	// their disk verdict with it — on the first post-deploy collection, with
+	// no error and no log line.
 	//
-	// Any future narrowing must first be validated against the shape
-	// distribution across the whole fleet (see the census requirement in
-	// specifications/data-collection.md § 1.4.1), not against one node.
+	// The sections Ohai emits are not the same on every platform. Windows
+	// delivers by_mountpoint keyed by drive letter and no by_pair; see the
+	// fixture in TestHandleNodeDisks_HappyPath_Windows (internal/webapi),
+	// which has encoded that shape since long before the narrowing. Any
+	// narrowed sub-path silently yields nothing wherever that section is
+	// absent.
+	//
+	// Before narrowing again, validate the shape distribution across the whole
+	// fleet from node_snapshots — see the census requirement in
+	// specifications/data-collection.md § 1.4.1. A single node, or a lab
+	// running current Chef, is not evidence about a heterogeneous estate.
 	attrs := NodeSearchAttributes()
 
 	path, ok := attrs["filesystem"]

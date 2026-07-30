@@ -59,7 +59,7 @@ The following attributes must be collected per node:
 | `platform` | `automatic.platform` | Platform filtering |
 | `platform_version` | `automatic.platform_version` | Platform filtering |
 | `platform_family` | `automatic.platform_family` | Platform grouping |
-| `filesystem` | `automatic.filesystem` | Disk space readiness check. Must be requested as a whole subtree — Ohai's shape varies by platform (Linux nests `by_device`/`by_mountpoint`/`by_pair`; Windows emits a flat map keyed by drive letter, with none of those sections), so any narrowed sub-path silently returns nothing for the platforms that lack it. |
+| `filesystem` | `automatic.filesystem` | Disk space readiness check. Must be requested as a **whole subtree**. Ohai's shape varies by platform and Chef version, and the sections present are not the same everywhere — Windows delivers `by_mountpoint` keyed by drive letter but no `by_pair`. Narrowing to any single sub-path silently returns nothing for every platform lacking that section. |
 | `cookbooks` | `automatic.cookbooks` | Resolved cookbook list (preferred for cookbook usage analysis) |
 | `run_list` | `run_list` | Raw run list (used for Test Kitchen config generation) |
 | `roles` | `automatic.roles` | Role association |
