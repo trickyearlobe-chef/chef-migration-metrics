@@ -1448,30 +1448,33 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 		log.Info("building role dependency graph",
 			logging.WithCollectionRunID(run.OrganisationName))
 
-		roleNames, roleListErr := client.GetRoles(ctx)
-		if roleListErr != nil {
-			log.Warn(fmt.Sprintf("failed to list roles: %v", roleListErr),
-				logging.WithCollectionRunID(run.OrganisationName))
-		} else if len(roleNames) > 0 {
-			// The Chef API has no bulk role-detail endpoint, so this is one
-			// request per role. Fetch them concurrently — serially this was
-			// the single largest contributor to run duration (measured:
-			// 31,958 roles at ~55ms each = 29m16s for one organisation).
-			roleWorkers := c.cfg.Concurrency.RoleFetching
-			if roleWorkers <= 0 {
-				roleWorkers = 1
-			}
-			roleStart := time.Now()
-			log.Info(fmt.Sprintf("fetching %d role(s) with %d worker(s)", len(roleNames), roleWorkers),
-				logging.WithCollectionRunID(run.OrganisationName))
+		// Role details come from the `role` search index — one request per
+		// page rather than one per role. The per-role GET remains as the
+		// fallback for gaps and for an unavailable index; the concurrency
+		// setting now bounds both the page walk and that fallback.
+		roleWorkers := c.cfg.Concurrency.RoleFetching
+		if roleWorkers <= 0 {
+			roleWorkers = 1
+		}
+		roleStart := time.Now()
 
-			roleDetails, roleErrs := client.GetRolesConcurrent(ctx, roleNames, roleWorkers)
-			for _, rdErr := range roleErrs {
-				log.Warn(fmt.Sprintf("failed to fetch role: %v", rdErr),
-					logging.WithCollectionRunID(run.OrganisationName))
-			}
-			log.Info(fmt.Sprintf("fetched %d/%d role(s) in %s",
-				len(roleDetails), len(roleNames), time.Since(roleStart).Round(time.Millisecond)),
+		roleResult, roleErr := collectRoleDetails(ctx, client, 1000, roleWorkers)
+		for _, warning := range roleResult.Warnings() {
+			log.Warn(warning, logging.WithCollectionRunID(run.OrganisationName))
+		}
+
+		switch {
+		case roleErr != nil:
+			log.Warn(fmt.Sprintf("failed to collect roles: %v", roleErr),
+				logging.WithCollectionRunID(run.OrganisationName))
+		case len(roleResult.Roles) == 0:
+			log.Info("no roles found — skipping dependency graph",
+				logging.WithCollectionRunID(run.OrganisationName))
+		default:
+			roleDetails := roleResult.Roles
+			log.Info(fmt.Sprintf("fetched %d role(s) in %s (%d from the search index, %d per-role)",
+				len(roleDetails), time.Since(roleStart).Round(time.Millisecond),
+				roleResult.FromIndex, roleResult.FromFallback),
 				logging.WithCollectionRunID(run.OrganisationName))
 
 			depParams := BuildRoleDependencies(org.Name, roleDetails)
@@ -1485,9 +1488,6 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 					replaced, len(roleDetails)),
 					logging.WithCollectionRunID(run.OrganisationName))
 			}
-		} else {
-			log.Info("no roles found — skipping dependency graph",
-				logging.WithCollectionRunID(run.OrganisationName))
 		}
 
 		// C.2: Cookbook usage analysis.
