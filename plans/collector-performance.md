@@ -57,12 +57,6 @@ of which assume the complete node set is in hand:
 Riskiest item here — shared collection path, silent-corruption failure modes. Own branch,
 lab run before shipping.
 
-### Decouple log retention from collection runs
-
-The purge only fires at the tail of a successful run (`collector.go:679`). `log_entries`
-was seen with 240k dead tuples and autovacuum a day stale. Needs a ticker plus
-partitioning so expiry is a `DROP PARTITION` rather than a `DELETE`.
-
 ### Retain collection history
 
 There is no duration trend to diagnose regressions against, because the **write model is

@@ -88,6 +88,17 @@ The following logging-related settings are exposed via the application configura
 | `log_level` | Minimum severity level to persist. Entries below this level are discarded. | `INFO` |
 | `log_retention_days` | Number of days to retain log entries in the datastore before purging. | `90` |
 
+Read live: a change takes effect on the next expiry tick without a restart. A value of zero or less means "retain indefinitely" and expires nothing.
+
+### Retention mechanism
+
+- `log_entries` is **range-partitioned by day** on `timestamp`. Expiry drops whole day partitions; it is never a row-level `DELETE`.
+  - *Why:* deleting rows from a table this size leaves millions of dead tuples for autovacuum to reclaim — measured in production at 240k dead tuples with autovacuum a day stale. The mechanism meant to bound the table was a source of the bloat it was supposed to prevent. Dropping a partition reclaims the space immediately.
+- A partition is dropped only once its **entire** range predates the cutoff, so entries still inside the retention window are never destroyed with it.
+- Day partitions are created on demand at insert time, pinned to UTC so partition edges do not move with the session time zone.
+- Expiry runs on its **own ticker**, independent of collection.
+  - *Why:* it previously ran only as the last step of a collection run, making it conditional on collection reaching that point. A failed run, a run skipped for overrunning its tick, or an early return on an empty organisation list all meant nothing expired — which is how the table reached 26GB in production.
+
 ---
 
 ## Export Job Logging
