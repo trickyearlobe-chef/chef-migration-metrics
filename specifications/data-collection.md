@@ -59,7 +59,7 @@ The following attributes must be collected per node:
 | `platform` | `automatic.platform` | Platform filtering |
 | `platform_version` | `automatic.platform_version` | Platform filtering |
 | `platform_family` | `automatic.platform_family` | Platform grouping |
-| `filesystem` | `automatic.filesystem` | Disk space readiness check. Must be requested as a whole subtree — Ohai's shape varies by platform (Linux nests `by_device`/`by_mountpoint`/`by_pair`; Windows emits a flat map keyed by drive letter, with none of those sections), so any narrowed sub-path silently returns nothing for the platforms that lack it. |
+| `filesystem` | `automatic.filesystem` | Disk space readiness check. Must be requested as a **whole subtree**. Ohai's shape varies by platform and Chef version, and the sections present are not the same everywhere — Windows delivers `by_mountpoint` keyed by drive letter but no `by_pair`. Narrowing to any single sub-path silently returns nothing for every platform lacking that section. |
 | `cookbooks` | `automatic.cookbooks` | Resolved cookbook list (preferred for cookbook usage analysis) |
 | `run_list` | `run_list` | Raw run list (used for Test Kitchen config generation) |
 | `roles` | `automatic.roles` | Role association |
@@ -68,6 +68,30 @@ The following attributes must be collected per node:
 | `ohai_time` | `automatic.ohai_time` | Unix timestamp of last Chef client run (used for stale check-in detection) |
 
 > **Note:** See `chef-api.md` for the difference in JSON structure between `GET /nodes/:name` and search responses. Automatic attributes are hoisted to the root of the `data` object in search responses.
+
+### 1.4.1 Changing the Collected Attribute Set
+
+Ohai attribute shapes vary by platform *and* by Chef version, and a migration
+assessment fleet is old and heterogeneous by definition — that is why it is being
+surveyed. A shape confirmed on one node, or on a lab running current Chef, does not
+generalise to the fleet.
+
+Before narrowing, widening or re-pathing any collected attribute:
+
+- **Validate against the stored census, not against sample nodes.** `node_snapshots`
+  already holds the attribute for every node in the fleet, across every platform and
+  Chef version. Its shape distribution is one SQL query away and needs no access to the
+  Chef servers. Sampling individual nodes is neither necessary nor sufficient.
+- Establish, per platform: whether the sub-path exists at all, what the map keys look
+  like, and which fields the entries carry. Absence on a subset of nodes is normal and
+  must not be assumed to be uniform within a platform.
+- **Enumerate every consumer before changing the shape** (`findReferences` on the
+  datastore field, not text search). Independent consumers derive differently: a
+  narrowing that satisfies one may silently starve another.
+
+Failures here are silent — an absent sub-path yields no error, no log entry, and an
+empty page or an "unknown" verdict. Contract tests must therefore pin shapes captured
+from real stored payloads rather than hand-authored fixtures.
 
 ### 1.5 Policyfile Support
 
