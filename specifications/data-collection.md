@@ -69,6 +69,30 @@ The following attributes must be collected per node:
 
 > **Note:** See `chef-api.md` for the difference in JSON structure between `GET /nodes/:name` and search responses. Automatic attributes are hoisted to the root of the `data` object in search responses.
 
+### 1.4.1 Changing the Collected Attribute Set
+
+Ohai attribute shapes vary by platform *and* by Chef version, and a migration
+assessment fleet is old and heterogeneous by definition — that is why it is being
+surveyed. A shape confirmed on one node, or on a lab running current Chef, does not
+generalise to the fleet.
+
+Before narrowing, widening or re-pathing any collected attribute:
+
+- **Validate against the stored census, not against sample nodes.** `node_snapshots`
+  already holds the attribute for every node in the fleet, across every platform and
+  Chef version. Its shape distribution is one SQL query away and needs no access to the
+  Chef servers. Sampling individual nodes is neither necessary nor sufficient.
+- Establish, per platform: whether the sub-path exists at all, what the map keys look
+  like, and which fields the entries carry. Absence on a subset of nodes is normal and
+  must not be assumed to be uniform within a platform.
+- **Enumerate every consumer before changing the shape** (`findReferences` on the
+  datastore field, not text search). Independent consumers derive differently: a
+  narrowing that satisfies one may silently starve another.
+
+Failures here are silent — an absent sub-path yields no error, no log entry, and an
+empty page or an "unknown" verdict. Contract tests must therefore pin shapes captured
+from real stored payloads rather than hand-authored fixtures.
+
 ### 1.5 Policyfile Support
 
 Many modern Chef deployments use **Policyfiles** instead of roles and run-lists. Policyfile nodes have a `policy_name` and `policy_group` instead of a traditional `chef_environment` and role-based run-list. Policyfiles lock cookbook versions in a policy lock file, producing deterministic cookbook sets per policy.
