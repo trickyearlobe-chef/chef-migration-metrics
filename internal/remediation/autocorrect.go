@@ -387,14 +387,28 @@ func (g *AutocorrectGenerator) generateOne(
 
 	diffOutput, filesChanged := generateUnifiedDiffs(originals, modified)
 
-	// Step 9: compute statistics.
-	// CookStyle's --auto-correct fixes offenses in-place. The remaining
-	// offenses in the JSON output are the ones it couldn't fix.
-	remainingAfterCorrect := afterOutput.Summary.OffenseCount
-	correctableCount := csResult.OffenseCount - remainingAfterCorrect
-	if correctableCount < 0 {
-		correctableCount = 0
+	// Step 9: compute statistics from the correcting run's own per-offence
+	// flags.
+	//
+	// This used to subtract the run's summary.offense_count from the scan's
+	// total. That is always ~0: a correcting run reports every offence it
+	// found, flagging the ones it fixed, and does NOT shrink its own
+	// offense_count. Measured on Cookstyle 8.6.10 and 8.7.6 alike — see
+	// internal/analysis/testdata/README.md. The subtraction is also a
+	// universe mismatch, because csResult.OffenseCount includes custom-cop
+	// offences that never appear in cookstyle's output at all.
+	correctableCount := afterOutput.correctedCount()
+	if correctableCount > csResult.OffenseCount {
+		correctableCount = csResult.OffenseCount
 	}
+
+	// Remaining is derived from the scan's total, not from cookstyle's own
+	// summary, so that total == correctable + remaining always holds. The scan
+	// total additionally includes custom-cop offences, which cookstyle never
+	// sees and can never correct — counting them as remaining is exactly
+	// right, and keeps this panel's total consistent with the offence count
+	// shown everywhere else for the same cookbook.
+	remainingAfterCorrect := csResult.OffenseCount - correctableCount
 
 	pr.TotalOffenses = csResult.OffenseCount
 	pr.CorrectableOffenses = correctableCount
@@ -582,7 +596,38 @@ func (g *AutocorrectGenerator) ResetAllPreviews(ctx context.Context, organisatio
 // autocorrectJSONOutput is the minimal subset of CookStyle JSON output
 // needed to extract offense counts after auto-correct.
 type autocorrectJSONOutput struct {
+	Files   []autocorrectFile  `json:"files"`
 	Summary autocorrectSummary `json:"summary"`
+}
+
+// autocorrectFile carries the per-offence flags. Only `summary` used to be
+// parsed, which is why the corrected count was unavailable and had to be
+// (wrongly) inferred by subtraction.
+type autocorrectFile struct {
+	Path     string                `json:"path"`
+	Offenses []autocorrectOffense2 `json:"offenses"`
+}
+
+type autocorrectOffense2 struct {
+	CopName string `json:"cop_name"`
+	// Corrected reports that this correcting run actually changed the file.
+	// Distinct from `correctable`, the cop's static capability: CMM runs
+	// --auto-correct, so corrections RuboCop deems unsafe stay uncorrected.
+	Corrected bool `json:"corrected"`
+}
+
+// correctedCount is how many offences the correcting run actually fixed — the
+// only trustworthy measure of what the accompanying diff contains.
+func (o autocorrectJSONOutput) correctedCount() int {
+	n := 0
+	for _, f := range o.Files {
+		for _, off := range f.Offenses {
+			if off.Corrected {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 type autocorrectSummary struct {
