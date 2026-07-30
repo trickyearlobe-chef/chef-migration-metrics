@@ -13,17 +13,54 @@ non-empty diff. Its header is internally contradictory: "0 of 3 offenses correct
 
 ## Verified toolchain behaviour
 
-Probed on the deployed version — Cookstyle 8.7.6 / RuboCop 1.86.1 / Chef Workstation
-26.1.0 — against a cookbook with one trailing-whitespace offence and one
-`not_if { ::File.exist?(...) }`:
+Re-measured 2026-07-30 on **Chef Workstation 25.14.2 / Cookstyle 8.6.10 / RuboCop 1.84.2**,
+reproducing an earlier probe on Workstation 26.1.0 / Cookstyle 8.7.6 / RuboCop 1.86.1.
+The behaviour is identical on both, so it is not version-specific.
 
 - Each offence carries **both** `correctable` and `corrected`.
 - Plain scan: `correctable=true`, `corrected=false`.
-- After `-A`: `summary.offense_count` is **unchanged**, and offences flip to
-  `corrected=true`.
+- After `-A`: `summary.offense_count` is **unchanged** (3 → 3 measured), and offences flip
+  to `corrected=true`.
+- `correctable=false` genuinely occurs and must round-trip: measured across 165 real
+  cookbook files, 64 correctable offences and 19 non-correctable
+  (`Chef/Sharing/DefaultMetadataMaintainer`, `Chef/Deprecations/ResourceWithoutUnifiedTrue`).
 
 So `summary.offense_count` is not "what could not be fixed", and `corrected` is
 meaningless on a non-correcting scan. Both assumptions are currently relied upon.
+
+Captured as real fixtures rather than prose, so this is pinned rather than remembered
+(`internal/analysis/testdata/`): `cookstyle_scan_plain.json`,
+`cookstyle_scan_autocorrected.json`, `cookstyle_scan_noncorrectable.json`. Paths are
+relativised; content is otherwise untouched cookstyle output. These are the fixtures
+Chunk 3 requires.
+
+**Still to confirm:** the same probe on Workstation 26 (`dev.home.arpa`) — blocked, the
+1Password SSH agent will not sign. Expected to match, since WS25 and WS26.1 already agree.
+
+## Verified code state — re-checked at `e602fdb`
+
+Every claim below re-read at the current commit; earlier line numbers had drifted.
+
+| Claim | Evidence |
+|---|---|
+| `CookstyleOffense` has no correctability field | `analysis/cookstyle.go:55-65` — only `Corrected` |
+| Correctable counted from the wrong flag | `analysis/cookstyle.go:603-604`, `:751-752` — `if off.Corrected { sr.CorrectableCount++ }` |
+| `EnrichedOffense` drops it entirely | `remediation/copmapping.go:42-51` — no such field |
+| Fingerprints store the wrong flag | `analysis/cookstyle_fingerprint.go:37` — `correctable: off.Corrected` |
+| Struct tag drift | `webapi/handle_cookstyle_cops_shared.go:23,37` — `Correctable bool \`json:"corrected"\`` |
+| Preview subtracts against a total that never shrinks | `remediation/autocorrect.go:393-394` |
+| The `-A` parser discards per-offence flags | `remediation/autocorrect.go:584-586` — parses only `summary` |
+| Complexity inflated by the zero | `remediation/complexity.go:167` — `ManualFixCount * WeightNonAutoCorrectable` (weight 4, `:37`) |
+| No operator trigger for the reset | `remediation/autocorrect.go:556`, `:571` — no route in `router.go`; the only `reset` route is `platform-display-names` (`router.go:954`) |
+
+### Resolves open question 1: `correctable` is canonical
+
+The toolchain emits both keys with distinct meanings — `correctable` is the static
+capability, `corrected` only reports that a correcting run changed the file. The
+remediation handlers already read `correctable`. `handle_cookstyle_cops_shared.go` names
+its field `Correctable` and merely *tags* it `json:"corrected"` — so the intent is
+`correctable` everywhere and the tags are simply wrong. No design decision is needed:
+fix the tags, do not migrate the handlers to `corrected`.
 
 ## Root cause — two independent broken derivations
 
@@ -65,10 +102,9 @@ Frontend is a faithful pass-through — no fix needed there.
 
 ## Open questions to settle before Chunk 1
 
-- **Which key is canonical, `correctable` or `corrected`?** The remediation handlers read
-  `correctable`; `handle_cookstyle_cops*.go` read `corrected`. Neither is written today.
-  Whichever is chosen, the other handler family and every pre-rescan stored row are wrong
-  until the re-scan completes — the rollout order needs stating.
+- ~~Which key is canonical?~~ **Settled: `correctable`** — see above. Note the rollout
+  consequence still stands: every pre-rescan stored row decodes false until the re-scan
+  completes, so the order in Data repair below matters.
 - **Does changing the fingerprint key fire spurious change detection fleet-wide?**
   Chunk 1 changes `cookstyle_fingerprint.go:37`, so every fingerprint changes on the next
   scan.
