@@ -9,13 +9,18 @@ gauge.
 Production incident 2026-07-29/30 (host OOM, 22GB heap, ~134k nodes). Diagnosis took
 hours of manual poll-and-report because:
 
-- **No way to get a profile out.** `performance.pprof_enabled` exists in
-  `config.PerformanceConfig` but cannot be set by any means — no config endpoint (see
-  the list at `router.go:863-877`), no UI, no env override, no CLI flag, and
+- **No way to get a profile out on a migrated install.** `performance.pprof_enabled` is
+  a real YAML field (`config.go:558`, parsed at `config.go:2107`), so it IS settable on a
+  fresh install. What makes it unreachable in practice: `configstore` owns the
+  `performance` key (`assembly.go:89,171,308,373`), the DB row is seeded from YAML at
+  migration and thereafter **overrides** YAML on assembly, and nothing writes that key —
+  no config endpoint (`router.go:863-877`), no UI, no env override, no CLI flag, and
   `config_store` values are AES-GCM encrypted so the row cannot be hand-edited. Even if
-  set, the routes are registered once at `router.go:567`, so it needs a restart.
-  Curl against `/debug/pprof/` also needs an admin session, impractical at a VDI-only
-  site.
+  set, routes register once at `router.go:567`, so it needs a restart. Curl against
+  `/debug/pprof/` also needs an admin session, impractical at a VDI-only site.
+
+  If the decision to delete the field stands, it must also say what happens to an
+  existing `performance` config_store row containing `pprof_enabled`.
 - **No history.** `go_heap_bytes` is instantaneous (`syshealth.go:140`), so
   leak-vs-spike could only be answered by a human sampling the page repeatedly.
 - **No context.** `HeapInuse` alone is misleading: a 1.3↔2.6GB oscillation read as a

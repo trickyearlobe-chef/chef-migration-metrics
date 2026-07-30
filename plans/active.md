@@ -11,8 +11,7 @@ Single source of truth for what is in flight. **Read this first at session start
 once the current batch of work is in — it stops ongoing readiness data loss, so do not
 leave it unreleased indefinitely.
 
-- `chore/spec-drift-report` — the only open branch. Parked; don't nag to merge
-  (see [[spec-drift-parked]]).
+**No open branches.**
 
 ## NOW — release migration 0054 (merged, unreleased)
 
@@ -26,7 +25,18 @@ depends on. Worsens as incompatibilities accumulate.
 Latent since the original schema (0001, recreated in 0009); nothing recent caused it.
 No backfill needed — affected nodes correct themselves on the next collection.
 
-Merged to `main`, not yet released. Needs a version bump, tag and push.
+Merged to `main`, not yet released.
+
+Release preconditions — the bump target runs no tests:
+
+1. `make ci` and `make vuln-go` must pass first (`bump-patch-push` does not depend on `ci`).
+2. **The push is a human step.** CLAUDE.md forbids interacting with remotes; an assistant
+   may bump and tag locally (`make bump-patch`) but must not push without explicit,
+   per-action authorisation.
+3. **Deploy needs a quiet window.** Migrations run at startup (`main.go:2877`), and 0054
+   does a plain `DROP`/`CREATE INDEX` inside a transaction, taking an `ACCESS EXCLUSIVE`
+   lock on `node_readiness` that blocks reads and writes until the rebuild finishes.
+   Confirmed acceptable by the operator; schedule accordingly.
 
 ## Queued — collector performance (`plans/collector-performance.md`)
 
@@ -61,18 +71,18 @@ MVP shipped. Highest-value first:
 Note before enabling at the customer: ~11 CCRs/second ≈ 950k events/day. Size the ingest
 path against that first.
 
-## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
-
-Chunks A/B/D landed. Open: **E** (drift sweep — the parked `chore/spec-drift-report`
-branch is its output); **C** (criteria↔test linkage). 5 specs still WARN on
-copied-contract (`diagnostic-bundle`, `system-health-*`) — fold into E.
-
 ## Queued — structural refactors (own branches, `todo-tech-debt.md`)
 
 - `CookstyleStore` sub-interface split (`webapi.DataStore` at **210** methods and growing).
 - Extract pipeline stages from the two remediation god-handlers
   (`handle_cookbook_remediation.go` ~499 lines, `handle_git_repo_remediation.go` ~486
   lines — each is one oversized function). No shared extraction; different sources.
+
+## Parked — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
+
+Not on the work list. Chunks A/B/D landed; C and E remain, and any drift report must be
+regenerated from scratch. Don't propose or nag to pick this up
+(see [[spec-drift-parked]]).
 
 ## Parked — SAML config follow-ups (lower priority)
 

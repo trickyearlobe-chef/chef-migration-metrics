@@ -63,6 +63,21 @@ only logged, never persisted, so fixing it alone changes nothing user-visible.
 
 Frontend is a faithful pass-through — no fix needed there.
 
+## Open questions to settle before Chunk 1
+
+- **Which key is canonical, `correctable` or `corrected`?** The remediation handlers read
+  `correctable`; `handle_cookstyle_cops*.go` read `corrected`. Neither is written today.
+  Whichever is chosen, the other handler family and every pre-rescan stored row are wrong
+  until the re-scan completes — the rollout order needs stating.
+- **Does changing the fingerprint key fire spurious change detection fleet-wide?**
+  Chunk 1 changes `cookstyle_fingerprint.go:37`, so every fingerprint changes on the next
+  scan.
+- **Which spec gets the correctable/corrected definition?** `specifications/cookstyle-*`
+  matches several files; `analysis-cookstyle.md` is the likely home. Needs owner sign-off.
+- **Chunk 2's acceptance criterion is not reproducible** — the "two-offence probe
+  cookbook" is not in the repo and no location is given, and the Symptom section
+  describes a different, three-offence cookbook.
+
 ## Chunk 1 — carry the flag end to end
 
 Add `Correctable` to `analysis.CookstyleOffense` and to `remediation.EnrichedOffense`,
@@ -99,7 +114,12 @@ The field was never written and there is no per-offence correctable column in an
 migration, so stored data is unrecoverable without re-running scans. Order matters:
 
 1. Re-scan (`rescan-all-cookstyle`) to repopulate `*_cookstyle_results.offences`.
-2. **Reset previews explicitly** — `autocorrect.go:309` skips generation when a preview
+2. **Reset previews explicitly** — **blocker: there is no operator trigger.**
+   `ResetPreviews`/`ResetAllPreviews` are Go methods with no HTTP route and no CLI entry
+   point, unlike `rescan-all-cookstyle` (`POST /api/v1/admin/rescan-all-cookstyle`).
+   At a VDI-only site this step is currently unexecutable; building the trigger is
+   unscoped work that must be added to Chunk 1 or 2.
+   Original note: — `autocorrect.go:309` skips generation when a preview
    already exists, so without `ResetPreviews`/`ResetAllPreviews` (`:556-576`) the fix
    silently no-ops. `diff_output`/`files_modified` are sound and need no correction.
 3. Complexity recomputes from previews and follows automatically.

@@ -68,17 +68,12 @@ of which assume the complete node set is in hand:
 - `deduplicateSnapshotParams` (pagination-boundary duplicates)
 - cookbook aggregation: `allCookbookNames` / `activeCookbookNames` / `activeCookbookVersions`
 - `nodeRecords` for usage analysis
-- `snapshotParams` is read at `collector.go:1007/1045/1557`, so it stays pinned for the
-  org's whole pipeline; needs projecting down to the fields those consumers use
+- `snapshotParams` stays pinned for the org's whole pipeline — it is read repeatedly
+  after the bulk insert (around `collector.go:1005`, `1012`, `1032-1034`, `1071`, `1593`,
+  `1796`); needs projecting down to the fields those consumers actually use
 
 Riskiest item here — shared collection path, silent-corruption failure modes. Own branch,
 lab run before shipping.
-
-### Audit remaining indexes for unbounded INCLUDE columns
-
-Migration 0054 fixed `idx_node_readiness_target_name_eval`. Grep the other migrations for
-`INCLUDE` lists containing JSONB or unbounded TEXT — the same failure mode is silent
-until a row grows past 2704 bytes.
 
 ### Decouple log retention from collection runs
 
@@ -88,14 +83,26 @@ partitioning so expiry is a `DROP PARTITION` rather than a `DELETE`.
 
 ### Retain collection history
 
-`PurgeOldCollectionRuns` (`collector.go:689`) keeps only the latest terminal run per org,
-so there is no duration trend to diagnose regressions against. Retain ~30 days.
+There is no duration trend to diagnose regressions against, because the **write model is
+an upsert**: `collection_runs` holds at most one row per organisation.
+`PurgeOldCollectionRuns` (`collection_runs.go:428`) is a no-op retained for backward
+compatibility — it is not why history is missing.
+
+So this is a schema and write-path change (a row per run, or a history table, plus a real
+purge), not a retention-policy tweak. Size it accordingly.
 
 ### Document or fix the early completed_at stamp
 
-`collection_runs.completed_at` is stamped at Step 4b (`collector.go:1022`), so its
-duration covers only the node-snapshot phase and excludes Steps 5–16. Per-org totals are
+`collection_runs.completed_at` is stamped at Step 4b (`collector.go:1047-1053`), so its
+duration covers only the node-snapshot phase and excludes the remaining steps through
+Step 16 (`collector.go:1613`). Per-org totals are
 now logged (v2.18.7), but the column still misleads anyone querying it directly.
+
+### Conflicts with runtime-observability Chunk 4
+
+Collector streaming and runtime-observability Chunk 4 (collection progress state) both
+rewrite the same region of `collector.go` around `snapshotParams` lifetime. Decide which
+lands first; they cannot proceed in parallel.
 
 ### Release workflow: Node 20 deprecation
 
