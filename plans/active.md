@@ -4,56 +4,50 @@ Single source of truth for what is in flight. **Read this first at session start
 
 ## Branch map (2026-07-30)
 
-`main` — deployed release at the customer is **v2.18.9**. Collection is hourly; a full
-3-org cycle takes ~28 min.
-
-**`main` carries unreleased work: migration 0054** (see NOW below). Cut the next release
-once the current batch of work is in — it stops ongoing readiness data loss, so do not
-leave it unreleased indefinitely.
+`main` — **v2.18.10 released**. Collection is hourly.
 
 **No open branches.**
 
-## NOW — release migration 0054 (merged, unreleased)
+## NOW — v2.18.11 waiting on the rescan
 
-`node_readiness` upserts are being rejected: `blocking_cookbooks` (JSONB) sat in a btree
-index `INCLUDE` list, and index tuples are capped at 2704 bytes with no TOAST escape.
-Measured over six hours: **22,043 rejected writes, 10,605 nodes with readiness older than
-their own snapshot, 89 with none at all.** Logged loudly, invisible in the UI, and it
-self-selects for nodes with the most blocking cookbooks — the ones a CC19 assessment
-depends on. Worsens as incompatibilities accumulate.
+`main` carries the git repo verdict reset, merged and **unreleased**. Deliberately held:
+a rescan is in progress at the customer and a deploy would interrupt it. Cut the tag once
+it completes.
 
-Latent since the original schema (0001, recreated in 0009); nothing recent caused it.
-No backfill needed — affected nodes correct themselves on the next collection.
-
-Merged to `main`, not yet released.
+The fix only takes effect at the moment `rescan-all-cookstyle` is triggered, so it cannot
+help the run in flight — it is for the next one. The list self-corrects as each repo is
+scanned (saving a result re-materialises its columns), so the current run still ends with
+a correct list.
 
 Release preconditions — the bump target runs no tests:
 
 1. `make ci` and `make vuln-go` must pass first (`bump-patch-push` does not depend on `ci`).
 2. **The push is a human step.** CLAUDE.md forbids interacting with remotes; an assistant
-   may bump and tag locally (`make bump-patch`) but must not push without explicit,
-   per-action authorisation.
-3. **Deploy needs a quiet window.** Migrations run at startup (`main.go:2877`), and 0054
-   does a plain `DROP`/`CREATE INDEX` inside a transaction, taking an `ACCESS EXCLUSIVE`
-   lock on `node_readiness` that blocks reads and writes until the rebuild finishes.
-   Confirmed acceptable by the operator; schedule accordingly.
+   may bump and tag locally but must not push without explicit, per-action authorisation.
+3. Local `make ci` needs `TRIVY_SKIP_DB_UPDATE=true` — the 1.2GB Trivy DB pull from
+   `mirror.gcr.io` stalls mid-transfer (registry handshake is fine; the blob does not
+   move). GitHub CI pulls it fresh, so the gap closes on push.
 
-## Queued — collector performance (`plans/collector-performance.md`)
+## Queued — Node 20 deprecation
 
-Measured baselines, the invariants learned during the incident, the ruled-out list, and
-the open items. Scope decision (2026-07-30): **collector streaming** is parked (shared
-collection path, silent-corruption failure modes, conflicts with runtime-observability
-Chunk 4), and **collection history** with it (`plans/collection-history.md`) — complex and
-risky for a small gain, and the duration question is answerable from logs today. The early
-`completed_at` stamp rides with collection history and is parked with it. Remaining:
-the Node 20 action bump.
+`softprops/action-gh-release` targets Node 20 and is being forced onto Node 24 by GitHub.
+Bump the pinned action before support is withdrawn. Supply-chain check per CLAUDE.md: pin
+exact version/SHA. Last survivor of the collector-performance batch.
 
-## Queued — cookstyle correctable flag (`plans/cookstyle-correctable-fix.md`)
+## Queued — spec drift sweep
 
-Auto-correctable counts read 0 fleet-wide; complexity scores are inflated as a result, so
-remediation prioritisation is skewed, not just the display. Root cause verified against
-deployed Cookstyle 8.7.6 / RuboCop 1.86.1. Three chunks, plus a re-scan and an explicit
-preview reset — without the reset the fix silently no-ops.
+Started 2026-07-30 after repeated instances of prose being believed over code. Five specs
+cleaned by deleting pasted contracts rather than correcting them. Still drifted:
+
+- `data-collection.md` — mandates page-level checkpointing that does not exist.
+  `checkpoint_start` is never written. **Actively misleading**; it produced a false
+  constraint in the collection-history plan.
+- `enriched-metric-snapshots.md` — describes the fingerprint `correctable` field as a
+  re-derivation input; nothing reads it.
+- `diagnostic-bundle.md`, `web-api-admin.md` — smaller gaps.
+
+Principle: delete pasted shapes, keep only intent and invariants. No file paths, symbol
+paths or line numbers — those rot too.
 
 ## Queued — runtime observability (`plans/runtime-observability.md`)
 
@@ -66,30 +60,32 @@ means — the plan proposes deleting it rather than wiring it up.
 MVP shipped. Highest-value first:
 
 - **CC19 target-version failing-nodes preset.** Rollup and filters are built and tested;
-  `useTargetChefVersion` exists but is unused on `RunEventsPage`, so the target version
-  must be picked by hand. This is the wiring.
+  `useTargetChefVersion` exists but is unused on `RunEventsPage`. This is the wiring.
 - **Live-fidelity validation** of Data Feed (fixtures still authored) + Chef Server proxy.
-- Lab cleanup; depsolve/attributes-only gap. See `todo-event-ingest.md`.
+- Lab cleanup; depsolve/attributes-only gap.
 
 Note before enabling at the customer: ~11 CCRs/second ≈ 950k events/day. Size the ingest
 path against that first.
 
 ## Queued — structural refactors (own branches, `todo-tech-debt.md`)
 
-- `CookstyleStore` sub-interface split (`webapi.DataStore` at **210** methods and growing).
-- Extract pipeline stages from the two remediation god-handlers
-  (`handle_cookbook_remediation.go` ~499 lines, `handle_git_repo_remediation.go` ~486
-  lines — each is one oversized function). No shared extraction; different sources.
+- `CookstyleStore` sub-interface split (`webapi.DataStore` at 210+ methods and growing).
+- Extract pipeline stages from the two remediation god-handlers. No shared extraction;
+  different sources.
 
-## Parked — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
+## Queued — supply chain
 
-Not on the work list. Chunks A/B/D landed; C and E remain, and any drift report must be
-regenerated from scratch. Don't propose or nag to pick this up
-(see [[spec-drift-parked]]).
+Dependabot reports 10 vulnerabilities on the default branch (3 high, 5 moderate, 2 low).
+Not contradicted by our clean Trivy run: that scans `frontend/package-lock.json` at
+MEDIUM+ with suppressions, while Dependabot covers all manifests. Needs triage.
 
-## Parked — SAML config follow-ups (lower priority)
+## Parked — do not propose picking these up
 
-- Warn when a SAML provider has empty `username_attr` (transient-NameID footgun —
-  `plans/todo-ownership.md`).
-- Turn the local-user username collision (`ErrAlreadyExists` → opaque 500) into a
-  clear, actionable message.
+- **Collector streaming** — shared collection path, silent-corruption failure modes,
+  conflicts with runtime-observability Chunk 4.
+- **Collection history** (`plans/collection-history.md`) and the early `completed_at`
+  stamp that rides with it — complex and risky for a small gain; the duration question is
+  answerable from logs today.
+- **Spec/Plan Drift Control** (`plans/spec-drift-control.md`) — see [[spec-drift-parked]].
+- **SAML config follow-ups** — empty `username_attr` warning; local-user username
+  collision returning an opaque 500.
