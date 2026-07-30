@@ -179,6 +179,7 @@ func TestDefaults_Concurrency(t *testing.T) {
 	}{
 		{"organisation_collection", cfg.Concurrency.OrganisationCollection, 5},
 		{"node_page_fetching", cfg.Concurrency.NodePageFetching, 10},
+		{"role_fetching", cfg.Concurrency.RoleFetching, 10},
 		{"git_pull", cfg.Concurrency.GitPull, 10},
 		{"cookstyle_scan", cfg.Concurrency.CookstyleScan, 8},
 		{"readiness_evaluation", cfg.Concurrency.ReadinessEvaluation, 20},

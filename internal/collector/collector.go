@@ -1427,16 +1427,26 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 			log.Warn(fmt.Sprintf("failed to list roles: %v", roleListErr),
 				logging.WithCollectionRunID(run.OrganisationName))
 		} else if len(roleNames) > 0 {
-			roleDetails := make([]*chefapi.RoleDetail, 0, len(roleNames))
-			for _, rn := range roleNames {
-				rd, rdErr := client.GetRole(ctx, rn)
-				if rdErr != nil {
-					log.Warn(fmt.Sprintf("failed to fetch role %q: %v", rn, rdErr),
-						logging.WithCollectionRunID(run.OrganisationName))
-					continue
-				}
-				roleDetails = append(roleDetails, rd)
+			// The Chef API has no bulk role-detail endpoint, so this is one
+			// request per role. Fetch them concurrently — serially this was
+			// the single largest contributor to run duration (measured:
+			// 31,958 roles at ~55ms each = 29m16s for one organisation).
+			roleWorkers := c.cfg.Concurrency.RoleFetching
+			if roleWorkers <= 0 {
+				roleWorkers = 1
 			}
+			roleStart := time.Now()
+			log.Info(fmt.Sprintf("fetching %d role(s) with %d worker(s)", len(roleNames), roleWorkers),
+				logging.WithCollectionRunID(run.OrganisationName))
+
+			roleDetails, roleErrs := client.GetRolesConcurrent(ctx, roleNames, roleWorkers)
+			for _, rdErr := range roleErrs {
+				log.Warn(fmt.Sprintf("failed to fetch role: %v", rdErr),
+					logging.WithCollectionRunID(run.OrganisationName))
+			}
+			log.Info(fmt.Sprintf("fetched %d/%d role(s) in %s",
+				len(roleDetails), len(roleNames), time.Since(roleStart).Round(time.Millisecond)),
+				logging.WithCollectionRunID(run.OrganisationName))
 
 			depParams := BuildRoleDependencies(org.Name, roleDetails)
 

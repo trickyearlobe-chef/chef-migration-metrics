@@ -20,10 +20,12 @@ import (
 	"io"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -124,22 +126,18 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 
 	hc := cfg.HTTPClient
 	if hc == nil {
+		var tlsCfg *tls.Config
 		if !sslVerify {
 			warn := cfg.WarnFunc
 			if warn == nil {
 				warn = func(msg string) { log.Printf("WARN: %s", msg) }
 			}
 			warn("chefapi: ssl_verify is false — TLS certificate verification is disabled. Do not use in production.")
-			hc = &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: true, // #nosec G402 -- user explicitly opted out of verification
-					},
-				},
+			tlsCfg = &tls.Config{
+				InsecureSkipVerify: true, // #nosec G402 -- user explicitly opted out of verification
 			}
-		} else {
-			hc = http.DefaultClient
 		}
+		hc = newDefaultHTTPClient(tlsCfg)
 	}
 
 	return &Client{
@@ -149,6 +147,52 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		userAgent:  ua,
 		httpClient: hc,
 	}, nil
+}
+
+// HTTP client timeouts. Without these the client inherits http.DefaultClient,
+// which has no timeout at all: a Chef server that accepts a connection and then
+// stops responding blocks the calling goroutine forever. Because a collection
+// run holds the single-run flag for its whole duration, one stalled request
+// wedges the run permanently and every subsequent scheduled tick is skipped —
+// collection stops silently until the service is restarted.
+//
+// ResponseHeaderTimeout is the load-bearing one: it bounds the wait for the
+// server to start replying without capping the transfer time of a large body
+// (cookbook downloads can be big and slow legitimately). The overall Timeout is
+// a generous backstop for a body that trickles indefinitely.
+const (
+	httpDialTimeout           = 15 * time.Second
+	httpTLSHandshakeTimeout   = 15 * time.Second
+	httpResponseHeaderTimeout = 60 * time.Second
+	httpIdleConnTimeout       = 90 * time.Second
+	httpOverallTimeout        = 15 * time.Minute
+
+	// Role fetching fans out concurrently against a single host, so the
+	// stdlib default of 2 idle connections per host would force most
+	// requests to build a fresh TCP+TLS connection.
+	httpMaxIdleConnsPerHost = 32
+)
+
+// newDefaultHTTPClient builds the HTTP client used when the caller does not
+// supply one. tlsCfg may be nil for default (verifying) TLS behaviour.
+func newDefaultHTTPClient(tlsCfg *tls.Config) *http.Client {
+	return &http.Client{
+		Timeout: httpOverallTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsCfg,
+			DialContext: (&net.Dialer{
+				Timeout:   httpDialTimeout,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   httpTLSHandshakeTimeout,
+			ResponseHeaderTimeout: httpResponseHeaderTimeout,
+			IdleConnTimeout:       httpIdleConnTimeout,
+			ExpectContinueTimeout: 1 * time.Second,
+			MaxIdleConns:          128,
+			MaxIdleConnsPerHost:   httpMaxIdleConnsPerHost,
+			ForceAttemptHTTP2:     true,
+		},
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -403,23 +447,23 @@ func NodeSearchAttributes() PartialSearchQuery {
 	// Ohai (platform, cookbooks, filesystem, etc.) are accessed directly
 	// by name — the "automatic" prefix must NOT appear in the path.
 	return PartialSearchQuery{
-		"name":                    {"name"},
-		"chef_environment":        {"chef_environment"},
-		"chef_version":            {"chef_packages", "chef", "version"},
-		"platform":                {"platform"},
-		"platform_version":        {"platform_version"},
-		"platform_family":         {"platform_family"},
-		"kernel_os_info_caption":  {"kernel", "os_info", "caption"},
-		"lsb_description":         {"lsb", "description"},
-		"filesystem":              {"filesystem"},
-		"cookbooks":               {"cookbooks"},
-		"run_list":                {"run_list"},
-		"roles":                   {"roles"},
-		"tags":                    {"tags"},
-		"policy_name":             {"policy_name"},
-		"policy_group":            {"policy_group"},
-		"ohai_time":               {"ohai_time"},
-		"chef_migration":          {"chef_migration"},
+		"name":                   {"name"},
+		"chef_environment":       {"chef_environment"},
+		"chef_version":           {"chef_packages", "chef", "version"},
+		"platform":               {"platform"},
+		"platform_version":       {"platform_version"},
+		"platform_family":        {"platform_family"},
+		"kernel_os_info_caption": {"kernel", "os_info", "caption"},
+		"lsb_description":        {"lsb", "description"},
+		"filesystem":             {"filesystem"},
+		"cookbooks":              {"cookbooks"},
+		"run_list":               {"run_list"},
+		"roles":                  {"roles"},
+		"tags":                   {"tags"},
+		"policy_name":            {"policy_name"},
+		"policy_group":           {"policy_group"},
+		"ohai_time":              {"ohai_time"},
+		"chef_migration":         {"chef_migration"},
 	}
 }
 
@@ -620,6 +664,78 @@ func (c *Client) GetRole(ctx context.Context, name string) (*RoleDetail, error) 
 		return nil, fmt.Errorf("chefapi: unmarshalling role detail: %w", err)
 	}
 	return &role, nil
+}
+
+// GetRolesConcurrent fetches the detail for each named role using a bounded
+// worker pool, and returns the successfully fetched roles in the same order as
+// names (not completion order) so the dependency graph is built
+// deterministically.
+//
+// The Chef API has no bulk role-detail endpoint, so this is one request per
+// role. Fetching them serially is the single largest contributor to collection
+// run duration at customer scale — 31,958 roles at one ~55ms round-trip each is
+// over 29 minutes of pure network wait per organisation.
+//
+// Roles that fail to fetch are omitted from the returned slice and reported in
+// the error slice; a partial graph is more useful than none, matching the
+// previous serial behaviour which logged and continued. If ctx is cancelled the
+// remaining roles are skipped rather than issued as doomed requests.
+func (c *Client) GetRolesConcurrent(ctx context.Context, names []string, concurrency int) ([]*RoleDetail, []error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	if concurrency > len(names) {
+		concurrency = len(names)
+	}
+
+	// Results are written by index so ordering is independent of completion
+	// order; no mutex is needed because each worker owns distinct indices.
+	details := make([]*RoleDetail, len(names))
+	errs := make([]error, len(names))
+
+	work := make(chan int)
+	var wg sync.WaitGroup
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for idx := range work {
+				if ctx.Err() != nil {
+					errs[idx] = fmt.Errorf("chefapi: role %q: %w", names[idx], ctx.Err())
+					continue
+				}
+				rd, err := c.GetRole(ctx, names[idx])
+				if err != nil {
+					errs[idx] = fmt.Errorf("chefapi: role %q: %w", names[idx], err)
+					continue
+				}
+				details[idx] = rd
+			}
+		}()
+	}
+
+	for i := range names {
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+
+	roles := make([]*RoleDetail, 0, len(names))
+	failures := make([]error, 0)
+	for i := range names {
+		if details[i] != nil {
+			roles = append(roles, details[i])
+			continue
+		}
+		if errs[i] != nil {
+			failures = append(failures, errs[i])
+		}
+	}
+	return roles, failures
 }
 
 // CookbookListEntry represents a single cookbook in the cookbook list response.
