@@ -83,10 +83,22 @@ func (r *Router) handleAdminRescanAllCookstyle(w http.ResponseWriter, req *http.
 		return
 	}
 
-	// Reset download_status to 'pending' for all server cookbooks so the
-	// streaming pipeline re-downloads and re-scans them on the next cycle.
-	// When delete_server_cookbooks_after_scan is false (the default), files
-	// already in the cache directory will be overwritten in place.
+	// Clear the materialised cookstyle verdicts on git_repos. The repo LIST
+	// view reads those columns directly while the DETAIL view looks the result
+	// up live, so leaving them set makes the list keep asserting "ready" from
+	// results just deleted, until each repo is re-scanned — hours, at fleet
+	// scale. Test Kitchen columns are preserved: a cookstyle rescan does not
+	// invalidate kitchen results. Server cookbooks need no equivalent: their
+	// list derives status by joining the results table live.
+	if err := r.db.ResetAllGitRepoCookstyleVerdicts(ctx); err != nil {
+		r.logf("ERROR", "resetting git repo cookstyle verdicts: %v", err)
+		WriteInternalError(w, "Failed to reset git repo statuses.")
+		return
+	}
+
+	// Mark all server cookbooks for reprocessing. Cached cookbook files are
+	// reused — resolveCookbookDir treats a populated version directory as
+	// authoritative regardless of this status, so this does not re-download.
 	resetCount, resetErr := r.db.ResetAllServerCookbookDownloadStatuses(ctx)
 	if resetErr != nil {
 		r.logf("ERROR", "resetting server cookbook download statuses: %v", resetErr)

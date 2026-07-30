@@ -558,3 +558,53 @@ func TestTriggerCollectionInBackground_Error(t *testing.T) {
 }
 
 
+
+// ---------------------------------------------------------------------------
+// rescan-all must clear the materialised git repo verdicts
+// ---------------------------------------------------------------------------
+
+// git_repos carries materialised cookstyle/compatibility columns that the repo
+// LIST view reads directly, while the DETAIL view resolves the result live.
+// Deleting cookstyle results without clearing them leaves the list asserting a
+// verdict ("ready") whose backing rows are gone, until every repo is
+// re-scanned — hours at fleet scale.
+func TestHandleAdminRescanAll_ResetsMaterialisedGitRepoVerdicts(t *testing.T) {
+	store := minimalRescanAllStore()
+	var reset bool
+	store.ResetAllGitRepoCookstyleVerdictsFn = func(ctx context.Context) error {
+		reset = true
+		return nil
+	}
+
+	var calls atomic.Int32
+	r := newTestRouterWithTrigger(store, succeedingTrigger(&calls))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/rescan-all-cookstyle", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+	}
+	if !reset {
+		t.Error("rescan-all deleted cookstyle results without clearing the materialised git repo verdicts")
+	}
+}
+
+// A failed reset must not report success: the caller would believe the list is
+// consistent when it is still showing verdicts for deleted results.
+func TestHandleAdminRescanAll_ResetFailureIsReported(t *testing.T) {
+	store := minimalRescanAllStore()
+	store.ResetAllGitRepoCookstyleVerdictsFn = func(ctx context.Context) error {
+		return errors.New("db unavailable")
+	}
+
+	var calls atomic.Int32
+	r := newTestRouterWithTrigger(store, succeedingTrigger(&calls))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/rescan-all-cookstyle", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Error("expected a non-200 when the verdict reset fails")
+	}
+}

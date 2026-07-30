@@ -90,6 +90,7 @@ type mockStore struct {
 	BatchUpdateGitRepoCookstylePassedFn                    func(ctx context.Context, updates []datastore.CookstylePassedUpdate) error
 	RecomputeGitRepoCompatibilityStatusFn                  func(ctx context.Context, name, url, targetVersion string) error
 	RecomputeAllGitRepoCookstyleStatusFn                   func(ctx context.Context, targetChefVersion string) error
+	ResetAllGitRepoCookstyleVerdictsFn                     func(ctx context.Context) error
 	DeleteAllGitRepoComplexitiesFn                         func(ctx context.Context) error
 	DeleteAllGitRepoAutocorrectPreviewsFn                  func(ctx context.Context) error
 	ListAllServerCookbookCookstyleResultsByTargetVersionFn func(ctx context.Context, targetChefVersion string) ([]datastore.ServerCookbookCookstyleResult, error)
@@ -784,6 +785,13 @@ func (m *mockStore) RecomputeGitRepoCompatibilityStatus(ctx context.Context, nam
 func (m *mockStore) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error {
 	if m.RecomputeAllGitRepoCookstyleStatusFn != nil {
 		return m.RecomputeAllGitRepoCookstyleStatusFn(ctx, targetChefVersion)
+	}
+	return nil
+}
+
+func (m *mockStore) ResetAllGitRepoCookstyleVerdicts(ctx context.Context) error {
+	if m.ResetAllGitRepoCookstyleVerdictsFn != nil {
+		return m.ResetAllGitRepoCookstyleVerdictsFn(ctx)
 	}
 	return nil
 }
