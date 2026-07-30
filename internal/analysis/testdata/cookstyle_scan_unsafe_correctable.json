@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "rubocop_version": "1.86.1",
+    "ruby_engine": "ruby",
+    "ruby_version": "3.4.8",
+    "ruby_patchlevel": "72",
+    "ruby_platform": "x86_64-linux"
+  },
+  "files": [
+    {
+      "path": "metadata.rb",
+      "offenses": []
+    },
+    {
+      "path": "recipes/default.rb",
+      "offenses": [
+        {
+          "severity": "convention",
+          "message": "Use `first`. (#first-and-last)",
+          "cop_name": "Style/ArrayFirstLast",
+          "corrected": false,
+          "correctable": true,
+          "location": {
+            "start_line": 2,
+            "start_column": 19,
+            "last_line": 2,
+            "last_column": 21,
+            "length": 3,
+            "line": 2,
+            "column": 19
+          }
+        },
+        {
+          "severity": "convention",
+          "message": "Use `last`. (#first-and-last)",
+          "cop_name": "Style/ArrayFirstLast",
+          "corrected": false,
+          "correctable": true,
+          "location": {
+            "start_line": 3,
+            "start_column": 18,
+            "last_line": 3,
+            "last_column": 21,
+            "length": 4,
+            "line": 3,
+            "column": 18
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "offense_count": 2,
+    "target_file_count": 2,
+    "inspected_file_count": 2
+  }
+}

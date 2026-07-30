@@ -40,6 +40,41 @@ reference because it carries both classes of offence in one document:
 Giving the arithmetic Chunk 2 needs: `correctable = count(corrected==true)` = 3,
 `remaining = offense_count - corrected` = 3.
 
+### CMM runs `--auto-correct`, not `--auto-correct-all`
+
+`remediation/cookstyle_invocation.go:28` and `autocorrect.go:440` build
+`{"--auto-correct","--format","json"}` — safe corrections only. `--auto-correct-all`
+(`-A`) additionally applies corrections RuboCop marks unsafe. **The two disagree**, so any
+measurement used to design the fix must use `--auto-correct`.
+
+Measured across 165 real cookbook files (WS 25.14.2):
+
+| Command | `correctable=true` | `corrected=true` | Gap |
+|---|---|---|---|
+| `--auto-correct` (what CMM runs) | 77 | 76 | **1** |
+| `--auto-correct-all` | 77 | 77 | 0 |
+
+The gap was `Style/ArrayFirstLast` — an unsafe correction. Minimal reproduction on the
+deployed toolchain in `cookstyle_scan_unsafe_correctable.json`: two offences, both
+`correctable=true`, both `corrected=false` after `--auto-correct`.
+
+**Consequence for the fix — the two counts are not interchangeable:**
+
+- The static `correctable` flag is the cop's *capability*. Persist it per offence
+  (Chunk 1); it is the right input for the per-cop pages.
+- What CMM's preview *actually fixes* is the `corrected` count from the `--auto-correct`
+  run, which can be lower.
+
+If the remediation page's "Auto-Correctable N" comes from the static flag while the diff
+beside it comes from the run, the header can contradict the diff again — a smaller version
+of the exact bug being fixed. **Recommendation:** the page's headline count and the
+complexity input both come from the run's `corrected` count; the static flag drives
+cop-level capability views. Needs sign-off before Chunk 2.
+
+`--auto-correct` modifies files in place, which is why previews run on a temporary copy
+(`autocorrect.go:354`, and the directory copy helpers at `:594`). Any future probing must
+copy first.
+
 ### Trap: the `-A` report is not a re-scan
 
 A plain scan of the *already corrected* tree reports **3** offences, all `corrected=false` —
