@@ -1,0 +1,127 @@
+{
+  "metadata": {
+    "rubocop_version": "1.86.1",
+    "ruby_engine": "ruby",
+    "ruby_version": "3.4.8",
+    "ruby_patchlevel": "72",
+    "ruby_platform": "x86_64-linux"
+  },
+  "files": [
+    {
+      "path": "metadata.rb",
+      "offenses": [
+        {
+          "severity": "refactor",
+          "message": "Metadata contains default maintainer information from the cookbook generator. Add actual cookbook maintainer information to the metadata.rb. (https://docs.chef.io/workstation/cookstyle/chef_sharing_defaultmetadatamaintainer)",
+          "cop_name": "Chef/Sharing/DefaultMetadataMaintainer",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 2,
+            "start_column": 1,
+            "last_line": 2,
+            "last_column": 24,
+            "length": 24,
+            "line": 2,
+            "column": 1
+          }
+        },
+        {
+          "severity": "refactor",
+          "message": "Metadata contains default maintainer information from the cookbook generator. Add actual cookbook maintainer information to the metadata.rb. (https://docs.chef.io/workstation/cookstyle/chef_sharing_defaultmetadatamaintainer)",
+          "cop_name": "Chef/Sharing/DefaultMetadataMaintainer",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 3,
+            "start_column": 1,
+            "last_line": 3,
+            "last_column": 34,
+            "length": 34,
+            "line": 3,
+            "column": 1
+          }
+        }
+      ]
+    },
+    {
+      "path": "recipes/default.rb",
+      "offenses": [
+        {
+          "severity": "convention",
+          "message": "Prefer single-quoted strings when you don't need string interpolation or special symbols. (https://rubystyle.guide#consistent-string-literals)",
+          "cop_name": "Style/StringLiterals",
+          "corrected": false,
+          "correctable": true,
+          "location": {
+            "start_line": 1,
+            "start_column": 9,
+            "last_line": 1,
+            "last_column": 61,
+            "length": 53,
+            "line": 1,
+            "column": 9
+          }
+        },
+        {
+          "severity": "convention",
+          "message": "Trailing whitespace detected. (https://rubystyle.guide#no-trailing-whitespace)",
+          "cop_name": "Layout/TrailingWhitespace",
+          "corrected": false,
+          "correctable": true,
+          "location": {
+            "start_line": 1,
+            "start_column": 62,
+            "last_line": 1,
+            "last_column": 64,
+            "length": 3,
+            "line": 1,
+            "column": 62
+          }
+        },
+        {
+          "severity": "refactor",
+          "message": "Use platform? and platform_family? helpers to check a node's platform (https://docs.chef.io/workstation/cookstyle/chef_style_useplatformhelpers)",
+          "cop_name": "Chef/Style/UsePlatformHelpers",
+          "corrected": false,
+          "correctable": true,
+          "location": {
+            "start_line": 8,
+            "start_column": 4,
+            "last_line": 8,
+            "last_column": 31,
+            "length": 28,
+            "line": 8,
+            "column": 4
+          }
+        }
+      ]
+    },
+    {
+      "path": "resources/thing.rb",
+      "offenses": [
+        {
+          "severity": "refactor",
+          "message": "Set `unified_mode true` in Chef Infra Client 15.3+ custom resources to ensure they work correctly in Chef Infra Client 18 (April 2022) when Unified Mode becomes the default. (https://docs.chef.io/workstation/cookstyle/chef_deprecations_resourcewithoutunifiedtrue)",
+          "cop_name": "Chef/Deprecations/ResourceWithoutUnifiedTrue",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 1,
+            "start_column": 1,
+            "last_line": 1,
+            "last_column": 1,
+            "length": 1,
+            "line": 1,
+            "column": 1
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "offense_count": 6,
+    "target_file_count": 3,
+    "inspected_file_count": 3
+  }
+}

@@ -28,14 +28,32 @@ The behaviour is identical on both, so it is not version-specific.
 So `summary.offense_count` is not "what could not be fixed", and `corrected` is
 meaningless on a non-correcting scan. Both assumptions are currently relied upon.
 
-Captured as real fixtures rather than prose, so this is pinned rather than remembered
-(`internal/analysis/testdata/`): `cookstyle_scan_plain.json`,
-`cookstyle_scan_autocorrected.json`, `cookstyle_scan_noncorrectable.json`. Paths are
-relativised; content is otherwise untouched cookstyle output. These are the fixtures
-Chunk 3 requires.
+Confirmed on both toolchains. The **Workstation 26.1.0 / Cookstyle 8.7.6** probe is the
+reference because it carries both classes of offence in one document:
 
-**Still to confirm:** the same probe on Workstation 26 (`dev.home.arpa`) — blocked, the
-1Password SSH agent will not sign. Expected to match, since WS25 and WS26.1 already agree.
+| | plain scan | the `-A` run's own report |
+|---|---|---|
+| `summary.offense_count` | 6 | **6 — unchanged** |
+| 3 correctable offences | `corrected=false` | `corrected=true` |
+| 3 non-correctable offences | `corrected=false` | `corrected=false` |
+
+Giving the arithmetic Chunk 2 needs: `correctable = count(corrected==true)` = 3,
+`remaining = offense_count - corrected` = 3.
+
+### Trap: the `-A` report is not a re-scan
+
+A plain scan of the *already corrected* tree reports **3** offences, all `corrected=false` —
+the fixed ones are gone, and nothing claims to have corrected them. The `-A` invocation's
+own report instead lists all 6 with flags. The two disagree, so Chunk 2 must read the
+output of the correcting run itself and must not re-scan afterwards to derive counts.
+(Found by making this mistake while capturing the fixtures.)
+
+Captured as real fixtures rather than prose, so this is pinned rather than remembered
+(`internal/analysis/testdata/`, see its README): the WS26 mixed pair
+`cookstyle_scan_mixed_plain.json` / `cookstyle_scan_mixed_autocorrected.json`, plus the
+WS25 set `cookstyle_scan_plain.json`, `cookstyle_scan_autocorrected.json` and
+`cookstyle_scan_noncorrectable.json`. Paths are relativised; content is otherwise
+untouched cookstyle output. These are the fixtures Chunk 3 requires.
 
 ## Verified code state — re-checked at `e602fdb`
 
@@ -114,14 +132,22 @@ Frontend is a faithful pass-through — no fix needed there.
   cookbook" is not in the repo and no location is given, and the Symptom section
   describes a different, three-offence cookbook.
 
-## Chunk 1 — carry the flag end to end
+## Chunk 1 — carry the flag end to end, and build the reset trigger
 
 Add `Correctable` to `analysis.CookstyleOffense` and to `remediation.EnrichedOffense`,
 populate it through `enrichOffenses`, and correct the read-side struct tags. Fix
 `cookstyle_fingerprint.go` to store `correctable`, not `corrected`.
 
+**Also build the preview-reset operator trigger** (folded in here 2026-07-30 — without it
+the fix silently no-ops, see Data repair). An admin endpoint alongside
+`POST /api/v1/admin/rescan-all-cookstyle`, wired to `ResetPreviews`/`ResetAllPreviews`
+(`autocorrect.go:556`, `:571`), **plus the admin UI control** so it is executable at a
+VDI-only site.
+
 Acceptance: a scan of a cookbook with a trailing-whitespace offence persists
-`correctable: true`; the remediation page reports a non-zero correctable count.
+`correctable: true`; a non-correctable offence persists `correctable: false`; the
+remediation page reports a non-zero correctable count; an operator can reset previews from
+the UI without shell access.
 
 ## Chunk 2 — fix the preview arithmetic
 
@@ -150,14 +176,12 @@ The field was never written and there is no per-offence correctable column in an
 migration, so stored data is unrecoverable without re-running scans. Order matters:
 
 1. Re-scan (`rescan-all-cookstyle`) to repopulate `*_cookstyle_results.offences`.
-2. **Reset previews explicitly** — **blocker: there is no operator trigger.**
-   `ResetPreviews`/`ResetAllPreviews` are Go methods with no HTTP route and no CLI entry
-   point, unlike `rescan-all-cookstyle` (`POST /api/v1/admin/rescan-all-cookstyle`).
-   At a VDI-only site this step is currently unexecutable; building the trigger is
-   unscoped work that must be added to Chunk 1 or 2.
-   Original note: — `autocorrect.go:309` skips generation when a preview
-   already exists, so without `ResetPreviews`/`ResetAllPreviews` (`:556-576`) the fix
+2. **Reset previews explicitly.** `autocorrect.go:309` skips generation when a preview
+   already exists, so without `ResetPreviews`/`ResetAllPreviews` (`:556`, `:571`) the fix
    silently no-ops. `diff_output`/`files_modified` are sound and need no correction.
+   These were Go methods with no HTTP route and no CLI entry, making the step
+   unexecutable at a VDI-only site; **the endpoint and its UI control are now scoped into
+   Chunk 1** (agreed 2026-07-30).
 3. Complexity recomputes from previews and follows automatically.
 
 `cookstyle_offence_fingerprints` history stays wrong; accept it.
