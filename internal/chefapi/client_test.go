@@ -2764,3 +2764,27 @@ func TestNewClient_RespectsSuppliedHTTPClient(t *testing.T) {
 		t.Error("an explicitly supplied HTTPClient must be used unchanged")
 	}
 }
+
+func TestNodeSearchAttributes_FilesystemIsNotNarrowed(t *testing.T) {
+	// The filesystem attribute must be requested as a whole subtree.
+	//
+	// Narrowing it to ["filesystem","by_pair"] (v2.18.6) destroyed filesystem
+	// data for every Windows node: Ohai on Windows emits no by_pair /
+	// by_device / by_mountpoint sections at all — automatic.filesystem is a
+	// flat map keyed by drive letter — so the sub-path does not resolve and
+	// partial search returns nothing. 55,488 of 55,489 Windows nodes lost
+	// their filesystem attribute and their disk verdict with it, silently.
+	//
+	// Any future narrowing must first be validated against the shape
+	// distribution across the whole fleet (see the census requirement in
+	// specifications/data-collection.md § 1.4.1), not against one node.
+	attrs := NodeSearchAttributes()
+
+	path, ok := attrs["filesystem"]
+	if !ok {
+		t.Fatal("filesystem attribute must be collected")
+	}
+	if len(path) != 1 || path[0] != "filesystem" {
+		t.Errorf("filesystem path = %v, want [filesystem]; a narrowed sub-path silently drops every platform whose Ohai lacks that section", path)
+	}
+}
