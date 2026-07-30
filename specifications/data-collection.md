@@ -318,8 +318,14 @@ To support the dependency graph view in the dashboard, the data collection compo
 
 ### 5.1 Role Expansion
 
-- For each organisation, fetch the full list of roles using `GET /organizations/<ORG>/roles`.
-- For each role, fetch the role detail using `GET /organizations/<ORG>/roles/<ROLE_NAME>` to obtain the `run_list` and `env_run_lists`.
+- For each organisation, fetch the full list of roles using `GET /organizations/<ORG>/roles`. This list is the authority on which roles exist.
+- Obtain each role's `run_list` and `env_run_lists` by **partial search on the `role` index**, paginated. A per-role `GET /organizations/<ORG>/roles/<ROLE_NAME>` is the fallback, used only to fill roles the index did not return, or to carry the whole collection when the index is unavailable.
+  - *Why:* one request per page instead of one per role. Measured at customer scale, the per-role path cost 73,910 requests and ~7m16s per cycle — 26% of the run.
+  - Role attribute paths are **unprefixed**: a role is a top-level Chef object, so its fields are not under the merged node attribute namespace. An `automatic`/`default`/`override` prefix returns nothing, silently.
+  - The role index is not assumed to behave like the node index: pagination advances by the number of rows actually returned (the server may cap `rows` below the request), roles are de-duplicated by name (pagination boundaries may repeat rows), and a page returning no rows ends the walk rather than failing.
+  - **The role index applies no stable sort.** Measured against chef-server 15.10: the same role set is returned in a different order depending on the page size requested. Two consequences: collected roles are sorted by name so the persisted graph does not churn between runs, and the per-role fallback is load-bearing — an index that can reorder under a paginated walk can drop a row from it, and at 74k roles that walk spans many requests.
+  - A role that cannot be decoded, or that fails both paths, is omitted and logged. A partial graph is preferred to none.
+- Lab fixtures: roles named `cmm-test-*` exist on the lab Chef server to exercise these paths (populated `env_run_lists`, nested roles, empty run list, a 60-entry run list, and 30 bulk roles for pagination). The functional tests in `internal/chefapi` use them; they are permanent and safe to leave in place.
 - Parse each role's `run_list` to extract:
   - **Cookbook references** — entries like `recipe[cookbook::recipe]` or `recipe[cookbook]`
   - **Nested role references** — entries like `role[other_role]`

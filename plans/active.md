@@ -41,9 +41,10 @@ Release preconditions — the bump target runs no tests:
 ## Queued — collector performance (`plans/collector-performance.md`)
 
 Measured baselines, the invariants learned during the incident, the ruled-out list, and
-the open items. Highest value: **role fetch via the search index** (verified viable on
-the lab; recovers ~7 min of the 28-minute cycle), then **collector streaming** (the only
-fix for peak memory scaling with fleet size).
+the open items. Scope decision (2026-07-30): everything **except collector streaming**,
+which is parked — it touches the shared collection path with silent-corruption failure
+modes and conflicts with runtime-observability Chunk 4. Remaining, in order: log-retention
+decoupling, collection history, the early `completed_at` stamp, the Node 20 action bump.
 
 ## Queued — cookstyle correctable flag (`plans/cookstyle-correctable-fix.md`)
 

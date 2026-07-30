@@ -280,6 +280,16 @@ GET /organizations/<ORG_NAME>/roles/<ROLE_NAME>
 
 Returns the role's `run_list`, `env_run_lists`, `default_attributes`, and `override_attributes`.
 
+This is the **fallback** path for the dependency graph, not the primary one — see below.
+
+#### Search Role Details
+
+```
+POST /organizations/<ORG_NAME>/search/role?q=*:*&rows=<N>&start=<N>
+```
+
+Partial search over the `role` index, requesting `name`, `run_list` and `env_run_lists`. Nested maps and arrays are returned intact. This is the primary path for dependency graph collection; the per-role GET above fills gaps and covers an unavailable index. See [Data Collection](data-collection.md) § 5.1 for the invariants.
+
 ---
 
 ## Implementation Notes
