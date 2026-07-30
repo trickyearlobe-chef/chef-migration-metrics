@@ -25,6 +25,7 @@ export interface IngestConfig {
 export interface ConcurrencyConfig {
   organisation_collection: number;
   node_page_fetching: number;
+  role_fetching: number;
   git_pull: number;
   cookbook_download: number;
   cookstyle_scan: number;

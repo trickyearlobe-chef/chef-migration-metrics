@@ -14,12 +14,63 @@ Single source of truth for what is in flight. **Read this first at session start
   ship. Full state + resume steps in `plans/p3-node-list-perf.md`.
 - **Parked** `chore/spec-drift-report` — one-time spec↔code drift report;
   deprioritised behind feature delivery. Don't nag to merge (see [[spec-drift-parked]]).
-- No feature branch in flight. Pull the next chunk from Queued/backlog onto a fresh branch.
+- `feature/runtime-observability` — heap/goroutine profile capture in the diagnostic
+  bundle plus heap history. Plan: `plans/runtime-observability.md`. Not started.
 
-## NOW — (nothing active)
+## NOW — collector memory: streaming (no branch yet)
 
-No chunk is in flight. Pick the next deliberately from Queued below or a `todo-*.md`
-backlog, start it on a fresh branch, and record the chunk (scope/steps/acceptance) here.
+Context for the 2026-07-29/30 production incident (host OOM, ~22GB Go heap on a 32GB
+box, ~134k nodes across 3 orgs). Measured findings worth keeping:
+
+- Node collection materialises the whole fleet as `map[string]interface{}`
+  (`client.go:359`) at **~193KB/node measured** (62,046 nodes → 12GB peak). Three orgs
+  concurrently ≈ 26GB, which is the observed 22GB. Peak memory still scales with fleet
+  size; Chunk B below is the only fix for that.
+- A full 3-org cycle runs 20–25min even after the collector fixes, so a `*/10` cron
+  means near-continuous collection. Collection interval must exceed run duration —
+  nodes converge every 2h at the customer, so hourly or slower loses nothing.
+- Per-org duration is dominated by cookbook/cookstyle/readiness work, not node count:
+  a 15k-node dev org with 2 active nodes took 33m46s.
+
+**Ruled out by evidence** (do not re-investigate): GIN index on `node_snapshots.cookbooks`
+(69MB, zero dead tuples, autovacuum current); `perf.Recorder` (bounded ring buffers,
+`perf/stats.go:37`); logging `DBWriter` (synchronous, no buffer); event ingest
+(`converge_runs` empty). There was no leak — goroutines stayed flat at 26–30.
+
+**Chunk B — item 5: stream node pages + per-batch commits (NOT started)**
+
+Scope: `collector.go:822-987`, `node_snapshots.go:259`.
+
+Makes peak O(page) instead of O(fleet) — the only change that stops peak memory scaling
+with fleet size. Blockers to design around, all of which currently assume the complete
+node set is in hand:
+
+- `deduplicateSnapshotParams` (pagination-boundary duplicates)
+- cookbook aggregation: `allCookbookNames` / `activeCookbookNames` / `activeCookbookVersions`
+- `nodeRecords` for usage analysis
+- `snapshotParams` is read downstream at `collector.go:1007/1045/1557`, so it stays
+  pinned for the org's entire pipeline (including role fetching). Needs projecting down
+  to the few fields those consumers actually use.
+
+Riskiest item on the list — shared collection path, silent-corruption failure modes.
+Deserves its own branch and a lab run before shipping.
+
+**Queued next (own chunks)**
+
+- **Role fetch via search index** — `/search/role` paginated at 1000 would turn 31,958
+  requests into ~32, versus the current bounded fan-out. Do once the fan-out is proven
+  at customer scale.
+- **Decouple log retention from collection runs** — purge only fires at the tail of a
+  successful run (`collector.go:679`); `log_entries` had 240k dead tuples and autovacuum
+  a day stale. Needs a ticker + partitioning so expiry is a `DROP PARTITION`.
+- **Keep collection history** — `PurgeOldCollectionRuns` (`collector.go:689`) keeps only
+  the latest terminal run per org, so there is no duration trend to diagnose regressions
+  with. Retain ~30 days.
+- `collection_runs.completed_at` is stamped **early** (Step 4b, `collector.go:1022`), so
+  the duration column excludes Steps 5–14. Document or add a true end-to-end duration.
+
+Note: the dev org stays in scheduled collection — it is the CC19 deployment-cookbook
+proving ground.
 
 ## Queued — Event Ingest follow-ups (`plans/todo-event-ingest.md`)
 

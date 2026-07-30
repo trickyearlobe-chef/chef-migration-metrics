@@ -944,3 +944,145 @@ func TestDeviceFromInfo_Neither(t *testing.T) {
 		t.Errorf("deviceFromInfo(empty) = %q, want %q", got, "")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// by_pair payloads (the shape the node partial search now stores)
+// ---------------------------------------------------------------------------
+//
+// The node search requests ["filesystem","by_pair"], so node_snapshots.filesystem
+// holds the by_pair map directly — keyed "device,mount" with no by_mountpoint
+// wrapper. parseFilesystemData must read that shape, and must keep reading the
+// legacy by_mountpoint wrapper for snapshots stored before the change (both
+// coexist until every org has been re-collected).
+
+func TestParseFilesystemData_ByPairLinux(t *testing.T) {
+	// Verbatim from node_snapshots.filesystem for a real Ubuntu 24.04 node.
+	raw := json.RawMessage(`{
+		"/dev/mapper/vg-lv,/": {
+			"uuid": "2a0e5534-2c57-464f-ae3b-f2838143207d", "mount": "/",
+			"device": "/dev/mapper/vg-lv", "fs_type": "ext4",
+			"kb_size": "24590672", "kb_used": "7468364", "kb_available": "15847840",
+			"percent_used": "33%", "inodes_used": "147193", "total_inodes": "1572864",
+			"inodes_available": "1425671", "inodes_percent_used": "10%",
+			"mount_options": ["rw", "relatime"]
+		},
+		"/dev/sda2,/boot": {
+			"mount": "/boot", "device": "/dev/sda2", "fs_type": "ext4",
+			"kb_size": "1992552", "kb_used": "200000", "kb_available": "1700000",
+			"percent_used": "11%"
+		},
+		"/dev/sda,": {"device": "/dev/sda", "fs_type": "ext4"}
+	}`)
+
+	disks, err := parseFilesystemData(raw, false)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 2 {
+		t.Fatalf("expected 2 mounted filesystems, got %d: %+v", len(disks), disks)
+	}
+
+	// Sorted by mount: "/" then "/boot".
+	root := disks[0]
+	if root.Mount != "/" {
+		t.Errorf("Mount = %q, want %q", root.Mount, "/")
+	}
+	if root.Device != "/dev/mapper/vg-lv" {
+		t.Errorf("Device = %q, want the by_pair 'device' string", root.Device)
+	}
+	if root.FSType != "ext4" {
+		t.Errorf("FSType = %q, want ext4", root.FSType)
+	}
+	if root.KBAvailable != 15847840 {
+		t.Errorf("KBAvailable = %d, want 15847840", root.KBAvailable)
+	}
+	if root.PercentUsed != 33 {
+		t.Errorf("PercentUsed = %d, want 33 (Ohai reports '33%%')", root.PercentUsed)
+	}
+	if root.UUID != "2a0e5534-2c57-464f-ae3b-f2838143207d" {
+		t.Errorf("UUID = %q, want the by_pair uuid", root.UUID)
+	}
+	if len(root.MountOptions) != 2 {
+		t.Errorf("MountOptions = %v, want 2 entries", root.MountOptions)
+	}
+	if root.InodesPercentUsed == nil || *root.InodesPercentUsed != 10 {
+		t.Errorf("InodesPercentUsed = %v, want 10", root.InodesPercentUsed)
+	}
+}
+
+func TestParseFilesystemData_ByPairSkipsUnmountedDevices(t *testing.T) {
+	// by_pair includes bare devices with an empty mount half ("/dev/sda,").
+	// They have no mount point and must not appear as blank-mount rows.
+	raw := json.RawMessage(`{
+		"/dev/sda,":  {"device": "/dev/sda", "fs_type": "ext4"},
+		"/dev/sr0,":  {"device": "/dev/sr0"},
+		"/dev/sda1,/": {"mount": "/", "device": "/dev/sda1", "fs_type": "ext4", "kb_size": "1000", "kb_available": "500"}
+	}`)
+
+	disks, err := parseFilesystemData(raw, true)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 1 {
+		t.Fatalf("expected only the mounted entry, got %d: %+v", len(disks), disks)
+	}
+	if disks[0].Mount != "/" {
+		t.Errorf("Mount = %q, want %q", disks[0].Mount, "/")
+	}
+}
+
+func TestParseFilesystemData_ByPairWindows(t *testing.T) {
+	// Verbatim from node_snapshots.filesystem for a real Windows Server 2022
+	// node. Keys are ",C:" — the device half is empty, so the mount must come
+	// from the entry's "mount" field, not the key.
+	raw := json.RawMessage(`{
+		",C:": {"mount": "C:", "device": "", "fs_type": "ntfs", "kb_size": 33685499,
+			"kb_used": 15392510, "kb_available": 18292989, "percent_used": 45,
+			"drive_type_human": "Local Fixed Disk", "volume_name": ""},
+		"new volume,D:": {"mount": "D:", "device": "new volume", "fs_type": "ntfs",
+			"kb_size": 34340859, "kb_used": 1403424, "kb_available": 32937435,
+			"percent_used": 4, "drive_type_human": "Local Fixed Disk", "volume_name": "New Volume"}
+	}`)
+
+	disks, err := parseFilesystemData(raw, false)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 2 {
+		t.Fatalf("expected 2 Windows volumes, got %d: %+v", len(disks), disks)
+	}
+	if disks[0].Mount != "C:" {
+		t.Errorf("Mount = %q, want C:", disks[0].Mount)
+	}
+	if disks[0].KBAvailable != 18292989 {
+		t.Errorf("KBAvailable = %d, want 18292989", disks[0].KBAvailable)
+	}
+	if disks[0].DriveType != "Local Fixed Disk" {
+		t.Errorf("DriveType = %q, want %q", disks[0].DriveType, "Local Fixed Disk")
+	}
+	if disks[1].VolumeName != "New Volume" {
+		t.Errorf("VolumeName = %q, want %q", disks[1].VolumeName, "New Volume")
+	}
+}
+
+func TestParseFilesystemData_ByMountpointStillSupported(t *testing.T) {
+	// Snapshots stored before the search was narrowed still carry the full
+	// wrapper; they must keep rendering until those orgs are re-collected.
+	raw := json.RawMessage(`{
+		"by_mountpoint": {
+			"/": {"devices": ["/dev/sda1"], "fs_type": "ext4", "kb_size": "1000", "kb_available": "500", "percent_used": "50%"}
+		},
+		"by_device": {"/dev/sda1": {"mount": "/"}}
+	}`)
+
+	disks, err := parseFilesystemData(raw, false)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 1 {
+		t.Fatalf("expected 1 filesystem, got %d", len(disks))
+	}
+	if disks[0].Mount != "/" || disks[0].Device != "/dev/sda1" {
+		t.Errorf("got mount=%q device=%q, want / and /dev/sda1", disks[0].Mount, disks[0].Device)
+	}
+}

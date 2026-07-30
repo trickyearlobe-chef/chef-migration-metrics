@@ -8,6 +8,7 @@ const INPUT_CLASS =
 const DEFAULT_CONFIG: ConcurrencyConfig = {
   organisation_collection: 1,
   node_page_fetching: 1,
+  role_fetching: 1,
   git_pull: 1,
   cookbook_download: 1,
   cookstyle_scan: 1,
@@ -87,6 +88,7 @@ export function AdminConcurrencyPage() {
   const fields: { key: keyof ConcurrencyConfig; label: string }[] = [
     { key: "organisation_collection", label: "Organisation Collection Workers" },
     { key: "node_page_fetching", label: "Node Page Fetching Workers" },
+    { key: "role_fetching", label: "Role Fetching Workers" },
     { key: "git_pull", label: "Git Pull Workers" },
     { key: "cookbook_download", label: "Cookbook Download Workers" },
     { key: "cookstyle_scan", label: "CookStyle Scan Workers" },

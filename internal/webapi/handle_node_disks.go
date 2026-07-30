@@ -135,27 +135,30 @@ func (r *Router) handleNodeDisks(w http.ResponseWriter, req *http.Request) {
 }
 
 // parseFilesystemData extracts disk entries from Ohai filesystem JSONB.
-// It uses the by_mountpoint key (Ohai 14+ format) as the preferred source.
+//
+// Two stored shapes are supported. The node partial search requests
+// ["filesystem","by_pair"], so current snapshots hold the by_pair map directly:
+// keys are "device,mount" and the mount comes from each entry's "mount" field.
+// Snapshots written before that change carry the full Ohai wrapper, so the
+// by_mountpoint section is still read when present — both shapes coexist in the
+// table until every organisation has been re-collected.
+//
 // When showAll is false, virtual/pseudo filesystems are filtered out.
 func parseFilesystemData(raw json.RawMessage, showAll bool) ([]DiskEntry, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return []DiskEntry{}, nil
 	}
 
-	// Top-level Ohai filesystem structure.
-	var fs struct {
-		ByMountpoint map[string]map[string]interface{} `json:"by_mountpoint"`
+	byMount, err := filesystemEntriesByMount(raw)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(raw, &fs); err != nil {
-		return nil, fmt.Errorf("unmarshal filesystem: %w", err)
-	}
-
-	if fs.ByMountpoint == nil {
+	if byMount == nil {
 		return []DiskEntry{}, nil
 	}
 
-	entries := make([]DiskEntry, 0, len(fs.ByMountpoint))
-	for mount, info := range fs.ByMountpoint {
+	entries := make([]DiskEntry, 0, len(byMount))
+	for mount, info := range byMount {
 		fsType := stringVal(info["fs_type"])
 
 		// Filter virtual filesystems unless show_all is requested.
@@ -266,6 +269,39 @@ func isVirtualFS(fsType, mount string) bool {
 // deviceFromInfo extracts the device name from the mountpoint info map.
 // The "devices" field can be a string array; we return the first entry.
 // Falls back to the "device" field if "devices" is absent.
+// filesystemEntriesByMount normalises either stored filesystem shape into a
+// map of mount point → entry. Returns nil when the payload carries no usable
+// filesystem data.
+func filesystemEntriesByMount(raw json.RawMessage) (map[string]map[string]interface{}, error) {
+	var wrapper struct {
+		ByMountpoint map[string]map[string]interface{} `json:"by_mountpoint"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err == nil && wrapper.ByMountpoint != nil {
+		// Legacy full-subtree snapshot.
+		return wrapper.ByMountpoint, nil
+	}
+
+	// by_pair shape: a flat map keyed "device,mount". The key is not the mount
+	// (on Windows it looks like ",C:"), so the mount must be read from the
+	// entry. Entries without one are bare unmounted devices — Ohai emits a
+	// "/dev/sda," pair for every disk — and are skipped rather than rendered
+	// as blank-mount rows.
+	var pairs map[string]map[string]interface{}
+	if err := json.Unmarshal(raw, &pairs); err != nil {
+		return nil, fmt.Errorf("unmarshal filesystem: %w", err)
+	}
+
+	byMount := make(map[string]map[string]interface{}, len(pairs))
+	for _, info := range pairs {
+		mount := stringVal(info["mount"])
+		if mount == "" {
+			continue
+		}
+		byMount[mount] = info
+	}
+	return byMount, nil
+}
+
 func deviceFromInfo(info map[string]interface{}) string {
 	if devs, ok := info["devices"]; ok {
 		if sl := toStringSlice(devs); len(sl) > 0 {

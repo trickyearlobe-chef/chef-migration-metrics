@@ -190,13 +190,17 @@ func TestNewClient_DefaultsApplied(t *testing.T) {
 	if !strings.Contains(c.userAgent, "unknown") {
 		t.Errorf("expected 'unknown' org in user agent, got %q", c.userAgent)
 	}
-	if c.httpClient != http.DefaultClient {
-		t.Error("expected default HTTP client to be used")
+	if c.httpClient == http.DefaultClient {
+		t.Error("must not use http.DefaultClient — it has no timeout")
+	}
+	if c.httpClient.Timeout <= 0 {
+		t.Error("expected a bounded default HTTP client")
 	}
 }
 
-func TestNewClient_SSLVerify_DefaultUsesDefaultClient(t *testing.T) {
-	// When SSLVerify is nil (not set), the client should use http.DefaultClient.
+func TestNewClient_SSLVerify_DefaultUsesVerifyingClient(t *testing.T) {
+	// When SSLVerify is nil (not set), TLS verification stays on: the
+	// transport must carry no InsecureSkipVerify override.
 	c, err := NewClient(ClientConfig{
 		ServerURL:     "https://chef.example.com/organizations/myorg",
 		ClientName:    "test",
@@ -205,12 +209,16 @@ func TestNewClient_SSLVerify_DefaultUsesDefaultClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if c.httpClient != http.DefaultClient {
-		t.Error("expected http.DefaultClient when SSLVerify is nil")
+	tr, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", c.httpClient.Transport)
+	}
+	if tr.TLSClientConfig != nil && tr.TLSClientConfig.InsecureSkipVerify {
+		t.Error("expected TLS verification to remain enabled when SSLVerify is nil")
 	}
 }
 
-func TestNewClient_SSLVerify_ExplicitTrueUsesDefaultClient(t *testing.T) {
+func TestNewClient_SSLVerify_ExplicitTrueUsesVerifyingClient(t *testing.T) {
 	sslVerify := true
 	c, err := NewClient(ClientConfig{
 		ServerURL:     "https://chef.example.com/organizations/myorg",
@@ -221,8 +229,12 @@ func TestNewClient_SSLVerify_ExplicitTrueUsesDefaultClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if c.httpClient != http.DefaultClient {
-		t.Error("expected http.DefaultClient when SSLVerify is explicitly true")
+	tr, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", c.httpClient.Transport)
+	}
+	if tr.TLSClientConfig != nil && tr.TLSClientConfig.InsecureSkipVerify {
+		t.Error("expected TLS verification to remain enabled when SSLVerify is true")
 	}
 }
 
@@ -2522,5 +2534,233 @@ func TestNodeData_PlatformCaption_ValidUTF8Unchanged(t *testing.T) {
 	want := "Microsoft Windows Server 2022 Données"
 	if got != want {
 		t.Errorf("PlatformCaption() = %q, want %q", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GetRolesConcurrent tests
+// ---------------------------------------------------------------------------
+
+func TestGetRolesConcurrent_ReturnsAllRolesInRequestOrder(t *testing.T) {
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/organizations/testorg/roles/")
+		_ = json.NewEncoder(w).Encode(RoleDetail{
+			Name:    name,
+			RunList: []string{"recipe[" + name + "]"},
+		})
+	})
+
+	names := []string{"alpha", "bravo", "charlie", "delta", "echo"}
+	roles, errs := client.GetRolesConcurrent(ctx(), names, 3)
+
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(roles) != len(names) {
+		t.Fatalf("expected %d roles, got %d", len(names), len(roles))
+	}
+	// Order must match the requested name order so the dependency graph is
+	// built deterministically regardless of completion order.
+	for i, want := range names {
+		if roles[i].Name != want {
+			t.Errorf("roles[%d].Name = %q, want %q", i, roles[i].Name, want)
+		}
+	}
+}
+
+func TestGetRolesConcurrent_SkipsFailedRolesAndReportsErrors(t *testing.T) {
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/organizations/testorg/roles/")
+		if name == "bravo" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(RoleDetail{Name: name})
+	})
+
+	names := []string{"alpha", "bravo", "charlie"}
+	roles, errs := client.GetRolesConcurrent(ctx(), names, 2)
+
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if len(roles) != 2 {
+		t.Fatalf("expected 2 roles, got %d", len(roles))
+	}
+	// A failing role is skipped, and the surviving roles keep request order.
+	for i, want := range []string{"alpha", "charlie"} {
+		if roles[i].Name != want {
+			t.Errorf("roles[%d].Name = %q, want %q", i, roles[i].Name, want)
+		}
+	}
+	if !strings.Contains(errs[0].Error(), "bravo") {
+		t.Errorf("error should name the failing role, got %v", errs[0])
+	}
+}
+
+func TestGetRolesConcurrent_RespectsConcurrencyLimit(t *testing.T) {
+	var inFlight, maxInFlight int64
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		cur := atomic.AddInt64(&inFlight, 1)
+		for {
+			old := atomic.LoadInt64(&maxInFlight)
+			if cur <= old || atomic.CompareAndSwapInt64(&maxInFlight, old, cur) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		atomic.AddInt64(&inFlight, -1)
+		_ = json.NewEncoder(w).Encode(RoleDetail{
+			Name: strings.TrimPrefix(r.URL.Path, "/organizations/testorg/roles/"),
+		})
+	})
+
+	names := make([]string, 20)
+	for i := range names {
+		names[i] = fmt.Sprintf("role%02d", i)
+	}
+
+	const limit = 4
+	roles, errs := client.GetRolesConcurrent(ctx(), names, limit)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(roles) != len(names) {
+		t.Fatalf("expected %d roles, got %d", len(names), len(roles))
+	}
+	if got := atomic.LoadInt64(&maxInFlight); got > limit {
+		t.Errorf("max concurrent requests = %d, want <= %d", got, limit)
+	}
+}
+
+func TestGetRolesConcurrent_EmptyInput(t *testing.T) {
+	client, _ := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("no request should be made for an empty role list")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	roles, errs := client.GetRolesConcurrent(ctx(), nil, 5)
+	if len(roles) != 0 || len(errs) != 0 {
+		t.Errorf("expected no roles and no errors, got %d roles / %d errors", len(roles), len(errs))
+	}
+}
+
+func TestGetRolesConcurrent_ZeroConcurrencyDefaultsToSerial(t *testing.T) {
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(RoleDetail{
+			Name: strings.TrimPrefix(r.URL.Path, "/organizations/testorg/roles/"),
+		})
+	})
+
+	roles, errs := client.GetRolesConcurrent(ctx(), []string{"a", "b"}, 0)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(roles) != 2 {
+		t.Fatalf("expected 2 roles, got %d", len(roles))
+	}
+}
+
+func TestGetRolesConcurrent_ContextCancellation(t *testing.T) {
+	cancelCtx, cancel := context.WithCancel(context.Background())
+	client, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		time.Sleep(5 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(RoleDetail{
+			Name: strings.TrimPrefix(r.URL.Path, "/organizations/testorg/roles/"),
+		})
+	})
+
+	names := make([]string, 50)
+	for i := range names {
+		names[i] = fmt.Sprintf("role%02d", i)
+	}
+
+	// Must return rather than hang; a cancelled context short-circuits the
+	// remaining fetches instead of issuing 50 doomed requests.
+	roles, _ := client.GetRolesConcurrent(cancelCtx, names, 2)
+	if len(roles) == len(names) {
+		t.Errorf("expected cancellation to skip some roles, got all %d", len(roles))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HTTP transport timeout tests
+// ---------------------------------------------------------------------------
+
+func TestNewClient_DefaultHTTPClientHasTimeouts(t *testing.T) {
+	c, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	hc := c.httpClient
+	if hc == http.DefaultClient {
+		t.Fatal("client must not use http.DefaultClient — it has no timeout, so a stalled Chef server hangs a collection run forever")
+	}
+	if hc.Timeout <= 0 {
+		t.Error("http client must set an overall Timeout")
+	}
+
+	tr, ok := hc.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", hc.Transport)
+	}
+	if tr.TLSHandshakeTimeout <= 0 {
+		t.Error("TLSHandshakeTimeout must be set")
+	}
+	if tr.ResponseHeaderTimeout <= 0 {
+		t.Error("ResponseHeaderTimeout must be set — it is what detects a stalled server")
+	}
+	if tr.MaxIdleConnsPerHost < 2 {
+		t.Errorf("MaxIdleConnsPerHost = %d; the default of 2 throttles concurrent role fetching", tr.MaxIdleConnsPerHost)
+	}
+}
+
+func TestNewClient_InsecureClientAlsoHasTimeouts(t *testing.T) {
+	sslVerify := false
+	c, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		SSLVerify:     &sslVerify,
+		WarnFunc:      func(string) {},
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	if c.httpClient.Timeout <= 0 {
+		t.Error("insecure client must also set an overall Timeout")
+	}
+	tr, ok := c.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", c.httpClient.Transport)
+	}
+	if !tr.TLSClientConfig.InsecureSkipVerify {
+		t.Error("InsecureSkipVerify must be preserved when ssl_verify is false")
+	}
+	if tr.ResponseHeaderTimeout <= 0 {
+		t.Error("ResponseHeaderTimeout must be set on the insecure client too")
+	}
+}
+
+func TestNewClient_RespectsSuppliedHTTPClient(t *testing.T) {
+	custom := &http.Client{Timeout: 3 * time.Second}
+	c, err := NewClient(ClientConfig{
+		ServerURL:     "https://chef.example.com/organizations/myorg",
+		ClientName:    "test",
+		PrivateKeyPEM: generateTestKey(t),
+		HTTPClient:    custom,
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if c.httpClient != custom {
+		t.Error("an explicitly supplied HTTPClient must be used unchanged")
 	}
 }

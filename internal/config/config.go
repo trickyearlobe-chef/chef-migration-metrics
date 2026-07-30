@@ -139,6 +139,7 @@ func (c *CollectionConfig) DeleteServerCookbooksAfterScanEnabled() bool {
 type ConcurrencyConfig struct {
 	OrganisationCollection int `yaml:"organisation_collection"`
 	NodePageFetching       int `yaml:"node_page_fetching"`
+	RoleFetching           int `yaml:"role_fetching"`
 	GitPull                int `yaml:"git_pull"`
 	CookbookDownload       int `yaml:"cookbook_download"`
 	CookstyleScan          int `yaml:"cookstyle_scan"`
@@ -984,6 +985,9 @@ func (c *Config) setDefaults() {
 	if c.Concurrency.NodePageFetching == 0 {
 		c.Concurrency.NodePageFetching = 10
 	}
+	if c.Concurrency.RoleFetching == 0 {
+		c.Concurrency.RoleFetching = 10
+	}
 	if c.Concurrency.GitPull == 0 {
 		c.Concurrency.GitPull = 10
 	}
@@ -1487,6 +1491,7 @@ func (c *Config) validateConcurrency(ve *ValidationError) {
 	}
 	check("organisation_collection", c.Concurrency.OrganisationCollection)
 	check("node_page_fetching", c.Concurrency.NodePageFetching)
+	check("role_fetching", c.Concurrency.RoleFetching)
 	check("git_pull", c.Concurrency.GitPull)
 	check("cookbook_download", c.Concurrency.CookbookDownload)
 	check("cookstyle_scan", c.Concurrency.CookstyleScan)
