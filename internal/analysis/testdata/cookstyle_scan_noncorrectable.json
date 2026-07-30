@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "rubocop_version": "1.84.2",
+    "ruby_engine": "ruby",
+    "ruby_version": "3.1.7",
+    "ruby_patchlevel": "261",
+    "ruby_platform": "arm64-darwin22"
+  },
+  "files": [
+    {
+      "path": "example001/metadata.rb",
+      "offenses": [
+        {
+          "severity": "refactor",
+          "message": "Metadata contains default maintainer information from the cookbook generator. Add actual cookbook maintainer information to the metadata.rb. (https://docs.chef.io/workstation/cookstyle/chef_sharing_defaultmetadatamaintainer)",
+          "cop_name": "Chef/Sharing/DefaultMetadataMaintainer",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 2,
+            "start_column": 1,
+            "last_line": 2,
+            "last_column": 24,
+            "length": 24,
+            "line": 2,
+            "column": 1
+          }
+        }
+      ]
+    },
+    {
+      "path": "selinux/resources/boolean.rb",
+      "offenses": [
+        {
+          "severity": "refactor",
+          "message": "Set `unified_mode true` in Chef Infra Client 15.3+ custom resources to ensure they work correctly in Chef Infra Client 18 (April 2022) when Unified Mode becomes the default. (https://docs.chef.io/workstation/cookstyle/chef_deprecations_resourcewithoutunifiedtrue)",
+          "cop_name": "Chef/Deprecations/ResourceWithoutUnifiedTrue",
+          "corrected": false,
+          "correctable": false,
+          "location": {
+            "start_line": 1,
+            "start_column": 1,
+            "last_line": 1,
+            "last_column": 1,
+            "length": 1,
+            "line": 1,
+            "column": 1
+          }
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "offense_count": 2,
+    "target_file_count": 2,
+    "inspected_file_count": 2
+  }
+}
