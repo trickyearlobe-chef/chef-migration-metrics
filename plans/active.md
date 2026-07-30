@@ -34,21 +34,6 @@ Release preconditions — the bump target runs no tests:
 Bump the pinned action before support is withdrawn. Supply-chain check per CLAUDE.md: pin
 exact version/SHA. Last survivor of the collector-performance batch.
 
-## Queued — spec drift sweep
-
-Started 2026-07-30 after repeated instances of prose being believed over code. Five specs
-cleaned by deleting pasted contracts rather than correcting them. Still drifted:
-
-- `data-collection.md` — mandates page-level checkpointing that does not exist.
-  `checkpoint_start` is never written. **Actively misleading**; it produced a false
-  constraint in the collection-history plan.
-- `enriched-metric-snapshots.md` — describes the fingerprint `correctable` field as a
-  re-derivation input; nothing reads it.
-- `diagnostic-bundle.md`, `web-api-admin.md` — smaller gaps.
-
-Principle: delete pasted shapes, keep only intent and invariants. No file paths, symbol
-paths or line numbers — those rot too.
-
 ## Queued — runtime observability (`plans/runtime-observability.md`)
 
 Heap and goroutine profile capture in the diagnostic bundle, threshold-triggered

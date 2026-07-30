@@ -261,18 +261,24 @@ The collection job must be able to resume an interrupted run without discarding 
 - On startup, the application queries for `collection_runs` rows with `status = 'running'` or `status = 'interrupted'`. These represent interrupted runs.
 - For interrupted runs, the application identifies which organisations have already been completed and resumes collection for the remaining organisations only.
 
-**Page-level checkpointing (within an organisation):**
+**Resumption granularity is the whole organisation.** An interrupted run is abandoned
+and its organisation re-collected from the beginning — there is no page-level resume.
+State the cost plainly, because it is not small: an interruption late in a 62k-node
+organisation discards that entire organisation's collection.
 
-- After each page of nodes is fetched and persisted, update the `checkpoint_start` field on the `collection_runs` row with the `start` offset of the **next** page to fetch.
-- On resume, if a `collection_runs` row has `status = 'running'` and a non-null `checkpoint_start`, the collection resumes pagination from that offset rather than from page zero.
-- This avoids re-fetching and re-persisting pages of nodes that were already successfully collected before the interruption.
+This section previously specified page-level checkpointing via a `checkpoint_start`
+offset. That was never built: nothing writes the field, and the resume path abandons
+the run and re-queues the organisation for a fresh collection. The description is
+removed rather than corrected — leaving it made the behaviour look solved, and it
+produced a false constraint in a later plan. If page-level resume is wanted, it is a
+piece of work to plan, not a behaviour to document.
 
 **Graceful shutdown:**
 
 - On receiving a shutdown signal (`SIGTERM`, `SIGINT`), the application must:
   1. Stop accepting new work (no new organisations, no new pages).
   2. Allow in-flight HTTP requests to complete (with a configurable grace period, default 30 seconds).
-  3. Update any `running` collection runs to `interrupted` with the current `checkpoint_start`.
+  3. Update any `running` collection runs to `interrupted`.
   4. Exit cleanly.
 
 ### 3.4 Recovery on Startup

@@ -307,6 +307,25 @@ Deletes a local user account. SAML users cannot be deleted via this endpoint.
 
 **Response (204):** No content.
 
+### Rescan
+
+#### `POST /api/v1/admin/rescan-all-cookstyle`
+
+Destructive, fleet-wide, and irreversible without re-scanning. Documented for what it
+destroys rather than for its response shape:
+
+- Deletes **all** CookStyle results, complexity records and auto-correct previews, for
+  both server cookbooks and git repos.
+- Clears the materialised cookstyle and compatibility verdicts on git repos, so the repo
+  list cannot keep showing a verdict whose backing rows are gone. Test Kitchen verdicts
+  are preserved — a CookStyle rescan does not invalidate kitchen results.
+- Marks every server cookbook for reprocessing, then triggers an immediate collection run.
+
+It does **not** re-download cookbooks. A populated, version-keyed cache directory is
+authoritative regardless of download status, so the cost is CookStyle CPU rather than
+network — bounded by `concurrency.cookstyle_scan`. At fleet scale the run takes hours,
+during which results are absent and pages read as untested.
+
 ### System Status
 
 #### `GET /api/v1/admin/status`
