@@ -351,6 +351,12 @@ type DataStore interface {
 	// version, so the materialised list columns cannot drift from the results.
 	RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChefVersion string) error
 
+	// ResetAllGitRepoCookstyleVerdicts clears the materialised cookstyle and
+	// compatibility verdicts, leaving Test Kitchen columns intact. Called when
+	// cookstyle results are deleted so the list view cannot keep showing a
+	// verdict whose backing rows are gone.
+	ResetAllGitRepoCookstyleVerdicts(ctx context.Context) error
+
 	// RecomputeAllRoleCompatStatus re-materialises every role's compatibility
 	// columns in role_summary from cookstyle results for the target Chef version.
 	RecomputeAllRoleCompatStatus(ctx context.Context, targetChefVersion string) error

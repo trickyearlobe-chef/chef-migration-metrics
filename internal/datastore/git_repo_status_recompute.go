@@ -172,9 +172,35 @@ func (db *DB) RecomputeGitRepoTKStatusByName(ctx context.Context, gitRepoName st
 	return nil
 }
 
-// ResetAllGitRepoStatuses resets all materialised status columns to 'untested'.
-// Call this when the active target Chef version changes (before results are
-// invalidated and re-computed).
+// ResetAllGitRepoCookstyleVerdicts resets only the materialised verdicts that a
+// CookStyle rescan invalidates: cookstyle_status and the compatibility_status
+// derived from it. Test Kitchen columns are deliberately left alone — a
+// cookstyle rescan does not delete kitchen results, so clearing tk_status would
+// destroy a verdict still backed by real data.
+//
+// Call this in the same operation that deletes cookstyle results. The git repo
+// LIST view reads these materialised columns while the DETAIL view looks the
+// result up live, so leaving them set makes the list assert a verdict ("ready")
+// derived from rows that no longer exist, until each repo is re-scanned. At
+// fleet scale that window is hours.
+func (db *DB) ResetAllGitRepoCookstyleVerdicts(ctx context.Context) error {
+	const query = `
+		UPDATE git_repos
+		SET cookstyle_status     = 'untested',
+		    compatibility_status = 'untested',
+		    updated_at           = now()
+		WHERE cookstyle_status != 'untested' OR compatibility_status != 'untested'`
+
+	if _, err := db.q().ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("datastore: resetting git repo cookstyle verdicts: %w", err)
+	}
+	return nil
+}
+
+// ResetAllGitRepoStatuses resets all materialised status columns to 'untested',
+// including Test Kitchen. Call this when the active target Chef version changes
+// (before results are invalidated and re-computed). For a CookStyle-only
+// rescan use ResetAllGitRepoCookstyleVerdicts, which preserves kitchen results.
 func (db *DB) ResetAllGitRepoStatuses(ctx context.Context) error {
 	const query = `
 		UPDATE git_repos
