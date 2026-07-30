@@ -16,8 +16,9 @@ Unmerged branches, none merged without explicit permission:
 - `docs/attribute-shape-validation` — **SUPERSEDED, delete without merging.** Its census
   rule was cherry-picked onto the branch above; its other commit records a claim that the
   v2.18.9 revert made false.
-- `fix/cookstyle-correctable-flag` — plan document only, no code.
-- `feature/runtime-observability` — plan document only, no code.
+- `fix/cookstyle-correctable-flag` — **SUPERSEDED, delete without merging.** Its plan
+  file is on the branch above; its other commit edits an `active.md` this one replaces.
+- `feature/runtime-observability` — **SUPERSEDED, delete without merging.** Same reason.
 - `chore/spec-drift-report` — parked; don't nag to merge (see [[spec-drift-parked]]).
 
 ## NOW — merge and release migration 0054
