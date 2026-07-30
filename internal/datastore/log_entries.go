@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -89,6 +90,14 @@ func (db *DB) InsertLogEntry(ctx context.Context, p InsertLogEntryParams) (LogEn
 func (db *DB) insertLogEntry(ctx context.Context, q queryable, p InsertLogEntryParams) (LogEntry, error) {
 	if err := validateLogEntryParams(p); err != nil {
 		return LogEntry{}, err
+	}
+
+	// log_entries is partitioned by day on timestamp; a row whose day partition
+	// does not exist cannot route and the insert fails. Creating it is
+	// idempotent and race-safe (see log_entries_ensure_partition).
+	day := p.Timestamp.UTC().Format("2006-01-02")
+	if _, err := q.ExecContext(ctx, `SELECT log_entries_ensure_partition($1::date)`, day); err != nil {
+		return LogEntry{}, fmt.Errorf("datastore: ensuring log_entries partition %s: %w", day, err)
 	}
 
 	const query = `
@@ -442,6 +451,67 @@ func (db *DB) ListLogEntriesByCollectionRun(ctx context.Context, orgName string)
 
 // PurgeLogEntriesBefore deletes all log entries with a timestamp older than
 // the given cutoff time. Returns the number of rows deleted.
+// PurgeLogEntryPartitions drops every whole day partition of log_entries whose
+// entire time range predates olderThan. Returns the number of partitions
+// dropped. The dropped table name is re-derived from the parsed partition date,
+// so the catalogue name is never interpolated verbatim.
+//
+// This is the retention path. A row-level DELETE over a table this size leaves
+// millions of dead tuples behind — the mechanism meant to bound the table
+// became a source of the bloat it was supposed to prevent. Mirrors
+// PurgeConvergeRunPartitions.
+func (db *DB) PurgeLogEntryPartitions(ctx context.Context, olderThan time.Time) (int, error) {
+	const listSQL = `
+SELECT c.relname
+FROM pg_inherits i
+JOIN pg_class c ON c.oid = i.inhrelid
+JOIN pg_class p ON p.oid = i.inhparent
+WHERE p.relname = 'log_entries'`
+
+	rows, err := db.pool.QueryContext(ctx, listSQL)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: listing log_entries partitions: %w", err)
+	}
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("datastore: scanning partition name: %w", err)
+		}
+		names = append(names, n)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("datastore: iterating partitions: %w", err)
+	}
+	rows.Close()
+
+	cutoff := olderThan.UTC()
+	dropped := 0
+	for _, name := range names {
+		suffix := strings.TrimPrefix(name, "log_entries_")
+		if suffix == name {
+			continue // not one of our day partitions
+		}
+		day, err := time.Parse("20060102", suffix)
+		if err != nil {
+			continue // unrecognised naming — leave it alone
+		}
+		// Partition covers [day, day+1). Drop only when the upper bound is at or
+		// before the cutoff, i.e. the whole day is older than the retention window.
+		if day.AddDate(0, 0, 1).After(cutoff) {
+			continue
+		}
+		safe := "log_entries_" + day.Format("20060102")
+		if _, err := db.pool.ExecContext(ctx, `DROP TABLE IF EXISTS `+safe); err != nil {
+			return dropped, fmt.Errorf("datastore: dropping partition %s: %w", safe, err)
+		}
+		dropped++
+	}
+	return dropped, nil
+}
+
 func (db *DB) PurgeLogEntriesBefore(ctx context.Context, before time.Time) (int64, error) {
 	if before.IsZero() {
 		return 0, fmt.Errorf("datastore: cutoff time is required for log purge")

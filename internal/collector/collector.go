@@ -694,15 +694,11 @@ func (c *Collector) Run(ctx context.Context) (*RunResult, error) {
 		c.recomputeRoleSummaries(ctx, log)
 	}
 
-	// Purge old log entries if retention is configured.
-	if c.cfg.Logging.RetentionDays > 0 {
-		purged, purgeErr := c.db.PurgeLogEntriesOlderThanDays(ctx, c.cfg.Logging.RetentionDays)
-		if purgeErr != nil {
-			log.Warn(fmt.Sprintf("log retention purge failed: %v", purgeErr))
-		} else if purged > 0 {
-			log.Info(fmt.Sprintf("purged %d log entries older than %d days", purged, c.cfg.Logging.RetentionDays))
-		}
-	}
+	// Log retention is not purged here. It runs on its own ticker
+	// (logging.StartRetentionTicker, started in main.go) because expiry tied to
+	// the tail of a collection run never happens when collection fails, is
+	// skipped for overrunning its tick, or returns early on an empty
+	// organisation list.
 
 	// Purge old collection runs (keep only the latest terminal run per org).
 	purgedRuns, purgeRunsErr := c.db.PurgeOldCollectionRuns(ctx)
