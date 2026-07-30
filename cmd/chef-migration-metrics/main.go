@@ -148,6 +148,9 @@ type serverApp struct {
 	// stopIngestRetention stops the converge_runs partition-retention ticker.
 	stopIngestRetention func()
 
+	// stopLogRetention stops the log_entries retention ticker.
+	stopLogRetention func()
+
 	// Kitchen queue manager (bounded concurrency for TK runs).
 	kitchenQueue *kitchenqueue.Manager
 
@@ -1373,6 +1376,31 @@ func (app *serverApp) setupExports() error {
 	}
 	app.stopIngestRetention = ingest.StartRetentionTicker(app.db, retentionDays, 1*time.Hour, ingestRetentionLog)
 	app.startup.Info("converge_runs retention ticker started (interval: 1h)")
+
+	// Log retention: expire log_entries older than logging.retention_days (read
+	// live). This used to run only at the tail of a collection run, so a failed
+	// or skipped run meant no expiry at all.
+	logRetentionLog := func(level, msg string) {
+		scoped := app.logger.WithScope(logging.ScopeStartup)
+		switch level {
+		case "DEBUG":
+			scoped.Debug(msg)
+		case "WARN":
+			scoped.Warn(msg)
+		case "ERROR":
+			scoped.Error(msg)
+		default:
+			scoped.Info(msg)
+		}
+	}
+	logRetentionDays := func() int {
+		if app.configHolder != nil {
+			return app.configHolder.Get().Logging.RetentionDays
+		}
+		return app.cfg.Logging.RetentionDays
+	}
+	app.stopLogRetention = logging.StartRetentionTicker(app.db, logRetentionDays, 1*time.Hour, logRetentionLog)
+	app.startup.Info("log retention ticker started (interval: 1h)")
 	return nil
 }
 
@@ -1804,6 +1832,10 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 						if app.stopIngestRetention != nil {
 							app.startup.Info("restore: stopping converge_runs retention")
 							app.stopIngestRetention()
+						}
+						if app.stopLogRetention != nil {
+							app.startup.Info("restore: stopping log retention")
+							app.stopLogRetention()
 						}
 						app.startup.Info("restore: all background workers stopped")
 					}))
@@ -2939,6 +2971,11 @@ func run() int {
 	defer func() {
 		if app.stopIngestRetention != nil {
 			app.stopIngestRetention()
+		}
+	}()
+	defer func() {
+		if app.stopLogRetention != nil {
+			app.stopLogRetention()
 		}
 	}()
 	defer func() {
