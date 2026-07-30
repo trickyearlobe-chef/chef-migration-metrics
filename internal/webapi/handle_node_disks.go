@@ -136,12 +136,17 @@ func (r *Router) handleNodeDisks(w http.ResponseWriter, req *http.Request) {
 
 // parseFilesystemData extracts disk entries from Ohai filesystem JSONB.
 //
-// Two stored shapes are supported. The node partial search requests
-// ["filesystem","by_pair"], so current snapshots hold the by_pair map directly:
-// keys are "device,mount" and the mount comes from each entry's "mount" field.
-// Snapshots written before that change carry the full Ohai wrapper, so the
-// by_mountpoint section is still read when present — both shapes coexist in the
-// table until every organisation has been re-collected.
+// Two stored shapes are supported, because both coexist in the table until
+// every organisation has been re-collected:
+//
+//   - Narrowed: the node partial search requests ["filesystem","by_pair"], so
+//     the by_pair map is stored directly, keyed "device,mount".
+//   - Legacy: the full Ohai wrapper with by_mountpoint / by_pair / by_device
+//     sections nested inside.
+//
+// For pair-keyed maps the mount comes from the entry's "mount" field where
+// present and from the key otherwise — some Ohai versions omit the redundant
+// field, and requiring it left the page blank while disk verdicts still worked.
 //
 // When showAll is false, virtual/pseudo filesystems are filtered out.
 func parseFilesystemData(raw json.RawMessage, showAll bool) ([]DiskEntry, error) {
@@ -266,41 +271,104 @@ func isVirtualFS(fsType, mount string) bool {
 	return false
 }
 
-// deviceFromInfo extracts the device name from the mountpoint info map.
-// The "devices" field can be a string array; we return the first entry.
-// Falls back to the "device" field if "devices" is absent.
 // filesystemEntriesByMount normalises either stored filesystem shape into a
 // map of mount point → entry. Returns nil when the payload carries no usable
 // filesystem data.
 func filesystemEntriesByMount(raw json.RawMessage) (map[string]map[string]interface{}, error) {
+	// Legacy full-subtree snapshot: sections nested under by_mountpoint /
+	// by_pair / by_device. Detect the wrapper by any of those keys, not just
+	// by_mountpoint — otherwise a wrapper missing that one section falls
+	// through to the flat branch below and the section names themselves get
+	// read as mount points.
 	var wrapper struct {
 		ByMountpoint map[string]map[string]interface{} `json:"by_mountpoint"`
+		ByPair       map[string]map[string]interface{} `json:"by_pair"`
+		ByDevice     map[string]map[string]interface{} `json:"by_device"`
 	}
-	if err := json.Unmarshal(raw, &wrapper); err == nil && wrapper.ByMountpoint != nil {
-		// Legacy full-subtree snapshot.
-		return wrapper.ByMountpoint, nil
+	if err := json.Unmarshal(raw, &wrapper); err == nil {
+		switch {
+		case wrapper.ByMountpoint != nil:
+			// Keys are already mount points.
+			return wrapper.ByMountpoint, nil
+		case wrapper.ByPair != nil:
+			return byMountFromPairs(wrapper.ByPair), nil
+		case wrapper.ByDevice != nil:
+			return byMountFromPairs(wrapper.ByDevice), nil
+		}
 	}
 
-	// by_pair shape: a flat map keyed "device,mount". The key is not the mount
-	// (on Windows it looks like ",C:"), so the mount must be read from the
-	// entry. Entries without one are bare unmounted devices — Ohai emits a
-	// "/dev/sda," pair for every disk — and are skipped rather than rendered
-	// as blank-mount rows.
+	// Narrowed snapshot: the by_pair map is stored directly, keyed
+	// "device,mount".
 	var pairs map[string]map[string]interface{}
 	if err := json.Unmarshal(raw, &pairs); err != nil {
 		return nil, fmt.Errorf("unmarshal filesystem: %w", err)
 	}
 
+	return byMountFromPairs(pairs), nil
+}
+
+// byMountFromPairs re-keys a "device,mount" map by mount point, dropping
+// entries that have no mount.
+func byMountFromPairs(pairs map[string]map[string]interface{}) map[string]map[string]interface{} {
 	byMount := make(map[string]map[string]interface{}, len(pairs))
-	for _, info := range pairs {
-		mount := stringVal(info["mount"])
+	for key, info := range pairs {
+		mount := mountForPair(key, info)
 		if mount == "" {
+			// A pair with no mount half is a bare unmounted device — Ohai
+			// emits a "/dev/sda," entry for every disk. Not a filesystem.
 			continue
 		}
 		byMount[mount] = info
 	}
-	return byMount, nil
+	return byMount
 }
+
+// mountForPair resolves the mount point of a by_pair entry, preferring the
+// explicit "mount" field and falling back to the mount half of the key.
+//
+// Some Ohai versions omit the redundant "mount" field from by_pair entries.
+// analysis.EvaluateDisk tolerates that because findBestMountWindows matches
+// the map key before falling back to entry.Mount, so such nodes report a disk
+// verdict while this page — which used to require the field — rendered nothing.
+// Deriving from the key keeps the two views consistent.
+//
+// The key is normally "<device>,<mount>" and a device name may itself contain
+// a comma (e.g. "weird,device,/data"), hence the split on the LAST comma; an
+// empty mount half means a bare unmounted device and yields "".
+//
+// Some Ohai versions (seen on Chef 16 Windows) instead key volumes by bare
+// drive letter — "C:", "D:" — with no comma and no "mount" field. Such a key
+// is accepted only when it actually looks like a mount point, so that stray
+// top-level keys are never mistaken for one.
+func mountForPair(key string, info map[string]interface{}) string {
+	if mount := stringVal(info["mount"]); mount != "" {
+		return mount
+	}
+	if i := strings.LastIndex(key, ","); i >= 0 {
+		return key[i+1:]
+	}
+	if looksLikeMountPoint(key) {
+		return key
+	}
+	return ""
+}
+
+// looksLikeMountPoint reports whether s has the shape of a mount point: a
+// POSIX absolute path, a UNC path, or a Windows drive letter such as "C:".
+func looksLikeMountPoint(s string) bool {
+	if strings.HasPrefix(s, "/") || strings.HasPrefix(s, `\\`) {
+		return true
+	}
+	if len(s) >= 2 && s[1] == ':' {
+		c := s[0]
+		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+	}
+	return false
+}
+
+// deviceFromInfo extracts the device name from the mountpoint info map.
+// The "devices" field can be a string array; we return the first entry.
+// Falls back to the "device" field if "devices" is absent.
 
 func deviceFromInfo(info map[string]interface{}) string {
 	if devs, ok := info["devices"]; ok {

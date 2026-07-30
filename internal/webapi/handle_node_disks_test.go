@@ -1086,3 +1086,107 @@ func TestParseFilesystemData_ByMountpointStillSupported(t *testing.T) {
 		t.Errorf("got mount=%q device=%q, want / and /dev/sda1", disks[0].Mount, disks[0].Device)
 	}
 }
+
+func TestParseFilesystemData_ByPairDerivesMountFromKeyWhenFieldAbsent(t *testing.T) {
+	// by_pair keys encode "device,mount". Some Ohai versions omit the
+	// redundant "mount" field from the entry. EvaluateDisk still resolves
+	// those because findBestMountWindows matches the key before falling back
+	// to entry.Mount — so a disk verdict appears while the disks page renders
+	// nothing. Derive the mount from the key so both agree.
+	raw := json.RawMessage(`{
+		",C:":            {"fs_type": "ntfs", "kb_size": 33685499, "kb_used": 15392510, "kb_available": 18292989},
+		"new volume,D:":  {"fs_type": "ntfs", "kb_size": 34340859, "kb_used": 1403424, "kb_available": 32937435},
+		"/dev/sda1,/":    {"fs_type": "ext4", "kb_size": 1000, "kb_used": 400, "kb_available": 600},
+		"/dev/sda,":      {"fs_type": "ext4"}
+	}`)
+
+	disks, err := parseFilesystemData(raw, false)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 3 {
+		t.Fatalf("expected 3 mounted filesystems, got %d: %+v", len(disks), disks)
+	}
+
+	got := map[string]int64{}
+	for _, d := range disks {
+		got[d.Mount] = d.KBAvailable
+	}
+	for mount, want := range map[string]int64{"C:": 18292989, "D:": 32937435, "/": 600} {
+		if got[mount] != want {
+			t.Errorf("mount %q: KBAvailable = %d, want %d (all mounts: %v)", mount, got[mount], want, got)
+		}
+	}
+	// "/dev/sda," has an empty mount half — an unmounted device, not a filesystem.
+	if _, ok := got[""]; ok {
+		t.Error("entry with an empty mount half must be skipped, not rendered blank")
+	}
+}
+
+func TestParseFilesystemData_ByPairPrefersMountFieldOverKey(t *testing.T) {
+	// When both are present the explicit field wins — the key is only a
+	// fallback, and a device name may itself contain a comma.
+	raw := json.RawMessage(`{
+		"weird,device,/data": {"mount": "/data", "fs_type": "xfs", "kb_size": 100, "kb_available": 50}
+	}`)
+
+	disks, err := parseFilesystemData(raw, true)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 1 {
+		t.Fatalf("expected 1 filesystem, got %d", len(disks))
+	}
+	if disks[0].Mount != "/data" {
+		t.Errorf("Mount = %q, want /data", disks[0].Mount)
+	}
+}
+
+func TestParseFilesystemData_ByPairWindowsDriveLetterKeys(t *testing.T) {
+	// Verbatim shape from a customer Windows node (Ohai version differs from
+	// the lab): by_pair keys are bare drive letters with NO comma and the
+	// entries carry NO "mount" field.
+	//
+	// analysis.findBestMountWindows matches the key against the drive letter,
+	// so these nodes report a disk verdict — while this page rendered nothing
+	// because it required either a "mount" field or a "device,mount" key.
+	raw := json.RawMessage(`{
+		"C:": {"fs_type": "ntfs", "kb_size": 98782146, "kb_used": 55134618, "drive_type": 3,
+			"volume_name": "System", "kb_available": 43647528, "percent_used": 55,
+			"drive_type_human": "Local Fixed Disk", "drive_type_string": "local"},
+		"D:": {"fs_type": "ntfs", "kb_size": 127775272, "kb_used": 102952689,
+			"kb_available": 24822583, "percent_used": 81, "drive_type_human": "Local Fixed Disk"}
+	}`)
+
+	disks, err := parseFilesystemData(raw, false)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 2 {
+		t.Fatalf("expected 2 Windows volumes, got %d: %+v", len(disks), disks)
+	}
+	if disks[0].Mount != "C:" || disks[1].Mount != "D:" {
+		t.Fatalf("mounts = %q/%q, want C:/D:", disks[0].Mount, disks[1].Mount)
+	}
+	if disks[0].KBAvailable != 43647528 {
+		t.Errorf("C: KBAvailable = %d, want 43647528", disks[0].KBAvailable)
+	}
+	if disks[0].VolumeName != "System" || disks[0].DriveType != "Local Fixed Disk" {
+		t.Errorf("C: volume=%q driveType=%q, want System / Local Fixed Disk",
+			disks[0].VolumeName, disks[0].DriveType)
+	}
+}
+
+func TestParseFilesystemData_CommalessNonMountKeysIgnored(t *testing.T) {
+	// A comma-less key is only a mount if it looks like one. Section names
+	// from a partially-populated wrapper must never become mount points.
+	raw := json.RawMessage(`{"by_pair": {"something": {}}, "by_device": {"something": {}}}`)
+
+	disks, err := parseFilesystemData(raw, true)
+	if err != nil {
+		t.Fatalf("parseFilesystemData: %v", err)
+	}
+	if len(disks) != 0 {
+		t.Errorf("expected 0 filesystems, got %d: %+v", len(disks), disks)
+	}
+}
