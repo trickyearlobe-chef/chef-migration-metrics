@@ -1190,8 +1190,18 @@ func (c *Collector) collectOrganisation(ctx context.Context, org datastore.Organ
 				logging.WithCollectionRunID(run.OrganisationName))
 		}
 
+		// Per-cookbook download and scan progress is CookStyle work, not
+		// collection-run narrative, so it is scoped cookstyle_scan — matching
+		// the git repo path, whose per-repo lines already come from the scanner
+		// under that scope. Without this the two sources report under different
+		// scopes purely because of which layer emits the line, and neither
+		// filter is useful: collection_run drowns in per-cookbook chatter while
+		// cookstyle_scan shows only half the scanning. The run-level summary
+		// below stays on the collection_run logger.
+		scanLog := c.logger.WithScope(logging.ScopeCookstyleScan, logging.WithOrganisation(org.Name))
+
 		pipelineResult := runServerCookbookPipeline(
-			ctx, client, c.db, log, org,
+			ctx, client, c.db, scanLog, org,
 			c.cookbookCacheDir,
 			c.cfg.TargetChefVersionList(),
 			c.cookstyleScanner,
