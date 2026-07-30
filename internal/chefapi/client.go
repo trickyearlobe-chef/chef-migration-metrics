@@ -455,30 +455,15 @@ func NodeSearchAttributes() PartialSearchQuery {
 		"platform_family":        {"platform_family"},
 		"kernel_os_info_caption": {"kernel", "os_info", "caption"},
 		"lsb_description":        {"lsb", "description"},
-		// Only the by_pair section, not the whole filesystem subtree. Ohai
-		// reports the same mounts three times (by_device, by_mountpoint,
-		// by_pair); on a real Linux node that is ~11.2KB of which by_pair is
-		// ~4.5KB, and decoded into map[string]interface{} the filesystem tree
-		// dominates per-node memory (measured ~193KB heap per node overall).
-		//
-		// by_pair is the only usable section: its entries carry a "mount"
-		// field, which analysis.EvaluateDisk requires. Real by_mountpoint
-		// entries key on the mount and omit the field, so narrowing to that
-		// section would silently make every Linux disk verdict unknown.
-		// Pinned by TestEvaluateDisk_ByPairOnly* in internal/analysis.
-		//
-		// Trade-off: nodes running Ohai < 14 report a flat filesystem map with
-		// no by_pair section and will return nothing here, losing their disk
-		// verdict. Chef 14 dates from 2018; revisit if such nodes appear.
-		"filesystem":     {"filesystem", "by_pair"},
-		"cookbooks":      {"cookbooks"},
-		"run_list":       {"run_list"},
-		"roles":          {"roles"},
-		"tags":           {"tags"},
-		"policy_name":    {"policy_name"},
-		"policy_group":   {"policy_group"},
-		"ohai_time":      {"ohai_time"},
-		"chef_migration": {"chef_migration"},
+		"filesystem":             {"filesystem"},
+		"cookbooks":              {"cookbooks"},
+		"run_list":               {"run_list"},
+		"roles":                  {"roles"},
+		"tags":                   {"tags"},
+		"policy_name":            {"policy_name"},
+		"policy_group":           {"policy_group"},
+		"ohai_time":              {"ohai_time"},
+		"chef_migration":         {"chef_migration"},
 	}
 }
 
