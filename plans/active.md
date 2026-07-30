@@ -4,24 +4,17 @@ Single source of truth for what is in flight. **Read this first at session start
 
 ## Branch map (2026-07-30)
 
-`main` — released line **v2.18.9**, deployed at the customer. Collection is hourly; a
-full 3-org cycle takes ~28 min.
+`main` — deployed release at the customer is **v2.18.9**. Collection is hourly; a full
+3-org cycle takes ~28 min.
 
-Unmerged branches, none merged without explicit permission:
+**`main` carries unreleased work: migration 0054** (see NOW below). Cut the next release
+once the current batch of work is in — it stops ongoing readiness data loss, so do not
+leave it unreleased indefinitely.
 
-- `fix/node-readiness-index-row-size` — **code, ready, `make ci` green.** Migration 0054.
-  **Merge and release first: this is the only open item with active data loss.**
-- `docs/correct-filesystem-shape-claims` — **docs + one test comment, ready, CI green.**
-  Corrects the Windows filesystem shape claims and adds the § 1.4.1 census rule.
-- `docs/attribute-shape-validation` — **SUPERSEDED, delete without merging.** Its census
-  rule was cherry-picked onto the branch above; its other commit records a claim that the
-  v2.18.9 revert made false.
-- `fix/cookstyle-correctable-flag` — **SUPERSEDED, delete without merging.** Its plan
-  file is on the branch above; its other commit edits an `active.md` this one replaces.
-- `feature/runtime-observability` — **SUPERSEDED, delete without merging.** Same reason.
-- `chore/spec-drift-report` — parked; don't nag to merge (see [[spec-drift-parked]]).
+- `chore/spec-drift-report` — the only open branch. Parked; don't nag to merge
+  (see [[spec-drift-parked]]).
 
-## NOW — merge and release migration 0054
+## NOW — release migration 0054 (merged, unreleased)
 
 `node_readiness` upserts are being rejected: `blocking_cookbooks` (JSONB) sat in a btree
 index `INCLUDE` list, and index tuples are capped at 2704 bytes with no TOAST escape.
@@ -32,6 +25,8 @@ depends on. Worsens as incompatibilities accumulate.
 
 Latent since the original schema (0001, recreated in 0009); nothing recent caused it.
 No backfill needed — affected nodes correct themselves on the next collection.
+
+Merged to `main`, not yet released. Needs a version bump, tag and push.
 
 ## Queued — collector performance (`plans/collector-performance.md`)
 
