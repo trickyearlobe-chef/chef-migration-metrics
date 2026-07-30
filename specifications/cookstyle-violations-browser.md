@@ -32,7 +32,7 @@ Each row contains:
 
 - `passed` (boolean) — back-compat convenience: `cookstyle_status != blocked`
 - `offence_count`, `deprecation_count`, `correctness_count` — pre-computed counts
-- `offences` (JSONB) — full offense array, each with `cop_name`, `severity`, `message`, `corrected`
+- `offences` (JSONB) — the persisted offence array. Shape not restated here. Note it is the *enriched* shape, not raw CookStyle output: it carries `correctable` (the cop's static capability) and not `corrected`, which is only meaningful for a correcting run.
 - `error_message` — non-null when scan was inconclusive
 
 ## API

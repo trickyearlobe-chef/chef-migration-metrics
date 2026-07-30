@@ -28,41 +28,21 @@ Chef Workstation must be installed on the host for CookStyle scanning to be avai
 
    **Config isolation.** The scan is driven by a **self-contained sidecar** config (`.rubocop_cmm.yml`, written into the cookbook directory and pointed at via `--config`) that sets `AllCops.TargetChefVersion`, requires `cookstyle`, and enables any operator addon cops. It **must not** inherit the cookbook's own `.rubocop.yml` / `.rubocop_todo.yml`. Those files are the team's style configuration and a deferred-violations TODO — irrelevant to a migration-readiness verdict (honouring the TODO would *hide* the offences we assess), and git-sourced cookbooks routinely carry a `.rubocop_todo.yml` referencing renamed/obsolete cops (e.g. `Metrics/LineLength` → `Layout/LineLength`) that make CookStyle abort with **exit 2** ("obsolete configuration found"). Every cookbook is therefore assessed against one consistent, tool-controlled ruleset for the target version, immune to stale in-repo configs. The cookbook's own files are left untouched — only the sidecar is added.
 
-4. **Parse JSON output** — The CookStyle JSON output follows the RuboCop JSON formatter structure:
+4. **Parse JSON output** — CookStyle emits the RuboCop JSON formatter structure. The
+   shape is not restated here: the copy that used to be in this file omitted
+   `correctable`, and that omission was reproduced in the code. Read the scan structs,
+   and the captured cookstyle output kept as test fixtures alongside them.
 
-   ```json
-   {
-     "metadata": {
-       "rubocop_version": "...",
-       "ruby_engine": "...",
-       "ruby_version": "..."
-     },
-     "files": [
-       {
-         "path": "recipes/default.rb",
-         "offenses": [
-           {
-             "severity": "convention|warning|error|fatal",
-             "message": "...",
-             "cop_name": "ChefDeprecations/ResourceWithoutUnifiedTrue",
-             "corrected": false,
-             "location": {
-               "start_line": 10,
-               "start_column": 1,
-               "last_line": 10,
-               "last_column": 30
-             }
-           }
-         ]
-       }
-     ],
-     "summary": {
-       "offense_count": 3,
-       "target_file_count": 5,
-       "inspected_file_count": 5
-     }
-   }
-   ```
+   Invariants the shape alone does not convey:
+
+   - Each offence carries **both** `correctable` and `corrected`, and they are
+     independent. `correctable` is the cop's static capability, reported on every scan.
+     `corrected` means a correcting run changed the file — always false on a plain scan,
+     and false for corrections RuboCop deems unsafe, because CMM runs `--auto-correct`
+     rather than `--auto-correct-all`.
+   - A correcting run does **not** shrink its own `summary.offense_count`: it reports
+     every offence it found and flags the ones it fixed. Counts must be derived from
+     those flags, never by subtracting summaries.
 
    Extract the following from the parsed output:
 

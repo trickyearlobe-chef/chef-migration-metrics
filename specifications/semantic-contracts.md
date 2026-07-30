@@ -52,15 +52,18 @@ Canonical definitions for all derived metrics. Each metric has exactly one autho
 
 **Inputs:** `ComplexityInput{Cookstyle CookstyleOffenseSummary, TestKitchen TKStatus, Blast BlastRadius}`
 
-**Contract:**
-```
-score = ErrorFatalCount * 5
-      + DeprecationCount * 3
-      + CorrectnessCount * 3
-      + ManualFixCount * 4
-      + ModernizeCount * 1
-      + tkPenalty
-```
+**Contract:** the formula is not restated here. This file previously carried a
+severity-weighted sum that production had stopped using, so the stated contract was not
+the one being executed.
+
+Two derivations exist and the wiring decides which runs: a classification-weighted one,
+used whenever a classifier is supplied — which production does — scoring each offence
+once by its resolved classification; and a legacy severity-weighted fallback for when no
+classifier is available.
+
+Consequence worth stating because it is not obvious: the per-offence breakdown rendered by
+the remediation handlers is computed from the legacy weights, so it does not necessarily
+sum to `complexity_score`.
 
 Where `tkPenalty`:
 - TK status `"failed"` → 20
