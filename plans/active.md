@@ -2,87 +2,68 @@
 
 Single source of truth for what is in flight. **Read this first at session start.**
 
-## Branch map (2026-07-20)
+## Branch map (2026-07-30)
 
-- `main` — holds all merged work. Released line: **v2.18.4**.
-- **Event Ingest MVP is MERGED** (`25551f4` + Data Feed fixes `f6161e6`/`3b11111`) and
-  released. `feature/event-ingest-mvp` is gone. Post-MVP follow-ups → `todo-event-ingest.md`.
-- **Parked** `fix/node-list-count-split` — P3: split the node-list `COUNT(*) OVER()`
-  into a separate count query (WIP, compiles, tests NOT run). **Low urgency,
-  deploy-risky** (shared node-list + export read path) → the nodes page is not
-  user-slow, this is just the heaviest DB query; test thoroughly before any customer
-  ship. Full state + resume steps in `plans/p3-node-list-perf.md`.
-- **Parked** `chore/spec-drift-report` — one-time spec↔code drift report;
-  deprioritised behind feature delivery. Don't nag to merge (see [[spec-drift-parked]]).
-- `feature/runtime-observability` — heap/goroutine profile capture in the diagnostic
-  bundle plus heap history. Plan: `plans/runtime-observability.md`. Not started.
+`main` — released line **v2.18.9**, deployed at the customer. Collection is hourly; a
+full 3-org cycle takes ~28 min.
 
-## NOW — collector memory: streaming (no branch yet)
+Unmerged branches, none merged without explicit permission:
 
-Context for the 2026-07-29/30 production incident (host OOM, ~22GB Go heap on a 32GB
-box, ~134k nodes across 3 orgs). Measured findings worth keeping:
+- `fix/node-readiness-index-row-size` — **code, ready, `make ci` green.** Migration 0054.
+  **Merge and release first: this is the only open item with active data loss.**
+- `docs/correct-filesystem-shape-claims` — **docs + one test comment, ready, CI green.**
+  Corrects the Windows filesystem shape claims and adds the § 1.4.1 census rule.
+- `docs/attribute-shape-validation` — **SUPERSEDED, delete without merging.** Its census
+  rule was cherry-picked onto the branch above; its other commit records a claim that the
+  v2.18.9 revert made false.
+- `fix/cookstyle-correctable-flag` — plan document only, no code.
+- `feature/runtime-observability` — plan document only, no code.
+- `chore/spec-drift-report` — parked; don't nag to merge (see [[spec-drift-parked]]).
 
-- Node collection materialises the whole fleet as `map[string]interface{}`
-  (`client.go:359`) at **~193KB/node measured** (62,046 nodes → 12GB peak). Three orgs
-  concurrently ≈ 26GB, which is the observed 22GB. Peak memory still scales with fleet
-  size; Chunk B below is the only fix for that.
-- A full 3-org cycle runs 20–25min even after the collector fixes, so a `*/10` cron
-  means near-continuous collection. Collection interval must exceed run duration —
-  nodes converge every 2h at the customer, so hourly or slower loses nothing.
-- Per-org duration is dominated by cookbook/cookstyle/readiness work, not node count:
-  a 15k-node dev org with 2 active nodes took 33m46s.
+## NOW — merge and release migration 0054
 
-**Ruled out by evidence** (do not re-investigate): GIN index on `node_snapshots.cookbooks`
-(69MB, zero dead tuples, autovacuum current); `perf.Recorder` (bounded ring buffers,
-`perf/stats.go:37`); logging `DBWriter` (synchronous, no buffer); event ingest
-(`converge_runs` empty). There was no leak — goroutines stayed flat at 26–30.
+`node_readiness` upserts are being rejected: `blocking_cookbooks` (JSONB) sat in a btree
+index `INCLUDE` list, and index tuples are capped at 2704 bytes with no TOAST escape.
+Measured over six hours: **22,043 rejected writes, 10,605 nodes with readiness older than
+their own snapshot, 89 with none at all.** Logged loudly, invisible in the UI, and it
+self-selects for nodes with the most blocking cookbooks — the ones a CC19 assessment
+depends on. Worsens as incompatibilities accumulate.
 
-**Chunk B — item 5: stream node pages + per-batch commits (NOT started)**
+Latent since the original schema (0001, recreated in 0009); nothing recent caused it.
+No backfill needed — affected nodes correct themselves on the next collection.
 
-Scope: `collector.go:822-987`, `node_snapshots.go:259`.
+## Queued — collector performance (`plans/collector-performance.md`)
 
-Makes peak O(page) instead of O(fleet) — the only change that stops peak memory scaling
-with fleet size. Blockers to design around, all of which currently assume the complete
-node set is in hand:
+Measured baselines, the invariants learned during the incident, the ruled-out list, and
+the open items. Highest value: **role fetch via the search index** (verified viable on
+the lab; recovers ~7 min of the 28-minute cycle), then **collector streaming** (the only
+fix for peak memory scaling with fleet size).
 
-- `deduplicateSnapshotParams` (pagination-boundary duplicates)
-- cookbook aggregation: `allCookbookNames` / `activeCookbookNames` / `activeCookbookVersions`
-- `nodeRecords` for usage analysis
-- `snapshotParams` is read downstream at `collector.go:1007/1045/1557`, so it stays
-  pinned for the org's entire pipeline (including role fetching). Needs projecting down
-  to the few fields those consumers actually use.
+## Queued — cookstyle correctable flag (`plans/cookstyle-correctable-fix.md`)
 
-Riskiest item on the list — shared collection path, silent-corruption failure modes.
-Deserves its own branch and a lab run before shipping.
+Auto-correctable counts read 0 fleet-wide; complexity scores are inflated as a result, so
+remediation prioritisation is skewed, not just the display. Root cause verified against
+deployed Cookstyle 8.7.6 / RuboCop 1.86.1. Three chunks, plus a re-scan and an explicit
+preview reset — without the reset the fix silently no-ops.
 
-**Queued next (own chunks)**
+## Queued — runtime observability (`plans/runtime-observability.md`)
 
-- **Role fetch via search index** — `/search/role` paginated at 1000 would turn 31,958
-  requests into ~32, versus the current bounded fan-out. Do once the fan-out is proven
-  at customer scale.
-- **Decouple log retention from collection runs** — purge only fires at the tail of a
-  successful run (`collector.go:679`); `log_entries` had 240k dead tuples and autovacuum
-  a day stale. Needs a ticker + partitioning so expiry is a `DROP PARTITION`.
-- **Keep collection history** — `PurgeOldCollectionRuns` (`collector.go:689`) keeps only
-  the latest terminal run per org, so there is no duration trend to diagnose regressions
-  with. Retain ~30 days.
-- `collection_runs.completed_at` is stamped **early** (Step 4b, `collector.go:1022`), so
-  the duration column excludes Steps 5–14. Document or add a true end-to-end duration.
-
-Note: the dev org stays in scheduled collection — it is the CC19 deployment-cookbook
-proving ground.
+Heap and goroutine profile capture in the diagnostic bundle, threshold-triggered
+auto-capture, heap history. `performance.pprof_enabled` exists but cannot be set by any
+means — the plan proposes deleting it rather than wiring it up.
 
 ## Queued — Event Ingest follow-ups (`plans/todo-event-ingest.md`)
 
-MVP shipped; these are post-MVP. Highest-value first:
+MVP shipped. Highest-value first:
 
-- **CC19 target-version failing-nodes preset.** The generic distinct-node rollup and
-  `chef_version ∧ status=failure` filters are built and tested; Run events defaults
-  status to `failure`. Missing: the auto-wired "prospective target-version" preset —
+- **CC19 target-version failing-nodes preset.** Rollup and filters are built and tested;
   `useTargetChefVersion` exists but is unused on `RunEventsPage`, so the target version
-  must be picked by hand. Design is largely decided (generic rollup); this is the wiring.
+  must be picked by hand. This is the wiring.
 - **Live-fidelity validation** of Data Feed (fixtures still authored) + Chef Server proxy.
-- Lab cleanup; depsolve/attributes-only gap. See `todo-event-ingest.md` for detail.
+- Lab cleanup; depsolve/attributes-only gap. See `todo-event-ingest.md`.
+
+Note before enabling at the customer: ~11 CCRs/second ≈ 950k events/day. Size the ingest
+path against that first.
 
 ## Queued — Spec/Plan Drift Control (`plans/spec-drift-control.md`)
 
@@ -95,8 +76,7 @@ copied-contract (`diagnostic-bundle`, `system-health-*`) — fold into E.
 - `CookstyleStore` sub-interface split (`webapi.DataStore` at **210** methods and growing).
 - Extract pipeline stages from the two remediation god-handlers
   (`handle_cookbook_remediation.go` ~499 lines, `handle_git_repo_remediation.go` ~486
-  lines — each is one oversized function). No shared extraction between them; they serve
-  different sources.
+  lines — each is one oversized function). No shared extraction; different sources.
 
 ## Parked — SAML config follow-ups (lower priority)
 
