@@ -41,24 +41,6 @@ leak — goroutines stayed flat at 26–30.
 
 ## Open — highest value first
 
-### Role fetch via the search index
-
-**Verified viable on the lab (2026-07-30).** Partial search on the `role` index with
-`attributes: ["name","run_list","env_run_lists"]` returns nested maps and arrays intact,
-which is what `BuildRoleDependencies` consumes. Verified with a temporary role carrying
-populated `env_run_lists`; probe role deleted afterwards.
-
-Replaces 73,910 individual `GET /roles/<name>` calls with ~74 paginated requests.
-Recovers ~7 min per cycle and cuts Chef server load by three orders of magnitude.
-
-Unverified at scale, handle defensively: whether the role index enforces a lower `rows`
-cap than nodes, and whether pagination-boundary duplication occurs as it does for nodes
-(cf. `deduplicateSnapshotParams`).
-
-Stopgap if this is deferred: raise `concurrency.role_fetching` from 10 (live-editable,
-no restart). 20 workers ≈ 3m40s, 30 ≈ 2m25s. Trades Chef server load for time — watch
-for `failed to fetch role` warnings.
-
 ### Collector streaming + per-batch commits
 
 Scope: `collector.go:822-987`, `node_snapshots.go:259`. Makes peak memory O(page) rather
