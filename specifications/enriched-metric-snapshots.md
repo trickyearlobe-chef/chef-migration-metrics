@@ -156,13 +156,17 @@ the canonical home of the decision summarised in cop-classification.md → Histo
 
 ### Fingerprint Shape
 
-A fingerprint is the minimal per-scan input needed to re-derive a result's rollup
-status and weighted complexity under the *current* classification — nothing more:
+A fingerprint is the per-scan input retained so a result's rollup status and weighted
+complexity can be re-derived under the *current* classification:
 
 - `cop_name`
 - `count` (number of offences for that cop in that result)
 - `severity`
-- `correctable`
+- `correctable` — stored and included in the content hash, but **not currently read by
+  re-derivation**, which resolves classification from cop name and severity alone.
+  Recorded here because it has a consequence: changing what this field means changes
+  every hash, so the next scan appends a "changed" fingerprint for every result that
+  has a correctable offence, fleet-wide.
 
 It deliberately does **not** retain full offence messages or source locations:
 re-derivation needs only the inputs the classification resolver and complexity
