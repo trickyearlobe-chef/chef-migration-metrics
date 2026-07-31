@@ -4,8 +4,17 @@ There is **no generic override scheme**. `CHEF_MIGRATION_METRICS_<SECTION>_<KEY>
 convention the code implements — each variable below is read by an individual, hand-written
 lookup, and anything not listed cannot be set this way.
 
-Environment variables exist only for **bootstrap**: values that must be present before the
-UI is reachable. Everything else is configured in the database through the UI (see
+Only two of these are inherently necessary: `DATABASE_URL` and
+`CMM_CREDENTIAL_ENCRYPTION_KEY` (plus its rotation partner), because they unlock the
+database that holds everything else. `CHEF_MIGRATION_METRICS_CONFIG` locates the bootstrap
+file that carries them.
+
+The server and TLS variables are **legacy**. They are not needed to avoid TLS lockout —
+startup already degrades to a self-signed certificate and then to plain HTTP rather than
+failing — so they duplicate settings that belong in the config store. Treat them as
+candidates for removal.
+
+Everything else is configured in the database through the UI (see
 [configuration.md](configuration.md) → Where configuration lives). Do not add an
 environment override to make a setting configurable — wire it into the config store.
 
