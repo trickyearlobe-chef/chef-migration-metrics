@@ -1,10 +1,21 @@
 # Configuration - Component Specification
 
-> **TL;DR** — Single YAML config file with environment variable overrides for secrets. Key sections: `server` (bind address, port, TLS mode — off/static/acme), `database` (PostgreSQL URL), `collection` (Chef server orgs, schedule, stale thresholds), `target_versions` (Chef Client versions to test against), `git` (cookbook repo URLs), `concurrency` (worker pool sizes per task type), `analysis_tools` (CookStyle/Test Kitchen timeouts and TK driver config; `cookstyle`/`kitchen` resolved from `PATH` via Chef Workstation), `auth` (local/SAML), `exports` (output dir, retention, async threshold), `elasticsearch` (NDJSON export toggle, output dir), `logging` (level, retention). All sensitive values must be set via env vars, never inlined. See `todo/configuration.md` for implementation status.
+> **TL;DR** — Configuration lives in the **database** and is edited through the **UI**. The only values sourced from the environment or a file are the ones needed to reach the database at all: the database URL and the credential encryption key. Everything else — server, collection, target version, git, concurrency, analysis tools, auth, exports, logging — is stored and changed through the config store. The schema documents below describe the *shape* of those settings, not a supported file-based way to set them.
 
 ## Overview
 
 This document specifies the configuration surface area for the Chef Migration Metrics application. Configuration controls all aspects of the application including Chef server connectivity, collection scheduling, analysis targets, datastore connectivity, logging behaviour, and authentication providers.
+
+### Where configuration lives
+
+Two rules, and they are not negotiable design detail — they are why the product works the way it does:
+
+1. **The database is the source of truth, edited through the UI.** The exceptions are bootstrap values that must exist before the UI is reachable: the database URL and credential encryption key (which cannot live in the database they unlock), and the server/TLS startup settings (which exist as an anti-lockout path — misconfigured TLS would otherwise make the UI unreachable and the mistake unfixable).
+2. **Nothing else is configured by environment variable or YAML file.** A setting that cannot be reached from the config store is not configurable — the options are to wire it into the store or remove it. Do not describe a file or env path as a supported way to set something.
+
+*Why it matters:* configuration must take effect immediately without a restart (see Live Reload), which a file-based value cannot do; and the deployment is VDI-only, so "edit a file on the host and restart" is neither usable nor safe while a collection or rescan is running.
+
+*Reading the schema documents:* a `yaml:` struct tag in the code is **not** evidence a setting is usable. Several exist for fields that are absent from the config store and therefore cannot be set at all.
 
 ## Live Reload Requirement
 

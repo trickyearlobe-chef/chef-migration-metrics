@@ -1,12 +1,15 @@
 # Configuration — Environment Variable Overrides
 
-Any configuration value may be overridden by an environment variable using the following naming convention:
+There is **no generic override scheme**. `CHEF_MIGRATION_METRICS_<SECTION>_<KEY>` is not a
+convention the code implements — each variable below is read by an individual, hand-written
+lookup, and anything not listed cannot be set this way.
 
-```
-CHEF_MIGRATION_METRICS_<SECTION>_<KEY>
-```
+Environment variables exist only for **bootstrap**: values that must be present before the
+UI is reachable. Everything else is configured in the database through the UI (see
+[configuration.md](configuration.md) → Where configuration lives). Do not add an
+environment override to make a setting configurable — wire it into the config store.
 
-The following environment variables are explicitly supported for sensitive values:
+The supported variables are:
 
 | Environment Variable | Description |
 |----------------------|-------------|

@@ -148,6 +148,8 @@ Three complementary layers — pick the cheapest that answers the question, esca
 
 ## Configuration
 
+- Configuration lives in the DB and is edited via the UI. The only exceptions are bootstrap values that must exist before the UI is reachable: the database URL, the credential encryption key, and server/TLS startup settings (an anti-lockout path).
+- Never propose an env var or `config.yaml` as a way to set anything else. A `yaml:` struct tag is not evidence a setting is usable — check the config store. If a setting is unreachable, the options are wire it into the store or delete it.
 - All configuration must be dynamic — changes via the UI or config store take effect immediately without a restart.
 - Components MUST read config via a live accessor (e.g. `configHolder.Get()` or a `configFn`) rather than caching values at construction time.
 - Static config fields are acceptable only for tests or as fallback defaults when no dynamic provider is set.
