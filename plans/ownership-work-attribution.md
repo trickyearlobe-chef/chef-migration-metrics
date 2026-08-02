@@ -24,9 +24,17 @@ does not serve one of these is scaffolding and can go.
 own — and works from that list. Several people can be selected at once: working groups are
 often a handful of individuals rather than a named team.
 
-For this to answer anything, a signed-in person has to resolve to an owner. Some of that
-already arrives with SSO — email, name, user id. It is not yet enough on its own, and the
-remaining sources are **to be refined with the product owner**, not decided here.
+For this to answer anything, a signed-in person has to resolve to an owner. Known sources,
+still being refined with the product owner:
+
+- **SSO**, which brings email, name and user id.
+- **Git contribution history** — who has contributed code, how much, and how recently.
+- **Added by hand.** Not only by administrators: end users should be able to contribute
+  their own aliases alongside the sources we derive.
+
+Where a match is uncertain it is **suggested for a person to confirm, never applied
+silently** — a wrong owner is worse than no owner. Fuzzy matching already exists in CMM and
+may serve this.
 
 **2. "Who can unblock this?"** A node is blocked. Its owner carries the outcome but usually
 cannot do the work, because the fix lives in a git repo someone else owns. From the blocked
