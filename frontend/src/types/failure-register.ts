@@ -15,10 +15,13 @@ export type FailureVerdict = "broken" | "not_broken";
 
 export type FailureStatus = "open" | "resolved" | "superseded";
 
-/** A commitment holder is a person we know about, a user, or a reference to
- * work tracked in another system. CMM holds the reference and does not read
- * the system behind it. */
-export type HolderType = "owner" | "user" | "ticket";
+/** A commitment holder is an owner, or a reference to work tracked in another
+ * system — CMM holds that reference and does not read the system behind it.
+ *
+ * There is deliberately no separate "user": everything person-shaped is an
+ * owner, and other identities (including one sourced from SAML) reach an owner
+ * through an alias. */
+export type HolderType = "owner" | "ticket";
 
 export interface FailureRegisterEntry {
   id: string;

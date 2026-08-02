@@ -37,20 +37,26 @@ const (
 	FailureStatusSuperseded = "superseded"
 )
 
-// Who is on it. A commitment holder may be a person we know about, an
-// application user, or a reference to work tracked in another system — CMM
-// holds the reference and does not read the system behind it.
-// What a verdict's subject names. A repo where one has been collected —
-// that is where a fix is made and re-released — and the cookbook itself where
-// none has.
+// What a verdict's subject names. A repo where one has been collected — that
+// is where a fix is made and re-released — and the cookbook itself where none
+// has.
 const (
 	SubjectTypeGitRepo  = "git_repo"
 	SubjectTypeCookbook = "cookbook"
 )
 
+// Who is on it. Either an owner, or a reference to work tracked in another
+// system — CMM holds that reference and does not read the system behind it.
+//
+// There is deliberately no separate "user" kind. Everything person-shaped is
+// an owner, and other identities — including one sourced from SAML — reach an
+// owner through an alias; the signed-in CMM user resolves to an owner the same
+// way, which is what makes "what's mine" filtering possible. A second kind for
+// people would be a second identity space for the same thing, which is the
+// conflation specifications/ownership-identity.md records as the alias model's
+// central fault.
 const (
 	HolderTypeOwner  = "owner"
-	HolderTypeUser   = "user"
 	HolderTypeTicket = "ticket"
 )
 
@@ -260,7 +266,7 @@ func resolveHolder(holderType, holderRef string) (string, string, error) {
 		return "", "", nil
 	}
 	switch holderType {
-	case HolderTypeOwner, HolderTypeUser, HolderTypeTicket:
+	case HolderTypeOwner, HolderTypeTicket:
 		return holderType, holderRef, nil
 	case "":
 		return "", "", errors.New("datastore: a commitment holder needs to say what kind of reference it is")

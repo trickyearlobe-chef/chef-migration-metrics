@@ -8,7 +8,12 @@ import * as api from "../api";
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof api>("../api");
-  return { ...actual, fetchGitRepos: vi.fn(), fetchCookbooks: vi.fn() };
+  return {
+    ...actual,
+    fetchGitRepos: vi.fn(),
+    fetchCookbooks: vi.fn(),
+    fetchOwners: vi.fn(),
+  };
 });
 
 import { FailureEntryDialog } from "./FailureEntryDialog";
@@ -35,6 +40,19 @@ describe("FailureEntryDialog — who is on it", () => {
     vi.mocked(api.fetchCookbooks).mockResolvedValue({
       data: [],
       pagination: { page: 1, per_page: 32, total_items: 0, total_pages: 0 },
+    });
+    vi.mocked(api.fetchOwners).mockResolvedValue({
+      data: [
+        {
+          name: "thomas-smith",
+          display_name: "Thomas Smith",
+          contact_email: "thomas.smith@example-corp.test",
+          owner_type: "individual",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      pagination: { page: 1, per_page: 8, total_items: 1, total_pages: 1 },
     });
   });
 
@@ -86,8 +104,12 @@ describe("FailureEntryDialog — who is on it", () => {
 
     await user.type(screen.getByLabelText(/^Reason/i), "Bogus failure");
     await user.selectOptions(screen.getByLabelText(/Who is on it/i), "owner");
-    await user.type(screen.getByLabelText(/^Reference/i), "platform-team");
+    await user.type(screen.getByLabelText(/^Reference/i), "thomas");
+    await user.click(
+      await screen.findByRole("button", { name: /thomas-smith/i }),
+    );
 
+    // The ticket default must not reclaim a kind somebody chose.
     expect(screen.getByLabelText(/Who is on it/i)).toHaveValue("owner");
 
     await user.click(
@@ -98,7 +120,7 @@ describe("FailureEntryDialog — who is on it", () => {
       expect(onSubmit).toHaveBeenCalledWith(
         expect.objectContaining({
           holder_type: "owner",
-          holder_ref: "platform-team",
+          holder_ref: "thomas-smith",
         }),
       );
     });
@@ -198,6 +220,19 @@ describe("FailureEntryDialog — editing an entry", () => {
       data: [],
       pagination: { page: 1, per_page: 32, total_items: 0, total_pages: 0 },
     });
+    vi.mocked(api.fetchOwners).mockResolvedValue({
+      data: [
+        {
+          name: "thomas-smith",
+          display_name: "Thomas Smith",
+          contact_email: "thomas.smith@example-corp.test",
+          owner_type: "individual",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      pagination: { page: 1, per_page: 8, total_items: 1, total_pages: 1 },
+    });
   });
 
   function renderRevising(onRevise = vi.fn().mockResolvedValue(undefined)) {
@@ -266,6 +301,128 @@ describe("FailureEntryDialog — editing an entry", () => {
           holder_type: "ticket",
           holder_ref: "Jira 999",
         }),
+      );
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Who is on it, as an identity rather than a string
+//
+// A ticket is free text on purpose — it addresses a system CMM does not read.
+// An owner is not: a name typed by hand is a commitment held by somebody
+// nobody can be reached through, nothing ever reconciles it, and it cannot be
+// grouped or filtered on later.
+// ---------------------------------------------------------------------------
+
+describe("FailureEntryDialog — who is on it, resolved", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.fetchGitRepos).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 8, total_items: 0, total_pages: 0 },
+    });
+    vi.mocked(api.fetchCookbooks).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 32, total_items: 0, total_pages: 0 },
+    });
+    vi.mocked(api.fetchOwners).mockResolvedValue({
+      data: [
+        {
+          name: "thomas-smith",
+          display_name: "Thomas Smith",
+          contact_email: "thomas.smith@example-corp.test",
+          owner_type: "individual",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      pagination: { page: 1, per_page: 8, total_items: 1, total_pages: 1 },
+    });
+  });
+
+  function renderRecording(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+    render(
+      <FailureEntryDialog
+        mode="record"
+        fixedRepo={{ name: "cron", cookbookName: "cron" }}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+      { wrapper: Wrapper },
+    );
+    return onSubmit;
+  }
+
+  // Everything person-shaped is an owner; a CMM user reaches one through an
+  // alias. Offering both would be two identity spaces for the same thing.
+  it("offers an owner or a ticket, and nothing else", () => {
+    renderRecording();
+    const kinds = screen.getByLabelText(/Who is on it/i);
+    expect(kinds).toHaveTextContent(/An owner/i);
+    expect(kinds).toHaveTextContent(/A ticket or work item/i);
+    expect(kinds).not.toHaveTextContent(/A user/i);
+  });
+
+  it("picks an owner from the catalogue", async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderRecording();
+
+    await user.type(screen.getByLabelText(/^Reason/i), "Bogus failure");
+    await user.selectOptions(screen.getByLabelText(/Who is on it/i), "owner");
+    await user.type(screen.getByLabelText(/^Reference/i), "thomas");
+    await user.click(
+      await screen.findByRole("button", { name: /thomas-smith/i }),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Record this verdict/i }),
+    );
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          holder_type: "owner",
+          holder_ref: "thomas-smith",
+        }),
+      );
+    });
+  });
+
+  // The black hole this closes.
+  it("will not record an owner name that was typed rather than picked", async () => {
+    const user = userEvent.setup();
+    renderRecording();
+
+    await user.type(screen.getByLabelText(/^Reason/i), "Bogus failure");
+    await user.selectOptions(screen.getByLabelText(/Who is on it/i), "owner");
+    await user.type(screen.getByLabelText(/^Reference/i), "someone made up");
+
+    expect(
+      screen.getByRole("button", { name: /Record this verdict/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/Choose an owner from the list/i),
+    ).toBeInTheDocument();
+  });
+
+  // A ticket addresses a system CMM does not read, so there is nothing to
+  // resolve it against and free text is the whole contract.
+  it("leaves a ticket reference as free text", async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderRecording();
+
+    await user.type(screen.getByLabelText(/^Reason/i), "Bogus failure");
+    await user.type(screen.getByLabelText(/^Reference/i), "Jira 999");
+
+    expect(screen.getByLabelText(/Who is on it/i)).toHaveValue("ticket");
+    await user.click(
+      screen.getByRole("button", { name: /Record this verdict/i }),
+    );
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ holder_type: "ticket", holder_ref: "Jira 999" }),
       );
     });
   });

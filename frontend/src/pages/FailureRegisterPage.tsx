@@ -26,7 +26,6 @@ const formatDate = (iso?: string) =>
 
 const HOLDER_LABELS: Record<string, string> = {
   owner: "Owner",
-  user: "User",
   ticket: "Tracked as",
 };
 

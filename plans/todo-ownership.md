@@ -81,6 +81,14 @@ human verdict inside the readiness rollup are built.
   and needs no team entity either, which is what journey 1 already concluded about
   multi-select over people.
 
+- [ ] **Free-text references to things that should resolve may exist elsewhere.** Raised by the
+  product owner 2026-08-02 after the register's owner reference turned out to be free text.
+  The pattern to look for is any field naming an entity CMM holds — an owner, a repo, a
+  cookbook, a node — that is typed rather than picked, because nothing reconciles it
+  afterwards and the reference reads as valid while pointing at nothing. Deliberately not
+  swept yet: **inventory it before fixing any of it**, since ingest paths take data as they
+  find it on purpose and must not be "corrected" into rejecting rows.
+
 - [ ] **The accuracy report is not defensible over time.** Every `broken` entry is counted as a
   failure the tools missed and every `not_broken` as a verdict they got wrong, but what the
   scans actually said at the moment the entry was raised is not snapshotted — so the numbers

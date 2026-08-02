@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SubjectPicker } from "./SubjectPicker";
+import { HolderRefInput } from "./HolderRefInput";
 import type {
   FailureRegisterEntry,
   FailureVerdict,
@@ -33,7 +34,6 @@ const HolderTypeTicketDefault: HolderType = "ticket";
 const HOLDER_TYPES: { value: HolderType; label: string }[] = [
   { value: "ticket", label: "A ticket or work item" },
   { value: "owner", label: "An owner" },
-  { value: "user", label: "A user" },
 ];
 
 /**
@@ -91,6 +91,9 @@ export function FailureEntryDialog({
   const [holderRef, setHolderRef] = useState(
     revising ? (entry?.holder_ref ?? "") : "",
   );
+  // A stored owner reference was resolvable when it was stored, so an edit
+  // that does not touch it stays valid.
+  const [holderResolved, setHolderResolved] = useState(true);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,9 +149,13 @@ export function FailureEntryDialog({
     }
   }
 
+  const holderUnresolved =
+    holderType === "owner" && holderRef.trim() !== "" && !holderResolved;
+
   const canSubmit = revising
-    ? true
-    : subjectConfirmed &&
+    ? !holderUnresolved
+    : !holderUnresolved &&
+      subjectConfirmed &&
       subjectName.trim() !== "" &&
       cookbookName.trim() !== "" &&
       reason.trim() !== "";
@@ -314,6 +321,9 @@ export function FailureEntryDialog({
                 onChange={(e) => {
                   const next = e.target.value as HolderType | "";
                   setHolderType(next);
+                  // An owner has to be picked; anything else is free text and
+                  // resolves by definition.
+                  setHolderResolved(next !== "owner" || holderRef.trim() === "");
                   // "Nobody yet" means nobody: leaving the reference behind
                   // would keep the previous kind alive and silently discard
                   // the unassignment.
@@ -333,19 +343,19 @@ export function FailureEntryDialog({
               label="Reference"
               hint="CMM holds the reference; it does not read the system behind it."
             >
-              <input
-                type="text"
+              <HolderRefInput
+                holderType={holderType}
                 value={holderRef}
-                onChange={(e) => {
-                  setHolderRef(e.target.value);
+                onChange={(next, resolved) => {
+                  setHolderRef(next);
+                  setHolderResolved(resolved);
                   // Typing a reference is saying somebody is on it. Most are
                   // tickets, so the kind follows — shown in the control beside
                   // it, and overridable, rather than demanded afterwards.
-                  if (e.target.value.trim() !== "" && holderType === "") {
+                  if (next.trim() !== "" && holderType === "") {
                     setHolderType(HolderTypeTicketDefault);
                   }
                 }}
-                className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </Field>
             <Field label="Target date">
@@ -357,6 +367,13 @@ export function FailureEntryDialog({
               />
             </Field>
           </div>
+
+          {holderUnresolved && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Choose an owner from the list. A name typed by hand is a
+              commitment held by somebody nobody can be reached through.
+            </div>
+          )}
 
           {error && (
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
