@@ -873,6 +873,12 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/duplicates/rescan", r.handleOwnershipDuplicatesRescan)
 	r.protect("/api/v1/ownership/merge", r.handleOwnershipMerge)
 
+	// The failure register: a person's verdict on whether a cookbook actually
+	// works, which outranks CookStyle and Test Kitchen. Reads are viewer;
+	// recording, revising and resolving need operator or admin.
+	r.protect("/api/v1/failure-register", r.handleFailureRegister)
+	r.protect("/api/v1/failure-register/", r.handleFailureRegister)
+
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)
 	// -----------------------------------------------------------------

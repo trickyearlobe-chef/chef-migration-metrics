@@ -129,6 +129,13 @@ type mockStore struct {
 	RecomputeOwnerDuplicateCandidatesFn                    func(ctx context.Context) (int, error)
 	GetOwnerDuplicateScanFn                                func(ctx context.Context) (datastore.OwnerDuplicateScan, error)
 	CountOwnersMissingAliasesFn                            func(ctx context.Context) (int, int, error)
+	RecordFailureVerdictFn                                 func(ctx context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error)
+	ReviseFailureEntryFn                                   func(ctx context.Context, id string, p datastore.ReviseFailureEntryParams) (datastore.FailureRegisterEntry, error)
+	ResolveFailureEntryFn                                  func(ctx context.Context, id, resolvedBy, note string) (datastore.FailureRegisterEntry, error)
+	GetFailureRegisterEntryFn                              func(ctx context.Context, id string) (datastore.FailureRegisterEntry, error)
+	ListFailureRegisterEntriesFn                           func(ctx context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error)
+	ListFailureRegisterHistoryFn                           func(ctx context.Context, gitRepoName string) ([]datastore.FailureRegisterEntry, error)
+	FailureRegisterSummaryFn                               func(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error)
 	LookupOwnershipFn                                      func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
 	ResolveOwnerByAliasFn                                  func(ctx context.Context, aliasType, aliasValue string) (string, error)
 	SuggestOwnerAliasesFn                                  func(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error)
@@ -1081,6 +1088,57 @@ func (m *mockStore) ReassignOwnership(ctx context.Context, fromOwnerName, toOwne
 		return m.ReassignOwnershipFn(ctx, fromOwnerName, toOwnerName, entityType, organisationName)
 	}
 	return 0, 0, nil
+}
+
+// --- The failure register ---
+
+func (m *mockStore) RecordFailureVerdict(ctx context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error) {
+	if m.RecordFailureVerdictFn != nil {
+		return m.RecordFailureVerdictFn(ctx, p)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) ReviseFailureEntry(ctx context.Context, id string, p datastore.ReviseFailureEntryParams) (datastore.FailureRegisterEntry, error) {
+	if m.ReviseFailureEntryFn != nil {
+		return m.ReviseFailureEntryFn(ctx, id, p)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) ResolveFailureEntry(ctx context.Context, id, resolvedBy, note string) (datastore.FailureRegisterEntry, error) {
+	if m.ResolveFailureEntryFn != nil {
+		return m.ResolveFailureEntryFn(ctx, id, resolvedBy, note)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) GetFailureRegisterEntry(ctx context.Context, id string) (datastore.FailureRegisterEntry, error) {
+	if m.GetFailureRegisterEntryFn != nil {
+		return m.GetFailureRegisterEntryFn(ctx, id)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) ListFailureRegisterEntries(ctx context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error) {
+	if m.ListFailureRegisterEntriesFn != nil {
+		return m.ListFailureRegisterEntriesFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) ListFailureRegisterHistory(ctx context.Context, gitRepoName string) ([]datastore.FailureRegisterEntry, error) {
+	if m.ListFailureRegisterHistoryFn != nil {
+		return m.ListFailureRegisterHistoryFn(ctx, gitRepoName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) FailureRegisterSummary(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error) {
+	if m.FailureRegisterSummaryFn != nil {
+		return m.FailureRegisterSummaryFn(ctx, windowDays)
+	}
+	return datastore.FailureRegisterSummary{}, nil
 }
 
 func (m *mockStore) MergeOwners(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error) {

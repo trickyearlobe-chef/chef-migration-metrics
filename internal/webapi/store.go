@@ -618,6 +618,35 @@ type DataStore interface {
 	// of them have no alias recorded.
 	CountOwnersMissingAliases(ctx context.Context) (total, missing int, err error)
 
+	// --- The failure register: a person's verdict about a git repo. ---
+
+	// RecordFailureVerdict records a verdict, superseding any standing one
+	// for the same repo rather than replacing it.
+	RecordFailureVerdict(ctx context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error)
+
+	// ReviseFailureEntry updates the diagnosis, plan, target date and holder
+	// of a standing entry. The verdict and reason are immutable.
+	ReviseFailureEntry(ctx context.Context, id string, p datastore.ReviseFailureEntryParams) (datastore.FailureRegisterEntry, error)
+
+	// ResolveFailureEntry records that a standing verdict has been dealt
+	// with. The entry stays: journey 6 needs the direction of travel.
+	ResolveFailureEntry(ctx context.Context, id, resolvedBy, note string) (datastore.FailureRegisterEntry, error)
+
+	// GetFailureRegisterEntry reads one entry whatever its status.
+	GetFailureRegisterEntry(ctx context.Context, id string) (datastore.FailureRegisterEntry, error)
+
+	// ListFailureRegisterEntries reads the register with the total matching
+	// the filter.
+	ListFailureRegisterEntries(ctx context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error)
+
+	// ListFailureRegisterHistory returns every verdict ever recorded about
+	// one repo, newest first.
+	ListFailureRegisterHistory(ctx context.Context, gitRepoName string) ([]datastore.FailureRegisterEntry, error)
+
+	// FailureRegisterSummary reports how large the register is and which way
+	// it is moving over the last windowDays days.
+	FailureRegisterSummary(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error)
+
 	// LookupOwnership returns the owners of a given entity, including
 	// inherited ownership.
 	LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
