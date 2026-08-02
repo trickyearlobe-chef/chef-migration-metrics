@@ -215,19 +215,28 @@ journeys and this work order** — where they disagree, these win.
 
 ## How to work
 
-**Per chunk:** its own branch, failing tests first, implement, green, then an independent adversarial
-review of the diff against that chunk's acceptance criteria whose job is to *refute* that it is done.
-Fix what the review confirms, re-run.
+**Per chunk:** failing tests first, implement, green, then an independent adversarial review of the
+diff against that chunk's acceptance criteria whose job is to *refute* that it is done. Fix what the
+review confirms, re-run.
 
-**Nothing merges to `main` until the whole MVP is complete and the product owner has tested it to
-their own satisfaction.** This is a standing instruction, not a per-chunk approval — a green chunk is
-not a mergeable chunk, and passing tests are not the bar. Stated 2026-08-02, after an earlier
+There are **two separate gates**, and they are not the same conversation.
+
+**Gate 1 — the product owner reviews every chunk before the next one starts.** A finished chunk is a
+full stop, not a handover to the next item. Report what was built and wait. The purpose is to catch
+drift early, while it is one chunk's worth of work to unpick rather than the whole MVP's. Do not
+begin the next chunk unprompted, and do not treat a green test suite as the signal to continue —
+"tests pass" and "this is what I asked for" are different claims, and only the product owner can
+make the second.
+
+**Gate 2 — nothing merges to `main` until the whole MVP is complete and the product owner has tested
+it.** Never ask for merge permission at the end of a chunk. Stated 2026-08-02, after an earlier
 attempt had to be backed out.
 
-So: **do not ask for merge permission at the end of a chunk.** Report what was built, leave the
-branch in place, and move on to the next one. Chunk branches accumulate deliberately here; that
-does not make them stale, and the session-start branch sweep must not treat them as such. The
-product owner initiates the merge conversation, not the assistant.
+**All chunks share this one branch**, rather than a branch each. That is what makes gate 2 cheap: if
+the MVP is abandoned, it costs one branch deletion and nothing on `main` has to be unpicked.
+Incrementally merging green chunks is precisely the thing that would need unpicking. The branch
+sitting unmerged for the length of the MVP is the intended state, not drift — the session-start
+branch sweep must not report it as stale or propose merging it.
 
 **Verify before you rely.** Any citation here was true when written and the tree moves. Open the file.
 A mismatch means the surrounding reasoning may also be stale — report it rather than adjusting quietly.
