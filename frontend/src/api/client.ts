@@ -110,7 +110,6 @@ export interface NodeFilterQuery extends PaginationQuery {
   ready_to_activate?: string;
   sort?: string;
   order?: string;
-  search?: string;
 }
 
 export interface CookbookFilterQuery extends PaginationQuery {
@@ -124,7 +123,6 @@ export interface CookbookFilterQuery extends PaginationQuery {
   target_chef_version?: string;
   complexity_label?: string;
   is_active?: string;
-  search?: string;
   sort?: string;
   order?: string;
 }
@@ -139,7 +137,6 @@ export interface GitRepoFilterQuery extends PaginationQuery {
   target_chef_version?: string;
   /** "broken", "not_broken", "any" (somebody has an opinion) or "none". */
   human_verdict?: string;
-  search?: string;
   sort?: string;
   order?: string;
 }

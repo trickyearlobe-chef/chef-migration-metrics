@@ -55,8 +55,12 @@ export function SubjectPicker({ value, onChange, inputId }: Props) {
       setLoadError(null);
 
       Promise.all([
-        fetchGitRepos({ search: query.trim(), per_page: SUGGESTION_LIMIT }),
-        fetchCookbooks({ search: query.trim(), per_page: SUGGESTION_LIMIT * 4 }),
+        // `name`, not `search`: the git repo and cookbook list endpoints read
+        // `name` and ignore anything else, so a search sent under the wrong
+        // key returns the first rows of the whole catalogue rather than no
+        // rows — which reads as a broken match, not an ignored filter.
+        fetchGitRepos({ name: query.trim(), per_page: SUGGESTION_LIMIT }),
+        fetchCookbooks({ name: query.trim(), per_page: SUGGESTION_LIMIT * 4 }),
       ])
         .then(([repoPage, cookbookPage]) => {
           const repos: Subject[] = (repoPage.data ?? []).map((r) => ({

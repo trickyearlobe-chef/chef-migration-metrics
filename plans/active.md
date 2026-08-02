@@ -70,6 +70,12 @@ worth building, if any.
 
 **Next free migration number: 0062.**
 
+## Snagging (`plans/todo-snagging.md`)
+
+Defects found by the product owner using the shipped app. Faults in what is built, so they
+come before new work. Reproduce, write the failing test, then fix — every one of these got
+past a green suite.
+
 ## QUEUED behind the ownership MVP
 
 - **CC19 target-version failing-nodes preset** (`plans/todo-event-ingest.md`) — wiring

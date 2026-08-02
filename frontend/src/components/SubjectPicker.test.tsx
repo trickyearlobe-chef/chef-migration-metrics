@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../api";
 
@@ -104,6 +104,26 @@ describe("SubjectPicker", () => {
 
     const options = await screen.findAllByRole("button", { name: /legacy-thing/i });
     expect(options).toHaveLength(1);
+  });
+
+  // The search term has to reach the API under the key the API actually reads.
+  // Sending one it ignores returns the first rows of the whole catalogue, so
+  // typing "selinux" offers something alphabetically first and unrelated —
+  // which reads as a broken match rather than an ignored filter.
+  it("narrows the search server-side", async () => {
+    const user = userEvent.setup();
+    render(<SubjectPicker value="" onChange={vi.fn()} />);
+
+    await user.type(screen.getByRole("combobox"), "selinux");
+
+    await waitFor(() => {
+      expect(api.fetchGitRepos).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "selinux" }),
+      );
+      expect(api.fetchCookbooks).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "selinux" }),
+      );
+    });
   });
 
   // Nothing collected matches, and the reason says why rather than showing an
