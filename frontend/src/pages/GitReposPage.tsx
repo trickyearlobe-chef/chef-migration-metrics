@@ -165,6 +165,9 @@ export function GitReposPage() {
     tkStatus,
     cloneStatus,
     kitchenFilter,
+    // Omitting this left the chip and the count updating while the request
+    // never changed — a list that looked filtered and was not.
+    humanVerdict,
     selectedTargetVersion,
     sortField,
     sortOrder,
