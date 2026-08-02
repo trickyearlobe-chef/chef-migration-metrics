@@ -194,14 +194,22 @@ against reality rather than against fixtures we invented.
    deferred — the `RowSource` contract was built for a streaming cursor, so it is a new source
    plus connection handling, not a rewrite. MSSQL needs a driver dependency and its supply-chain
    check first.
-2. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
+2. **Identity and alias management.** **Moved from last to second, 2026-08-02**, after testing
+   the import. It is not tidy-up: it is the tool you debug matching failures *with*, and it
+   *"will pay off once we start exploring why stuff is not matching in node and git views."*
+   Doing it after the matching chunks means diagnosing every miss with no quick way to fix
+   one, and the deferred-correction model from journey 1 only works if correcting is easy at
+   the moment somebody recognises the person. Scope is in `plans/todo-ownership.md`: put a
+   person's aliases on their own page with add and remove inline, and add the merge action
+   that folds one owner into another — which is also what makes a correction survive a
+   re-ingest.
+3. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
    previous attempt.
-3. **Git repo matching.** Repos resolve to their owners. The previous attempt treated this
+4. **Git repo matching.** Repos resolve to their owners. The previous attempt treated this
    as the hard one because it assumed a re-keying job. Diagnosing that failure suggested the
    repo name is **already carried alongside the URL and already used elsewhere**, so the
    re-key may not be needed here at all. **Verify before assuming either way** — the repo
    URL gotcha below is why the assumption was made, not evidence that it holds.
-4. **Alias management.** Last, but **not optional** — see below.
 
 **The incoming ownership data is not clean.** It identifies people inconsistently: sometimes
 an email, sometimes a username, sometimes a team. Matching has to cope with all three, and
