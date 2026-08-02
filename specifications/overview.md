@@ -16,6 +16,7 @@
 | Specification | Summary |
 |---------------|---------|
 | [analysis](analysis.md) | Cookbook usage analysis, compatibility testing (Test Kitchen + CookStyle), remediation guidance, and per-node upgrade readiness. |
+| [audit-log](audit-log.md) | ⚠️ Proposed, not built. One append-only record of who did what — ownership, configuration, credentials, triggered processes — replacing two narrow per-subject tables and no coverage of config or jobs. |
 | [auth](auth.md) | Authentication: local bcrypt accounts and SAML 2.0 SSO, with viewer/operator/admin RBAC. |
 | [backup-restore](backup-restore.md) | Backup and restore of the datastore and application configuration. |
 | [batch-estimate](batch-estimate.md) | Estimation and sizing of migration batches. |
