@@ -15,25 +15,33 @@ reviewing earlier drafts of this plan was in that layer. Derive it; do not inher
 
 ## User journeys
 
-**1. "What's mine."** A team lead filters nodes and git repos down to what they own — including a
-one-click *Mine* — and works from that list. They can also select several people at once, because
-working groups are often a handful of individuals rather than a named team.
+Stated by the product owner, 2026-08-02. These are the requirement. Anything below that
+does not serve one of these is scaffolding and can go.
 
-**2. "Something broke that testing didn't catch."** A real converge fails for a cause cookstyle and
-Test Kitchen never predicted. Someone records it: what failed, the diagnosis, the plan, and a target
-date if one has been given. They can do this by hand, with no telemetry configured.
+**Needed for this deliverable: 1, 2 and 4.**
 
-**3. "Who fixes this?"** A node is blocked. Its owner carries the outcome but usually cannot do the
-work — the fix lives in a git repo someone else owns. From the blocked node, you reach the repo that
-holds the fix, its owner, and any recorded target date.
+**1. "What's mine."** A team lead sees only their own estate — the nodes and git repos they
+own — and works from that list. Several people can be selected at once: working groups are
+often a handful of individuals rather than a named team.
 
-**4. "How are we doing, and who is holding up whom?"** Progress per owner, with the unowned
-remainder visible so the numbers reconcile to the whole fleet. Alongside it, how many other people's
-nodes each owner's repos are blocking — a count derived from stored relationships, never a judgement.
+**2. "Who can unblock this?"** A node is blocked. Its owner carries the outcome but usually
+cannot do the work, because the fix lives in a git repo someone else owns. From the blocked
+node, reach the repo holding the fix and the person accountable for it.
 
-**5. "Get our ownership data in."** Point CMM at an export, see the columns and sample values, map
-them onto CMM's fields, preview what would happen, and get an honest report of what matched, what
-did not, and why. It must succeed while the source data is still inconsistent.
+**3. "What is blocking migration, and where is the work tracked?"** A programme manager needs
+to see what is blocking migration, what work has an owner, what is progressing, and **where to
+find the actual work tracking** — which may be comments in CMM, or may be Jira. Open question:
+how CMM points at externally-tracked work.
+
+**4. "Something broke that testing didn't catch."** An engineer records a failure nobody
+predicted: what broke, the diagnosis, what they plan to do about it, and a target date if one
+has been given. Recorded by hand, with no telemetry configured.
+
+**5. "Get our ownership data in."** An admin brings existing ownership data in from a CSV
+**and/or a database** — probably MSSQL, possibly PostgreSQL. **We do not have the schema, so
+discovery happens in the UI:** choose a table and pick fields from it, or supply a SQL query and
+pick fields from what it returns, with a data preview to make the choice possible. More complex
+than the others; not part of this deliverable.
 
 ---
 
