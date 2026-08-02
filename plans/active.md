@@ -14,8 +14,8 @@ top of the tag: the git repo owner filter, and the snagging fixes made after it 
 was overridden deliberately by the product owner**, ahead of the MVP being complete, to get
 a build deployable at customer scale and take the measurements that decide whether node and
 repo matching are worth building at all. That decision bought the measurement at the cost of
-having work on `main` that has not been through a full MVP sign-off — if it has to come out,
-see the backout note below. Later chunks should branch fresh from `main`.
+having work on `main` that has not been through a full MVP sign-off. Later chunks should
+branch fresh from `main`.
 
 **If a rollback is ever needed:** redeploy the previous package, and note there is **no
 down-migration runner** — only `MigrateUp` exists, so a schema rollback is `psql` by hand or a
