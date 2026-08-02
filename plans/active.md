@@ -7,16 +7,39 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 
 ## Branch map (2026-08-02)
 
-`main` — v2.18.11 tagged and pushed. Collection is hourly. No open branches.
+`main` — v2.18.11 tagged and pushed. Collection is hourly.
 
-## NOW — CC19 target-version failing-nodes preset (`plans/todo-event-ingest.md`)
+`feature/owner-ingest-discovery` — the ownership MVP. **Long-lived and deliberately
+unmerged; do not report it as stale or propose merging it.** All chunks land on this one
+branch. Read the two gates in `plans/ownership-work-attribution.md` § How to work before
+doing anything on it.
 
-Rollup and filters are built and tested. `useTargetChefVersion`
-(`frontend/src/hooks/useTargetChefVersion.ts:31`) is already wired into `GitReposPage`,
-`NodesPage`, `RoleDetailPage` and `CookbooksPage`, but not `RunEventsPage`. This is the
-wiring — copy an existing call site, not new behaviour.
+## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
-## NEXT — Dependabot triage
+Work order and journeys live in that plan; per-chunk scope lives in
+`plans/todo-ownership.md`. Do not re-plan either.
+
+**Chunk 1, owner ingest — done and reviewed by the product owner, 2026-08-02.** Behaviour is
+`specifications/ownership-intake.md`. Two decisions departed from the written plan and were
+confirmed in review: unresolved people are created rather than rejected, and a fuzzy
+candidate no longer rejects the row. Both stay.
+
+**Chunk 2, identity and alias management — cleared to start.** Moved ahead of node matching
+because it is the tool you debug matching failures with. Three strands, one chunk, sharing
+machinery: a person's aliases editable inline on their own page; a standing
+possible-duplicate-owners view; and a merge action folding one owner into another — which is
+also what makes a correction survive a re-ingest. Scope and the gotchas that shape it are in
+`plans/todo-ownership.md`.
+
+Then node matching, then git repo matching.
+
+## QUEUED behind the ownership MVP
+
+- **CC19 target-version failing-nodes preset** (`plans/todo-event-ingest.md`) — wiring
+  `useTargetChefVersion` into `RunEventsPage`; copy an existing call site, not new behaviour.
+- **Dependabot triage** — below.
+
+## Dependabot triage
 
 12 vulnerabilities on the default branch (5 high, 5 moderate, 2 low) as of 2026-08-02,
 up from 10 (3 high) on 2026-07-30. Our local gates are clean for a reason, not by
