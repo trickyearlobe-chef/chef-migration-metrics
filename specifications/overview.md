@@ -1,5 +1,16 @@
 # Specifications Overview
 
+> ## ⚠️ THESE SPECIFICATIONS ARE NOT TO BE TRUSTED
+>
+> **The code is the only source of truth.** Specs in this set assert tables, columns,
+> config flags, endpoints and processes that **do not exist**. A spec claim is unverified
+> until you have checked it against the tree at the current commit.
+>
+> **Do not plan, estimate or write code from an unverified spec claim.** Doing so cost a
+> full sprint week: work was planned against tables that had never existed and processes
+> that behaved nothing like the spec described. Read specs for *intent*; verify every
+> *fact* in the code before you rely on it.
+
 > Index of every component specification for Chef Migration Metrics. This is the routing layer for agents: find the relevant spec here, then open it. Large specs are a thin index plus `<spec>-<section>.md` part files — open only the section you need. `CLAUDE.md` (repo root) holds the working rules; `project-conventions.md` holds Go/DB/frontend conventions.
 
 | Specification | Summary |

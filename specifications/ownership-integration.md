@@ -43,7 +43,6 @@ ownership:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `ownership.enabled` | boolean | `false` | Enable ownership tracking features. When disabled, ownership tables still exist but are not populated, and UI elements are hidden. |
 | `ownership.auto_rules` | list | `[]` | List of auto-derivation rule definitions (see § 2.2) |
 | `ownership.audit_log.retention_days` | integer | `365` | Number of days to retain audit log entries. Entries older than this are purged daily. Set to `0` to disable purging (retain indefinitely). |
 
@@ -51,7 +50,6 @@ ownership:
 
 | Variable | Overrides |
 |----------|-----------|
-| `CMM_OWNERSHIP_ENABLED` | `ownership.enabled` |
 | `CMM_OWNERSHIP_AUDIT_LOG_RETENTION_DAYS` | `ownership.audit_log.retention_days` |
 
 Auto-derivation rules are not overridable via environment variables due to their complex structure. They must be defined in the YAML configuration file.
@@ -62,11 +60,11 @@ Auto-derivation rules are not overridable via environment variables due to their
 
 ### 7.1 Additional Partial Search Keys
 
-When `ownership.enabled` is `true` and `node_attribute` auto-derivation rules are configured, the data collection component must include the configured `attribute_path` values in the partial search key map sent to the Chef API. The returned values are stored in the `custom_attributes` field on node snapshots, keyed by the dot-separated attribute path.
+When `node_attribute` auto-derivation rules are configured, the data collection component must include the configured `attribute_path` values in the partial search key map sent to the Chef API. The returned values are stored in the `custom_attributes` field on node snapshots, keyed by the dot-separated attribute path.
 
 ### 7.2 Git Committer Collection
 
-When `ownership.enabled` is `true`, the data collection component must extract committer information from each git-sourced cookbook repository during the fetch cycle. After fetching/pulling a repository, the collector gathers the distinct committers from the git log of the default branch — recording each committer's name, email, total commit count, earliest commit date, and most recent commit date.
+The data collection component must extract committer information from each git-sourced cookbook repository during the fetch cycle. After fetching/pulling a repository, the collector gathers the distinct committers from the git log of the default branch — recording each committer's name, email, total commit count, earliest commit date, and most recent commit date.
 
 This data is stored in the `git_repo_committers` table and fully refreshed on each collection run (the previous set of committer rows for the repository is replaced). The committer data is read-only from the application's perspective — it reflects the state of the git history, not user input.
 
@@ -74,7 +72,6 @@ This data is stored in the `git_repo_committers` table and fully refreshed on ea
 
 After each collection run completes for an organisation:
 
-- If `ownership.enabled` is `false`, skip.
 - Evaluate all auto-derivation rules against the newly collected data.
 - Create assignments for new matches and remove stale `auto_rule` assignments from rules that no longer match.
 - Log a summary at `INFO` severity with the rule count, assignments created, and stale assignments removed.

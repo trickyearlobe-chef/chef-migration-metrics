@@ -168,7 +168,7 @@ All dashboard views must support filtering by the following dimensions. Filters 
 | Active/unused cookbook status | Show or hide cookbooks not applied to any node (default: hide unused) |
 | Stale node status | Show all nodes, only stale nodes, or only fresh nodes (default: all) |
 | Complexity label | Filter cookbooks by complexity label (`low`, `medium`, `high`, `critical`) |
-| Owner | Filter by owner name(s) or show only unowned entities. Multi-select. See [Ownership Specification](ownership.md) § 5.1. Only visible when `ownership.enabled` is `true`. |
+| Owner | Filter by owner name(s) or show only unowned entities. Multi-select. See [Ownership Specification](ownership.md) § 5.1. |
 
 ---
 
@@ -227,7 +227,7 @@ Accessible from the node detail page via "View Filesystem Details" links in both
 
 ## Ownership Views
 
-When `ownership.enabled` is `true`, the dashboard includes ownership-aware views and indicators. These are fully specified in the [Ownership Specification](ownership.md) § 5 and summarised here:
+The dashboard includes ownership-aware views and indicators. These are fully specified in the [Ownership Specification](ownership.md) § 5 and summarised here:
 
 - **Owner filter** — An Owner multi-select filter in the filter bar, applied consistently across all views (§ 5.1).
 - **Ownership summary view** — A top-level "Ownership" navigation item showing per-owner migration progress, ownership coverage metrics, and drill-down to owner-scoped dashboards (§ 5.2).

@@ -78,6 +78,8 @@ Three complementary layers — pick the cheapest that answers the question, esca
 
 ## Specifications
 
+- **THE SPECS ARE NOT TO BE TRUSTED. The code is the only source of truth.** Specs assert tables, columns, config flags, endpoints and processes that do not exist. Treat every spec claim as unverified until you have checked it against the tree at the current commit.
+- **NEVER plan, estimate, or write code from a spec claim you have not just verified in code.** Planning against stale specs cost a full sprint week. If a claim matters to what you are about to do, verify it; if it turns out to be wrong, correct the spec (with permission) or say so — never build to it.
 - Specs live under `specifications/<component>.md` (flat layout, no subdirectories).
 - NEVER silently diverge from a spec.
 - Do not modify specs without asking.
@@ -111,10 +113,23 @@ Three complementary layers — pick the cheapest that answers the question, esca
 
 - Prefer subagents for read/search fan-out — the largest token lever. A subagent reads files in a separate context and returns a short summary; the file dumps never enter the main conversation. Use it whenever answering means sweeping many files and you only want the conclusion.
 - Model-tier the work: run exploration/search subagents on a cheaper model, reserve the top model for reasoning and edits.
+- **Agents locate; the caller verifies.** Never act on a subagent's conclusion. Finding a candidate costs an agent twenty reads; confirming it costs the caller one command — run it. Yesterday's failures came from using agent conclusions directly.
+- **Every load-bearing claim carries its evidence** — the command run, and `file:line @ <short-SHA>`. A claim that cannot carry evidence is a lead, not a fact.
+- **Negative claims are the dangerous class.** "There is no X" from an agent that searched the wrong term is indistinguishable from true absence. A negative must state the terms searched and the paths covered, or it is worthless.
+- **Ask for facts, not judgements.** "Which files write this field?" not "is this design sound?" Agents fill gaps by inferring intent, and the inference is invisible in the output.
+- **Do not merge several agents' partial findings into one narrative.** Keep claims attributed and separate — the seams are where the errors hide, and the merged story always reads better than its sources.
+- Never run read-only agents concurrently with writers on the same files: true-when-read, false-when-used.
 - Scope spawned agents tightly. One file or one narrow topic per agent.
 - If a task requires many changes, split across multiple agents rather than risking context exhaustion.
 - Spawned agents NEVER run git commands; the caller handles git.
 
+
+## Reporting to the User
+
+- **The user is not the verification layer for internal technical claims.** They cannot audit volume, and they should not have to. If a claim matters, encode it as a **test that fails** — never as a sentence for a human to check.
+- **Division of verification:** tests verify facts; the assistant verifies agent claims; **the user verifies intent** — whether the work matches the requirement. That is the only check nobody else can perform, so protect their attention for it.
+- **Write findings in plain language**: what a user would see, or what breaks. Internal shorthand ("false derive of gin index ordinality") is unreviewable — it asks the reader to audit internals in the assistant's vocabulary. Plain statement first; the technical term only if it earns its place.
+- Report only what changes a decision. Volume defeats checking, and skimming is indistinguishable from verifying until it isn't.
 
 ## Permission Boundaries
 
