@@ -46,6 +46,11 @@ possibly the customer's own workaround for the missing team data. That leaves an
 question: when several people own something, who is specifically on the hook to fix it?**
 Unresolved, and it lands on journey 2, which promises "the person accountable".
 
+**Deferred idea — infer teams from co-ownership.** Where the same people repeatedly own the
+same things together, that grouping is probably a team, and could be proposed at a stated
+level of confidence rather than asserted. **Not in scope for Monday** unless it turns out to
+be the cheapest way to hit it.
+
 **2. "Who can unblock this?"** A node is blocked. Its owner carries the outcome but usually
 cannot do the work, because the fix lives in a git repo someone else owns. From the blocked
 node, reach the repo holding the fix and the person accountable for it.
@@ -59,7 +64,16 @@ holds the reference.
 
 **4. "Something broke that testing didn't catch."** An engineer records a failure nobody
 predicted: what broke, the diagnosis, what they plan to do about it, and a target date if one
-has been given. Recorded by hand, with no telemetry configured.
+has been given. Recorded by hand, with no telemetry configured. Read back daily — see journey 6.
+
+**6. "What's broken right now?" — the standup view.** Every morning the team reads the
+register together and needs, in one place: **which cookbooks are currently broken** — which
+ultimately map to git repos — **why** each one is broken, **what is being done about it**, and
+**whether the list is getting too large**. The size and direction of the list matter as much
+as its contents: a register that is growing is a different message from one that is shrinking.
+
+This is the consumer for journey 4. Without it, recording a failure is data entry nobody
+reads, and people stop doing it.
 
 **5. "Get our ownership data in."** An admin brings existing ownership data in from a CSV
 **and/or a database** — probably MSSQL, possibly PostgreSQL. **We will not have the schema, so
@@ -69,6 +83,28 @@ must succeed while the source data is still inconsistent, and report what matche
 and why.
 
 ---
+
+## Vocabulary — cookbook and git repo are not interchangeable
+
+Affects journeys 2, 4 and 6. Getting this wrong builds the right feature against the wrong
+thing.
+
+- **The unit of work is the git repo.** That is where a fix is made and re-released, so the
+  diagnosis, the plan, the target date and the ticket reference all hang off the repo.
+- **It is called a cookbook.** To a human the cookbook *lives* in the repo and also *gets
+  deployed*, via the Chef Server, onto nodes — one thing seen in two places. Standup says
+  "cookbook" while looking at repo-level work.
+- **Never a specific version.** Several versions are usually in use at once, so failures are
+  discussed version-agnostically.
+
+So the work is **keyed on the repo** and **labelled with the cookbook**. This is one list,
+not two.
+
+**This customer has exactly one distinct cookbook per repo**, holding multiple versions in
+the normal manner — so the label is unambiguous. Repos containing several distinct cookbooks
+are **mono-repos**; some customers use them, this one does not. **Deliberately not considered
+now** — assume one cookbook per repo, and treat mono-repo support as a later question rather
+than designing around it.
 
 ## Gotchas
 
