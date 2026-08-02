@@ -618,6 +618,10 @@ type DataStore interface {
 	// of them have no alias recorded.
 	CountOwnersMissingAliases(ctx context.Context) (total, missing int, err error)
 
+	// ListOwnedEntityKeys returns every entity key of the given type that
+	// somebody owns, in one query.
+	ListOwnedEntityKeys(ctx context.Context, entityType string) (map[string]bool, error)
+
 	// DismissOwnerDuplicate records that two owners are not the same person.
 	// The rejection outlives a rescan.
 	DismissOwnerDuplicate(ctx context.Context, ownerA, ownerB, reason, dismissedBy string) error

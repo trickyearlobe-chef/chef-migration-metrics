@@ -126,6 +126,16 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 
 	ctx := req.Context()
 
+	// The repo is where a fix is made, so "what's mine" and "what has nobody"
+	// are repo-level questions. Ownership lives in its own table with no join
+	// to git_repos — assignments are keyed on the repo *name* because repo
+	// URLs are volatile — so it is resolved separately and applied here, the
+	// same way the cookbook and node lists do it.
+	of := parseOwnerFilter(req)
+	if !validateOwnerFilter(w, of) {
+		return
+	}
+
 	// Parse query params into filter struct (shared with the export path so an
 	// export reproduces the list view's filtering exactly).
 	f := gitRepoFilterFromValues(req.URL.Query())
@@ -135,11 +145,33 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 	f.Limit = pg.PerPage
 	f.Offset = (pg.Page - 1) * pg.PerPage
 
+	// With ownership filtering on, SQL paging would page the unfiltered set
+	// and then hide rows from it, so the page would come back short and the
+	// total would describe the wrong set. Page in memory instead. Safe here
+	// because the repo catalogue is thousands, not the node fleet.
+	if of.Active {
+		f.Limit = 0
+		f.Offset = 0
+	}
+
 	repos, total, err := r.db.ListGitReposFiltered(ctx, f)
 	if err != nil {
 		r.logf("ERROR", "listing git repos (filtered): %v", err)
 		WriteInternalError(w, "Failed to list git repos.")
 		return
+	}
+
+	if of.Active {
+		ownedKeys, oErr := r.resolveOwnershipFilter(ctx, of, "git_repo")
+		if oErr != nil {
+			r.logf("ERROR", "resolving git repo ownership filter: %v", oErr)
+			WriteInternalError(w, "Failed to resolve the ownership filter.")
+			return
+		}
+		repos = filterByOwnershipKey(repos, ownedKeys, of,
+			func(gr datastore.GitRepo) string { return gr.Name })
+		total = len(repos)
+		repos, _ = PaginateSlice(repos, pg)
 	}
 
 	// Determine target Chef version for response metadata.

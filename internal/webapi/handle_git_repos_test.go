@@ -518,3 +518,129 @@ func TestGitRepos_HumanVerdictFilterReachesTheStore(t *testing.T) {
 		t.Errorf("the cookstyle filter was lost: %+v", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Ownership filtering on the git repo list
+//
+// The repo is where a fix is made, so "what's mine" and "what has nobody" are
+// repo-level questions — but the list was the one place ownership could not be
+// filtered on. With 92% of the estate now carrying an owner, the unowned
+// remainder is the actionable list.
+// ---------------------------------------------------------------------------
+
+func gitRepoOwnershipStore(assignments []datastore.OwnershipAssignment) *mockStore {
+	return &mockStore{
+		ListGitReposFilteredFn: func(_ context.Context, _ datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			return []datastore.GitRepo{
+				{Name: "acme-apache", GitRepoURL: "https://git.example.com/apache.git"},
+				{Name: "acme-nginx", GitRepoURL: "https://git.example.com/nginx.git"},
+				{Name: "acme-mysql", GitRepoURL: "https://git.example.com/mysql.git"},
+			}, 3, nil
+		},
+		ListAssignmentsByOwnerFn: func(_ context.Context, _ datastore.AssignmentListFilter) ([]datastore.OwnershipAssignment, int, error) {
+			return assignments, len(assignments), nil
+		},
+		ListOwnedEntityKeysFn: func(_ context.Context, _ string) (map[string]bool, error) {
+			keys := map[string]bool{}
+			for _, a := range assignments {
+				keys[a.EntityKey] = true
+			}
+			return keys, nil
+		},
+	}
+}
+
+func gitRepoNames(t *testing.T, body []byte) []string {
+	t.Helper()
+	var resp struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	out := make([]string, 0, len(resp.Data))
+	for _, d := range resp.Data {
+		out = append(out, d.Name)
+	}
+	return out
+}
+
+func TestGitRepos_FilterByOwner(t *testing.T) {
+	store := gitRepoOwnershipStore([]datastore.OwnershipAssignment{
+		{OwnerName: "alice.brown", EntityType: "git_repo", EntityKey: "acme-apache"},
+	})
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet,
+		"/api/v1/git-repos?owner=alice.brown", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	got := gitRepoNames(t, w.Body.Bytes())
+	if len(got) != 1 || got[0] != "acme-apache" {
+		t.Errorf("got %v, want just acme-apache", got)
+	}
+}
+
+// The one the measurement needs: repos nobody has been made responsible for.
+func TestGitRepos_FilterUnowned(t *testing.T) {
+	store := gitRepoOwnershipStore([]datastore.OwnershipAssignment{
+		{OwnerName: "alice.brown", EntityType: "git_repo", EntityKey: "acme-apache"},
+	})
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet,
+		"/api/v1/git-repos?unowned=true", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	got := gitRepoNames(t, w.Body.Bytes())
+	if len(got) != 2 {
+		t.Fatalf("got %v, want the two with no owner", got)
+	}
+	for _, name := range got {
+		if name == "acme-apache" {
+			t.Error("an owned repo appeared in the unowned list")
+		}
+	}
+}
+
+// Asking for both at once is a contradiction, and answering it either way
+// would be a guess.
+func TestGitRepos_OwnerAndUnownedAreExclusive(t *testing.T) {
+	r := ownershipRouter(gitRepoOwnershipStore(nil))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet,
+		"/api/v1/git-repos?owner=alice.brown&unowned=true", nil))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+// The count has to describe the filtered set, or paging through it lies.
+func TestGitRepos_OwnershipFilterCorrectsTheTotal(t *testing.T) {
+	store := gitRepoOwnershipStore([]datastore.OwnershipAssignment{
+		{OwnerName: "alice.brown", EntityType: "git_repo", EntityKey: "acme-apache"},
+	})
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet,
+		"/api/v1/git-repos?owner=alice.brown&per_page=25", nil))
+
+	var resp struct {
+		Pagination struct {
+			TotalItems int `json:"total_items"`
+		} `json:"pagination"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Pagination.TotalItems != 1 {
+		t.Errorf("total_items = %d, want 1 — the total must describe the filtered set", resp.Pagination.TotalItems)
+	}
+}

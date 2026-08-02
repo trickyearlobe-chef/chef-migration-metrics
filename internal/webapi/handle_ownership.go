@@ -78,23 +78,16 @@ func (r *Router) resolveOwnedEntityKeys(ctx context.Context, ownerNames []string
 // resolveAllOwnedEntityKeys returns the set of all entity keys that have any
 // owner for the specified entity type. Used for the "unowned" filter.
 func (r *Router) resolveAllOwnedEntityKeys(ctx context.Context, entityType string) (map[string]bool, error) {
-	owners, _, err := r.db.ListOwners(ctx, datastore.OwnerListFilter{Limit: 10000})
+	keys, err := r.db.ListOwnedEntityKeys(ctx, entityType)
 	if err != nil {
 		return nil, err
 	}
-	keys := make(map[string]bool)
-	for _, o := range owners {
-		assignments, _, err := r.db.ListAssignmentsByOwner(ctx, datastore.AssignmentListFilter{
-			OwnerName:  o.Name,
-			EntityType: entityType,
-			Limit:      10000,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for _, a := range assignments {
-			keys[a.EntityKey] = true
-		}
+	// Never nil while the filter is active. A nil set means "no filtering" to
+	// every caller, so returning one for an unowned filter would silently show
+	// the whole estate as though nothing were owned — the wrong answer,
+	// delivered confidently.
+	if keys == nil {
+		keys = map[string]bool{}
 	}
 	return keys, nil
 }

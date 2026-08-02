@@ -2342,6 +2342,10 @@ func TestResolveOwnershipFilter_Unowned(t *testing.T) {
 	cfg := testConfig()
 	r := newTestRouterWithMockAndConfig(store, cfg)
 
+	store.ListOwnedEntityKeysFn = func(_ context.Context, _ string) (map[string]bool, error) {
+		return map[string]bool{"web1": true}, nil
+	}
+
 	of := ownerFilter{Active: true, Unowned: true}
 	keys, err := r.resolveOwnershipFilter(context.Background(), of, "node")
 	if err != nil {

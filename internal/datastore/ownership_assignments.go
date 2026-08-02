@@ -617,3 +617,31 @@ func nullStringPtr(s string) any {
 	}
 	return s
 }
+
+// ListOwnedEntityKeys returns every entity key of the given type that somebody
+// owns, as a set.
+//
+// This replaces walking the owner catalogue and querying per owner, which was
+// a query per owner — fine on a catalogue of a dozen, and 1,862 queries on a
+// real one, every time somebody filtered a list by "unowned". It also removes
+// the row cap that walk carried: an owner past the ten-thousandth was silently
+// treated as owning nothing, which would have made their repos look unowned.
+func (db *DB) ListOwnedEntityKeys(ctx context.Context, entityType string) (map[string]bool, error) {
+	rows, err := db.pool.QueryContext(ctx,
+		`SELECT DISTINCT entity_key FROM ownership_assignments WHERE entity_type = $1`,
+		entityType)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing owned entity keys for %q: %w", entityType, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	keys := map[string]bool{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, fmt.Errorf("datastore: scanning an owned entity key: %w", err)
+		}
+		keys[key] = true
+	}
+	return keys, rows.Err()
+}

@@ -3146,6 +3146,9 @@ func TestHandleDashboardVersionDistributionTrend_OwnershipFiltered_Unowned(t *te
 				{EntityType: "node", EntityKey: "web01"},
 			}, 1, nil
 		},
+		ListOwnedEntityKeysFn: func(ctx context.Context, entityType string) (map[string]bool, error) {
+			return map[string]bool{"web01": true}, nil
+		},
 		ListMetricSnapshotsByOrganisationFn: func(ctx context.Context, organisationID, snapshotType string, limit int) ([]datastore.MetricSnapshot, error) {
 			return []datastore.MetricSnapshot{
 				{
