@@ -100,6 +100,8 @@ export interface ReviseFailureEntryBody {
   plan?: string;
   evidence?: string;
   target_date?: string;
-  holder_type?: HolderType;
+  /** "" clears the holder — it is how "nobody is on it" is said. Omitting the
+   * field instead leaves whatever is stored, which cannot express that. */
+  holder_type?: HolderType | "";
   holder_ref?: string;
 }

@@ -159,3 +159,114 @@ describe("FailureEntryDialog — who is on it", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Editing an entry
+//
+// Found by trying to set an assigned item back to unassigned: the reference
+// alone kept the previous kind alive, so the entry could not be unassigned,
+// and the target date came back as a timestamp the date input could not read
+// and rendered blank.
+// ---------------------------------------------------------------------------
+
+describe("FailureEntryDialog — editing an entry", () => {
+  const assigned = {
+    id: "entry-1",
+    subject_name: "cron",
+    subject_type: "git_repo" as const,
+    cookbook_name: "cron",
+    verdict: "broken" as const,
+    reason: "Its a totally bogus test",
+    diagnosis: "theres a negative pole on the tranny-transformer",
+    plan: "Get Doctor Who to fix it",
+    target_date: "2026-08-30",
+    holder_type: "ticket" as const,
+    holder_ref: "Jira 999",
+    status: "open" as const,
+    raised_by: "richard",
+    raised_at: "2026-08-02T09:00:00Z",
+    updated_at: "2026-08-02T09:00:00Z",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.fetchGitRepos).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 8, total_items: 0, total_pages: 0 },
+    });
+    vi.mocked(api.fetchCookbooks).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 32, total_items: 0, total_pages: 0 },
+    });
+  });
+
+  function renderRevising(onRevise = vi.fn().mockResolvedValue(undefined)) {
+    render(
+      <FailureEntryDialog
+        mode="revise"
+        entry={assigned}
+        onCancel={vi.fn()}
+        onRevise={onRevise}
+      />,
+      { wrapper: Wrapper },
+    );
+    return onRevise;
+  }
+
+  // A date input cannot parse a timestamp, so it renders blank and the value
+  // looks lost the moment the form opens.
+  it("shows the target date already on the entry", () => {
+    renderRevising();
+    expect(screen.getByLabelText(/Target date/i)).toHaveValue("2026-08-30");
+  });
+
+  it("shows the plan, diagnosis and holder already on the entry", () => {
+    renderRevising();
+    expect(screen.getByLabelText(/^Plan/i)).toHaveValue("Get Doctor Who to fix it");
+    expect(screen.getByLabelText(/^Diagnosis/i)).toHaveValue(
+      "theres a negative pole on the tranny-transformer",
+    );
+    expect(screen.getByLabelText(/Who is on it/i)).toHaveValue("ticket");
+    expect(screen.getByLabelText(/^Reference/i)).toHaveValue("Jira 999");
+  });
+
+  // The one that could not be done at all: taking somebody off an entry.
+  it("can set an assigned entry back to unassigned", async () => {
+    const user = userEvent.setup();
+    const onRevise = renderRevising();
+
+    await user.selectOptions(screen.getByLabelText(/Who is on it/i), "");
+
+    // Choosing "Nobody yet" takes the reference with it — leaving it behind
+    // kept the old kind alive and silently discarded the unassignment.
+    expect(screen.getByLabelText(/^Reference/i)).toHaveValue("");
+
+    await user.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(onRevise).toHaveBeenCalledWith(
+        expect.objectContaining({ holder_type: "", holder_ref: "" }),
+      );
+    });
+  });
+
+  // Saving without touching anything must not quietly drop what is there.
+  it("keeps every field when nothing is changed", async () => {
+    const user = userEvent.setup();
+    const onRevise = renderRevising();
+
+    await user.click(screen.getByRole("button", { name: /^Save$/i }));
+
+    await waitFor(() => {
+      expect(onRevise).toHaveBeenCalledWith(
+        expect.objectContaining({
+          plan: "Get Doctor Who to fix it",
+          diagnosis: "theres a negative pole on the tranny-transformer",
+          target_date: "2026-08-30",
+          holder_type: "ticket",
+          holder_ref: "Jira 999",
+        }),
+      );
+    });
+  });
+});

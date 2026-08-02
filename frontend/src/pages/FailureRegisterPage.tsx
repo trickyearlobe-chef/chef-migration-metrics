@@ -52,7 +52,10 @@ export function FailureRegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("open");
-  const [verdict, setVerdict] = useState("");
+  // The standup asks what is broken. Entries overruling a wrong automated
+  // verdict are the accuracy report rather than the agenda, and are one
+  // selection away.
+  const [verdict, setVerdict] = useState("broken");
   const [notice, setNotice] = useState<string | null>(null);
 
   // The dialog does three jobs: raise a new entry, revise the plan on one, and
@@ -156,11 +159,11 @@ export function FailureRegisterPage() {
             }}
             className="rounded-md border border-gray-300 px-2 py-1 text-sm"
           >
-            <option value="">Both</option>
             <option value="broken">Broken — the tools missed it</option>
             <option value="not_broken">
               Not broken — the tools got it wrong
             </option>
+            <option value="">Both</option>
           </select>
         </label>
       </div>

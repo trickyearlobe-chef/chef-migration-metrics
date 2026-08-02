@@ -122,7 +122,7 @@ export function FailureEntryDialog({
           plan,
           evidence,
           target_date: targetDate,
-          holder_type: effectiveHolderType === "" ? undefined : effectiveHolderType,
+          holder_type: effectiveHolderType,
           holder_ref: effectiveHolderRef,
         });
       } else {
@@ -311,9 +311,14 @@ export function FailureEntryDialog({
             <Field label="Who is on it">
               <select
                 value={holderType}
-                onChange={(e) =>
-                  setHolderType(e.target.value as HolderType | "")
-                }
+                onChange={(e) => {
+                  const next = e.target.value as HolderType | "";
+                  setHolderType(next);
+                  // "Nobody yet" means nobody: leaving the reference behind
+                  // would keep the previous kind alive and silently discard
+                  // the unassignment.
+                  if (next === "") setHolderRef("");
+                }}
                 className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 <option value="">Nobody yet</option>

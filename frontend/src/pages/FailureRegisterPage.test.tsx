@@ -334,13 +334,29 @@ describe("FailureRegisterPage", () => {
     });
   });
 
-  // The default read is what is standing, not the whole history.
-  it("opens on the standing entries", async () => {
+  // The default read is what is standing, and what is broken: the standup
+  // asks what is broken, and an entry overruling a wrong automated verdict is
+  // the accuracy report rather than the agenda.
+  it("opens on the standing, broken entries", async () => {
     render(<FailureRegisterPage />, { wrapper: Wrapper });
     await waitFor(() => {
       expect(api.fetchFailureRegister).toHaveBeenCalledWith(
-        expect.objectContaining({ status: "open" }),
+        expect.objectContaining({ status: "open", verdict: "broken" }),
       );
+    });
+  });
+
+  // The overruled entries are one selection away, not buried.
+  it("can show both sides", async () => {
+    const user = userEvent.setup();
+    render(<FailureRegisterPage />, { wrapper: Wrapper });
+    await waitFor(() => expect(api.fetchFailureRegister).toHaveBeenCalled());
+
+    await user.selectOptions(screen.getByLabelText(/Verdict/i), "");
+
+    await waitFor(() => {
+      const last = vi.mocked(api.fetchFailureRegister).mock.calls.at(-1)?.[0];
+      expect(last?.verdict).toBeUndefined();
     });
   });
 
