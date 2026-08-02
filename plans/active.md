@@ -10,18 +10,14 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 `main` — **v2.18.13** tagged and pushed. Collection is hourly. A few commits sit unpushed on
 top of the tag: the git repo owner filter, and the snagging fixes made after it was cut.
 
-`feature/owner-ingest-discovery` — merged into `main` 2026-08-02 and kept locally. **Gate 2
-was overridden deliberately by the product owner**, ahead of the MVP being complete, to get
-a build deployable at customer scale and take the measurements that decide whether node and
-repo matching are worth building at all. That decision bought the measurement at the cost of
-having work on `main` that has not been through a full MVP sign-off. Later chunks should
-branch fresh from `main`.
+`feature/owner-ingest-discovery` — merged into `main` 2026-08-02. **Gate 2 was overridden
+deliberately by the product owner**, ahead of the MVP being complete, to get a build deployable
+at customer scale and take the measurements below. Later chunks branch fresh from `main`.
 
-**If a rollback is ever needed:** redeploy the previous package, and note there is **no
-down-migration runner** — only `MigrateUp` exists, so a schema rollback is `psql` by hand or a
-restore. Take a `pg_dump` before any deploy. Only migration 0059 leaves a residue the old binary
-reads (`owner_aliases` back-filled from `owners.contact_email`); its down script removes exactly
-those rows.
+**If a rollback is ever needed:** there is **no down-migration runner** — only `MigrateUp` — so a
+schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Only
+migration 0059 leaves a residue the old binary reads (`owner_aliases` back-filled from
+`owners.contact_email`); its down script removes exactly those rows.
 
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
