@@ -52,16 +52,28 @@ const (
 	SourceServerCookstyle = "server_cookstyle"
 	SourceGitCookstyle    = "git_cookstyle"
 	SourceGitTestKitchen  = "git_test_kitchen"
+
+	// SourceHumanVerdict is a person's verdict from the failure register. It
+	// outranks every automated source in both directions: it records a failure
+	// nothing detected, and it overrules a wrong automated verdict.
+	// See specifications/failure-register.md.
+	SourceHumanVerdict = "human"
 )
 
 // CookbookSourceVerdict records the compatibility result from one source.
 type CookbookSourceVerdict struct {
-	Source          string `json:"source"`               // "server_cookstyle", "git_cookstyle", "git_test_kitchen"
+	Source          string `json:"source"`               // "server_cookstyle", "git_cookstyle", "git_test_kitchen", "human"
 	Status          string `json:"status"`               // "compatible", "incompatible", "untested"
 	Version         string `json:"version,omitempty"`    // server version or "HEAD" for git
 	CommitSHA       string `json:"commit_sha,omitempty"` // git HEAD SHA (git sources only)
 	ComplexityScore int    `json:"complexity_score,omitempty"`
 	ComplexityLabel string `json:"complexity_label,omitempty"`
+
+	// Note is why a person reached this verdict, and RecordedBy is who. Both
+	// are carried only by SourceHumanVerdict: a machine verdict has no reason
+	// beyond its offences, and a human one is worthless without one.
+	Note       string `json:"note,omitempty"`
+	RecordedBy string `json:"recorded_by,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +161,10 @@ type ReadinessDataStore interface {
 
 	// Bulk-load git Test Kitchen aggregate counts
 	ListGitKitchenCountsByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]tkstatus.Counts, error)
+
+	// ListOpenFailureVerdicts returns the standing human verdicts from the
+	// failure register, keyed on git repo name.
+	ListOpenFailureVerdicts(ctx context.Context) (map[string]datastore.StandingVerdict, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +182,12 @@ type readinessCache struct {
 	serverComplexity map[string]*datastore.ServerCookbookComplexity      // cookbookID|target → complexity
 	gitComplexity    map[string]*datastore.GitRepoComplexity             // gitRepoID|target → complexity
 	gitTKStatuses    map[string]string                                   // repoName|target → "passed"/"failed"/"partial"
+
+	// humanVerdicts are the standing verdicts from the failure register,
+	// keyed on git repo name. Nil or empty on a deployment where nobody has
+	// recorded anything, which is the normal starting state.
+	humanVerdicts map[string]datastore.StandingVerdict
+
 	// reviewBlocksReadiness mirrors the live readiness toggle, snapshotted at
 	// cache-build time so every node in the batch evaluates against one
 	// consistent value. Off: Review cookbooks resolve to compatible.
@@ -194,6 +216,7 @@ func buildReadinessCache(
 		serverComplexity:      make(map[string]*datastore.ServerCookbookComplexity),
 		gitComplexity:         make(map[string]*datastore.GitRepoComplexity),
 		gitTKStatuses:         make(map[string]string),
+		humanVerdicts:         make(map[string]datastore.StandingVerdict),
 		reviewBlocksReadiness: reviewBlocksReadiness,
 	}
 
@@ -256,6 +279,14 @@ func buildReadinessCache(
 			cache.gitTKStatuses[k] = s
 		}
 	}
+
+	// 7. Standing human verdicts from the failure register. Small — one row
+	// per repo somebody currently has an opinion about.
+	humanVerdicts, err := db.ListOpenFailureVerdicts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("readiness: bulk-loading the failure register: %w", err)
+	}
+	cache.humanVerdicts = humanVerdicts
 
 	return cache, nil
 }
@@ -935,6 +966,39 @@ func checkCookbookCompatibility(
 			}
 			verdicts = append(verdicts, v)
 		}
+	}
+
+	// --- Source 4: a person's verdict, which outranks every automated one. ---
+	//
+	// The register is keyed on the git repo name, and this looks it up by
+	// cookbook name because that is already how the evaluator resolves a
+	// cookbook to its repo (cache.gitRepos above). One cookbook per repo is
+	// the assumption throughout; matching is deliberately deferred.
+	//
+	// The losing verdicts stay in the array exactly as the sources reported
+	// them. That is the point of joining this set rather than sitting beside
+	// it: a reader can see that a scan called the cookbook incompatible, a
+	// person overruled it, and why.
+	if hv, ok := cache.humanVerdicts[cookbookName]; ok {
+		v := CookbookSourceVerdict{
+			Source:     SourceHumanVerdict,
+			Note:       hv.Reason,
+			RecordedBy: hv.RaisedBy,
+		}
+		switch hv.Verdict {
+		case datastore.VerdictBroken:
+			v.Status = StatusIncompatible
+			verdicts = append(verdicts, v)
+			return StatusIncompatible, SourceHumanVerdict, verdicts
+		case datastore.VerdictNotBroken:
+			v.Status = StatusCompatible
+			verdicts = append(verdicts, v)
+			return StatusCompatible, SourceHumanVerdict, verdicts
+		}
+		// An unrecognised verdict is not a verdict. The schema constrains the
+		// column, so reaching here means the vocabulary has moved and the
+		// automated sources should decide rather than an unknown value
+		// silently blocking or unblocking an estate.
 	}
 
 	// --- Determine overall status ---
