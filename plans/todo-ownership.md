@@ -62,13 +62,26 @@ only the first two right leaves a duplicate person in the catalogue.
   moves A's aliases onto B (tolerating collisions), and removes A. This is what makes a
   correction stick across a scheduled re-ingest, and it is the natural home for the
   "who owns this? … I wonder if that's Thomas Smith" moment.
-- [ ] **Show a person's aliases on their own page.** Owner detail has an *Identity Aliases*
-  card that only links out to `/ownership/aliases?owner=<name>` (the link does work and
-  auto-loads). But assignments and aliases answer two different questions — *what they own*
-  versus *what they are called elsewhere* — and only the first is on the page. Observed
-  2026-08-02: the assignments table was read as the alias list, and the conclusion was that
-  the alias editor must be somewhere else entirely. Correction is an alias job, so the thing
-  you correct with should not be the thing that is a page away.
+- [ ] **Alias editing is organised around the alias table, not around the person.** This is
+  one fault with two symptoms, both observed 2026-08-02 while testing the import.
+
+  *Aliases are not on the owner's page.* Owner detail has an *Identity Aliases* card that
+  only links out to `/ownership/aliases?owner=<name>` (the link works and auto-loads). But
+  assignments and aliases answer different questions — *what they own* versus *what they are
+  called elsewhere* — and only the first is on the page, so the assignments table gets read
+  as the alias list and the alias editor seems to be missing.
+
+  *The alias page then drops the person.* `ownerInput` initialises from `?owner=`
+  (`OwnerAliasesPage.tsx:38`) but `aliasForm.owner_name` initialises to `""` (`:47`), so
+  Browse is pre-filled and the Add Alias form beside it is blank — two owner boxes on one
+  screen, one filled and one not. Owner is free text in both, with no picker: the only way to
+  choose an existing owner is the suggestion search, which matches on *alias values* and so
+  cannot find an owner that has no alias yet — exactly the case that brings you there.
+
+  Expected instead: be editing **thomas-smith**, add an alias that does not yet exist, or
+  pick from the existing owners. The fix is to put add/remove inline on the owner's own page
+  with no owner field at all, leaving the global alias page as a secondary admin view. This
+  is also where the merge action below belongs.
 - [ ] **Owner detail's alias blurb claims "SAML IDs".** The `alias_type` CHECK permits
   `email`, `git_name`, `git_email`, `username`, `custom` — never a SAML subject. This is the
   stale `saml_subject` claim surfacing in shipped UI copy, sending a reader to look for
