@@ -118,6 +118,10 @@ language-labelled fences. Reference data belongs in unlabelled ones.
 
 Stated by the product owner, 2026-08-02. This supersedes any ordering in the part files.
 
+**Why this order:** matching faults and data-quality gotchas cannot be discovered until
+there are real owners to match against. Ingest first is what makes the rest testable
+against reality rather than against fixtures we invented.
+
 1. **Get owner ingest solid.** Owners come in before anything can be matched to them.
 2. **Node matching.** Nodes resolve to their owners.
 3. **Git repo matching.** Repos resolve to their owners.
