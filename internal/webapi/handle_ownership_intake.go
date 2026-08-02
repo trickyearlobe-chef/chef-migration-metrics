@@ -596,7 +596,6 @@ type mappingRequestBody struct {
 	Delimiter  string                            `json:"delimiter"`
 	FieldMap   ownershipimport.FieldMap          `json:"field_map"`
 	rawMap     json.RawMessage                   `json:"-"`
-	errs       []ownershipimport.ValidationError `json:"-"`
 }
 
 func (r *Router) handleIntakeMappingCollection(w http.ResponseWriter, req *http.Request) {
