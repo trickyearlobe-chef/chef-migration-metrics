@@ -11,11 +11,36 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
-*(nothing outstanding)*
+- [ ] **No way to say "not a duplicate".** The duplicates view offers a merge and nothing
+  else, so a pair a person has looked at and rejected stays on the list — and the scan
+  rebuilds the table each run, so it comes back every time. The consequence is that the
+  list can only grow in the reader's mind: there is no way to work it down to nothing,
+  which is the only state that makes it worth opening. Needs a dismissal that survives a
+  rescan, so it has to live outside `owner_duplicate_candidates` (the scan deletes and
+  rebuilds that table), keyed on the ordered pair and cascading with the owners.
 
 ---
 
 ## Fixed
+
+- **The duplicates view paired three unrelated people with each other.** Owners added by
+  email address all carry their address as an alias (migration 0059 seeds it), and the
+  scan compared whole addresses. Everyone at one company shares a domain, and a shared
+  domain is most of a shared string: three names with nothing in common scored 38%, 33%
+  and 30% against a 30% floor, entirely on the domain. Every pair matched.
+
+  Fixed by scoring the alias comparison on the localpart. The measured effect on the
+  reported case: 45%/40%/38% → 10%/3%/0%, all dropped. The nearest-neighbour ordering
+  still uses the whole value, so the GiST index still bounds the scan, and the reported
+  values are still the full addresses because a reader needs them to judge the pair.
+
+  **It also strengthens the signal it exists for.** One person under two domains —
+  the case the plan calls a strong lead — went from 44% to 100%, because the domain was
+  previously diluting the part that actually identified them.
+
+  **Why it would have got worse, not better, at scale:** the noise floor rises with the
+  number of owners sharing a domain, so the view degrades fastest on exactly the estate
+  it was built for. Worth remembering when judging any similarity signal here.
 
 - **The subject picker did not narrow — typing `selinux` offered `aett_bats_core_aws`.**
   The picker sent its term as `search`, and the git repo and cookbook list endpoints read

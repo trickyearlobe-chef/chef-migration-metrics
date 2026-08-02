@@ -121,6 +121,21 @@ func (db *DB) RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error
 
 			UNION ALL
 
+			-- Compared on the part that identifies a person, not the part
+			-- every colleague shares.
+			--
+			-- Everyone at one company has the same email domain, and a shared
+			-- domain is most of a shared string: three names with nothing in
+			-- common scored 0.33-0.49 against a 0.3 floor purely on
+			-- "@example-corp.test". Left whole, this signal pairs every owner
+			-- with its nearest few and drowns the real duplicates it exists to
+			-- surface — worse the larger the catalogue, which is backwards.
+			--
+			-- The nearest-neighbour ordering still uses the whole value, so the
+			-- GiST index is still what bounds the scan; only the score that
+			-- decides whether a pair is worth recording is taken on the
+			-- localpart. The values reported are the originals, because a
+			-- reader needs to see the addresses to judge the pair.
 			SELECT LEAST(x.owner_name, near.owner_name),
 			       GREATEST(x.owner_name, near.owner_name),
 			       'alias',
@@ -130,7 +145,8 @@ func (db *DB) RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error
 			FROM owner_aliases x
 			CROSS JOIN LATERAL (
 				SELECT z.owner_name, z.alias_value,
-				       similarity(x.alias_value, z.alias_value) AS sim
+				       similarity(split_part(x.alias_value, '@', 1),
+				                  split_part(z.alias_value, '@', 1)) AS sim
 				FROM owner_aliases z
 				WHERE z.owner_name <> x.owner_name
 				ORDER BY z.alias_value <-> x.alias_value

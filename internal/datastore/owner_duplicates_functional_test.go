@@ -316,3 +316,49 @@ func TestFunctional_CountOwnersMissingAliases(t *testing.T) {
 		t.Errorf("owners without an alias (%d) exceeds the total (%d)", missing, total)
 	}
 }
+
+// Owners at one company share an email domain, and a shared domain is most of
+// a shared string. Comparing whole addresses made every owner look like every
+// other one — measured at 0.33-0.41 against a floor of 0.3 for three names
+// with nothing in common — so the view paired everybody with everybody and
+// stopped being readable at exactly the scale it was built for.
+func TestRecomputeOwnerDuplicateCandidates_ASharedEmailDomainIsNotASignal(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	for _, o := range []struct{ name, email string }{
+		{"alice.brown", "alice.brown@example-corp.test"},
+		{"bob.jones", "bob.jones@example-corp.test"},
+		{"carol.white", "carol.white@example-corp.test"},
+	} {
+		if _, err := db.InsertOwner(ctx, InsertOwnerParams{
+			Name: o.name, OwnerType: "individual", ContactEmail: o.email,
+		}); err != nil {
+			t.Fatalf("InsertOwner(%q): %v", o.name, err)
+		}
+		defer func(n string) { _, _ = db.DeleteOwner(context.Background(), n) }(o.name)
+	}
+
+	if _, err := db.RecomputeOwnerDuplicateCandidates(ctx); err != nil {
+		t.Fatalf("RecomputeOwnerDuplicateCandidates: %v", err)
+	}
+
+	pairs, _, err := db.ListOwnerDuplicateCandidates(ctx, OwnerDuplicateFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("ListOwnerDuplicateCandidates: %v", err)
+	}
+	for _, p := range pairs {
+		if isSeedOwner(p.OwnerA) && isSeedOwner(p.OwnerB) {
+			t.Errorf("paired %s with %s on %s (%q vs %q, %.3f) — three unrelated people at one company",
+				p.OwnerA, p.OwnerB, p.MatchedOn, p.ValueA, p.ValueB, p.Similarity)
+		}
+	}
+}
+
+func isSeedOwner(name string) bool {
+	switch name {
+	case "alice.brown", "bob.jones", "carol.white":
+		return true
+	}
+	return false
+}
