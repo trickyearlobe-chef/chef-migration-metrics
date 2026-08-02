@@ -7,12 +7,24 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 
 ## Branch map (2026-08-02)
 
-`main` — v2.18.11 tagged and pushed. Collection is hourly.
+`main` — v2.18.12 tagged and pushed, carrying the ownership MVP through chunk 3.
+Collection is hourly.
 
-`feature/owner-ingest-discovery` — the ownership MVP. **Long-lived and deliberately
-unmerged; do not report it as stale or propose merging it.** All chunks land on this one
-branch. Read the two gates in `plans/ownership-work-attribution.md` § How to work before
-doing anything on it.
+`feature/owner-ingest-discovery` — merged into `main` 2026-08-02 and kept locally. **Gate 2
+was overridden deliberately by the product owner**, ahead of the MVP being complete, to get
+a build deployable at customer scale and take the measurements that decide whether node and
+repo matching are worth building at all. That decision bought the measurement at the cost of
+having work on `main` that has not been through a full MVP sign-off — if it has to come out,
+see the backout note below. Later chunks should branch fresh from `main`.
+
+**Backout, should it be needed.** Redeploy the previous package; the code side is that
+simple. There is **no down-migration runner** — only `MigrateUp` exists — so a schema
+rollback is `psql` by hand or a restore, and a `pg_dump` before deploying is the real
+control. Most of it needs no rollback at all: 0056, 0057, 0060 and 0061 are new tables the
+old binary ignores, and 0058 only loosened constraints. The one residue is 0059, which
+back-fills `owner_aliases` from `owners.contact_email` — old code reads that table, so those
+rows would persist. Its down script removes exactly them
+(`DELETE FROM owner_aliases WHERE source = 'contact_email'`), leaving hand-recorded ones.
 
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
@@ -64,15 +76,26 @@ worth building, if any.
   `useTargetChefVersion` into `RunEventsPage`; copy an existing call site, not new behaviour.
 - **General audit log** (`plans/todo-audit.md`, spec `specifications/audit-log.md`) — who
   changed config, who triggered a rescan. Proposed, not started.
-- **Dependabot triage** — below.
 
-## Dependabot triage
+## Dependabot — settled 2026-08-02, do not re-triage
 
-12 vulnerabilities on the default branch (5 high, 5 moderate, 2 low) as of 2026-08-02,
-up from 10 (3 high) on 2026-07-30. Our local gates are clean for a reason, not by
-contradiction: govulncheck covers reachable Go code, Trivy covers
-`frontend/package-lock.json` at MEDIUM+ with suppressions, and Dependabot covers every
-manifest. Triage for reachability first — do not blanket-bump.
+All 12 open alerts were dismissed as **inaccurate**, with the evidence on each alert.
+Every one named a version outside its own advisory's vulnerable range: undici 7.28.0
+against `< 7.28.0`, brace-expansion 5.0.7 against `< 5.0.7`, postcss 8.5.18 against
+`<= 8.5.17`, react-router 7.18.0 against `< 7.18.0`, and react-router-dom 7.18.0 against
+an advisory covering only `6.30.2 - 6.30.4`.
+
+**The local gates were right and GitHub was wrong**, which is the reverse of the usual
+assumption and the reason this took a while to see. Trivy scans
+`frontend/package-lock.json` — the resolved tree that actually ships — and passes;
+govulncheck covers reachable Go code and is clean. Dependabot was reporting against
+manifest resolution that did not match the lockfile.
+
+**Do not "fix" this by unpinning `overrides` in `frontend/package.json`.** The ranges
+their parents ask for (`jsdom` wants `undici ^7.25.0`, `minimatch` wants
+`brace-expansion ^5.0.5`) already permit the patched versions, so unpinning changes the
+tree not at all — and several other pins there exist because the Harness registry
+quarantines very recent versions, so removing them trades a working build for nothing.
 
 ## Release preconditions (the bump target runs no tests)
 
