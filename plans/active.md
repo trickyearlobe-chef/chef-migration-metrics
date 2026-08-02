@@ -7,8 +7,8 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 
 ## Branch map (2026-08-02)
 
-`main` — v2.18.12 tagged and pushed, carrying the ownership MVP through chunk 3.
-Collection is hourly.
+`main` — **v2.18.13** tagged and pushed. Collection is hourly. A few commits sit unpushed on
+top of the tag: the git repo owner filter, and the snagging fixes made after it was cut.
 
 `feature/owner-ingest-discovery` — merged into `main` 2026-08-02 and kept locally. **Gate 2
 was overridden deliberately by the product owner**, ahead of the MVP being complete, to get
@@ -52,8 +52,8 @@ design session established that the alias model is wrong in a way that is record
 includes the provenance, so one address can belong to two owners. The rough edges are all in that
 file and in `plans/todo-ownership.md`; none is a blocker for what shipped.
 
-**Chunk 3, the failure register** (`specifications/failure-register.md`) — **built, awaiting the
-product owner's review.** Moved ahead of both matching chunks on 2026-08-02 because both automated
+**Chunk 3, the failure register** (`specifications/failure-register.md`) — **built and shipped
+(v2.18.13), reviewed in use rather than in a sitting.** Moved ahead of both matching chunks on 2026-08-02 because both automated
 blocker signals are currently untrustworthy — CookStyle marks cookbooks blocked that run fine, and
 Test Kitchen reports environment failures as cookbook failures. A person's verdict outranks both.
 Journeys 4 and 6, declared in scope from the start and previously missing from the work order.
@@ -62,19 +62,32 @@ The load-bearing assumption held: `node_readiness.blocking_cookbooks` already ca
 verdicts array, so a human verdict joins it as a fourth source rather than becoming a parallel list.
 Seed it with the ten real cookbooks before reviewing — the register is only as good as what is in it.
 
-**Node and git repo matching are demoted behind it** and must be re-scoped before they start: see
-`plans/ownership-work-attribution.md` § Ownership only has to be right where somebody has to act.
-Both were scoped against the whole estate. The first item in `plans/todo-ownership.md` — blocking
-and unowned, ordered by affected nodes — needs no matching at all and decides how much matching is
-worth building, if any.
+**Node and git repo matching are probably dead.** The measurement they were waiting on has been
+taken against the real estate: **92% of repos carry an owner, and 126 are blocking and unowned**.
+Both chunks were scoped assuming ownership was largely absent. 126 is a hand-workable list. Full
+numbers and the reasoning are in `plans/todo-ownership.md`; do not start either chunk without
+revisiting them.
 
-**Next free migration number: 0063.**
+**The 126 are mostly CookStyle-blocked with Test Kitchen untested**, so they are unverified
+claims rather than repos needing owners — which is what the failure register is for. Verifying
+the highest-impact few comes before hunting any owners.
+
+## NEXT — ownership filtering in the list views
+
+The work in flight, and where a new thread starts. Scope and findings:
+`plans/todo-ownership.md` § Ownership filtering in the list views.
+
+Backend is done for git repos, cookbooks and nodes. **Every one of them is missing the UI
+control**, which is the entire remaining gap. Order: git repos, then cookbooks (UI only), then
+nodes (UI only, deferred — no node ownership data exists yet).
 
 ## Snagging (`plans/todo-snagging.md`)
 
-Defects found by the product owner using the shipped app. Faults in what is built, so they
-come before new work. Reproduce, write the failing test, then fix — every one of these got
-past a green suite.
+Defects found by the product owner using the shipped app. Faults in what is built, so they come
+before new work. Seven found and fixed on 2026-08-02, six of them while importing real data —
+none would have come from a code review. Reproduce, write the failing test, then fix.
+
+**Next free migration number: 0063.**
 
 ## QUEUED behind the ownership MVP
 
