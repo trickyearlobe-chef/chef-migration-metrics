@@ -872,6 +872,8 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/duplicates", r.handleOwnershipDuplicates)
 	r.protect("/api/v1/ownership/duplicates/rescan", r.handleOwnershipDuplicatesRescan)
 	r.protect("/api/v1/ownership/duplicates/dismiss", r.handleOwnershipDuplicatesDismiss)
+	r.protect("/api/v1/ownership/duplicates/dismissed", r.handleOwnershipDuplicatesDismissed)
+	r.protect("/api/v1/ownership/duplicates/restore", r.handleOwnershipDuplicatesRestore)
 	r.protect("/api/v1/ownership/merge", r.handleOwnershipMerge)
 
 	// The failure register: a person's verdict on whether a cookbook actually

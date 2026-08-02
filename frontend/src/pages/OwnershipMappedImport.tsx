@@ -1,14 +1,16 @@
-import { useState, useRef, type ChangeEvent } from "react";
+import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import {
   profileImportSource,
   previewOwnershipImport,
   commitOwnershipImport,
   createImportMapping,
+  fetchImportMappings,
   ApiError,
 } from "../api";
 import type {
   IntakeFieldMap,
   IntakeFieldMapping,
+  IntakeMapping,
   IntakeReport,
   IntakeReportRow,
   IntakeSourceProfile,
@@ -105,13 +107,65 @@ export function OwnershipMappedImport() {
   const [choices, setChoices] = useState<Partial<Record<IntakeTargetField, ColumnChoice>>>({});
   const [entityType, setEntityType] = useState("git_repo");
   const [createOwners, setCreateOwners] = useState(true);
+  // Import one kind of row from a consolidated export, rather than splitting
+  // the file outside CMM first.
+  const [filterColumn, setFilterColumn] = useState("");
+  const [filterValue, setFilterValue] = useState("");
   const [report, setReport] = useState<IntakeReport | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveName, setSaveName] = useState("");
   const [saved, setSaved] = useState<string | null>(null);
+  // Saved mappings, so a second file with the same columns is not re-mapped by
+  // hand. Re-mapping is not just tedious: a mapping done twice can differ, and
+  // nothing would tell you which import used which.
+  const [mappings, setMappings] = useState<IntakeMapping[]>([]);
+  const [loadedMapping, setLoadedMapping] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Best-effort: not being able to list saved mappings must not stop
+    // somebody importing by hand.
+    fetchImportMappings()
+      .then((r) => setMappings(r.data ?? []))
+      .catch(() => setMappings([]));
+  }, []);
+
+  // Turn a stored mapping document back into the form's state. The reverse of
+  // fieldMap(): a constant entity_type is the entity selector, a column source
+  // is a column choice, and the first transform is the one the form can show.
+  function applyMapping(m: IntakeMapping) {
+    const next: Partial<Record<IntakeTargetField, ColumnChoice>> = {};
+    const missing: string[] = [];
+    const known = new Set((profile?.columns ?? []).map((c) => c.name));
+
+    for (const [field, mapping] of Object.entries(m.field_map ?? {})) {
+      const src = mapping.source;
+      if (field === "entity_type" && src.kind === "constant") {
+        setEntityType(String(src.value ?? ""));
+        continue;
+      }
+      if (src.kind !== "column" || !src.column) continue;
+      if (known.size > 0 && !known.has(src.column)) missing.push(src.column);
+      next[field as IntakeTargetField] = {
+        column: src.column,
+        transform: mapping.transforms?.[0]?.kind ?? "",
+      };
+    }
+
+    setChoices(next);
+    if (m.delimiter) setDelimiter(m.delimiter);
+    setReport(null);
+    setSaved(null);
+    // A mapping naming columns this file does not have would otherwise look
+    // applied and quietly map nothing.
+    setLoadedMapping(
+      missing.length > 0
+        ? `Loaded "${m.name}", but this file has no column named ${missing.map((c) => `"${c}"`).join(", ")} — check the mapping below.`
+        : `Loaded "${m.name}".`,
+    );
+  }
 
   function reportError(err: unknown, fallback: string) {
     setError(
@@ -173,6 +227,8 @@ export function OwnershipMappedImport() {
         file,
         delimiter: delimiter || undefined,
         fieldMap: fieldMap(),
+        filterColumn: filterColumn || undefined,
+        filterValue,
         createOwners,
       };
       setReport(commit ? await commitOwnershipImport(opts) : await previewOwnershipImport(opts));
@@ -194,6 +250,9 @@ export function OwnershipMappedImport() {
       });
       setSaved(`Saved as "${mapping.name}". A repeat import can reuse it.`);
       setSaveName("");
+      fetchImportMappings()
+        .then((r) => setMappings(r.data ?? []))
+        .catch(() => undefined);
     } catch (err: unknown) {
       reportError(err, "Could not save the mapping.");
     }
@@ -365,6 +424,49 @@ export function OwnershipMappedImport() {
               </label>
             </div>
 
+            {/* A consolidated export holds several kinds of row — declared
+                owners beside inferred committers. Importing one kind at a time
+                beats splitting the file in a spreadsheet first. */}
+            <div className="mt-4 flex flex-wrap items-end gap-3 rounded-md border border-gray-200 bg-gray-50 p-3">
+              <label className="block space-y-1">
+                <span className="block text-xs font-medium text-gray-700">
+                  Only import rows where
+                </span>
+                <select
+                  value={filterColumn}
+                  onChange={(e) => {
+                    setFilterColumn(e.target.value);
+                    if (!e.target.value) setFilterValue("");
+                  }}
+                  className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                >
+                  <option value="">(no filter — import every row)</option>
+                  {(profile?.columns ?? []).map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="block text-xs font-medium text-gray-700">
+                  equals
+                </span>
+                <input
+                  type="text"
+                  value={filterValue}
+                  disabled={!filterColumn}
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  placeholder="e.g. owner"
+                  className="rounded-md border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-100"
+                />
+              </label>
+              <span className="pb-1 text-xs text-gray-500">
+                Case-insensitive. The preview reports how many rows were left
+                out.
+              </span>
+            </div>
+
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -374,6 +476,24 @@ export function OwnershipMappedImport() {
               >
                 Preview — nothing is saved
               </button>
+              {mappings.length > 0 && (
+                <select
+                  aria-label="Load a saved mapping"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const m = mappings.find((x) => String(x.id) === e.target.value);
+                    if (m) applyMapping(m);
+                  }}
+                  className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                >
+                  <option value="">Load a saved mapping…</option>
+                  {mappings.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 type="text"
                 value={saveName}
@@ -390,6 +510,9 @@ export function OwnershipMappedImport() {
                 Save mapping
               </button>
               {saved && <span className="text-sm text-green-700">{saved}</span>}
+              {loadedMapping && (
+                <span className="text-sm text-blue-700">{loadedMapping}</span>
+              )}
             </div>
           </div>
         </>
@@ -434,6 +557,24 @@ function IntakeReportView({
             </div>
           ))}
         </div>
+        {/* Rows the filter left out are not failures and are not counted as
+            outcomes — but without saying so, a file of 267,000 rows reporting
+            19,000 looks like most of it went missing. */}
+        {(report.filtered_out ?? 0) > 0 && (
+          <p className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            {report.filtered_out?.toLocaleString()} row
+            {report.filtered_out === 1 ? " was" : "s were"} left out by the
+            filter and not imported. {report.row_count.toLocaleString()} row
+            {report.row_count === 1 ? "" : "s"} matched.
+          </p>
+        )}
+        {report.rows_truncated && (
+          <p className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            Every one of the {report.row_count.toLocaleString()} matching rows
+            was processed{report.committed ? " and imported" : ""}. Only the
+            per-row list below is shortened, to keep this page usable.
+          </p>
+        )}
         {report.alias_conflict_count > 0 && (
           <p className="mt-4 text-sm text-gray-600">
             {report.alias_conflict_count} row

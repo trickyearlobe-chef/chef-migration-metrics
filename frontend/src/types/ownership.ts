@@ -167,6 +167,12 @@ export interface IntakeColumnProfile {
 export interface IntakeSourceProfile {
   columns: IntakeColumnProfile[];
   row_count: number;
+  /** Source rows skipped by the import filter. Not failures — they were
+   * asked to be left out. */
+  filtered_out?: number;
+  /** The per-row detail was capped for display. Counts and the commit are
+   * unaffected: every row was processed. */
+  rows_truncated?: boolean;
   malformed_rows: number;
   warnings: string[];
 }
@@ -231,6 +237,12 @@ export interface IntakeNewOwner {
   display_name: string;
   source_value: string;
   row_count: number;
+  /** Source rows skipped by the import filter. Not failures — they were
+   * asked to be left out. */
+  filtered_out?: number;
+  /** The per-row detail was capped for display. Counts and the commit are
+   * unaffected: every row was processed. */
+  rows_truncated?: boolean;
   suggestions?: IntakeOwnerSuggestion[];
 }
 
@@ -240,6 +252,12 @@ export interface IntakeReport {
   counts: Record<string, number>;
   alias_conflict_count: number;
   row_count: number;
+  /** Source rows skipped by the import filter. Not failures — they were
+   * asked to be left out. */
+  filtered_out?: number;
+  /** The per-row detail was capped for display. Counts and the commit are
+   * unaffected: every row was processed. */
+  rows_truncated?: boolean;
   unmatched_owners: IntakeUnmatchedOwner[];
   committed: boolean;
   created: number;

@@ -26,14 +26,31 @@ import (
 // unchanged handler. See specifications/ownership-intake.md.
 // ---------------------------------------------------------------------------
 
-// intakeMaxUploadBytes bounds what is buffered from an upload. It matches the
-// fixed-header import's limit.
-const intakeMaxUploadBytes = 10 << 20
+// intakeMaxUploadBytes bounds what is buffered from an upload.
+//
+// Raised from 10MB after a real export arrived at roughly 270,000 rows: the
+// byte cap rejected the file before the row cap was ever reached, so the two
+// have to move together or the second one is decorative.
+const intakeMaxUploadBytes = 128 << 20
 
-// intakeMaxRows bounds a single import, matching the fixed-header path's cap.
-// Profiling reads to the end of the source, so an unbounded file would be an
-// unbounded allocation.
-const intakeMaxRows = 10000
+// intakeMaxRows bounds a single import. Profiling reads to the end of the
+// source, so an unbounded file would be an unbounded allocation.
+//
+// Counted against rows *kept* — a filtered import reads the whole file and
+// keeps only what matches, which is what lets a 270,000-row export through
+// when 19,000 of its rows are wanted. Still a backstop rather than a target:
+// a bound that cannot be exceeded by accident is worth more than the few
+// imports it inconveniences.
+const intakeMaxRows = 100000
+
+// intakeMaxReportRows bounds the per-row detail returned to the caller, not
+// the import.
+//
+// The report carries a row for every source row and is serialised whole; at
+// six figures that response is large enough to be useless to a browser. The
+// import still processes and commits every row — only the detail shown is
+// truncated, and the response says so explicitly rather than looking complete.
+const intakeMaxReportRows = 2000
 
 // aliasResolutionOrder is the order the raw owner string is tried against
 // owner_aliases.
@@ -131,13 +148,43 @@ func (r *Router) handleIntakeRun(w http.ResponseWriter, req *http.Request, commi
 		return
 	}
 
-	mapped := make([]ownershipimport.MappedRow, 0, 64)
-	for src.Next() {
-		if len(mapped) >= intakeMaxRows {
-			WriteBadRequest(w, fmt.Sprintf("Import is limited to %d rows per request.", intakeMaxRows))
+	// An optional filter on a source column, so a consolidated export
+	// containing several kinds of row can be imported one kind at a time
+	// without being split up outside CMM first. Compared case-insensitively
+	// and ignoring surrounding space: these values are labels written by
+	// people, and "Owner" and "owner" are the same label.
+	filterColumn := strings.TrimSpace(req.FormValue("filter_column"))
+	filterValue := strings.TrimSpace(req.FormValue("filter_value"))
+	if filterColumn != "" {
+		known := false
+		for _, c := range columns {
+			if c == filterColumn {
+				known = true
+				break
+			}
+		}
+		if !known {
+			WriteBadRequest(w, fmt.Sprintf("The source has no column named %q to filter on.", filterColumn))
 			return
 		}
-		mapped = append(mapped, mapper.MapRow(src.Row()))
+	}
+
+	mapped := make([]ownershipimport.MappedRow, 0, 64)
+	filteredOut := 0
+	for src.Next() {
+		row := src.Row()
+		if filterColumn != "" &&
+			!strings.EqualFold(strings.TrimSpace(row.Values[filterColumn]), filterValue) {
+			filteredOut++
+			continue
+		}
+		if len(mapped) >= intakeMaxRows {
+			WriteBadRequest(w, fmt.Sprintf(
+				"Import is limited to %d rows per request, and this source has more. "+
+					"Filter it to the rows you want, or split the file.", intakeMaxRows))
+			return
+		}
+		mapped = append(mapped, mapper.MapRow(row))
 	}
 	if err := src.Err(); err != nil {
 		// A source that failed part way through must not be reported as a
@@ -156,12 +203,23 @@ func (r *Router) handleIntakeRun(w http.ResponseWriter, req *http.Request, commi
 	createOwners := req.FormValue("create_owners") != "false"
 
 	report := r.classifyIntakeRows(req.Context(), mapped, createOwners)
+	report.FilteredOut = filteredOut
 
 	if commit {
+		// Commits from the full report, before any truncation for display.
 		r.commitIntakeRows(req, &report)
 	}
 
-	WriteJSON(w, http.StatusOK, report)
+	// Truncate the per-row detail for the response only. The copy is
+	// deliberate: truncating report.Rows itself would silently shorten the
+	// import, which is the one mistake this must not make.
+	resp := report
+	if len(report.Rows) > intakeMaxReportRows {
+		resp.Rows = report.Rows[:intakeMaxReportRows]
+		resp.RowsTruncated = true
+	}
+
+	WriteJSON(w, http.StatusOK, resp)
 }
 
 // classifyIntakeRows resolves owners and entities and decides what each row

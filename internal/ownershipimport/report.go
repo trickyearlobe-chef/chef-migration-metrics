@@ -151,6 +151,16 @@ type Report struct {
 	RowCount        int              `json:"row_count"`
 	UnmatchedOwners []UnmatchedOwner `json:"unmatched_owners"`
 
+	// FilteredOut counts source rows skipped by the import filter before
+	// mapping. They are not failures and are never counted as outcomes — the
+	// caller asked for them to be left out.
+	FilteredOut int `json:"filtered_out"`
+
+	// RowsTruncated reports that Rows carries only the first slice of the
+	// detail. Counts, RowCount and the commit are unaffected: every row was
+	// processed. Without this a shortened list would read as a short import.
+	RowsTruncated bool `json:"rows_truncated"`
+
 	// Committed reports whether the assignments were written. Preview and
 	// commit return the same shape, so a caller reading a report needs this to
 	// know which it is holding.

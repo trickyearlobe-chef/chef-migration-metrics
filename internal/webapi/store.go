@@ -626,6 +626,14 @@ type DataStore interface {
 	// rejected, so an empty list can be told apart from an unread one.
 	CountOwnerDuplicateDismissals(ctx context.Context) (int, error)
 
+	// ListOwnerDuplicateDismissals returns every rejected pair. A dismissed
+	// pair is hidden from the candidate list, so this is the only way to see
+	// one in order to undo it.
+	ListOwnerDuplicateDismissals(ctx context.Context) ([]datastore.OwnerDuplicateDismissal, error)
+
+	// RestoreOwnerDuplicate undoes a dismissal.
+	RestoreOwnerDuplicate(ctx context.Context, ownerA, ownerB string) error
+
 	// --- The failure register: a person's verdict about a git repo. ---
 
 	// RecordFailureVerdict records a verdict, superseding any standing one

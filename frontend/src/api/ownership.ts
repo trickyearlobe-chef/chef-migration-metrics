@@ -247,6 +247,11 @@ export interface IntakeRunOptions {
   fieldMap?: IntakeFieldMap;
   mappingId?: number;
   createOwners?: boolean;
+  /** Import only rows whose filterColumn equals filterValue, compared
+   * case-insensitively. Lets a consolidated export holding several kinds of
+   * row be imported one kind at a time. */
+  filterColumn?: string;
+  filterValue?: string;
 }
 
 function intakeFormData(opts: IntakeRunOptions): FormData {
@@ -257,6 +262,10 @@ function intakeFormData(opts: IntakeRunOptions): FormData {
   if (opts.mappingId !== undefined) formData.append("mapping_id", String(opts.mappingId));
   // Only send the flag when switching creation off — the default is on.
   if (opts.createOwners === false) formData.append("create_owners", "false");
+  if (opts.filterColumn) {
+    formData.append("filter_column", opts.filterColumn);
+    formData.append("filter_value", opts.filterValue ?? "");
+  }
   return formData;
 }
 

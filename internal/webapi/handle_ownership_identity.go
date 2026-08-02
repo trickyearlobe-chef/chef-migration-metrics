@@ -172,6 +172,61 @@ func (r *Router) handleOwnershipDuplicatesDismiss(w http.ResponseWriter, req *ht
 	WriteJSON(w, http.StatusOK, map[string]any{"dismissed": true})
 }
 
+// GET  /api/v1/ownership/duplicates/dismissed  — the rejected pairs
+// POST /api/v1/ownership/duplicates/restore    — undo one
+//
+// A dismissed pair is hidden from the candidate list, so without somewhere to
+// see it there is nothing to click to undo it: a mis-click would suppress a
+// pair permanently and invisibly.
+func (r *Router) handleOwnershipDuplicatesDismissed(w http.ResponseWriter, req *http.Request) {
+	if !requireGET(w, req) {
+		return
+	}
+	dismissals, err := r.db.ListOwnerDuplicateDismissals(req.Context())
+	if err != nil {
+		r.logf("ERROR", "ownership/duplicates: listing dismissals: %v", err)
+		WriteInternalError(w, "Failed to list the rejected pairs.")
+		return
+	}
+	if dismissals == nil {
+		dismissals = []datastore.OwnerDuplicateDismissal{}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"data": dismissals})
+}
+
+func (r *Router) handleOwnershipDuplicatesRestore(w http.ResponseWriter, req *http.Request) {
+	if !requireMethod(w, req, http.MethodPost) {
+		return
+	}
+	if !requireOperatorOrAdmin(w, req) {
+		return
+	}
+
+	var body struct {
+		OwnerA string `json:"owner_a"`
+		OwnerB string `json:"owner_b"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+		return
+	}
+	if body.OwnerA == "" || body.OwnerB == "" {
+		WriteBadRequest(w, "owner_a and owner_b are required.")
+		return
+	}
+
+	if err := r.db.RestoreOwnerDuplicate(req.Context(), body.OwnerA, body.OwnerB); err != nil {
+		r.logf("ERROR", "ownership/duplicates: restoring %s / %s: %v", body.OwnerA, body.OwnerB, err)
+		WriteInternalError(w, "Failed to undo the rejection.")
+		return
+	}
+
+	details, _ := json.Marshal(body)
+	r.auditOwnership(req, "owner_duplicate_restored", body.OwnerA, "", "", "", details)
+
+	WriteJSON(w, http.StatusOK, map[string]any{"restored": true})
+}
+
 func (r *Router) handleOwnershipDuplicates(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return

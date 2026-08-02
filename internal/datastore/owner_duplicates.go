@@ -352,3 +352,62 @@ func (db *DB) CountOwnerDuplicateDismissals(ctx context.Context) (int, error) {
 	}
 	return n, nil
 }
+
+// OwnerDuplicateDismissal is a pair somebody has said are different people.
+type OwnerDuplicateDismissal struct {
+	OwnerA      string    `json:"owner_a"`
+	OwnerB      string    `json:"owner_b"`
+	Reason      string    `json:"reason,omitempty"`
+	DismissedBy string    `json:"dismissed_by"`
+	DismissedAt time.Time `json:"dismissed_at"`
+}
+
+// ListOwnerDuplicateDismissals returns every rejected pair, most recent first.
+//
+// A dismissed pair is hidden from the candidate list, so without this there is
+// nothing to click to undo one — a mis-click would suppress a pair permanently
+// and invisibly, which is worse than the problem dismissing solved.
+func (db *DB) ListOwnerDuplicateDismissals(ctx context.Context) ([]OwnerDuplicateDismissal, error) {
+	rows, err := db.pool.QueryContext(ctx, `
+		SELECT owner_a, owner_b, COALESCE(reason, ''), dismissed_by, dismissed_at
+		FROM owner_duplicate_dismissals
+		ORDER BY dismissed_at DESC, owner_a, owner_b
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing dismissed duplicate pairs: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []OwnerDuplicateDismissal
+	for rows.Next() {
+		var d OwnerDuplicateDismissal
+		if err := rows.Scan(&d.OwnerA, &d.OwnerB, &d.Reason, &d.DismissedBy, &d.DismissedAt); err != nil {
+			return nil, fmt.Errorf("datastore: scanning a dismissed pair: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// RestoreOwnerDuplicate undoes a dismissal, so the pair is offered again if the
+// scan still considers the two similar.
+//
+// Removing the dismissal is all this does: it does not assert the pair is a
+// duplicate, only that nobody has ruled on it. If the scan no longer pairs them
+// — because the data or the scoring has moved on — the pair stays absent, which
+// is the honest outcome.
+//
+// Undoing something already undone is not an error: a second click has changed
+// nothing, and failing there would be noise.
+func (db *DB) RestoreOwnerDuplicate(ctx context.Context, ownerA, ownerB string) error {
+	if ownerA > ownerB {
+		ownerA, ownerB = ownerB, ownerA
+	}
+	if _, err := db.pool.ExecContext(ctx,
+		`DELETE FROM owner_duplicate_dismissals WHERE owner_a = $1 AND owner_b = $2`,
+		ownerA, ownerB,
+	); err != nil {
+		return fmt.Errorf("datastore: undoing a dismissal: %w", err)
+	}
+	return nil
+}

@@ -446,3 +446,60 @@ func pairPresent(t *testing.T, db *DB, a, b string) bool {
 	}
 	return false
 }
+
+// A rejection has to be reversible, and a rejected pair is hidden from the
+// list — so there is nothing to click unless it can be listed separately.
+// Without both halves, a mis-click suppresses a pair permanently and
+// invisibly, which is a worse failure than the one dismissing fixed.
+func TestRestoreOwnerDuplicate_UndoesADismissal(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	for _, n := range []string{"frank.oneill", "frank.o-neill"} {
+		if _, err := db.InsertOwner(ctx, InsertOwnerParams{Name: n, OwnerType: "individual"}); err != nil {
+			t.Fatalf("InsertOwner(%q): %v", n, err)
+		}
+		defer func(n string) { _, _ = db.DeleteOwner(context.Background(), n) }(n)
+	}
+	if _, err := db.RecomputeOwnerDuplicateCandidates(ctx); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if !pairPresent(t, db, "frank.oneill", "frank.o-neill") {
+		t.Fatal("precondition: the scan should pair these two")
+	}
+
+	if err := db.DismissOwnerDuplicate(ctx, "frank.oneill", "frank.o-neill", "mis-click", "tester"); err != nil {
+		t.Fatalf("DismissOwnerDuplicate: %v", err)
+	}
+
+	// It has to be findable, or there is nothing to undo.
+	dismissed, err := db.ListOwnerDuplicateDismissals(ctx)
+	if err != nil {
+		t.Fatalf("ListOwnerDuplicateDismissals: %v", err)
+	}
+	var found *OwnerDuplicateDismissal
+	for i := range dismissed {
+		if dismissed[i].OwnerA == "frank.o-neill" || dismissed[i].OwnerB == "frank.o-neill" {
+			found = &dismissed[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("a dismissed pair is invisible — it cannot be undone")
+	}
+	if found.Reason != "mis-click" || found.DismissedBy != "tester" {
+		t.Errorf("dismissal = %+v, want the reason and who recorded it", found)
+	}
+
+	if err := db.RestoreOwnerDuplicate(ctx, "frank.oneill", "frank.o-neill"); err != nil {
+		t.Fatalf("RestoreOwnerDuplicate: %v", err)
+	}
+	if !pairPresent(t, db, "frank.oneill", "frank.o-neill") {
+		t.Error("the pair did not come back after the dismissal was undone")
+	}
+
+	// Undoing something already undone is not an error — a second click has
+	// changed nothing.
+	if err := db.RestoreOwnerDuplicate(ctx, "frank.o-neill", "frank.oneill"); err != nil {
+		t.Errorf("restoring twice, named the other way round: %v", err)
+	}
+}

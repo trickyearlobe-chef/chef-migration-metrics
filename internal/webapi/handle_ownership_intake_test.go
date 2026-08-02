@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
@@ -1140,5 +1142,150 @@ func TestFixedHeaderImport_StillWorksUnchanged(t *testing.T) {
 	// The old response shape is part of the contract — the shipped UI reads it.
 	if body.Errors == nil {
 		t.Error("errors must serialise as an array, never null")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Importing one kind of row from a consolidated export
+//
+// The real source is a database holding several kinds of row together —
+// declared owners alongside inferred committers and group members. Splitting
+// that outside CMM means an afternoon in a spreadsheet per import, so the
+// filter belongs here.
+// ---------------------------------------------------------------------------
+
+const mixedCategoryCSV = `cookbook,person,category
+apache,alice.brown,owner
+apache,bob.jones,committer
+nginx,carol.white,owner
+nginx,dave.taylor,group member
+mysql,erin.walsh,committer
+`
+
+func intakeFieldsWithFilter(col, val string) map[string]string {
+	return map[string]string{
+		"entity_type":   "git_repo",
+		"filter_column": col,
+		"filter_value":  val,
+		"field_map": `{
+			"owner":      {"source":{"kind":"column","column":"person"}},
+			"entity_key": {"source":{"kind":"column","column":"cookbook"}},
+			"entity_type":{"source":{"kind":"constant","value":"git_repo"}}
+		}`,
+	}
+}
+
+func TestIntakePreview_FiltersToOneCategory(t *testing.T) {
+	r := ownershipRouter(&mockStore{})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, intakeRequest(t, "/api/v1/ownership/import/preview",
+		mixedCategoryCSV, intakeFieldsWithFilter("category", "owner")))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Rows []struct {
+			Owner string `json:"owner"`
+		} `json:"rows"`
+		RowCount    int `json:"row_count"`
+		FilteredOut int `json:"filtered_out"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.RowCount != 2 {
+		t.Errorf("row_count = %d, want the 2 owner rows", resp.RowCount)
+	}
+	// The skipped rows are reported, not silently dropped — otherwise a
+	// mistyped filter value looks like an empty file.
+	if resp.FilteredOut != 3 {
+		t.Errorf("filtered_out = %d, want 3", resp.FilteredOut)
+	}
+}
+
+// "Owner" and "owner" are the same label — these values are written by people.
+func TestIntakePreview_FilterIgnoresCaseAndSpace(t *testing.T) {
+	r := ownershipRouter(&mockStore{})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, intakeRequest(t, "/api/v1/ownership/import/preview",
+		mixedCategoryCSV, intakeFieldsWithFilter("category", "  OWNER ")))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		RowCount int `json:"row_count"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.RowCount != 2 {
+		t.Errorf("row_count = %d, want 2", resp.RowCount)
+	}
+}
+
+// A filter naming a column the source does not have would otherwise match
+// nothing and report an empty import as though the file were empty.
+func TestIntakePreview_FilterOnAnUnknownColumnIsRefused(t *testing.T) {
+	r := ownershipRouter(&mockStore{})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, intakeRequest(t, "/api/v1/ownership/import/preview",
+		mixedCategoryCSV, intakeFieldsWithFilter("nonesuch", "owner")))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "nonesuch") {
+		t.Errorf("the refusal does not name the column: %s", w.Body.String())
+	}
+}
+
+// The dangerous one. The response truncates its per-row detail so a large
+// import stays readable; the commit must still write every row. Truncating
+// report.Rows itself would silently shorten the import.
+func TestIntakeCommit_TruncatedDetailDoesNotShortenTheImport(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("cookbook,person,category\n")
+	const rows = intakeMaxReportRows + 250
+	for i := 0; i < rows; i++ {
+		fmt.Fprintf(&b, "cookbook-%d,alice.brown,owner\n", i)
+	}
+
+	created := 0
+	store := &mockStore{
+		InsertAssignmentFn: func(_ context.Context, _ datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
+			created++
+			return datastore.OwnershipAssignment{}, nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, intakeRequest(t, "/api/v1/ownership/import/commit",
+		b.String(), intakeFieldsWithFilter("category", "owner")))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Rows          []json.RawMessage `json:"rows"`
+		RowCount      int               `json:"row_count"`
+		RowsTruncated bool              `json:"rows_truncated"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if resp.RowCount != rows {
+		t.Errorf("row_count = %d, want %d — the whole file was processed", resp.RowCount, rows)
+	}
+	if len(resp.Rows) != intakeMaxReportRows {
+		t.Errorf("returned %d row details, want them capped at %d", len(resp.Rows), intakeMaxReportRows)
+	}
+	// Saying so is the difference between a shortened list and a short import.
+	if !resp.RowsTruncated {
+		t.Error("the response does not say its row detail was truncated")
+	}
+	if created != rows {
+		t.Errorf("committed %d assignments, want %d — truncating the display must not shorten the import", created, rows)
 	}
 }
