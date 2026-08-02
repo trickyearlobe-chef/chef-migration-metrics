@@ -12,8 +12,8 @@ import (
 )
 
 // gitReposExportSpec exports the current filtered Git Repos list. Git repos are
-// few, so the list is materialised in full. Repos are not org-scoped and have no
-// ownership filter, so the filtered query fully determines the row set.
+// few, so the list is materialised in full. Repos are not org-scoped, so the
+// filtered query plus the ownership filter determines the row set.
 func (r *Router) gitReposExportSpec() exportSpec {
 	return exportSpec{
 		Filename:  "git_repos",
@@ -28,6 +28,21 @@ func newGitRepoExportSource(ctx context.Context, r *Router, req *http.Request) (
 	if err != nil {
 		return nil, err
 	}
+
+	// Ownership is applied after the query for the same reason the list view
+	// applies it there: assignments live in their own table, keyed on the repo
+	// name, with no join to git_repos. Without this an export taken from a list
+	// filtered by owner comes back as the whole estate, and nothing in the file
+	// says which set it is.
+	if of := parseOwnerFilter(req); of.Active {
+		ownedKeys, oErr := r.resolveOwnershipFilter(ctx, of, "git_repo")
+		if oErr != nil {
+			return nil, oErr
+		}
+		repos = filterByOwnershipKey(repos, ownedKeys, of,
+			func(gr datastore.GitRepo) string { return gr.Name })
+	}
+
 	anyRows := make([]any, len(repos))
 	for i := range repos {
 		anyRows[i] = repos[i]
