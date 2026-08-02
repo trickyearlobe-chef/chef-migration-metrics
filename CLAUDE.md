@@ -40,7 +40,7 @@
 
 ## Quality Maintenance
 
-- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main`) and for each either merge, queue, or note why it is parked — branches must not accumulate silently.
+- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main | grep -v '^  abandoned/'`) and for each either merge, queue, or abandon it — branches must not accumulate silently. `abandoned/*` is excluded by that filter: skip it, do not report it, do not re-ask.
 - TODO hygiene: update todos as items complete or block; don't end a session with a net TODO increase unless they're genuine open questions.
 - Verify before you record: any claim about code state or completion must be checked against the tree at the current commit and cite `file:line @ <short-SHA>`. Never record a status/audit claim from memory or stale context — re-read the code first. Stale audits come from recording claims that were never re-verified.
 - Watch context relevance (re-check every few tool calls): suggest a fresh thread when the chunk is complete, context is >50% stale/irrelevant, or scope has shifted significantly from the plan.
@@ -92,7 +92,8 @@ Three complementary layers — pick the cheapest that answers the question, esca
 - Spawned agents NEVER run git commands (add, commit, push, status, etc.). Only the main Claude commits.
 - Every spawn message MUST include: Do NOT run any git commands (add, commit, push, etc.). Write files only — the caller handles git.
 - All tasks must be performed on a branch, never on `main`.
-- Branch names must be of the pattern `<type>/<short-description>` where `<type>` is one of `feature`, `fix`, `refactor`, `chore`, `docs`, `specification`, or `test`.
+- Branch names must be of the pattern `<type>/<short-description>` where `<type>` is one of `feature`, `fix`, `refactor`, `chore`, `docs`, `specification`, `test`, or `abandoned`.
+- `abandoned/*` is a terminal state: work we stopped but kept so it can be mined later for design or learnings. Rename a branch to `abandoned/<short-description>` when it is dropped. These branches are settled — never merge them, never delete them, never propose resuming them, and never raise them unprompted. Read one only when its subject resurfaces in new work.
 - **Do not merge the feature branch into `main` without explicit permission from the user.**
 - After significant work has been completed and verified (tests pass, linting clean, summary written), present a summary of the branch's changes and **ask the user for permission to merge**.
 - When permission is granted, merge using `git merge --no-ff` to preserve the branch history, then delete the feature branch.

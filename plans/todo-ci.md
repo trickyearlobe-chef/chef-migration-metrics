@@ -38,3 +38,11 @@ accepted per `tls-acme.md` § 3.1 (the SDK subset is deliberately preferred over
 `lego`, which pulls every DNS-provider SDK). Action: confirm the osv-scanner /
 Trivy Go gate covers these and triage any advisories; no module here should be a
 surprise on the first scan.
+
+## 5. Node 20 deprecation — `softprops/action-gh-release`
+The action targets Node 20 and GitHub is forcing it onto Node 24. Nothing is
+broken today: it is SHA-pinned at `release.yml:394`
+(`3bb12739c298aeb8a4eeaf626c5b8d85266b0e65` = v2.6.2). Action: bump the pin to a
+Node 24 release before Node 20 support is withdrawn, keeping the exact-SHA pin
+and running the usual supply-chain check. Last survivor of the
+collector-performance batch.
