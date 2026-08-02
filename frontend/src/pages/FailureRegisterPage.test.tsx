@@ -12,6 +12,7 @@ vi.mock("../api", async () => {
   return {
     ...actual,
     fetchFailureRegister: vi.fn(),
+    fetchGitRepos: vi.fn(),
     recordFailureVerdict: vi.fn(),
     resolveFailureEntry: vi.fn(),
     reviseFailureEntry: vi.fn(),
@@ -75,6 +76,18 @@ describe("FailureRegisterPage", () => {
       user: { role: "admin", username: "test" },
     });
     vi.mocked(api.fetchFailureRegister).mockResolvedValue(response());
+    vi.mocked(api.fetchGitRepos).mockResolvedValue({
+      data: [
+        {
+          id: "1",
+          name: "acme-mysql-cookbook",
+          git_repo_url: "https://git.example.com/acme/acme-mysql-cookbook.git",
+          has_test_suite: true,
+          clone_status: "ok",
+        },
+      ],
+      pagination: { page: 1, per_page: 8, total_items: 1, total_pages: 1 },
+    });
   });
 
   // Journey 6: which repos are broken, why, and what is being done — all
@@ -182,7 +195,13 @@ describe("FailureRegisterPage", () => {
     render(<FailureRegisterPage />, { wrapper: Wrapper });
     await user.click(await screen.findByRole("button", { name: /Record a failure/i }));
 
-    await user.type(screen.getByLabelText(/Git repo/i), "acme-mysql-cookbook");
+    // The repo is chosen from the catalogue, not typed: a name that matches
+    // no repo would be stored and change nobody's readiness.
+    await user.type(screen.getByLabelText(/Git repo/i), "acme-mysql");
+    await user.click(
+      await screen.findByRole("button", { name: /acme-mysql-cookbook/i }),
+    );
+    await user.clear(screen.getByLabelText(/^Cookbook/i));
     await user.type(screen.getByLabelText(/^Cookbook/i), "mysql");
     await user.type(
       screen.getByLabelText(/^Reason/i),
@@ -210,12 +229,48 @@ describe("FailureRegisterPage", () => {
     render(<FailureRegisterPage />, { wrapper: Wrapper });
     await user.click(await screen.findByRole("button", { name: /Record a failure/i }));
 
-    await user.type(screen.getByLabelText(/Git repo/i), "acme-mysql-cookbook");
-    await user.type(screen.getByLabelText(/^Cookbook/i), "mysql");
+    await user.type(screen.getByLabelText(/Git repo/i), "acme-mysql");
+    await user.click(
+      await screen.findByRole("button", { name: /acme-mysql-cookbook/i }),
+    );
 
     expect(
       screen.getByRole("button", { name: /Record this verdict/i }),
     ).toBeDisabled();
+  });
+
+  // The hole the picker closes: a verdict against a repo that does not exist
+  // is stored, shown, and silently changes nobody's readiness.
+  it("will not submit a repo name that was typed rather than chosen", async () => {
+    const user = userEvent.setup();
+    render(<FailureRegisterPage />, { wrapper: Wrapper });
+    await user.click(await screen.findByRole("button", { name: /Record a failure/i }));
+
+    await user.type(screen.getByLabelText(/Git repo/i), "a-repo-that-is-not-real");
+    await user.type(screen.getByLabelText(/^Cookbook/i), "whatever");
+    await user.type(screen.getByLabelText(/^Reason/i), "it broke");
+
+    expect(
+      screen.getByRole("button", { name: /Record this verdict/i }),
+    ).toBeDisabled();
+  });
+
+  // Nothing in the catalogue matches, and the reason says why rather than
+  // showing an empty box.
+  it("says why nothing matched when the catalogue has no such repo", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchGitRepos).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 8, total_items: 0, total_pages: 0 },
+    });
+    render(<FailureRegisterPage />, { wrapper: Wrapper });
+    await user.click(await screen.findByRole("button", { name: /Record a failure/i }));
+
+    await user.type(screen.getByLabelText(/Git repo/i), "nonesuch");
+
+    expect(
+      await screen.findByText(/Only repos CMM has collected can carry a verdict/i),
+    ).toBeInTheDocument();
   });
 
   // A reversal is a new verdict, and the form has to say the old one survives.

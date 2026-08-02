@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
+import { GitRepoPicker } from "./GitRepoPicker";
 import type {
   FailureRegisterEntry,
   FailureVerdict,
@@ -14,6 +15,9 @@ type Mode = "record" | "reverse" | "revise";
 interface Props {
   mode: Mode;
   entry?: FailureRegisterEntry;
+  /** Fixes the subject when recording from a repo's own page — there is
+   * nothing to pick, and nothing to mistype. */
+  fixedRepo?: { name: string; cookbookName?: string };
   onCancel: () => void;
   /** record and reverse both write a new verdict. */
   onSubmit?: (body: RecordFailureVerdictBody) => Promise<void>;
@@ -39,14 +43,25 @@ const HOLDER_TYPES: { value: HolderType; label: string }[] = [
 export function FailureEntryDialog({
   mode,
   entry,
+  fixedRepo,
   onCancel,
   onSubmit,
   onRevise,
 }: Props) {
   const revising = mode === "revise";
 
-  const [gitRepoName, setGitRepoName] = useState(entry?.git_repo_name ?? "");
-  const [cookbookName, setCookbookName] = useState(entry?.cookbook_name ?? "");
+  const [gitRepoName, setGitRepoName] = useState(
+    fixedRepo?.name ?? entry?.git_repo_name ?? "",
+  );
+  const [cookbookName, setCookbookName] = useState(
+    fixedRepo?.cookbookName ?? fixedRepo?.name ?? entry?.cookbook_name ?? "",
+  );
+  // The subject has to be a repo that exists, or the verdict changes nobody's
+  // readiness. Already satisfied when the repo came from its own page or from
+  // the entry being reversed; otherwise it has to be picked.
+  const [repoConfirmed, setRepoConfirmed] = useState(
+    Boolean(fixedRepo) || mode === "reverse",
+  );
   // A reversal starts on the opposite verdict, which is what it is for.
   const [verdict, setVerdict] = useState<FailureVerdict>(
     mode === "reverse" && entry?.verdict === "broken" ? "not_broken" : "broken",
@@ -125,7 +140,8 @@ export function FailureEntryDialog({
 
   const canSubmit = revising
     ? true
-    : gitRepoName.trim() !== "" &&
+    : repoConfirmed &&
+      gitRepoName.trim() !== "" &&
       cookbookName.trim() !== "" &&
       reason.trim() !== "";
 
@@ -146,23 +162,41 @@ export function FailureEntryDialog({
           {!revising && (
             <>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field
-                  label="Git repo"
-                  hint="Where the fix is made. Never a version."
-                >
-                  <input
-                    type="text"
-                    value={gitRepoName}
-                    onChange={(e) => setGitRepoName(e.target.value)}
-                    readOnly={mode === "reverse"}
-                    required
-                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </Field>
-                <Field
-                  label="Cookbook"
-                  hint="What it is called at standup."
-                >
+                <div className="block space-y-1">
+                  <label
+                    htmlFor="failure-git-repo"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Git repo
+                  </label>
+                  {fixedRepo || mode === "reverse" ? (
+                    <input
+                      id="failure-git-repo"
+                      type="text"
+                      value={gitRepoName}
+                      readOnly
+                      className="w-full rounded-md border border-gray-300 bg-gray-50 px-2 py-1.5 text-sm text-gray-700"
+                    />
+                  ) : (
+                    <GitRepoPicker
+                      inputId="failure-git-repo"
+                      value={gitRepoName}
+                      onChange={(repo, rawName) => {
+                        setGitRepoName(rawName);
+                        setRepoConfirmed(repo !== null);
+                        // One cookbook per repo is the assumption throughout,
+                        // so the label follows the repo until somebody edits
+                        // it. A repo holding several cookbooks is a mono-repo,
+                        // deliberately not handled yet.
+                        if (repo) setCookbookName((c) => c || repo.name);
+                      }}
+                    />
+                  )}
+                  <span className="block text-xs text-gray-500">
+                    Where the fix is made. Never a version.
+                  </span>
+                </div>
+                <Field label="Cookbook" hint="What it is called at standup.">
                   <input
                     type="text"
                     value={cookbookName}
