@@ -59,12 +59,13 @@ signal is.
 
 ## NEXT — ownership filtering in the list views
 
-The work in flight, and where a new thread starts. Scope and findings:
-`plans/todo-ownership.md` § Ownership filtering in the list views.
+Scope and the decisions that bind: `plans/todo-ownership.md` § Ownership filtering in the list
+views.
 
-Backend is done for git repos, cookbooks and nodes. **Every one of them is missing the UI
-control**, which is the entire remaining gap. Order: git repos, then cookbooks (UI only), then
-nodes (UI only, deferred — no node ownership data exists yet).
+The git repo and cookbook lists carry the control (`feature/ownership-list-filters`). The node
+list is the remainder, and stays deferred — there is no node ownership data to test it against.
+**Not yet looked at in the running app**: the filter bar was already busy and one more control
+went into it.
 
 ## Snagging (`plans/todo-snagging.md`)
 

@@ -143,27 +143,36 @@ human verdict inside the readiness rollup are built.
 - [ ] **Nothing surfaces the register on the repo or node it affects.** A node blocked by a
   human verdict carries the reason in `blocking_cookbooks`, and no view reads it yet.
 
-## Ownership filtering in the list views — IN PROGRESS, next thread starts here
+## Ownership filtering in the list views
 
 Journey 1 ("what's mine") and the unowned question both need the list views to filter on
-ownership. Findings from wiring it up 2026-08-02:
+ownership. The git repo and cookbook lists now carry the control; three decisions bind
+anything that extends it:
 
-- **Cookbooks and nodes already had the backend** — `parseOwnerFilter` → `resolveOwnershipFilter`
-  → `filterByOwnershipKey`, with in-memory paging while the filter is active.
-- **Git repos did not, and now does** (`handle_git_repos.go`), same pattern, with tests.
-- **No list view has any UI for it.** That is the whole remaining gap, and it is why
-  "no screen answers 'show me every repo with no owner'" was true.
+- **Both questions live in one control** (`OwnerFilter`). The API rejects `owner` and
+  `unowned` together with a 400, so ticking either withdraws the other and the pair cannot
+  leave the page. Split across two controls that rule could only be enforced by catching the
+  error after somebody had already asked for it.
+- **Owners are searched on the server**, not filtered in the browser. The estate carries
+  thousands, so a page of them held locally would answer "no such person" for anybody who did
+  not make the first page. The control calls `GET /owners?search=`, which runs the owners
+  list's readiness enrichment on every search — measure it against the real estate before
+  assuming it is cheap enough.
+- **The export carries the ownership filter too.** Adding the control made an export taken
+  from a filtered list reachable, and the git-repo export was returning the whole estate with
+  nothing in the file to say so.
 
-- [ ] **Git repo list — the filter control.** Backend done. Needs the UI: a filter on owner
-  (multi-select, per journey 1's "several people at once") and an unowned toggle. Model it on
-  the `FilterMultiCheckbox` controls already on that page, and mind that the page is busy —
-  the same objection that kept the team-verdict marker out of its own column.
-- [ ] **Cookbook list — UI only.** The backend already works.
 - [ ] **Node list — UI only**, and deferred: there is no node ownership dataset yet, so it
-  cannot be tested against anything real.
-
-**Beware the `owner` and `unowned` parameters are mutually exclusive** — the API returns 400 if
-both are sent, so the control has to make that unreachable rather than rely on the error.
+  cannot be tested against anything real. `OwnerFilter` drops straight in.
+- [ ] **Ownership is not part of a saved filter.** `savedFilterVocabulary` does not accept
+  `owner`/`unowned`, so "my repos" cannot be saved as a named cohort — which is journey 1's
+  own question. `human_verdict` is excluded on the same footing. Decide whether either
+  belongs in a saved cohort, rather than leaving both out by accident.
+- [ ] **The export path accepts the contradiction the list view rejects.**
+  `/api/v1/exports?...&owner=x&unowned=true` answers the unowned question silently;
+  the list endpoint 400s on the same pair. `newCookbookExportSource` and
+  `newGitRepoExportSource` call `parseOwnerFilter` without `validateOwnerFilter`, and an
+  export source can only fail as a 500. Unreachable from the UI, reachable from a script.
 
 ## Identity and alias management — what is left
 
