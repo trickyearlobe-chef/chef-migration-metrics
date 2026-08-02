@@ -54,6 +54,7 @@ import {
 import { AdminPlatformDisplayNamesPage } from "./pages/AdminPlatformDisplayNamesPage";
 import { AdminBackupPage } from "./pages/AdminBackupPage";
 import { OwnerAliasesPage } from "./pages/OwnerAliasesPage";
+import { OwnerDuplicatesPage } from "./pages/OwnerDuplicatesPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -226,6 +227,10 @@ export function App() {
               <Route
                 path="/ownership/aliases"
                 element={<OwnerAliasesPage />}
+              />
+              <Route
+                path="/ownership/duplicates"
+                element={<OwnerDuplicatesPage />}
               />
               <Route
                 path="/ownership/audit-log"

@@ -21,3 +21,52 @@ export interface AliasImportResponse {
   skipped: number;
   errors: { line: number; error: string }[] | null;
 }
+
+/** One pair of owners that may be the same person. A lead, never a match. */
+export interface OwnerDuplicateCandidate {
+  owner_a: string;
+  owner_b: string;
+  /** "name" when the owner names are similar, "alias" when two identities are. */
+  matched_on: string;
+  value_a: string;
+  value_b: string;
+  similarity: number;
+  assignments_a: number;
+  assignments_b: number;
+}
+
+export interface OwnerDuplicatesResponse {
+  data: OwnerDuplicateCandidate[];
+  pagination: {
+    page: number;
+    per_page: number;
+    total_items: number;
+    total_pages: number;
+  };
+  /** Absent when the count could not be taken. */
+  coverage: {
+    owners_total?: number;
+    owners_without_alias?: number;
+  };
+  /** Absent until the catalogue has been scanned at least once. */
+  scan?: {
+    scanned_at: string;
+    pairs_found: number;
+  };
+  scan_running: boolean;
+}
+
+export interface OwnerDuplicateRescanResponse {
+  started: boolean;
+  reason?: string;
+}
+
+export interface MergeOwnersResult {
+  from_owner: string;
+  into_owner: string;
+  reassigned: number;
+  skipped: number;
+  aliases_moved: number;
+  aliases_dropped: number;
+  source_name_aliased: boolean;
+}

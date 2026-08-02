@@ -22,6 +22,7 @@ const ACTION_OPTIONS: { value: string; label: string }[] = [
   { value: "owner_created", label: "Owner Created" },
   { value: "owner_updated", label: "Owner Updated" },
   { value: "owner_deleted", label: "Owner Deleted" },
+  { value: "owner_merged", label: "Owner Merged" },
   { value: "assignment_created", label: "Assignment Created" },
   { value: "assignment_deleted", label: "Assignment Deleted" },
   { value: "assignment_reassigned", label: "Assignment Reassigned" },
