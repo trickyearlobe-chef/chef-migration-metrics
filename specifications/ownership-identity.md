@@ -119,6 +119,44 @@ in.
 Canonicalising on write would also remove the raw-then-lowercase retry the import resolution does
 today, which exists only because the column has no case-insensitive collation.
 
+### Git identities are rewritten by the hosting platform
+
+Measured across five cloned cookbook repositories, 3,022 commits. Recorded because it is
+expensive to rediscover and it contradicts the obvious reading of the fields.
+
+- **19% of commits have a different author and committer.** On the largest repo, **two thirds of
+  those have the platform itself as committer** (`GitHub <noreply@github.com>`) rather than a
+  person. The remainder concentrate on a few maintainer addresses — a gatekeeper signal, distinct
+  from contribution, and the closer of the two to "who is accountable".
+- **The distinction is near-absent in a repo with direct pushes** — 1 commit in 84 — and present
+  in community repos with a maintainer/contributor split. Whether it carries any signal depends
+  on the customer's workflow, which is not known.
+- **A merge through the web UI rewrites the author too.** The platform substitutes the account's
+  privacy-protected address (`<account>@users.noreply.github.com`) into the **author** field and
+  puts its own machine identity in the committer field. So the field collected precisely because
+  it means "who did the work" is contaminated by the interaction most common in a PR-based shop.
+  One such merge is enough to manufacture a second owner for a person who authored everything
+  else in the repo under their own address.
+- **`<account>@users.noreply.github.com` is a durable identity** whose localpart is the platform
+  account name — a genuinely useful handle. **`noreply@github.com` is not a person** and must
+  never become an owner.
+- **The author *name* survives the substitution.** Where the address is rewritten, the display
+  name is preserved, which is why comparing display names finds pairs that no address comparison
+  can. This was not the reason display-name comparison was added; it is a stronger one.
+- **Committer counts are inflated by mechanical operations** — a rebase rewrites the committer of
+  every commit in the range — so committer is usable as a set of people, not as a tally.
+
+**Vendored cookbooks are the harder case underneath this.** In an upstream community cookbook,
+every author and every committer is external. Git history can say which maintainer landed a patch;
+it cannot say who inside the customer's organisation is responsible for keeping that vendored
+dependency current, which is the actual ownership question. Better git-identity handling makes the
+gap more visible rather than closing it.
+
+**Classification is deliberately deferred.** Rules that recognise platform identities, bots and
+maintainers are best written against real patterns rather than guessed. That is safe here
+specifically because git history is re-derivable from the clones on disk, so no decision is
+foreclosed by waiting — which is not true of any signal discarded at ingest.
+
 ### Open questions
 
 - **The import's raw string genuinely has no known shape** — sometimes an address, sometimes a

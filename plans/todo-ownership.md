@@ -55,6 +55,15 @@ Remaining:
 - [ ] **Surface it at the point of use**, per the journey-1 refinement in
   `plans/ownership-work-attribution.md`: wherever an owner is read, show the raw string
   and any candidate owners, one action from being merged.
+- [ ] **Rules for platform identities, bots and maintainers — write them against real data.**
+  Findings and measurements: `specifications/ownership-identity.md` § Git identities are
+  rewritten by the hosting platform. Deliberately deferred, and safe to defer because git
+  history is re-derivable from the clones on disk.
+
+  Cheaper and already collected: `commit_count`, `first_commit_at` and `last_commit_at` are
+  on every committer row and nothing in ownership reads them. Journey 1 asks for how much
+  and how recently somebody contributed; recency and concentration need no collector change
+  at all.
 - [ ] **Re-model aliases: shape is not source.** Design and evidence:
   `specifications/ownership-identity.md` § Proposed: shape is not source. Do not restate it
   here.
