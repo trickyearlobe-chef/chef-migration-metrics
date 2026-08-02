@@ -22,8 +22,12 @@ export type HolderType = "owner" | "user" | "ticket";
 
 export interface FailureRegisterEntry {
   id: string;
-  /** The subject: the repo is where a fix is made and re-released. */
-  git_repo_name: string;
+  /**
+   * The subject: normally the repo, because that is where a fix is made and
+   * re-released — but the cookbook itself where no repo has been collected.
+   */
+  subject_name: string;
+  subject_type: "git_repo" | "cookbook";
   /** The label: standup says "cookbook" while looking at repo-level work. */
   cookbook_name: string;
   verdict: FailureVerdict;
@@ -76,7 +80,8 @@ export interface FailureRegisterResponse {
 }
 
 export interface RecordFailureVerdictBody {
-  git_repo_name: string;
+  subject_name: string;
+  subject_type?: "git_repo" | "cookbook";
   cookbook_name: string;
   verdict: FailureVerdict;
   reason: string;

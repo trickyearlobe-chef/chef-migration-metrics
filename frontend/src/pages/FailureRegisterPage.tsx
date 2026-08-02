@@ -366,10 +366,10 @@ function EntryCard({
           </div>
           {/* The repo is the subject; the cookbook above is the label. */}
           <Link
-            to={`/git-repos?search=${encodeURIComponent(entry.git_repo_name)}`}
+            to={`/git-repos?search=${encodeURIComponent(entry.subject_name)}`}
             className="mt-0.5 inline-block text-xs text-blue-600 hover:underline"
           >
-            {entry.git_repo_name}
+            {entry.subject_name}
           </Link>
         </div>
 

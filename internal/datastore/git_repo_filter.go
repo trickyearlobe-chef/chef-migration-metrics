@@ -131,7 +131,7 @@ func gitRepoFilterWheres(f GitRepoFilter, startArg int) (wheres []string, args [
 	// Only standing verdicts count. A superseded one has been reversed and a
 	// resolved one dealt with; neither is anybody's current opinion.
 	const registerExists = `SELECT 1 FROM failure_register_entries fre
-		 WHERE fre.git_repo_name = git_repos.name AND fre.status = 'open'`
+		 WHERE fre.subject_name = git_repos.name AND fre.status = 'open'`
 
 	switch f.HumanVerdict {
 	case VerdictBroken, VerdictNotBroken:

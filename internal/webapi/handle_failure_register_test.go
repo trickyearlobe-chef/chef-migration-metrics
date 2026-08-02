@@ -40,7 +40,7 @@ func TestRecordFailure_RecordsTheVerdictAndAudits(t *testing.T) {
 		RecordFailureVerdictFn: func(_ context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error) {
 			got = p
 			return datastore.FailureRegisterEntry{
-				ID: "entry-1", GitRepoName: p.GitRepoName, CookbookName: p.CookbookName,
+				ID: "entry-1", SubjectName: p.SubjectName, CookbookName: p.CookbookName,
 				Verdict: p.Verdict, Reason: p.Reason, Status: datastore.FailureStatusOpen,
 			}, nil
 		},
@@ -52,7 +52,7 @@ func TestRecordFailure_RecordsTheVerdictAndAudits(t *testing.T) {
 	r := ownershipRouter(store)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, registerRequest(http.MethodPost, "/api/v1/failure-register", `{
-		"git_repo_name": "acme-nginx",
+		"subject_name": "acme-nginx",
 		"cookbook_name": "nginx",
 		"verdict": "broken",
 		"reason": "the service resource fails on a real converge",
@@ -63,8 +63,8 @@ func TestRecordFailure_RecordsTheVerdictAndAudits(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 	}
-	if got.GitRepoName != "acme-nginx" || got.CookbookName != "nginx" {
-		t.Errorf("recorded against %q/%q", got.GitRepoName, got.CookbookName)
+	if got.SubjectName != "acme-nginx" || got.CookbookName != "nginx" {
+		t.Errorf("recorded against %q/%q", got.SubjectName, got.CookbookName)
 	}
 	if got.Verdict != "broken" || got.Reason == "" {
 		t.Errorf("verdict = %q, reason = %q", got.Verdict, got.Reason)
@@ -93,7 +93,7 @@ func TestRecordFailure_RefusesAVerdictWithNoReason(t *testing.T) {
 	r := ownershipRouter(store)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, registerRequest(http.MethodPost, "/api/v1/failure-register",
-		`{"git_repo_name":"acme-nginx","cookbook_name":"nginx","verdict":"broken","reason":"   "}`))
+		`{"subject_name":"acme-nginx","cookbook_name":"nginx","verdict":"broken","reason":"   "}`))
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", w.Code)
@@ -111,7 +111,7 @@ func TestRecordFailure_RefusesAVersion(t *testing.T) {
 	r := ownershipRouter(store)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, registerRequest(http.MethodPost, "/api/v1/failure-register",
-		`{"git_repo_name":"acme-nginx","cookbook_name":"nginx","cookbook_version":"1.2.3","verdict":"broken","reason":"broken"}`))
+		`{"subject_name":"acme-nginx","cookbook_name":"nginx","cookbook_version":"1.2.3","verdict":"broken","reason":"broken"}`))
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 — a verdict is about a repo, not a version", w.Code)
@@ -126,8 +126,8 @@ func TestRecordFailure_RefusesAVersion(t *testing.T) {
 func TestRecordFailure_RequiresRepoAndCookbook(t *testing.T) {
 	for _, body := range []string{
 		`{"cookbook_name":"nginx","verdict":"broken","reason":"broken"}`,
-		`{"git_repo_name":"acme-nginx","verdict":"broken","reason":"broken"}`,
-		`{"git_repo_name":"acme-nginx","cookbook_name":"nginx","reason":"broken"}`,
+		`{"subject_name":"acme-nginx","verdict":"broken","reason":"broken"}`,
+		`{"subject_name":"acme-nginx","cookbook_name":"nginx","reason":"broken"}`,
 	} {
 		r := ownershipRouter(&mockStore{})
 		w := httptest.NewRecorder()
@@ -143,7 +143,7 @@ func TestRecordFailure_RequiresRepoAndCookbook(t *testing.T) {
 func TestRecordFailure_RecomputesReadiness(t *testing.T) {
 	store := &mockStore{
 		RecordFailureVerdictFn: func(_ context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error) {
-			return datastore.FailureRegisterEntry{ID: "entry-1", GitRepoName: p.GitRepoName}, nil
+			return datastore.FailureRegisterEntry{ID: "entry-1", SubjectName: p.SubjectName}, nil
 		},
 	}
 	recomputed := false
@@ -152,7 +152,7 @@ func TestRecordFailure_RecomputesReadiness(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, registerRequest(http.MethodPost, "/api/v1/failure-register",
-		`{"git_repo_name":"acme-nginx","cookbook_name":"nginx","verdict":"broken","reason":"breaks on converge"}`))
+		`{"subject_name":"acme-nginx","cookbook_name":"nginx","verdict":"broken","reason":"breaks on converge"}`))
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
@@ -167,7 +167,7 @@ func TestRecordFailure_RecomputesReadiness(t *testing.T) {
 func TestRecordFailure_SurvivesAFailedRecompute(t *testing.T) {
 	store := &mockStore{
 		RecordFailureVerdictFn: func(_ context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error) {
-			return datastore.FailureRegisterEntry{ID: "entry-1", GitRepoName: p.GitRepoName}, nil
+			return datastore.FailureRegisterEntry{ID: "entry-1", SubjectName: p.SubjectName}, nil
 		},
 	}
 	r := ownershipRouter(store)
@@ -175,7 +175,7 @@ func TestRecordFailure_SurvivesAFailedRecompute(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, registerRequest(http.MethodPost, "/api/v1/failure-register",
-		`{"git_repo_name":"acme-nginx","cookbook_name":"nginx","verdict":"broken","reason":"breaks on converge"}`))
+		`{"subject_name":"acme-nginx","cookbook_name":"nginx","verdict":"broken","reason":"breaks on converge"}`))
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("status = %d, want 201 — the verdict was recorded", w.Code)
@@ -192,7 +192,7 @@ func TestListFailureRegister_TheStandupView(t *testing.T) {
 		ListFailureRegisterEntriesFn: func(_ context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error) {
 			gotFilter = f
 			return []datastore.FailureRegisterEntry{{
-				ID: "entry-1", GitRepoName: "acme-nginx", CookbookName: "nginx",
+				ID: "entry-1", SubjectName: "acme-nginx", CookbookName: "nginx",
 				Verdict: "broken", Reason: "fails on a real converge",
 				Plan: "rewrite the template", TargetDate: &target,
 				HolderType: "ticket", HolderRef: "PLAT-4821",
@@ -217,7 +217,7 @@ func TestListFailureRegister_TheStandupView(t *testing.T) {
 
 	var resp struct {
 		Data []struct {
-			GitRepoName  string `json:"git_repo_name"`
+			GitRepoName  string `json:"subject_name"`
 			CookbookName string `json:"cookbook_name"`
 			Reason       string `json:"reason"`
 			Plan         string `json:"plan"`
@@ -258,7 +258,7 @@ func TestListFailureRegister_TheStandupView(t *testing.T) {
 func TestListFailureRegister_SummaryFailureKeepsTheList(t *testing.T) {
 	store := &mockStore{
 		ListFailureRegisterEntriesFn: func(_ context.Context, _ datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error) {
-			return []datastore.FailureRegisterEntry{{ID: "entry-1", GitRepoName: "acme-nginx"}}, 1, nil
+			return []datastore.FailureRegisterEntry{{ID: "entry-1", SubjectName: "acme-nginx"}}, 1, nil
 		},
 		FailureRegisterSummaryFn: func(_ context.Context, _ int) (datastore.FailureRegisterSummary, error) {
 			return datastore.FailureRegisterSummary{}, context.DeadlineExceeded
@@ -446,10 +446,10 @@ func TestReviseFailure_CannotChangeTheVerdictOrReason(t *testing.T) {
 // The whole history for a repo: a scan called it incompatible, a person
 // overruled it, and why.
 func TestFailureRegisterHistory_ReturnsEveryVerdict(t *testing.T) {
-	var gotRepo string
+	var gotSubject string
 	store := &mockStore{
 		ListFailureRegisterHistoryFn: func(_ context.Context, repo string) ([]datastore.FailureRegisterEntry, error) {
-			gotRepo = repo
+			gotSubject = repo
 			return []datastore.FailureRegisterEntry{
 				{ID: "entry-2", Verdict: "not_broken", Status: datastore.FailureStatusOpen},
 				{ID: "entry-1", Verdict: "broken", Status: datastore.FailureStatusSuperseded, SupersededBy: "entry-2"},
@@ -458,13 +458,13 @@ func TestFailureRegisterHistory_ReturnsEveryVerdict(t *testing.T) {
 	}
 	r := ownershipRouter(store)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, registerRequest(http.MethodGet, "/api/v1/failure-register/repo/acme-nginx", ""))
+	r.ServeHTTP(w, registerRequest(http.MethodGet, "/api/v1/failure-register/subject/acme-nginx", ""))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
-	if gotRepo != "acme-nginx" {
-		t.Errorf("history read for %q, want acme-nginx", gotRepo)
+	if gotSubject != "acme-nginx" {
+		t.Errorf("history read for %q, want acme-nginx", gotSubject)
 	}
 	var resp struct {
 		Data []datastore.FailureRegisterEntry `json:"data"`
@@ -483,22 +483,22 @@ func TestFailureRegisterHistory_ReturnsEveryVerdict(t *testing.T) {
 // A repo name with a slash in it (some hosting platforms allow one) must reach
 // the store whole rather than being truncated at the first separator.
 func TestFailureRegisterHistory_RepoNameWithASlash(t *testing.T) {
-	var gotRepo string
+	var gotSubject string
 	store := &mockStore{
 		ListFailureRegisterHistoryFn: func(_ context.Context, repo string) ([]datastore.FailureRegisterEntry, error) {
-			gotRepo = repo
+			gotSubject = repo
 			return nil, nil
 		},
 	}
 	r := ownershipRouter(store)
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, registerRequest(http.MethodGet, "/api/v1/failure-register/repo/group/acme-nginx", ""))
+	r.ServeHTTP(w, registerRequest(http.MethodGet, "/api/v1/failure-register/subject/group/acme-nginx", ""))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
 	}
-	if gotRepo != "group/acme-nginx" {
-		t.Errorf("history read for %q, want the whole name group/acme-nginx", gotRepo)
+	if gotSubject != "group/acme-nginx" {
+		t.Errorf("history read for %q, want the whole name group/acme-nginx", gotSubject)
 	}
 }
 

@@ -40,6 +40,14 @@ const (
 // Who is on it. A commitment holder may be a person we know about, an
 // application user, or a reference to work tracked in another system — CMM
 // holds the reference and does not read the system behind it.
+// What a verdict's subject names. A repo where one has been collected —
+// that is where a fix is made and re-released — and the cookbook itself where
+// none has.
+const (
+	SubjectTypeGitRepo  = "git_repo"
+	SubjectTypeCookbook = "cookbook"
+)
+
 const (
 	HolderTypeOwner  = "owner"
 	HolderTypeUser   = "user"
@@ -50,8 +58,14 @@ const (
 type FailureRegisterEntry struct {
 	ID string `json:"id"`
 
-	// The subject is the repo; the label is the cookbook. Never a version.
-	GitRepoName  string `json:"git_repo_name"`
+	// The subject is normally the repo, because that is where a fix is made.
+	// Where no repo has been collected the subject is the cookbook itself —
+	// those are more likely to be unowned and untested, not less, so refusing
+	// them would exclude the population the register exists to catch.
+	SubjectName string `json:"subject_name"`
+	SubjectType string `json:"subject_type"`
+
+	// The label, because standup says "cookbook". Never a version.
 	CookbookName string `json:"cookbook_name"`
 
 	Verdict string `json:"verdict"`
@@ -84,7 +98,8 @@ type FailureRegisterEntry struct {
 
 // RecordFailureVerdictParams records a new verdict about a repo.
 type RecordFailureVerdictParams struct {
-	GitRepoName  string
+	SubjectName  string
+	SubjectType  string
 	CookbookName string
 	Verdict      string
 	Reason       string
@@ -115,7 +130,7 @@ type ReviseFailureEntryParams struct {
 type FailureRegisterFilter struct {
 	Status      string // open / resolved / superseded; empty means every status
 	Verdict     string // broken / not_broken; empty means both
-	GitRepoName string
+	SubjectName string
 	Limit       int
 	Offset      int
 }
@@ -123,7 +138,8 @@ type FailureRegisterFilter struct {
 // StandingVerdict is a human verdict as the readiness evaluator consumes it:
 // the current, unsuperseded, unresolved opinion about one repo.
 type StandingVerdict struct {
-	GitRepoName  string
+	SubjectName  string
+	SubjectType  string
 	CookbookName string
 	Verdict      string
 	Reason       string
@@ -159,7 +175,7 @@ type FailureRegisterSummary struct {
 // failureEntryColumns is the read projection, in the order scanFailureEntry
 // expects.
 const failureEntryColumns = `
-	id, git_repo_name, cookbook_name, verdict, reason,
+	id, subject_name, subject_type, cookbook_name, verdict, reason,
 	COALESCE(evidence, ''), COALESCE(diagnosis, ''), COALESCE(plan, ''), target_date,
 	COALESCE(holder_type, ''), COALESCE(holder_ref, ''),
 	status, raised_by, raised_at, updated_at,
@@ -173,7 +189,7 @@ func scanFailureEntry(s interface{ Scan(...any) error }) (FailureRegisterEntry, 
 	var supersededBy sql.NullString
 
 	err := s.Scan(
-		&e.ID, &e.GitRepoName, &e.CookbookName, &e.Verdict, &e.Reason,
+		&e.ID, &e.SubjectName, &e.SubjectType, &e.CookbookName, &e.Verdict, &e.Reason,
 		&e.Evidence, &e.Diagnosis, &e.Plan, &targetDate,
 		&e.HolderType, &e.HolderRef,
 		&e.Status, &e.RaisedBy, &e.RaisedAt, &e.UpdatedAt,
@@ -207,6 +223,20 @@ func validateVerdict(verdict string) error {
 	}
 }
 
+// validateSubjectType rejects a subject that is neither a repo nor a cookbook.
+// An empty value means a repo, which is what every entry recorded before
+// cookbook subjects existed was.
+func validateSubjectType(subjectType string) (string, error) {
+	switch subjectType {
+	case "", SubjectTypeGitRepo:
+		return SubjectTypeGitRepo, nil
+	case SubjectTypeCookbook:
+		return SubjectTypeCookbook, nil
+	default:
+		return "", fmt.Errorf("datastore: %q is not a kind of subject a verdict can be about", subjectType)
+	}
+}
+
 // validateHolder enforces that a commitment holder is a recognised type and a
 // reference together, or neither. Half a reference cannot be chased.
 func validateHolder(holderType, holderRef string) error {
@@ -234,11 +264,15 @@ func validateHolder(holderType, holderRef string) error {
 // overwritten — who said what, when and why is the point of the register, and
 // the disagreement is what a later reader needs to judge either verdict.
 func (db *DB) RecordFailureVerdict(ctx context.Context, p RecordFailureVerdictParams) (FailureRegisterEntry, error) {
-	if strings.TrimSpace(p.GitRepoName) == "" {
+	if strings.TrimSpace(p.SubjectName) == "" {
 		return FailureRegisterEntry{}, errors.New("datastore: a verdict needs the git repo it is about")
 	}
 	if strings.TrimSpace(p.CookbookName) == "" {
 		return FailureRegisterEntry{}, errors.New("datastore: a verdict needs the cookbook it is labelled with")
+	}
+	subjectType, err := validateSubjectType(p.SubjectType)
+	if err != nil {
+		return FailureRegisterEntry{}, err
 	}
 	if err := validateVerdict(p.Verdict); err != nil {
 		return FailureRegisterEntry{}, err
@@ -257,17 +291,17 @@ func (db *DB) RecordFailureVerdict(ctx context.Context, p RecordFailureVerdictPa
 	}
 
 	var entry FailureRegisterEntry
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
+	err = db.Tx(ctx, func(tx *sql.Tx) error {
 		// The previous standing verdict for this repo, if there is one. Locked
 		// so two people recording at once cannot both leave an open entry.
 		var previousID sql.NullString
 		err := tx.QueryRowContext(ctx, `
 			SELECT id FROM failure_register_entries
-			WHERE git_repo_name = $1 AND status = 'open'
+			WHERE subject_name = $1 AND status = 'open'
 			FOR UPDATE
-		`, p.GitRepoName).Scan(&previousID)
+		`, p.SubjectName).Scan(&previousID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("reading the standing verdict for %q: %w", p.GitRepoName, err)
+			return fmt.Errorf("reading the standing verdict for %q: %w", p.SubjectName, err)
 		}
 
 		if previousID.Valid {
@@ -284,11 +318,11 @@ func (db *DB) RecordFailureVerdict(ctx context.Context, p RecordFailureVerdictPa
 
 		row := tx.QueryRowContext(ctx, `
 			INSERT INTO failure_register_entries
-				(git_repo_name, cookbook_name, verdict, reason, evidence,
+				(subject_name, subject_type, cookbook_name, verdict, reason, evidence,
 				 diagnosis, plan, target_date, holder_type, holder_ref, raised_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING `+failureEntryColumns,
-			p.GitRepoName, p.CookbookName, p.Verdict, strings.TrimSpace(p.Reason),
+			p.SubjectName, subjectType, p.CookbookName, p.Verdict, strings.TrimSpace(p.Reason),
 			nullStringPtr(p.Evidence), nullStringPtr(p.Diagnosis), nullStringPtr(p.Plan),
 			nullTimePtr(p.TargetDate),
 			nullStringPtr(strings.TrimSpace(p.HolderType)), nullStringPtr(strings.TrimSpace(p.HolderRef)),
@@ -438,9 +472,9 @@ func (db *DB) ListFailureRegisterEntries(ctx context.Context, f FailureRegisterF
 		args = append(args, f.Verdict)
 		argN++
 	}
-	if f.GitRepoName != "" {
-		where += fmt.Sprintf(" AND git_repo_name = $%d", argN)
-		args = append(args, f.GitRepoName)
+	if f.SubjectName != "" {
+		where += fmt.Sprintf(" AND subject_name = $%d", argN)
+		args = append(args, f.SubjectName)
 		argN++
 	}
 
@@ -488,7 +522,7 @@ func (db *DB) ListFailureRegisterHistory(ctx context.Context, gitRepoName string
 	rows, err := db.pool.QueryContext(ctx,
 		`SELECT `+failureEntryColumns+`
 		 FROM failure_register_entries
-		 WHERE git_repo_name = $1
+		 WHERE subject_name = $1
 		 ORDER BY raised_at DESC, id`, gitRepoName)
 	if err != nil {
 		return nil, fmt.Errorf("datastore: reading the register history for %q: %w", gitRepoName, err)
@@ -513,7 +547,7 @@ func (db *DB) ListFailureRegisterHistory(ctx context.Context, gitRepoName string
 // has been dealt with. Neither is anybody's current opinion.
 func (db *DB) ListOpenFailureVerdicts(ctx context.Context) (map[string]StandingVerdict, error) {
 	rows, err := db.pool.QueryContext(ctx, `
-		SELECT git_repo_name, cookbook_name, verdict, reason, raised_by, raised_at
+		SELECT subject_name, subject_type, cookbook_name, verdict, reason, raised_by, raised_at
 		FROM failure_register_entries
 		WHERE status = 'open'
 	`)
@@ -525,11 +559,11 @@ func (db *DB) ListOpenFailureVerdicts(ctx context.Context) (map[string]StandingV
 	out := map[string]StandingVerdict{}
 	for rows.Next() {
 		var v StandingVerdict
-		if err := rows.Scan(&v.GitRepoName, &v.CookbookName, &v.Verdict, &v.Reason,
+		if err := rows.Scan(&v.SubjectName, &v.SubjectType, &v.CookbookName, &v.Verdict, &v.Reason,
 			&v.RaisedBy, &v.RaisedAt); err != nil {
 			return nil, fmt.Errorf("datastore: scanning a standing verdict: %w", err)
 		}
-		out[v.GitRepoName] = v
+		out[v.SubjectName] = v
 	}
 	return out, rows.Err()
 }

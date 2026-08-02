@@ -55,11 +55,16 @@ Remaining:
 Behaviour is `specifications/failure-register.md`. Manual entry, the standup view and the
 human verdict inside the readiness rollup are built.
 
-- [ ] **A register entry only reaches readiness when the repo name matches a cookbook name.**
-  The evaluator resolves a cookbook to its repo through `cache.gitRepos[cookbookName]`, and the
-  register lookup rides on the same key. Where the two names differ the entry is recorded and
-  visible in the register but changes nobody's readiness — silently. This is the matching work
-  that is deliberately deferred; **measure how often it happens before building for it.**
+- [ ] **A register entry only reaches readiness when its subject name matches a cookbook name.**
+  The evaluator resolves a standing verdict by name. A repo whose name differs from the cookbook
+  it holds is recorded and visible in the register but changes nobody's readiness — silently.
+  Narrowed since the subject may now be the cookbook itself, which removes the common case; what
+  is left is repos named differently from their cookbook. **Measure how often that happens before
+  building matching for it.**
+- [ ] **Versions are not modelled, deliberately.** A break may be in one version, several, or all,
+  and today that nuance lives in the reason and evidence text. Keying entries on a version would
+  fragment one problem into several and would need the evaluator to match versions too. Revisit
+  only if the seeded entries show the free text is not enough.
 - [ ] **The accuracy report is not defensible over time.** Every `broken` entry is counted as a
   failure the tools missed and every `not_broken` as a verdict they got wrong, but what the
   scans actually said at the moment the entry was raised is not snapshotted — so the numbers

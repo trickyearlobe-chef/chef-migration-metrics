@@ -23,9 +23,9 @@ func recordEntry(t *testing.T, db *DB, p RecordFailureVerdictParams) FailureRegi
 	}
 	entry, err := db.RecordFailureVerdict(context.Background(), p)
 	if err != nil {
-		t.Fatalf("RecordFailureVerdict(%q): %v", p.GitRepoName, err)
+		t.Fatalf("RecordFailureVerdict(%q): %v", p.SubjectName, err)
 	}
-	t.Cleanup(func() { deleteRegisterEntriesForRepo(db, p.GitRepoName) })
+	t.Cleanup(func() { deleteRegisterEntriesForRepo(db, p.SubjectName) })
 	return entry
 }
 
@@ -34,7 +34,7 @@ func recordEntry(t *testing.T, db *DB, p RecordFailureVerdictParams) FailureRegi
 // this lives in the test rather than in the datastore.
 func deleteRegisterEntriesForRepo(db *DB, gitRepoName string) {
 	_, _ = db.pool.ExecContext(context.Background(),
-		`DELETE FROM failure_register_entries WHERE git_repo_name = $1`, gitRepoName)
+		`DELETE FROM failure_register_entries WHERE subject_name = $1`, gitRepoName)
 }
 
 // A verdict with no reason is an opinion. The register exists to hold verdicts
@@ -45,7 +45,7 @@ func TestRecordFailureVerdict_RequiresAReason(t *testing.T) {
 
 	for _, reason := range []string{"", "   ", "\t\n"} {
 		_, err := db.RecordFailureVerdict(context.Background(), RecordFailureVerdictParams{
-			GitRepoName:  "acme-apache",
+			SubjectName:  "acme-apache",
 			CookbookName: "apache",
 			Verdict:      VerdictBroken,
 			Reason:       reason,
@@ -65,7 +65,7 @@ func TestRecordFailureVerdict_BothSidesAndNothingElse(t *testing.T) {
 
 	for _, verdict := range []string{VerdictBroken, VerdictNotBroken} {
 		entry := recordEntry(t, db, RecordFailureVerdictParams{
-			GitRepoName:  "acme-" + verdict,
+			SubjectName:  "acme-" + verdict,
 			CookbookName: "acme",
 			Verdict:      verdict,
 			Reason:       "seen on a real converge",
@@ -79,7 +79,7 @@ func TestRecordFailureVerdict_BothSidesAndNothingElse(t *testing.T) {
 	}
 
 	if _, err := db.RecordFailureVerdict(context.Background(), RecordFailureVerdictParams{
-		GitRepoName:  "acme-maybe",
+		SubjectName:  "acme-maybe",
 		CookbookName: "acme",
 		Verdict:      "probably_fine",
 		Reason:       "a hunch",
@@ -96,14 +96,14 @@ func TestRecordFailureVerdict_KeyedOnRepoLabelledWithCookbook(t *testing.T) {
 	db := testDB(t)
 
 	entry := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-nginx-cookbook",
+		SubjectName:  "acme-nginx-cookbook",
 		CookbookName: "nginx",
 		Verdict:      VerdictBroken,
 		Reason:       "fails to compile on the target version",
 	})
 
-	if entry.GitRepoName != "acme-nginx-cookbook" {
-		t.Errorf("git repo = %q", entry.GitRepoName)
+	if entry.SubjectName != "acme-nginx-cookbook" {
+		t.Errorf("git repo = %q", entry.SubjectName)
 	}
 	if entry.CookbookName != "nginx" {
 		t.Errorf("cookbook = %q", entry.CookbookName)
@@ -124,7 +124,7 @@ func TestRecordFailureVerdict_SupersedesRatherThanReplaces(t *testing.T) {
 	ctx := context.Background()
 
 	first := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-tomcat",
+		SubjectName:  "acme-tomcat",
 		CookbookName: "tomcat",
 		Verdict:      VerdictBroken,
 		Reason:       "converge fails resolving the java dependency",
@@ -132,7 +132,7 @@ func TestRecordFailureVerdict_SupersedesRatherThanReplaces(t *testing.T) {
 	})
 
 	second, err := db.RecordFailureVerdict(ctx, RecordFailureVerdictParams{
-		GitRepoName:  "acme-tomcat",
+		SubjectName:  "acme-tomcat",
 		CookbookName: "tomcat",
 		Verdict:      VerdictNotBroken,
 		Reason:       "the dependency was pinned; it has run in production for a month",
@@ -177,7 +177,7 @@ func TestResolveFailureEntry_RecordsRatherThanDeletes(t *testing.T) {
 	ctx := context.Background()
 
 	entry := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-mysql",
+		SubjectName:  "acme-mysql",
 		CookbookName: "mysql",
 		Verdict:      VerdictBroken,
 		Reason:       "the service resource never starts",
@@ -204,7 +204,7 @@ func TestResolveFailureEntry_RecordsRatherThanDeletes(t *testing.T) {
 	// Resolving frees the repo for a new verdict — the same cookbook can break
 	// again, and that is a new entry rather than a reopening.
 	again, err := db.RecordFailureVerdict(ctx, RecordFailureVerdictParams{
-		GitRepoName:  "acme-mysql",
+		SubjectName:  "acme-mysql",
 		CookbookName: "mysql",
 		Verdict:      VerdictBroken,
 		Reason:       "broke again on the next release",
@@ -234,7 +234,7 @@ func TestResolveFailureEntry_OnlyOpenEntries(t *testing.T) {
 	ctx := context.Background()
 
 	entry := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-redis",
+		SubjectName:  "acme-redis",
 		CookbookName: "redis",
 		Verdict:      VerdictBroken,
 		Reason:       "template renders an invalid config",
@@ -255,7 +255,7 @@ func TestReviseFailureEntry_PlanAndHolderOnly(t *testing.T) {
 	ctx := context.Background()
 
 	entry := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-haproxy",
+		SubjectName:  "acme-haproxy",
 		CookbookName: "haproxy",
 		Verdict:      VerdictBroken,
 		Reason:       "the config template uses a removed DSL method",
@@ -308,7 +308,7 @@ func TestReviseFailureEntry_RejectsHalfAHolder(t *testing.T) {
 	ctx := context.Background()
 
 	entry := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-consul",
+		SubjectName:  "acme-consul",
 		CookbookName: "consul",
 		Verdict:      VerdictBroken,
 		Reason:       "agent fails to register",
@@ -342,7 +342,7 @@ func TestRecordFailureVerdict_StoresAnUnboundedStacktrace(t *testing.T) {
 	trace := strings.Repeat("        from /var/chef/cache/cookbooks/acme/recipes/default.rb:42:in `block in from_file'\n", 400)
 
 	entry := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-bigtrace",
+		SubjectName:  "acme-bigtrace",
 		CookbookName: "bigtrace",
 		Verdict:      VerdictBroken,
 		Reason:       "compile error on the target version",
@@ -366,19 +366,19 @@ func TestListOpenFailureVerdicts_OnlyTheStandingOnes(t *testing.T) {
 	ctx := context.Background()
 
 	standing := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-standing",
+		SubjectName:  "acme-standing",
 		CookbookName: "standing",
 		Verdict:      VerdictBroken,
 		Reason:       "breaks on every converge",
 	})
 	overruled := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-overruled",
+		SubjectName:  "acme-overruled",
 		CookbookName: "overruled",
 		Verdict:      VerdictNotBroken,
 		Reason:       "cookstyle is wrong; this has run for months",
 	})
 	fixed := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-fixed",
+		SubjectName:  "acme-fixed",
 		CookbookName: "fixed",
 		Verdict:      VerdictBroken,
 		Reason:       "was broken",
@@ -419,20 +419,20 @@ func TestListFailureRegisterEntries_TheStandupList(t *testing.T) {
 	ctx := context.Background()
 
 	broken := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-list-broken",
+		SubjectName:  "acme-list-broken",
 		CookbookName: "listbroken",
 		Verdict:      VerdictBroken,
 		Reason:       "the recipe raises on compile",
 		Plan:         "rewrite and re-release",
 	})
 	recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-list-ok",
+		SubjectName:  "acme-list-ok",
 		CookbookName: "listok",
 		Verdict:      VerdictNotBroken,
 		Reason:       "kitchen never converged; the cookbook is fine",
 	})
 	done := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-list-done",
+		SubjectName:  "acme-list-done",
 		CookbookName: "listdone",
 		Verdict:      VerdictBroken,
 		Reason:       "was broken",
@@ -447,7 +447,7 @@ func TestListFailureRegisterEntries_TheStandupList(t *testing.T) {
 	}
 	names := map[string]FailureRegisterEntry{}
 	for _, e := range open {
-		names[e.GitRepoName] = e
+		names[e.SubjectName] = e
 	}
 	if _, ok := names["acme-list-done"]; ok {
 		t.Error("a resolved entry is in the open list")
@@ -492,19 +492,19 @@ func TestFailureRegisterSummary_SizeAndDirection(t *testing.T) {
 	}
 
 	a := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-sum-a",
+		SubjectName:  "acme-sum-a",
 		CookbookName: "suma",
 		Verdict:      VerdictBroken,
 		Reason:       "broken on converge",
 	})
 	recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-sum-b",
+		SubjectName:  "acme-sum-b",
 		CookbookName: "sumb",
 		Verdict:      VerdictNotBroken,
 		Reason:       "the scan is wrong",
 	})
 	recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-sum-c",
+		SubjectName:  "acme-sum-c",
 		CookbookName: "sumc",
 		Verdict:      VerdictBroken,
 		Reason:       "also broken",
@@ -555,7 +555,7 @@ func TestFailureRegisterSummary_CountsOverdueCommitments(t *testing.T) {
 	}
 
 	entry := recordEntry(t, db, RecordFailureVerdictParams{
-		GitRepoName:  "acme-overdue",
+		SubjectName:  "acme-overdue",
 		CookbookName: "overdue",
 		Verdict:      VerdictBroken,
 		Reason:       "still broken",
@@ -603,3 +603,105 @@ func TestFailureRegister_MissingEntry(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// A cookbook can be entirely real, deployed and broken with no repo collected
+// for it. Those are more likely to be unowned and untested, not less, so
+// refusing them would exclude the population the register exists to catch.
+func TestRecordFailureVerdict_ACookbookWithNoRepo(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	entry := recordEntry(t, db, RecordFailureVerdictParams{
+		SubjectName:  "legacy-thing",
+		SubjectType:  SubjectTypeCookbook,
+		CookbookName: "legacy-thing",
+		Verdict:      VerdictBroken,
+		Reason:       "breaks on converge; nothing has ever scanned it",
+	})
+
+	if entry.SubjectType != SubjectTypeCookbook {
+		t.Errorf("subject type = %q, want %q", entry.SubjectType, SubjectTypeCookbook)
+	}
+
+	// The readiness evaluator resolves a standing verdict by name, so a
+	// cookbook subject blocks the nodes running it exactly as a repo does.
+	verdicts, err := db.ListOpenFailureVerdicts(ctx)
+	if err != nil {
+		t.Fatalf("ListOpenFailureVerdicts: %v", err)
+	}
+	v, ok := verdicts["legacy-thing"]
+	if !ok {
+		t.Fatal("a cookbook subject is missing from the standing verdicts")
+	}
+	if v.Verdict != VerdictBroken || v.SubjectType != SubjectTypeCookbook {
+		t.Errorf("standing verdict = %+v", v)
+	}
+}
+
+// An entry recorded before cookbook subjects existed is about a repo, and the
+// column default is what says so.
+func TestRecordFailureVerdict_DefaultsToARepoSubject(t *testing.T) {
+	db := testDB(t)
+
+	entry := recordEntry(t, db, RecordFailureVerdictParams{
+		SubjectName:  "acme-default-subject",
+		CookbookName: "acme",
+		Verdict:      VerdictBroken,
+		Reason:       "unspecified subject kind",
+	})
+
+	if entry.SubjectType != SubjectTypeGitRepo {
+		t.Errorf("subject type = %q, want %q", entry.SubjectType, SubjectTypeGitRepo)
+	}
+}
+
+// Anything that is neither a repo nor a cookbook is not a subject.
+func TestRecordFailureVerdict_RejectsAnUnknownSubjectKind(t *testing.T) {
+	db := testDB(t)
+
+	if _, err := db.RecordFailureVerdict(context.Background(), RecordFailureVerdictParams{
+		SubjectName:  "acme-weird",
+		SubjectType:  "policyfile",
+		CookbookName: "acme",
+		Verdict:      VerdictBroken,
+		Reason:       "broken",
+		RaisedBy:     "tester",
+	}); err == nil {
+		t.Fatal("an unrecognised subject kind was accepted")
+	}
+}
+
+// One standing verdict per thing, however it was picked. This customer has one
+// cookbook per repo, so a repo and a cookbook of the same name are the same
+// thing seen from two sides — two standing verdicts about it could disagree.
+func TestRecordFailureVerdict_OneStandingVerdictPerName(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	first := recordEntry(t, db, RecordFailureVerdictParams{
+		SubjectName:  "acme-two-sides",
+		SubjectType:  SubjectTypeGitRepo,
+		CookbookName: "twosides",
+		Verdict:      VerdictBroken,
+		Reason:       "recorded against the repo",
+	})
+
+	if _, err := db.RecordFailureVerdict(ctx, RecordFailureVerdictParams{
+		SubjectName:  "acme-two-sides",
+		SubjectType:  SubjectTypeCookbook,
+		CookbookName: "twosides",
+		Verdict:      VerdictNotBroken,
+		Reason:       "recorded against the cookbook",
+		RaisedBy:     "bob",
+	}); err != nil {
+		t.Fatalf("recording against the other side: %v", err)
+	}
+
+	reread, err := db.GetFailureRegisterEntry(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("re-reading: %v", err)
+	}
+	if reread.Status != FailureStatusSuperseded {
+		t.Errorf("the first verdict is %q; the second should have superseded it rather than standing beside it", reread.Status)
+	}
+}

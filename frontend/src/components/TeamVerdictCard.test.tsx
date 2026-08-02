@@ -28,8 +28,9 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 
 const standing: FailureRegisterEntry = {
   id: "entry-1",
-  git_repo_name: "acme-nginx-cookbook",
+  subject_name: "acme-nginx-cookbook",
   cookbook_name: "nginx",
+  subject_type: "git_repo",
   verdict: "not_broken",
   reason: "kitchen never converged; this runs on 4000 nodes today",
   status: "open",
@@ -79,7 +80,7 @@ describe("TeamVerdictCard", () => {
     );
 
     // The subject is fixed and not editable.
-    const repoField = screen.getByLabelText(/Git repo/i);
+    const repoField = screen.getByLabelText(/Repo or cookbook/i);
     expect(repoField).toHaveValue("acme-nginx-cookbook");
     expect(repoField).toHaveAttribute("readonly");
 
@@ -91,7 +92,7 @@ describe("TeamVerdictCard", () => {
     await waitFor(() => {
       expect(api.recordFailureVerdict).toHaveBeenCalledWith(
         expect.objectContaining({
-          git_repo_name: "acme-nginx-cookbook",
+          subject_name: "acme-nginx-cookbook",
           cookbook_name: "nginx",
           reason: "breaks on converge",
         }),

@@ -414,7 +414,7 @@ func TestGitRepos_MarksARepoAPersonHasOverruled(t *testing.T) {
 		ListOpenFailureVerdictsFn: func(_ context.Context) (map[string]datastore.StandingVerdict, error) {
 			return map[string]datastore.StandingVerdict{
 				"acme-apache": {
-					GitRepoName: "acme-apache", CookbookName: "apache",
+					SubjectName: "acme-apache", CookbookName: "apache",
 					Verdict: datastore.VerdictNotBroken,
 					Reason:  "kitchen never converged; this runs on 4000 nodes",
 				},

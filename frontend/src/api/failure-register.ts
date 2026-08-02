@@ -15,7 +15,7 @@ import { apiFetch, buildUrl } from "./client";
 export function fetchFailureRegister(params?: {
   status?: string;
   verdict?: string;
-  git_repo_name?: string;
+  subject_name?: string;
   window_days?: number;
   page?: number;
   per_page?: number;
@@ -73,15 +73,15 @@ export function resolveFailureEntry(
 }
 
 /**
- * Every verdict ever recorded about one repo — where a reader sees that a
+ * Every verdict ever recorded about one subject — where a reader sees that a
  * scan called it incompatible, a person overruled it, and why.
  */
 export function fetchFailureRegisterHistory(
-  gitRepoName: string,
+  subjectName: string,
 ): Promise<{ data: FailureRegisterEntry[] }> {
   return apiFetch<{ data: FailureRegisterEntry[] }>(
-    // The repo name may contain a slash on some hosting platforms, and the
-    // API takes the rest of the path whole, so it must not be escaped away.
-    buildUrl(`/failure-register/repo/${gitRepoName}`),
+    // A repo name may contain a slash on some hosting platforms, and the API
+    // takes the rest of the path whole, so it must not be escaped away.
+    buildUrl(`/failure-register/subject/${subjectName}`),
   );
 }

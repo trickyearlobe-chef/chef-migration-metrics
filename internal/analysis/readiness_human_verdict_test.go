@@ -53,7 +53,7 @@ func TestHumanVerdict_BrokenOverridesACleanScan(t *testing.T) {
 	cache := f.buildFakeCache()
 	cache.humanVerdicts = map[string]datastore.StandingVerdict{
 		"acme-nginx": {
-			GitRepoName:  "acme-nginx",
+			SubjectName:  "acme-nginx",
 			CookbookName: "nginx",
 			Verdict:      datastore.VerdictBroken,
 			Reason:       "the service resource fails on a real converge; no scan sees it",
@@ -108,7 +108,7 @@ func TestHumanVerdict_NotBrokenOverridesAFailingScan(t *testing.T) {
 	cache := f.buildFakeCache()
 	cache.humanVerdicts = map[string]datastore.StandingVerdict{
 		"acme-apache": {
-			GitRepoName:  "acme-apache",
+			SubjectName:  "acme-apache",
 			CookbookName: "apache",
 			Verdict:      datastore.VerdictNotBroken,
 			Reason:       "kitchen never got as far as converging; this has run in production for months",
@@ -149,7 +149,7 @@ func TestHumanVerdict_BrokenOnAnUntestedCookbook(t *testing.T) {
 	cache := f.buildFakeCache()
 	cache.humanVerdicts = map[string]datastore.StandingVerdict{
 		"acme-legacy": {
-			GitRepoName:  "acme-legacy",
+			SubjectName:  "acme-legacy",
 			CookbookName: "legacy",
 			Verdict:      datastore.VerdictBroken,
 			Reason:       "known broken; never scanned because the clone fails",
@@ -181,7 +181,7 @@ func TestHumanVerdict_AbsentChangesNothing(t *testing.T) {
 	cache := f.buildFakeCache()
 	cache.humanVerdicts = map[string]datastore.StandingVerdict{
 		"some-other-repo": {
-			GitRepoName: "some-other-repo",
+			SubjectName: "some-other-repo",
 			Verdict:     datastore.VerdictNotBroken,
 			Reason:      "unrelated",
 			RaisedBy:    "alice",
@@ -228,7 +228,7 @@ func TestHumanVerdict_BlocksTheNodesRunningIt(t *testing.T) {
 	cache := f.buildFakeCache()
 	cache.humanVerdicts = map[string]datastore.StandingVerdict{
 		"acme-ntp": {
-			GitRepoName:  "acme-ntp",
+			SubjectName:  "acme-ntp",
 			CookbookName: "ntp",
 			Verdict:      datastore.VerdictBroken,
 			Reason:       "drifts the clock on RHEL 9 and the converge never completes",
@@ -282,7 +282,7 @@ func TestHumanVerdict_NotBrokenUnblocksTheNode(t *testing.T) {
 
 	cache.humanVerdicts = map[string]datastore.StandingVerdict{
 		"acme-sudo": {
-			GitRepoName:  "acme-sudo",
+			SubjectName:  "acme-sudo",
 			CookbookName: "sudo",
 			Verdict:      datastore.VerdictNotBroken,
 			Reason:       "the offence is a false positive; this runs on 4000 nodes today",

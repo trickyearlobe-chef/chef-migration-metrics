@@ -8,7 +8,7 @@ import * as api from "../api";
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof api>("../api");
-  return { ...actual, fetchGitRepos: vi.fn() };
+  return { ...actual, fetchGitRepos: vi.fn(), fetchCookbooks: vi.fn() };
 });
 
 import { FailureEntryDialog } from "./FailureEntryDialog";
@@ -31,6 +31,10 @@ describe("FailureEntryDialog — who is on it", () => {
     vi.mocked(api.fetchGitRepos).mockResolvedValue({
       data: [],
       pagination: { page: 1, per_page: 8, total_items: 0, total_pages: 0 },
+    });
+    vi.mocked(api.fetchCookbooks).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 32, total_items: 0, total_pages: 0 },
     });
   });
 

@@ -22,7 +22,7 @@ import (
 //	GET   /api/v1/failure-register/{id}
 //	PATCH /api/v1/failure-register/{id}         — the diagnosis, plan and holder
 //	POST  /api/v1/failure-register/{id}/resolve
-//	GET   /api/v1/failure-register/repo/{name}  — every verdict about one repo
+//	GET   /api/v1/failure-register/subject/{name} — every verdict about one subject
 //
 // A person's verdict on whether a cookbook actually works on the target
 // version, recorded with a reason. It exists because the automated signals are
@@ -51,11 +51,11 @@ func (r *Router) handleFailureRegister(w http.ResponseWriter, req *http.Request)
 		}
 		return
 
-	case strings.HasPrefix(rest, "repo/"):
-		// The rest of the path is the repo name, taken whole: some hosting
-		// platforms allow a slash in it, and truncating at the first separator
-		// would silently read the history of a different repo.
-		r.handleFailureRegisterHistory(w, req, strings.TrimPrefix(rest, "repo/"))
+	case strings.HasPrefix(rest, "subject/"):
+		// The rest of the path is the subject name, taken whole: some hosting
+		// platforms allow a slash in a repo name, and truncating at the first
+		// separator would silently read the history of a different subject.
+		r.handleFailureRegisterHistory(w, req, strings.TrimPrefix(rest, "subject/"))
 		return
 
 	case strings.HasSuffix(rest, "/resolve"):
@@ -101,7 +101,7 @@ func (r *Router) handleListFailureRegister(w http.ResponseWriter, req *http.Requ
 	entries, total, err := r.db.ListFailureRegisterEntries(req.Context(), datastore.FailureRegisterFilter{
 		Status:      status,
 		Verdict:     q.Get("verdict"),
-		GitRepoName: q.Get("git_repo_name"),
+		SubjectName: q.Get("subject_name"),
 		Limit:       pg.Limit(),
 		Offset:      pg.Offset(),
 	})
@@ -141,19 +141,19 @@ func (r *Router) handleListFailureRegister(w http.ResponseWriter, req *http.Requ
 	WriteJSON(w, http.StatusOK, body)
 }
 
-func (r *Router) handleFailureRegisterHistory(w http.ResponseWriter, req *http.Request, gitRepoName string) {
+func (r *Router) handleFailureRegisterHistory(w http.ResponseWriter, req *http.Request, subjectName string) {
 	if !requireGET(w, req) {
 		return
 	}
-	if gitRepoName == "" {
-		WriteBadRequest(w, "A git repo name is required.")
+	if subjectName == "" {
+		WriteBadRequest(w, "A subject name is required.")
 		return
 	}
 
-	entries, err := r.db.ListFailureRegisterHistory(req.Context(), gitRepoName)
+	entries, err := r.db.ListFailureRegisterHistory(req.Context(), subjectName)
 	if err != nil {
-		r.logf("ERROR", "failure-register: reading the history for %s: %v", gitRepoName, err)
-		WriteInternalError(w, "Failed to read the register history for this repo.")
+		r.logf("ERROR", "failure-register: reading the history for %s: %v", subjectName, err)
+		WriteInternalError(w, "Failed to read the register history for this subject.")
 		return
 	}
 	if entries == nil {
@@ -186,7 +186,8 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 	}
 
 	var body struct {
-		GitRepoName  string `json:"git_repo_name"`
+		SubjectName  string `json:"subject_name"`
+		SubjectType  string `json:"subject_type"`
 		CookbookName string `json:"cookbook_name"`
 		Verdict      string `json:"verdict"`
 		Reason       string `json:"reason"`
@@ -197,10 +198,10 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 		HolderType   string `json:"holder_type"`
 		HolderRef    string `json:"holder_ref"`
 
-		// Accepted only so it can be refused. A verdict is about a repo;
-		// several versions are in use at once and the failure is discussed
-		// version-agnostically. Silently ignoring it would let a caller
-		// believe it had recorded something narrower than it had.
+		// Accepted only so it can be refused. A verdict is about the thing,
+		// not one of its versions: several are in use at once and the failure
+		// is discussed version-agnostically. Silently ignoring it would let a
+		// caller believe it had recorded something narrower than it had.
 		CookbookVersion string `json:"cookbook_version"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -209,12 +210,12 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 	}
 
 	if body.CookbookVersion != "" {
-		WriteBadRequest(w, "A verdict is about a git repo, not a cookbook version. "+
+		WriteBadRequest(w, "A verdict is about a repo or a cookbook, not one of its versions. "+
 			"Several versions are usually in use at once, so entries are never keyed on one.")
 		return
 	}
-	if strings.TrimSpace(body.GitRepoName) == "" {
-		WriteBadRequest(w, "git_repo_name is required — the repo is where the fix is made.")
+	if strings.TrimSpace(body.SubjectName) == "" {
+		WriteBadRequest(w, "subject_name is required — the repo where the fix is made, or the cookbook itself where no repo has been collected.")
 		return
 	}
 	if strings.TrimSpace(body.CookbookName) == "" {
@@ -240,7 +241,8 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 	}
 
 	entry, err := r.db.RecordFailureVerdict(req.Context(), datastore.RecordFailureVerdictParams{
-		GitRepoName:  strings.TrimSpace(body.GitRepoName),
+		SubjectName:  strings.TrimSpace(body.SubjectName),
+		SubjectType:  body.SubjectType,
 		CookbookName: strings.TrimSpace(body.CookbookName),
 		Verdict:      body.Verdict,
 		Reason:       body.Reason,
@@ -253,13 +255,13 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 		RaisedBy:     adminUsername(req),
 	})
 	if err != nil {
-		r.logf("ERROR", "failure-register: recording a verdict about %s: %v", body.GitRepoName, err)
+		r.logf("ERROR", "failure-register: recording a verdict about %s: %v", body.SubjectName, err)
 		WriteBadRequest(w, "Failed to record the verdict: "+err.Error())
 		return
 	}
 
 	details, _ := json.Marshal(entry)
-	r.auditOwnership(req, "failure_recorded", "", "git_repo", entry.GitRepoName, "", details)
+	r.auditOwnership(req, "failure_recorded", "", entry.SubjectType, entry.SubjectName, "", details)
 
 	// A human verdict outranks every automated one, so which nodes are ready
 	// has just changed. Without this the register is a list nothing reflects
@@ -329,7 +331,7 @@ func (r *Router) handleReviseFailureEntry(w http.ResponseWriter, req *http.Reque
 	}
 
 	details, _ := json.Marshal(entry)
-	r.auditOwnership(req, "failure_revised", "", "git_repo", entry.GitRepoName, "", details)
+	r.auditOwnership(req, "failure_revised", "", entry.SubjectType, entry.SubjectName, "", details)
 
 	WriteJSON(w, http.StatusOK, entry)
 }
@@ -361,7 +363,7 @@ func (r *Router) handleResolveFailureEntry(w http.ResponseWriter, req *http.Requ
 	}
 
 	details, _ := json.Marshal(entry)
-	r.auditOwnership(req, "failure_resolved", "", "git_repo", entry.GitRepoName, "", details)
+	r.auditOwnership(req, "failure_resolved", "", entry.SubjectType, entry.SubjectName, "", details)
 
 	// A resolved verdict stops outranking the automated ones.
 	r.recomputeReadinessAfterRegisterChange("resolving a verdict")

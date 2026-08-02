@@ -233,7 +233,7 @@ func TestBuildGitRepoFilterQuery_HumanVerdictBroken(t *testing.T) {
 	}
 	// Keyed on the repo name, because repo URLs are volatile and the name is
 	// the stable part.
-	if !strings.Contains(q, "git_repo_name = git_repos.name") {
+	if !strings.Contains(q, "subject_name = git_repos.name") {
 		t.Errorf("the filter does not join on the repo name: %s", q)
 	}
 }

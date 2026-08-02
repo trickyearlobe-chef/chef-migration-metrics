@@ -13,6 +13,7 @@ vi.mock("../api", async () => {
     ...actual,
     fetchFailureRegister: vi.fn(),
     fetchGitRepos: vi.fn(),
+    fetchCookbooks: vi.fn(),
     recordFailureVerdict: vi.fn(),
     resolveFailureEntry: vi.fn(),
     reviseFailureEntry: vi.fn(),
@@ -30,8 +31,9 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 
 const brokenEntry = {
   id: "entry-1",
-  git_repo_name: "acme-nginx-cookbook",
+  subject_name: "acme-nginx-cookbook",
   cookbook_name: "nginx",
+  subject_type: "git_repo" as const,
   verdict: "broken" as const,
   reason: "the service resource fails on a real converge",
   plan: "rewrite the template and re-release",
@@ -87,6 +89,10 @@ describe("FailureRegisterPage", () => {
         },
       ],
       pagination: { page: 1, per_page: 8, total_items: 1, total_pages: 1 },
+    });
+    vi.mocked(api.fetchCookbooks).mockResolvedValue({
+      data: [],
+      pagination: { page: 1, per_page: 32, total_items: 0, total_pages: 0 },
     });
   });
 
@@ -149,7 +155,7 @@ describe("FailureRegisterPage", () => {
           {
             ...brokenEntry,
             id: "entry-2",
-            git_repo_name: "acme-apache-cookbook",
+            subject_name: "acme-apache-cookbook",
             cookbook_name: "apache",
             verdict: "not_broken",
             reason: "kitchen never converged; this runs on 4000 nodes today",
@@ -197,7 +203,7 @@ describe("FailureRegisterPage", () => {
 
     // The repo is chosen from the catalogue, not typed: a name that matches
     // no repo would be stored and change nobody's readiness.
-    await user.type(screen.getByLabelText(/Git repo/i), "acme-mysql");
+    await user.type(screen.getByLabelText(/Repo or cookbook/i), "acme-mysql");
     await user.click(
       await screen.findByRole("button", { name: /acme-mysql-cookbook/i }),
     );
@@ -214,7 +220,7 @@ describe("FailureRegisterPage", () => {
     await waitFor(() => {
       expect(api.recordFailureVerdict).toHaveBeenCalledWith(
         expect.objectContaining({
-          git_repo_name: "acme-mysql-cookbook",
+          subject_name: "acme-mysql-cookbook",
           cookbook_name: "mysql",
           verdict: "broken",
           reason: "the service never starts on RHEL 9",
@@ -229,7 +235,7 @@ describe("FailureRegisterPage", () => {
     render(<FailureRegisterPage />, { wrapper: Wrapper });
     await user.click(await screen.findByRole("button", { name: /Record a failure/i }));
 
-    await user.type(screen.getByLabelText(/Git repo/i), "acme-mysql");
+    await user.type(screen.getByLabelText(/Repo or cookbook/i), "acme-mysql");
     await user.click(
       await screen.findByRole("button", { name: /acme-mysql-cookbook/i }),
     );
@@ -246,7 +252,7 @@ describe("FailureRegisterPage", () => {
     render(<FailureRegisterPage />, { wrapper: Wrapper });
     await user.click(await screen.findByRole("button", { name: /Record a failure/i }));
 
-    await user.type(screen.getByLabelText(/Git repo/i), "a-repo-that-is-not-real");
+    await user.type(screen.getByLabelText(/Repo or cookbook/i), "a-repo-that-is-not-real");
     await user.type(screen.getByLabelText(/^Cookbook/i), "whatever");
     await user.type(screen.getByLabelText(/^Reason/i), "it broke");
 
@@ -266,10 +272,10 @@ describe("FailureRegisterPage", () => {
     render(<FailureRegisterPage />, { wrapper: Wrapper });
     await user.click(await screen.findByRole("button", { name: /Record a failure/i }));
 
-    await user.type(screen.getByLabelText(/Git repo/i), "nonesuch");
+    await user.type(screen.getByLabelText(/Repo or cookbook/i), "nonesuch");
 
     expect(
-      await screen.findByText(/Only repos CMM has collected can carry a verdict/i),
+      await screen.findByText(/Only repos and cookbooks CMM has collected/i),
     ).toBeInTheDocument();
   });
 
@@ -301,7 +307,7 @@ describe("FailureRegisterPage", () => {
     await waitFor(() => {
       expect(api.recordFailureVerdict).toHaveBeenCalledWith(
         expect.objectContaining({
-          git_repo_name: "acme-nginx-cookbook",
+          subject_name: "acme-nginx-cookbook",
           verdict: "not_broken",
         }),
       );
