@@ -257,6 +257,9 @@ and its aliases in place, so the raw string still resolves to the owner the work
 the next ingest puts it straight back. Correcting a mistaken owner therefore means **moving the
 alias to the right person**, not just moving the work. Both behaviours are pinned by tests.
 
+That is what `POST /api/v1/ownership/merge` does — see
+[ownership-identity.md](ownership-identity.md).
+
 **Ingest is additive.** A row that disappears from the source does not remove the assignment it
 created, so ownership that has been revoked at source persists until someone removes it in CMM.
 
