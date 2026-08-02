@@ -170,8 +170,9 @@ which is what `gist_trgm_ops` is for; the GIN `%` operator cannot do it). Anythi
 records by similarity must be bounded per row and computed away from the request that reads it.
 
 **Unbounded text in a btree index has already caused a production outage here.** Hash a bounded,
-canonicalised projection instead. The rule and the canonicalisation are written and normative in
-`specifications/failure-register.md`.
+canonicalised projection instead. **Verified absent 2026-08-02:** this plan previously cited the
+rule as written and normative in `specifications/failure-register.md`, and that file has never
+existed. The rule stands on this line until the failure register is specified.
 
 **Migration numbers are assigned centrally, in this plan.** A duplicate version hard-errors at
 startup before anything applies, and the runner silently skips any version at or below what a
@@ -212,13 +213,31 @@ against reality rather than against fixtures we invented.
    person's aliases on their own page with add and remove inline, and add the merge action
    that folds one owner into another — which is also what makes a correction survive a
    re-ingest.
-3. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
-   previous attempt.
-4. **Git repo matching.** Repos resolve to their owners. The previous attempt treated this
+3. **The failure register.** **Moved ahead of both matching chunks, 2026-08-02.** Journeys 4
+   and 6 were declared in scope and had no place in this order at all; they do now, because
+   **both automated blocker signals are currently untrustworthy**. CookStyle marks cookbooks
+   blocked that demonstrably run fine in production. Test Kitchen is not running for reasons
+   that are not technical, and the batches that did run failed on DHCP exhaustion — which the
+   rollup counts as cookbook failures, so they are durable false blockers.
+
+   A person recording *"this actually broke"* outranks both, and is the one signal an
+   environment problem cannot fake. Real examples exist to seed it, and they double as the
+   only available measure of what the automated signals **miss**. It needs no matching: a
+   handful of entries assigned by hand is the whole of the ownership requirement.
+
+   Behaviour belongs in `specifications/failure-register.md`, **which does not exist** — the
+   gotcha below refers to it as written and normative, and that reference is stale.
+4. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
+   previous attempt. **Demoted, 2026-08-02** — see § Ownership only has to be right where
+   somebody has to act. Scope it against the blocking set rather than the estate, and
+   establish that set first: it may be small enough to assign by hand, in which case matching
+   is a convenience rather than a requirement.
+5. **Git repo matching.** Repos resolve to their owners. The previous attempt treated this
    as the hard one because it assumed a re-keying job. Diagnosing that failure suggested the
    repo name is **already carried alongside the URL and already used elsewhere**, so the
    re-key may not be needed here at all. **Verify before assuming either way** — the repo
-   URL gotcha below is why the assumption was made, not evidence that it holds.
+   URL gotcha below is why the assumption was made, not evidence that it holds. **Demoted on
+   the same grounds as node matching**, and may never be built.
 
 **The incoming ownership data is not clean.** It identifies people inconsistently: sometimes
 an email, sometimes a username, sometimes a team. Matching has to cope with all three, and
