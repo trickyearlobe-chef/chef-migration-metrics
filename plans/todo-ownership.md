@@ -71,11 +71,27 @@ Remaining:
 - [ ] **`policy` entity existence is never confirmed.** CMM collects no policy objects,
   so a policy key always reports as not collected. Harmless — an uncollected entity
   never rejects a row — but the UI should say why rather than implying a miss.
-- [ ] **Ingest is additive — decide what a disappeared row should mean.** A row dropped
-  from the source never removes the assignment it created, so revoked ownership persists.
-  Deleting on absence is dangerous (a truncated export would wipe the estate); a
-  "not seen in the last N runs" report is probably the safe form. Needs a decision before
-  ingest is put on a schedule.
+- [ ] **Ingest is additive — reconciling a refreshed source. MVP2.** A row dropped from
+  the source never removes the assignment it created, so revoked ownership persists. With
+  a refresh job on the source database this stops being theoretical: repeated imports make
+  ownership accrete, and a person who handed something over years ago stays attached to it.
+
+  **The operating model, agreed with the product owner 2026-08-02:** treat the source
+  database as the truth for what it covers, add anything missing by hand, and remove dead
+  rows when a fresh import arrives. `ownership_assignments.assignment_source` already
+  scopes this exactly — only `import` rows are ever in scope for removal, so a `manual`
+  addition cannot vanish underneath somebody.
+
+  **The one missing piece** is that a repeat import leaves no footprint: `insertAssignment`
+  is a plain INSERT, the repeat is caught on the unique index, and `updated_at` is never
+  touched — so a reaffirmed row is indistinguishable from an abandoned one. An upsert that
+  touches `updated_at`, or an import-run stamp, makes "import-sourced and not reaffirmed
+  by the latest run" a query.
+
+  **Keep it a report with a delete beside each row, never an automatic purge.** A truncated
+  or half-failed export would otherwise wipe live ownership, and it would do it silently.
+  The delete already exists on the owner's page (`OwnerDetailPage.tsx`), so the missing
+  half is the list, not the action.
 
 ## Failure register — what is left
 
