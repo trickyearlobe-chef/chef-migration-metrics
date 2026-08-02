@@ -114,6 +114,11 @@ Providers, most authoritative first:
   on every committer row and nothing in ownership reads them. Journey 1 asks for how much
   and how recently somebody contributed; recency and concentration need no collector change
   at all.
+- [ ] **Owner names are derived from an identifier and cannot be changed.** The committer path
+  names an owner after an email localpart, so two addresses for one person make two owners, and
+  `owners.name` is immutable — the referencing foreign keys have no `ON UPDATE CASCADE`, so
+  merging is the only repair for what is a naming accident. Design:
+  `specifications/ownership-identity.md` § The label is not an identity.
 - [ ] **Re-model aliases: shape is not source.** Design and evidence:
   `specifications/ownership-identity.md` § Proposed: shape is not source. Do not restate it
   here.

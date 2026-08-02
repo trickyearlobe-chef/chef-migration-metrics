@@ -327,19 +327,20 @@ A parallel feed into CMM is being negotiated and the obstacle is political, not 
 it lands, the static prediction has to stand on its own — which it does: telling somebody all the
 blockers in a runlist rather than the one they are currently failing on needs no run data at all.
 
-**Two of the three ingest producer shapes bypass Automate entirely.** The spec has CMM accepting a
-node's own data collector and a Chef Infra Server proxy as well as the Automate feed. The
-speculative runs are orchestrated deliberately, so pointing *those* runs' data collector at CMM
-would deliver exactly the failing runs that matter without adding a consumer to anybody's Automate
-or touching production telemetry. **Unverified:** every run captured to date arrived by the
-Automate feed and the other two shapes have never received one, so this is a lead to exercise in
-the lab, not a position to take into the negotiation.
+**Attribution does not depend on the transport.** Captured fixtures show a converge failure
+carrying the failed resource's cookbook and recipe on both the Automate shape and the raw
+node/proxy shape. What carries nothing is an *attributes-only* delivery — and that is a property
+of the failure, not the path: a run that dies before it converges has declared no resources, so on
+any transport there is nothing to attribute a cookbook to.
 
-**Verify the failure path in the lab first, either way.** Every converge run captured so far
-succeeded, so the failure decode has never run against real data, and a depsolve or
-missing-cookbook failure is known to arrive without resource detail — the blocker class the
-speculative runs are finding. Attribution may therefore be weakest exactly where it is needed.
-One forced failure settles both questions at once.
+**That is exactly the first-wave blocker.** A depsolve failure, or a cookbook using an API removed
+in the new version and blowing up at compile time, produces no resources. For those the cookbook
+is only inferable from the backtrace, which is captured but never parsed. So the risk is not
+whether the telemetry arrives; it is whether the blocker in it can be named. **Forcing one such
+failure in the lab settles that, and it is worth knowing before a parallel feed is negotiated
+rather than after.**
+
+Detail on the ingest side belongs in `plans/todo-event-ingest.md`, not here.
 
 ## Decisions already taken
 

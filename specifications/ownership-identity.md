@@ -86,6 +86,34 @@ Each of these was observed, not predicted.
   `alias_type IN ('email','git_email')` — meaning "the address-shaped ones". Any new
   address-bearing source silently falls outside it.
 
+### The label is not an identity
+
+An owner is a person; every identifier is an alias of that person; **none of them is primary**. A
+commit address, a platform noreply address, a SAML email, a display name and a login are all
+equally aliases of one identity, and a malformed one identifies just as well as a valid one — a
+mistyped address in a `.gitconfig` still names every commit made under it.
+
+Two things follow that the current model gets wrong.
+
+**The owner's name is a label, and it is currently derived from an identifier.** The
+committer-assign path names a new owner after the email localpart, so two addresses for one person
+produce two owners — the label inherits the accident of which identifier arrived first. Under this
+model the label is a *choice*, made once and separate from every identifier.
+
+**And it cannot be changed.** `owners.name` is the primary key, the foreign keys that reference it
+carry no `ON UPDATE CASCADE`, and the update parameters treat the name as immutable. So a naming
+accident cannot be corrected — merging is the only repair, which is a heavy instrument for what is
+really a spelling decision. Making the label editable requires the cascade.
+
+**Login is not primary, but it is load-bearing.** A wrong git-name alias misattributes a commit; a
+wrong login alias shows one person another person's estate. Equal status in the model, very
+different blast radius — so it warrants a stricter bar for *automatic* linking, not a different
+type.
+
+**And equal status does not mean equal evidence.** An address asserted by an identity provider is
+vouched for. An address in a commit is whatever was in someone's `.gitconfig`. Both are identities;
+they are not equally good grounds for linking one person to another without asking.
+
 ### Shape is not enforced at the source
 
 **This is the constraint that shapes the fix.** No source guarantees that a value has the shape
