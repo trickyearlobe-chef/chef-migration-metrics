@@ -1,0 +1,294 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import * as api from "../api";
+import type { IntakeReport, IntakeSourceProfile } from "../types";
+
+vi.mock("../api", async () => {
+  const actual = await vi.importActual<typeof api>("../api");
+  return {
+    ...actual,
+    profileImportSource: vi.fn(),
+    previewOwnershipImport: vi.fn(),
+    commitOwnershipImport: vi.fn(),
+    createImportMapping: vi.fn(),
+  };
+});
+
+const mockUseAuth = vi.fn();
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
+import { OwnershipMappedImport } from "./OwnershipMappedImport";
+import { OwnershipImportPage } from "./OwnershipImportPage";
+
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return <MemoryRouter>{children}</MemoryRouter>;
+}
+
+const profile: IntakeSourceProfile = {
+  columns: [
+    { name: "Owner Email", sample_values: ["alice@example.com"], non_empty_pct: 100, distinct_count: 2 },
+    { name: "Repo", sample_values: ["web-app", "db-tools"], non_empty_pct: 100, distinct_count: 2 },
+    { name: "Business Unit", sample_values: ["acme"], non_empty_pct: 50, distinct_count: 1 },
+  ],
+  row_count: 2,
+  malformed_rows: 0,
+  warnings: [],
+};
+
+function emptyReport(overrides: Partial<IntakeReport> = {}): IntakeReport {
+  return {
+    rows: [],
+    new_owners: [],
+    counts: {},
+    alias_conflict_count: 0,
+    row_count: 0,
+    unmatched_owners: [],
+    committed: false,
+    created: 0,
+    ...overrides,
+  };
+}
+
+async function uploadFile(user: ReturnType<typeof userEvent.setup>) {
+  const file = new File(["Owner Email,Repo\nalice@example.com,web-app\n"], "own.csv", {
+    type: "text/csv",
+  });
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  await user.upload(input, file);
+}
+
+describe("OwnershipMappedImport", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: "admin", username: "admin" } });
+    vi.mocked(api.profileImportSource).mockResolvedValue(profile);
+    vi.mocked(api.previewOwnershipImport).mockResolvedValue(emptyReport());
+    vi.mocked(api.commitOwnershipImport).mockResolvedValue(emptyReport({ committed: true }));
+  });
+
+  it("profiles the file and shows what it found", async () => {
+    const user = userEvent.setup();
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+
+    await waitFor(() => {
+      expect(api.profileImportSource).toHaveBeenCalled();
+    });
+    // Fill rate and distinct count are what let the administrator tell an
+    // identifier column from a free-text one without opening the file.
+    // The column name also appears in every mapping dropdown, so scope the
+    // assertion to the profile table rather than the whole page.
+    const profileTable = (await screen.findByText("Filled")).closest("table")!;
+    expect(profileTable).toHaveTextContent("Owner Email");
+    expect(profileTable).toHaveTextContent("alice@example.com");
+    expect(profileTable).toHaveTextContent("50%");
+  });
+
+  it("cannot preview until the required fields are mapped", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.profileImportSource).mockResolvedValue({
+      ...profile,
+      // Nothing here matches the guesser's vocabulary, so the form starts empty.
+      columns: [{ name: "col_a", sample_values: ["x"], non_empty_pct: 100, distinct_count: 1 }],
+    });
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+
+    const preview = await screen.findByRole("button", { name: /preview/i });
+    expect(preview).toBeDisabled();
+  });
+
+  it("previews without writing anything, and only then offers to import", async () => {
+    const user = userEvent.setup();
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+
+    const preview = await screen.findByRole("button", { name: /preview/i });
+    await waitFor(() => expect(preview).toBeEnabled());
+
+    // No import button exists before a preview has been run — the user cannot
+    // reach a write without seeing what it would do first.
+    expect(screen.queryByRole("button", { name: /^Import these/i })).toBeNull();
+
+    await user.click(preview);
+
+    await waitFor(() => expect(api.previewOwnershipImport).toHaveBeenCalled());
+    expect(api.commitOwnershipImport).not.toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: /^Import these/i })).toBeInTheDocument();
+  });
+
+  it("guesses a starting mapping from the column names", async () => {
+    const user = userEvent.setup();
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+    await screen.findByText("3. Map the columns");
+
+    const selects = screen.getAllByRole("combobox") as HTMLSelectElement[];
+    const values = selects.map((s) => s.value);
+    expect(values).toContain("Owner Email");
+    expect(values).toContain("Repo");
+  });
+
+  it("names the people it could not place, and does not guess for them", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.previewOwnershipImport).mockResolvedValue(
+      emptyReport({
+        row_count: 1,
+        counts: { rejected: 1 },
+        unmatched_owners: [{ value: "Alice Smyth", count: 1 }],
+        rows: [
+          {
+            source_row: 1,
+            malformed: false,
+            raw: {},
+            owner: "",
+            owner_raw: "Alice Smyth",
+            entity_type: "git_repo",
+            entity_key: "web-app",
+            organisation: "",
+            notes: "",
+            display_name: "Alice Smyth",
+            rejected_reason: "unknown_owner",
+            owner_match: "fuzzy_suggestion",
+            entity_match: "found",
+            outcome: "rejected",
+            creates_owner: false,
+            alias_conflict: false,
+            owner_suggestions: [{ owner_name: "asmith", score: 0.82 }],
+          },
+        ],
+      }),
+    );
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+    const preview = await screen.findByRole("button", { name: /preview/i });
+    await waitFor(() => expect(preview).toBeEnabled());
+    await user.click(preview);
+
+    // The value appears twice by design: once in the unmatched list and once
+    // in the not-imported rows.
+    const unmatched = (await screen.findByText("Value in the file")).closest("table")!;
+    expect(unmatched).toHaveTextContent("Alice Smyth");
+    // The suggestion is offered for a person to confirm, never applied.
+    expect(unmatched).toHaveTextContent("asmith");
+    expect(screen.getByText(/Owner not recognised/i)).toBeInTheDocument();
+  });
+
+  // No similarity score can connect "Fat Tommy" to "Thomas Smith" — only a
+  // person can. So the people being added are listed as people, where someone
+  // scanning them has a chance to recognise one.
+  it("lists the people it would add, by the name a human would recognise", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.previewOwnershipImport).mockResolvedValue(
+      emptyReport({
+        row_count: 2,
+        counts: { would_create: 2 },
+        new_owners: [
+          {
+            name: "fat-tommy",
+            display_name: "Fat Tommy",
+            source_value: "Fat Tommy",
+            row_count: 2,
+          },
+        ],
+      }),
+    );
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+    const preview = await screen.findByRole("button", { name: /preview/i });
+    await waitFor(() => expect(preview).toBeEnabled());
+    await user.click(preview);
+
+    const table = (await screen.findByText("Name in the file")).closest("table")!;
+    expect(table).toHaveTextContent("Fat Tommy");
+    // The slug is shown too, but the recognisable name is the point.
+    expect(table).toHaveTextContent("fat-tommy");
+    // Review is not a gate — the import is still offered.
+    expect(screen.getByRole("button", { name: /^Import these/i })).toBeEnabled();
+  });
+
+  it("explains that an overlapping owner name does not block the import", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.previewOwnershipImport).mockResolvedValue(
+      emptyReport({ row_count: 1, counts: { would_create: 1 }, alias_conflict_count: 1 }),
+    );
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+    const preview = await screen.findByRole("button", { name: /preview/i });
+    await waitFor(() => expect(preview).toBeEnabled());
+    await user.click(preview);
+
+    expect(
+      await screen.findByText(/assignments are still\s+made/i),
+    ).toBeInTheDocument();
+  });
+
+  it("commits only when asked", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.previewOwnershipImport).mockResolvedValue(
+      emptyReport({ row_count: 1, counts: { would_create: 1 } }),
+    );
+    vi.mocked(api.commitOwnershipImport).mockResolvedValue(
+      emptyReport({ row_count: 1, counts: { would_create: 1 }, committed: true, created: 1 }),
+    );
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+    await uploadFile(user);
+    const preview = await screen.findByRole("button", { name: /preview/i });
+    await waitFor(() => expect(preview).toBeEnabled());
+    await user.click(preview);
+
+    await user.click(await screen.findByRole("button", { name: /^Import these/i }));
+
+    await waitFor(() => expect(api.commitOwnershipImport).toHaveBeenCalled());
+    expect(await screen.findByText(/1 assignment imported/i)).toBeInTheDocument();
+  });
+});
+
+describe("OwnershipImportPage tabs", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({ user: { role: "admin", username: "admin" } });
+    vi.mocked(api.profileImportSource).mockResolvedValue(profile);
+  });
+
+  // The fixed-header flow is the fast lane for files already in CMM's format.
+  // Adding the new one must not move it.
+  it("shows the fixed-format flow by default", () => {
+    render(<OwnershipImportPage />, { wrapper: Wrapper });
+
+    expect(screen.getByText("Import Format")).toBeInTheDocument();
+    expect(
+      screen.getByText("owner,entity_type,entity_key,organisation,notes"),
+    ).toBeInTheDocument();
+  });
+
+  it("switches to the mapping flow", async () => {
+    const user = userEvent.setup();
+    render(<OwnershipImportPage />, { wrapper: Wrapper });
+
+    await user.click(screen.getByRole("button", { name: "Map columns" }));
+
+    expect(screen.getByText("1. Choose a file")).toBeInTheDocument();
+    expect(screen.queryByText("Import Format")).toBeNull();
+  });
+
+  it("keeps the role gate on both flows", () => {
+    mockUseAuth.mockReturnValue({ user: { role: "viewer", username: "v" } });
+    render(<OwnershipImportPage />, { wrapper: Wrapper });
+
+    expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Map columns" })).toBeNull();
+  });
+});
