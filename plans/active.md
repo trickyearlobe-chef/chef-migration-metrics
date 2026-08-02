@@ -47,9 +47,19 @@ Both chunks were scoped assuming ownership was largely absent. 126 is a hand-wor
 numbers and the reasoning are in `plans/todo-ownership.md`; do not start either chunk without
 revisiting them.
 
-**The 126 are mostly CookStyle-blocked with Test Kitchen untested**, so they are unverified
-claims rather than repos needing owners — which is what the failure register is for. Verifying
-the highest-impact few comes before hunting any owners.
+**But the blocking signal itself is the real problem, and it is worse than "untrustworthy".**
+`git_kitchen_results.go:228` counts a Test Kitchen failure as `passed = false OR timed_out`,
+with nothing distinguishing a cookbook that fails to converge from a lab that could not
+authenticate or hand out an IP. That rolls up to `tk_status = failed`, and readiness treats any
+TK failure as incompatible — **overriding a CookStyle pass**. On this estate, where most TK runs
+fail on auth or DHCP, lab failures are blocking real nodes. CookStyle offences are separately
+reported as badly curated for this work.
+
+So the 126 **bounds** the unowned work rather than describing it, and the top open question is
+no longer ownership — it is whether the blocking list is true at all. Detail and the shape of a
+fix: `plans/todo-bulk-kitchen-scanning.md`. The failure register is the only instrument that can
+correct it today, one repo at a time, and every entry is also a measurement of how wrong the
+signal is.
 
 ## NEXT — ownership filtering in the list views
 

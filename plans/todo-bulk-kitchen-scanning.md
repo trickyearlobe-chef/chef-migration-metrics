@@ -1,5 +1,52 @@
 # Bulk Kitchen Scanning — ToDo
 
+## An environmental failure is counted as a cookbook failure — and it blocks nodes
+
+**Found 2026-08-02, confirmed in code.** The most consequential open fault in the
+compatibility signals.
+
+`git_kitchen_results.go:228` counts a failure as `passed = false OR timed_out = true`.
+Nothing distinguishes a cookbook that genuinely fails to converge from a run that never
+got that far — an auth failure, an exhausted DHCP pool, a timeout. All land as `failed`.
+
+That rolls up through `ComputeTKStatus` to `tk_status = "failed"`, and
+`checkCookbookCompatibility` treats **any** Test Kitchen failure as `StatusIncompatible`,
+overriding a CookStyle pass. So a lab that could not hand out an IP address marks the
+cookbook incompatible and blocks every node running it.
+
+**Why this matters more than it looks.** The product owner reports that on the real estate
+a proper Test Kitchen run has only succeeded for a small fraction of cookbooks; the rest are
+auth or DHCP failures, or untested. So this is not an edge case — it is most of the Test
+Kitchen signal, and it is feeding the readiness number the whole product is judged on.
+
+**It also corrupts the blocking-and-unowned measurement.** The 126 recorded in
+`plans/todo-ownership.md` derive from `cookstyle_status = 'blocked'`, and the product owner
+reports CookStyle offences are badly curated for this work too. Both signals are unreliable
+in the same direction — over-blocking — so that 126 bounds the work rather than describing it.
+
+**Do not fix this by weakening the rollup blindly.** A cookbook that genuinely fails to
+converge must still block. What is missing is the distinction, not the severity.
+
+Shape to aim for, cheapest first:
+
+- [ ] **Stop counting `timed_out` as a cookbook failure.** One clause in the count query. A
+  timeout is already understood to be usually environmental, and the plan already called it
+  "a free lower bound" on the environmental share. Measure the effect before and after —
+  the size of the change is itself the measurement of how much of the blocking set was
+  never about cookbooks.
+- [ ] **Record *why* a run failed**, rather than only that it did. Auth and DHCP failures
+  have recognisable signatures in the output already stored. A run that never reached
+  converge is not evidence about the cookbook and should not be a verdict about it.
+- [ ] **Report the environmental share** so a reader can see how much of the Test Kitchen
+  signal is about the lab. Until then the failure register is the only instrument that can
+  correct it, one repo at a time, by hand.
+
+**Interim, and available today:** a human verdict in the failure register outranks Test
+Kitchen, so a cookbook wrongly blocked by a lab failure can be recorded `not_broken` and
+will stop blocking nodes immediately. That is the correct use of it, and every such entry
+is also a measurement of how wrong the automated signal is.
+
+
 Spec: `bulk-kitchen-scanning.md`
 
 ## Run → Scheduler Wiring (DONE — already implemented via queue)
