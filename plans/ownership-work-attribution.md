@@ -170,9 +170,10 @@ which is what `gist_trgm_ops` is for; the GIN `%` operator cannot do it). Anythi
 records by similarity must be bounded per row and computed away from the request that reads it.
 
 **Unbounded text in a btree index has already caused a production outage here.** Hash a bounded,
-canonicalised projection instead. **Verified absent 2026-08-02:** this plan previously cited the
-rule as written and normative in `specifications/failure-register.md`, and that file has never
-existed. The rule stands on this line until the failure register is specified.
+canonicalised projection instead. **Narrowed 2026-08-02:** storing unbounded text is not the risk
+— a btree entry is capped at roughly a third of a page, so the failure is a hard write error and
+it only occurs if the text reaches an *index or unique constraint*. The rule and the
+canonicalisation are normative in `specifications/failure-register.md` § Storing the evidence.
 
 **Migration numbers are assigned centrally, in this plan.** A duplicate version hard-errors at
 startup before anything applies, and the runner silently skips any version at or below what a
@@ -225,8 +226,10 @@ against reality rather than against fixtures we invented.
    only available measure of what the automated signals **miss**. It needs no matching: a
    handful of entries assigned by hand is the whole of the ownership requirement.
 
-   Behaviour belongs in `specifications/failure-register.md`, **which does not exist** — the
-   gotcha below refers to it as written and normative, and that reference is stale.
+   Behaviour is `specifications/failure-register.md`. **Two-sided, confirmed by the product
+   owner 2026-08-02:** it records a failure nothing detected *and* overrules a wrong automated
+   verdict, both with a mandatory reason. It is a third verdict source in the existing readiness
+   rollup, not a parallel list.
 4. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
    previous attempt. **Demoted, 2026-08-02** — see § Ownership only has to be right where
    somebody has to act. Scope it against the blocking set rather than the estate, and

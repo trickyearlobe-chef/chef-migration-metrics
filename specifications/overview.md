@@ -37,6 +37,7 @@
 | [encrypted-config-store](encrypted-config-store.md) | Encrypted storage backend for configuration values. |
 | [enriched-metric-snapshots](enriched-metric-snapshots.md) | Periodic enriched metric snapshots for historical trending. |
 | [event-ingest](event-ingest.md) | Passive HTTP receiver for Chef run telemetry (node / Server proxy / Automate Data Feed) → partitioned `converge_runs` → Node Detail Runs tab. MVP, no auth. |
+| [failure-register](failure-register.md) | ⚠️ Specified, not built. A person's verdict on whether a cookbook actually works — two-sided, so it overrules a wrong automated verdict as well as recording one nothing caught — plus the standup view that reads it back. |
 | [filter-ux-overhaul](filter-ux-overhaul.md) | Dashboard filtering UX across org, environment, role, policy, platform, and owner. |
 | [git-repo-file-browser](git-repo-file-browser.md) | Browsing files within cloned git cookbook repositories. |
 | [kitchen-analyser](kitchen-analyser.md) | Analysis of Test Kitchen configurations and results. |
