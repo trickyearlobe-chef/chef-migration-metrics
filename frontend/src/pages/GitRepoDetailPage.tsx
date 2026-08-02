@@ -21,6 +21,7 @@ import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CookStyleStatusBadge } from "../components/StatusBadge";
 import { GitKitchenSection } from "../components/GitKitchenSection";
+import { TeamVerdictCard } from "../components/TeamVerdictCard";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { useSort } from "../hooks/useSort";
 import { SMALL_PAGE_SIZE } from "../constants";
@@ -371,6 +372,10 @@ export function GitRepoDetailPage() {
                     </div>
                     <p className="mt-3 text-xs font-medium text-blue-600">View Details →</p>
                   </button>
+
+                  {/* A person's verdict, beside the two automated ones. It
+                      outranks both, and this is where it gets recorded. */}
+                  <TeamVerdictCard gitRepoName={gr.name} cookbookName={gr.name} />
                 </div>
               );
             })()
