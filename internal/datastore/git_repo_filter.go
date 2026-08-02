@@ -43,6 +43,16 @@ type GitRepoFilter struct {
 	// nil means no filter.
 	KitchenExcluded *bool
 
+	// HumanVerdict filters by the standing verdict in the failure register.
+	// Valid: "broken", "not_broken", "any" (somebody has an opinion either
+	// way), "none". Anything else is ignored rather than guessed at.
+	//
+	// This cannot be answered from the materialised status columns. Those
+	// report what CookStyle and Test Kitchen said and are deliberately not
+	// rewritten when a person overrules them, so a repo somebody has called
+	// fine still reads as blocked there.
+	HumanVerdict string
+
 	// Sort specifies the column to sort by. Valid values: "name",
 	// "compatibility", "tk_status", "clone_status", "last_fetched_at",
 	// "has_test_suite".
@@ -66,23 +76,18 @@ type GitRepoFilterRow struct {
 	TotalCount int // populated from COUNT(*) OVER()
 }
 
-// buildGitRepoFilterQuery constructs the SQL query and args for
-// ListGitReposFiltered. Extracted for unit testing without a database.
-func buildGitRepoFilterQuery(f GitRepoFilter) (query string, args []interface{}) {
-	var sb strings.Builder
-	argN := 0
+// gitRepoFilterWheres builds the WHERE clauses and their args for a git repo
+// filter, starting placeholder numbering from startArg.
+//
+// Shared by the page query and the count query deliberately: they were
+// byte-for-byte duplicates, and a filter added to one and not the other makes
+// the reported total disagree with the rows on the page.
+func gitRepoFilterWheres(f GitRepoFilter, startArg int) (wheres []string, args []interface{}) {
+	argN := startArg
 	nextArg := func() string {
 		argN++
 		return fmt.Sprintf("$%d", argN)
 	}
-
-	sb.WriteString("SELECT ")
-	sb.WriteString(gitRepoColumns)
-	sb.WriteString(", COUNT(*) OVER () AS total_count")
-	sb.WriteString("\n  FROM git_repos")
-
-	// WHERE clauses.
-	var wheres []string
 
 	if f.Name != "" {
 		wheres = append(wheres, "LOWER(name) LIKE LOWER("+nextArg()+")")
@@ -117,6 +122,46 @@ func buildGitRepoFilterQuery(f GitRepoFilter) (query string, args []interface{})
 	if f.KitchenExcluded != nil {
 		wheres = append(wheres, "kitchen_excluded = "+nextArg())
 		args = append(args, *f.KitchenExcluded)
+	}
+
+	// The failure register. Correlated on the repo name only: git_repos has a
+	// composite key including the URL, and URLs are volatile — a re-hosting
+	// rewrites the row — so the name is what a verdict is keyed on.
+	//
+	// Only standing verdicts count. A superseded one has been reversed and a
+	// resolved one dealt with; neither is anybody's current opinion.
+	const registerExists = `SELECT 1 FROM failure_register_entries fre
+		 WHERE fre.git_repo_name = git_repos.name AND fre.status = 'open'`
+
+	switch f.HumanVerdict {
+	case VerdictBroken, VerdictNotBroken:
+		wheres = append(wheres,
+			"EXISTS ("+registerExists+" AND fre.verdict = "+nextArg()+")")
+		args = append(args, f.HumanVerdict)
+	case "any":
+		wheres = append(wheres, "EXISTS ("+registerExists+")")
+	case "none":
+		wheres = append(wheres, "NOT EXISTS ("+registerExists+")")
+	}
+
+	return wheres, args
+}
+
+// buildGitRepoFilterQuery constructs the SQL query and args for
+// ListGitReposFiltered. Extracted for unit testing without a database.
+func buildGitRepoFilterQuery(f GitRepoFilter) (query string, args []interface{}) {
+	var sb strings.Builder
+
+	sb.WriteString("SELECT ")
+	sb.WriteString(gitRepoColumns)
+	sb.WriteString(", COUNT(*) OVER () AS total_count")
+	sb.WriteString("\n  FROM git_repos")
+
+	wheres, args := gitRepoFilterWheres(f, 0)
+	argN := len(args)
+	nextArg := func() string {
+		argN++
+		return fmt.Sprintf("$%d", argN)
 	}
 
 	if len(wheres) > 0 {
@@ -239,45 +284,10 @@ func (db *DB) ListGitReposFiltered(ctx context.Context, f GitRepoFilter) ([]GitR
 // clauses as the main filter query. Used as fallback when the page is empty.
 func buildGitRepoFilterCountQuery(f GitRepoFilter) (query string, args []interface{}) {
 	var sb strings.Builder
-	argN := 0
-	nextArg := func() string {
-		argN++
-		return fmt.Sprintf("$%d", argN)
-	}
 
 	sb.WriteString("SELECT COUNT(*) FROM git_repos")
 
-	var wheres []string
-
-	if f.Name != "" {
-		wheres = append(wheres, "LOWER(name) LIKE LOWER("+nextArg()+")")
-		args = append(args, "%"+f.Name+"%")
-	}
-	if f.CompatibilityStatus != "" {
-		wheres = append(wheres, "compatibility_status = "+nextArg())
-		args = append(args, f.CompatibilityStatus)
-	}
-
-	if f.CookstyleStatus != "" {
-		wheres = append(wheres, "cookstyle_status = ANY("+nextArg()+")")
-		args = append(args, pq.Array(strings.Split(f.CookstyleStatus, ",")))
-	}
-	if f.TKStatus != "" {
-		wheres = append(wheres, "tk_status = "+nextArg())
-		args = append(args, f.TKStatus)
-	}
-	if f.CloneStatus != "" {
-		wheres = append(wheres, "clone_status = "+nextArg())
-		args = append(args, f.CloneStatus)
-	}
-	if f.HasTestSuite != nil {
-		wheres = append(wheres, "has_test_suite = "+nextArg())
-		args = append(args, *f.HasTestSuite)
-	}
-	if f.KitchenExcluded != nil {
-		wheres = append(wheres, "kitchen_excluded = "+nextArg())
-		args = append(args, *f.KitchenExcluded)
-	}
+	wheres, args := gitRepoFilterWheres(f, 0)
 
 	if len(wheres) > 0 {
 		sb.WriteString("\n WHERE ")
