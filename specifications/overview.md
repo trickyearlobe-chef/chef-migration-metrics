@@ -46,6 +46,7 @@
 | [node-list-enhancements](node-list-enhancements.md) | Enhancements to the node list view (columns, filters). |
 | [node-tags](node-tags.md) | Ingest Chef node tags; filter the node list by them (pinned `prepare`/`upgrade`/`rollback` + searchable long tail); include in exports. |
 | [ownership](ownership.md) | Ownership model: owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows. |
+| [ownership-intake](ownership-intake.md) | Discovery-driven ownership import: source profiling, column mapping, preview and the match report. |
 | [packaging](packaging.md) | RPM/DEB/Docker packaging. CookStyle/Test Kitchen are not bundled — they come from Chef Workstation on the host (resolved from `PATH`). |
 | [parallel-deployment-tracking](parallel-deployment-tracking.md) | Tracking parallel, per-version deployment progress across the fleet. |
 | [performance-diagnostics](performance-diagnostics.md) | Performance diagnostics and profiling. |
