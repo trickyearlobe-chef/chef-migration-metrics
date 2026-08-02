@@ -125,11 +125,11 @@ against reality rather than against fixtures we invented.
 1. **Get owner ingest solid.** Owners come in before anything can be matched to them.
 2. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
    previous attempt.
-3. **Git repo matching.** Repos resolve to their owners. Harder, and known why: repo
-   ownership is keyed today on a URL that moves, so it has to be re-keyed onto the repo
-   name, and that change reaches every place a repo owner is read or written. See the repo
-   URL gotcha above — this is the one place where sequencing the change matters more than
-   the change itself.
+3. **Git repo matching.** Repos resolve to their owners. The previous attempt treated this
+   as the hard one because it assumed a re-keying job. Diagnosing that failure suggested the
+   repo name is **already carried alongside the URL and already used elsewhere**, so the
+   re-key may not be needed here at all. **Verify before assuming either way** — the repo
+   URL gotcha below is why the assumption was made, not evidence that it holds.
 4. **Alias management.** Last, but **not optional** — see below.
 
 **The incoming ownership data is not clean.** It identifies people inconsistently: sometimes
