@@ -389,7 +389,7 @@ Assign one or more committers from the cookbook's git repo as owners. Creates ow
 
 **Behaviour:**
 
-- For each committer, if an owner with the given `owner_name` does not exist, it is created with `owner_type = 'individual'` and `contact_email` set to the committer's `author_email`.
+- For each committer, if an owner with the given `owner_name` does not exist, it is created with `owner_type = 'individual'` and `contact_email` set to the committer's `author_email`, and the commit address is seeded as a `git_email` alias against it (see [ownership-identity.md](ownership-identity.md) § Aliases are seeded, never inferred). Without that alias the owner carries no identity at all and no later lookup can reach it. A seed that collides with an address somebody else already answers to is skipped, and does not fail the assignment.
 - If an owner with the given `owner_name` already exists, it is reused (not modified).
 - A `git_repo` ownership assignment is created linking each owner to the cookbook's `git_repo_url`, with `assignment_source = 'manual'` and `confidence = 'definitive'`.
 - Duplicate assignments (owner already assigned to this repo) are skipped.

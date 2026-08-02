@@ -18,11 +18,11 @@ import (
 type mockStore struct {
 	PingFn                                                 func(ctx context.Context) error
 	BulkUpsertConvergeRunsFn                               func(ctx context.Context, runs []ingest.ConvergeRun) (int, error)
-	ListConvergeRunsForNodeFn                             func(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error)
-	ListConvergeRunNodesFilteredFn                        func(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
-	ListConvergeRunsFilteredFn                            func(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
-	ListConvergeRunOrganisationsFn                        func(ctx context.Context) ([]string, error)
-	ListConvergeRunChefVersionsFn                         func(ctx context.Context) ([]string, error)
+	ListConvergeRunsForNodeFn                              func(ctx context.Context, organisation, nodeName string, limit int) ([]datastore.ConvergeRunView, error)
+	ListConvergeRunNodesFilteredFn                         func(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
+	ListConvergeRunsFilteredFn                             func(ctx context.Context, f datastore.ConvergeRunFilter) ([]datastore.ConvergeRunListItem, int, error)
+	ListConvergeRunOrganisationsFn                         func(ctx context.Context) ([]string, error)
+	ListConvergeRunChefVersionsFn                          func(ctx context.Context) ([]string, error)
 	ListOrganisationsFn                                    func(ctx context.Context) ([]datastore.Organisation, error)
 	GetOrganisationByNameFn                                func(ctx context.Context, name string) (datastore.Organisation, error)
 	GetLatestCollectionRunFn                               func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
@@ -124,7 +124,31 @@ type mockStore struct {
 	GetAssignmentFn                                        func(ctx context.Context, id int64) (datastore.OwnershipAssignment, error)
 	DeleteAssignmentFn                                     func(ctx context.Context, id int64) error
 	ReassignOwnershipFn                                    func(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (int, int, error)
+	MergeOwnersFn                                          func(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error)
+	ListOwnerDuplicateCandidatesFn                         func(ctx context.Context, f datastore.OwnerDuplicateFilter) ([]datastore.OwnerDuplicateCandidate, int, error)
+	RecomputeOwnerDuplicateCandidatesFn                    func(ctx context.Context) (int, error)
+	GetOwnerDuplicateScanFn                                func(ctx context.Context) (datastore.OwnerDuplicateScan, error)
+	CountOwnersMissingAliasesFn                            func(ctx context.Context) (int, int, error)
+	RecordFailureVerdictFn                                 func(ctx context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error)
+	ReviseFailureEntryFn                                   func(ctx context.Context, id string, p datastore.ReviseFailureEntryParams) (datastore.FailureRegisterEntry, error)
+	ResolveFailureEntryFn                                  func(ctx context.Context, id, resolvedBy, note string) (datastore.FailureRegisterEntry, error)
+	GetFailureRegisterEntryFn                              func(ctx context.Context, id string) (datastore.FailureRegisterEntry, error)
+	ListFailureRegisterEntriesFn                           func(ctx context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error)
+	ListFailureRegisterHistoryFn                           func(ctx context.Context, gitRepoName string) ([]datastore.FailureRegisterEntry, error)
+	FailureRegisterSummaryFn                               func(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error)
+	ListOpenFailureVerdictsFn                              func(ctx context.Context) (map[string]datastore.StandingVerdict, error)
 	LookupOwnershipFn                                      func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
+	ResolveOwnerByAliasFn                                  func(ctx context.Context, aliasType, aliasValue string) (string, error)
+	SuggestOwnerAliasesFn                                  func(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error)
+	InsertOwnerAliasFn                                     func(ctx context.Context, p datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error)
+	InsertImportMappingFn                                  func(ctx context.Context, p datastore.InsertImportMappingParams) (datastore.ImportMapping, error)
+	ListImportMappingsFn                                   func(ctx context.Context, limit, offset int) ([]datastore.ImportMapping, int, error)
+	GetImportMappingFn                                     func(ctx context.Context, id int64) (datastore.ImportMapping, error)
+	UpdateImportMappingFn                                  func(ctx context.Context, id int64, p datastore.UpdateImportMappingParams) (datastore.ImportMapping, error)
+	DeleteImportMappingFn                                  func(ctx context.Context, id int64) error
+	LookupAssignmentOwnersByEntityFn                       func(ctx context.Context, entityType string, entityKeys []string) (map[string][]datastore.EntityAssignment, error)
+	EntityKeysExistFn                                      func(ctx context.Context, entityType string, keys []string) (map[string]bool, error)
+	SuggestOwnersByEmailLocalpartFn                        func(ctx context.Context, localpart string, limit int) ([]datastore.AliasSuggestion, error)
 	GetOwnerReadinessSummaryFn                             func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerReadinessSummary, error)
 	GetOwnerCookbookSummaryFn                              func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerCookbookSummary, error)
 	GetOwnerGitRepoSummaryFn                               func(ctx context.Context, ownerName, targetChefVersion string) (datastore.OwnerGitRepoSummary, error)
@@ -1067,6 +1091,99 @@ func (m *mockStore) ReassignOwnership(ctx context.Context, fromOwnerName, toOwne
 	return 0, 0, nil
 }
 
+// --- The failure register ---
+
+func (m *mockStore) RecordFailureVerdict(ctx context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error) {
+	if m.RecordFailureVerdictFn != nil {
+		return m.RecordFailureVerdictFn(ctx, p)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) ReviseFailureEntry(ctx context.Context, id string, p datastore.ReviseFailureEntryParams) (datastore.FailureRegisterEntry, error) {
+	if m.ReviseFailureEntryFn != nil {
+		return m.ReviseFailureEntryFn(ctx, id, p)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) ResolveFailureEntry(ctx context.Context, id, resolvedBy, note string) (datastore.FailureRegisterEntry, error) {
+	if m.ResolveFailureEntryFn != nil {
+		return m.ResolveFailureEntryFn(ctx, id, resolvedBy, note)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) GetFailureRegisterEntry(ctx context.Context, id string) (datastore.FailureRegisterEntry, error) {
+	if m.GetFailureRegisterEntryFn != nil {
+		return m.GetFailureRegisterEntryFn(ctx, id)
+	}
+	return datastore.FailureRegisterEntry{}, nil
+}
+
+func (m *mockStore) ListFailureRegisterEntries(ctx context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error) {
+	if m.ListFailureRegisterEntriesFn != nil {
+		return m.ListFailureRegisterEntriesFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) ListFailureRegisterHistory(ctx context.Context, gitRepoName string) ([]datastore.FailureRegisterEntry, error) {
+	if m.ListFailureRegisterHistoryFn != nil {
+		return m.ListFailureRegisterHistoryFn(ctx, gitRepoName)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) FailureRegisterSummary(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error) {
+	if m.FailureRegisterSummaryFn != nil {
+		return m.FailureRegisterSummaryFn(ctx, windowDays)
+	}
+	return datastore.FailureRegisterSummary{}, nil
+}
+
+func (m *mockStore) ListOpenFailureVerdicts(ctx context.Context) (map[string]datastore.StandingVerdict, error) {
+	if m.ListOpenFailureVerdictsFn != nil {
+		return m.ListOpenFailureVerdictsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) MergeOwners(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error) {
+	if m.MergeOwnersFn != nil {
+		return m.MergeOwnersFn(ctx, fromOwnerName, intoOwnerName)
+	}
+	return datastore.MergeOwnersResult{}, nil
+}
+
+func (m *mockStore) ListOwnerDuplicateCandidates(ctx context.Context, f datastore.OwnerDuplicateFilter) ([]datastore.OwnerDuplicateCandidate, int, error) {
+	if m.ListOwnerDuplicateCandidatesFn != nil {
+		return m.ListOwnerDuplicateCandidatesFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error) {
+	if m.RecomputeOwnerDuplicateCandidatesFn != nil {
+		return m.RecomputeOwnerDuplicateCandidatesFn(ctx)
+	}
+	return 0, nil
+}
+
+func (m *mockStore) GetOwnerDuplicateScan(ctx context.Context) (datastore.OwnerDuplicateScan, error) {
+	if m.GetOwnerDuplicateScanFn != nil {
+		return m.GetOwnerDuplicateScanFn(ctx)
+	}
+	return datastore.OwnerDuplicateScan{}, datastore.ErrNotFound
+}
+
+func (m *mockStore) CountOwnersMissingAliases(ctx context.Context) (int, int, error) {
+	if m.CountOwnersMissingAliasesFn != nil {
+		return m.CountOwnersMissingAliasesFn(ctx)
+	}
+	return 0, 0, nil
+}
+
 func (m *mockStore) LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error) {
 	if m.LookupOwnershipFn != nil {
 		return m.LookupOwnershipFn(ctx, entityType, entityKey, organisationID)
@@ -1689,7 +1806,10 @@ func (m *mockStore) DependencyDepthStats(ctx context.Context, includeNames bool)
 // Owner aliases stubs
 // ---------------------------------------------------------------------------
 
-func (m *mockStore) InsertOwnerAlias(_ context.Context, _ datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error) {
+func (m *mockStore) InsertOwnerAlias(ctx context.Context, p datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error) {
+	if m.InsertOwnerAliasFn != nil {
+		return m.InsertOwnerAliasFn(ctx, p)
+	}
 	return datastore.OwnerAlias{}, nil
 }
 
@@ -1697,7 +1817,10 @@ func (m *mockStore) GetOwnerAliasesByOwner(_ context.Context, _ string) ([]datas
 	return nil, nil
 }
 
-func (m *mockStore) ResolveOwnerByAlias(_ context.Context, _, _ string) (string, error) {
+func (m *mockStore) ResolveOwnerByAlias(ctx context.Context, aliasType, aliasValue string) (string, error) {
+	if m.ResolveOwnerByAliasFn != nil {
+		return m.ResolveOwnerByAliasFn(ctx, aliasType, aliasValue)
+	}
 	return "", datastore.ErrNotFound
 }
 
@@ -1705,7 +1828,70 @@ func (m *mockStore) DeleteOwnerAlias(_ context.Context, _ string) error {
 	return nil
 }
 
-func (m *mockStore) SuggestOwnerAliases(_ context.Context, _ string, _ int) ([]datastore.AliasSuggestion, error) {
+func (m *mockStore) SuggestOwnerAliases(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error) {
+	if m.SuggestOwnerAliasesFn != nil {
+		return m.SuggestOwnerAliasesFn(ctx, input, limit)
+	}
+	return nil, nil
+}
+
+// ---------------------------------------------------------------------------
+// Discovery-driven ownership intake stubs
+// ---------------------------------------------------------------------------
+
+func (m *mockStore) InsertImportMapping(ctx context.Context, p datastore.InsertImportMappingParams) (datastore.ImportMapping, error) {
+	if m.InsertImportMappingFn != nil {
+		return m.InsertImportMappingFn(ctx, p)
+	}
+	return datastore.ImportMapping{}, nil
+}
+
+func (m *mockStore) ListImportMappings(ctx context.Context, limit, offset int) ([]datastore.ImportMapping, int, error) {
+	if m.ListImportMappingsFn != nil {
+		return m.ListImportMappingsFn(ctx, limit, offset)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) GetImportMapping(ctx context.Context, id int64) (datastore.ImportMapping, error) {
+	if m.GetImportMappingFn != nil {
+		return m.GetImportMappingFn(ctx, id)
+	}
+	return datastore.ImportMapping{}, datastore.ErrNotFound
+}
+
+func (m *mockStore) UpdateImportMapping(ctx context.Context, id int64, p datastore.UpdateImportMappingParams) (datastore.ImportMapping, error) {
+	if m.UpdateImportMappingFn != nil {
+		return m.UpdateImportMappingFn(ctx, id, p)
+	}
+	return datastore.ImportMapping{}, datastore.ErrNotFound
+}
+
+func (m *mockStore) DeleteImportMapping(ctx context.Context, id int64) error {
+	if m.DeleteImportMappingFn != nil {
+		return m.DeleteImportMappingFn(ctx, id)
+	}
+	return datastore.ErrNotFound
+}
+
+func (m *mockStore) LookupAssignmentOwnersByEntity(ctx context.Context, entityType string, entityKeys []string) (map[string][]datastore.EntityAssignment, error) {
+	if m.LookupAssignmentOwnersByEntityFn != nil {
+		return m.LookupAssignmentOwnersByEntityFn(ctx, entityType, entityKeys)
+	}
+	return map[string][]datastore.EntityAssignment{}, nil
+}
+
+func (m *mockStore) EntityKeysExist(ctx context.Context, entityType string, keys []string) (map[string]bool, error) {
+	if m.EntityKeysExistFn != nil {
+		return m.EntityKeysExistFn(ctx, entityType, keys)
+	}
+	return map[string]bool{}, nil
+}
+
+func (m *mockStore) SuggestOwnersByEmailLocalpart(ctx context.Context, localpart string, limit int) ([]datastore.AliasSuggestion, error) {
+	if m.SuggestOwnersByEmailLocalpartFn != nil {
+		return m.SuggestOwnersByEmailLocalpartFn(ctx, localpart, limit)
+	}
 	return nil, nil
 }
 

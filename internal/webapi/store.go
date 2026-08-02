@@ -597,6 +597,60 @@ type DataStore interface {
 	// Returns the number reassigned and the number skipped (duplicates).
 	ReassignOwnership(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (reassigned, skipped int, err error)
 
+	// MergeOwners folds one owner into another: the work moves, the
+	// identities the source was known by move with it, and the source
+	// owner is removed. Returns datastore.ErrNotFound if either is absent.
+	MergeOwners(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error)
+
+	// ListOwnerDuplicateCandidates returns stored pairs of owners that may
+	// be the same person, with the total number found.
+	ListOwnerDuplicateCandidates(ctx context.Context, f datastore.OwnerDuplicateFilter) ([]datastore.OwnerDuplicateCandidate, int, error)
+
+	// RecomputeOwnerDuplicateCandidates rescans the catalogue and returns
+	// the number of pairs found.
+	RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error)
+
+	// GetOwnerDuplicateScan returns when the catalogue was last scanned.
+	// Returns datastore.ErrNotFound if it never has been.
+	GetOwnerDuplicateScan(ctx context.Context) (datastore.OwnerDuplicateScan, error)
+
+	// CountOwnersMissingAliases returns the number of owners and how many
+	// of them have no alias recorded.
+	CountOwnersMissingAliases(ctx context.Context) (total, missing int, err error)
+
+	// --- The failure register: a person's verdict about a git repo. ---
+
+	// RecordFailureVerdict records a verdict, superseding any standing one
+	// for the same repo rather than replacing it.
+	RecordFailureVerdict(ctx context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error)
+
+	// ReviseFailureEntry updates the diagnosis, plan, target date and holder
+	// of a standing entry. The verdict and reason are immutable.
+	ReviseFailureEntry(ctx context.Context, id string, p datastore.ReviseFailureEntryParams) (datastore.FailureRegisterEntry, error)
+
+	// ResolveFailureEntry records that a standing verdict has been dealt
+	// with. The entry stays: journey 6 needs the direction of travel.
+	ResolveFailureEntry(ctx context.Context, id, resolvedBy, note string) (datastore.FailureRegisterEntry, error)
+
+	// GetFailureRegisterEntry reads one entry whatever its status.
+	GetFailureRegisterEntry(ctx context.Context, id string) (datastore.FailureRegisterEntry, error)
+
+	// ListFailureRegisterEntries reads the register with the total matching
+	// the filter.
+	ListFailureRegisterEntries(ctx context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error)
+
+	// ListFailureRegisterHistory returns every verdict ever recorded about
+	// one repo, newest first.
+	ListFailureRegisterHistory(ctx context.Context, gitRepoName string) ([]datastore.FailureRegisterEntry, error)
+
+	// FailureRegisterSummary reports how large the register is and which way
+	// it is moving over the last windowDays days.
+	FailureRegisterSummary(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error)
+
+	// ListOpenFailureVerdicts returns the standing verdicts keyed on git repo
+	// name, so a list view can mark the rows a person has overruled.
+	ListOpenFailureVerdicts(ctx context.Context) (map[string]datastore.StandingVerdict, error)
+
 	// LookupOwnership returns the owners of a given entity, including
 	// inherited ownership.
 	LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
@@ -619,6 +673,44 @@ type DataStore interface {
 
 	// SuggestOwnerAliases returns fuzzy match suggestions.
 	SuggestOwnerAliases(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error)
+
+	// -----------------------------------------------------------------
+	// Discovery-driven ownership intake
+	// -----------------------------------------------------------------
+
+	// InsertImportMapping creates a saved column mapping. Returns
+	// datastore.ErrAlreadyExists when the name is taken.
+	InsertImportMapping(ctx context.Context, p datastore.InsertImportMappingParams) (datastore.ImportMapping, error)
+
+	// ListImportMappings returns saved mappings without their field maps,
+	// with the total count for pagination.
+	ListImportMappings(ctx context.Context, limit, offset int) ([]datastore.ImportMapping, int, error)
+
+	// GetImportMapping returns one saved mapping including its field map.
+	// Returns datastore.ErrNotFound when no mapping has that id.
+	GetImportMapping(ctx context.Context, id int64) (datastore.ImportMapping, error)
+
+	// UpdateImportMapping replaces a saved mapping's name, delimiter and
+	// field map.
+	UpdateImportMapping(ctx context.Context, id int64, p datastore.UpdateImportMappingParams) (datastore.ImportMapping, error)
+
+	// DeleteImportMapping removes a saved mapping.
+	DeleteImportMapping(ctx context.Context, id int64) error
+
+	// LookupAssignmentOwnersByEntity returns the assignments that already
+	// exist on each of the given entity keys. Keys with no assignment are
+	// absent from the map rather than present and empty.
+	LookupAssignmentOwnersByEntity(ctx context.Context, entityType string, entityKeys []string) (map[string][]datastore.EntityAssignment, error)
+
+	// EntityKeysExist reports which of the given keys name an entity CMM
+	// has collected. Informational only: assignments are soft references,
+	// so an absent key is reported, never rejected.
+	EntityKeysExist(ctx context.Context, entityType string, keys []string) (map[string]bool, error)
+
+	// SuggestOwnersByEmailLocalpart finds owners whose email-shaped aliases
+	// share a localpart with the given one. Suggestions only — the same
+	// localpart under two domains is as often two people as one.
+	SuggestOwnersByEmailLocalpart(ctx context.Context, localpart string, limit int) ([]datastore.AliasSuggestion, error)
 
 	// -----------------------------------------------------------------
 	// Owner detail summaries

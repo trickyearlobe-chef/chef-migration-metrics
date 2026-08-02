@@ -1,28 +1,47 @@
 import { useState, useRef, type ChangeEvent, type DragEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { importOwnership, ApiError } from "../api";
 import type { ImportResponse } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { useAuth } from "../context/AuthContext";
+import { OwnershipMappedImport } from "./OwnershipMappedImport";
 
 // ---------------------------------------------------------------------------
-// Ownership Import page — bulk import ownership assignments via CSV or JSON
-// file upload. Requires operator or admin role.
+// Ownership Import page — bulk import ownership assignments. Requires operator
+// or admin role.
+//
+// Two flows sit side by side:
+//   • Fixed format — the original path, for files already in CMM's column
+//     order. Unchanged.
+//   • Map columns — for a file whose shape we do not control: profile it, map
+//     its columns, preview, then commit.
 // ---------------------------------------------------------------------------
 
-type ImportFormat = "csv" | "json";
+type ImportTab = "fixed" | "mapped";
+
+const TABS: { key: ImportTab; label: string }[] = [
+  { key: "fixed", label: "Fixed format" },
+  { key: "mapped", label: "Map columns" },
+];
 
 export function OwnershipImportPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [format, setFormat] = useState<ImportFormat>("csv");
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<ImportResponse | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const rawTab = searchParams.get("tab");
+  const activeTab: ImportTab = rawTab === "mapped" ? "mapped" : "fixed";
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  function switchTab(tab: ImportTab) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (tab === "fixed") {
+        next.delete("tab");
+      } else {
+        next.set("tab", tab);
+      }
+      return next;
+    });
+  }
 
   // Role gate — only operator or admin may import
   const allowed = user?.role === "admin" || user?.role === "operator";
@@ -39,6 +58,61 @@ export function OwnershipImportPage() {
       </div>
     );
   }
+
+  return (
+    <div className="space-y-6">
+      {/* Breadcrumb */}
+      <nav className="text-sm text-gray-500">
+        <Link to="/ownership" className="hover:text-blue-600 hover:underline">Ownership</Link>
+        <span className="mx-1">/</span>
+        <span className="text-gray-800">Import</span>
+      </nav>
+
+      {/* Header */}
+      <div>
+        <h2 className="text-lg font-semibold text-gray-800">
+          Import Ownership Data
+        </h2>
+        <p className="text-sm text-gray-500">
+          Bring existing ownership data into CMM from a file.
+        </p>
+      </div>
+
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-6" aria-label="Import tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => switchTab(t.key)}
+              className={
+                "whitespace-nowrap border-b-2 px-1 pb-3 text-sm font-medium transition-colors " +
+                (activeTab === t.key
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700")
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {activeTab === "fixed" ? <FixedFormatImport /> : <OwnershipMappedImport />}
+    </div>
+  );
+}
+
+type ImportFormat = "csv" | "json";
+
+function FixedFormatImport() {
+  const [format, setFormat] = useState<ImportFormat>("csv");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<ImportResponse | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFormatChange(newFormat: ImportFormat) {
     setFormat(newFormat);
@@ -128,23 +202,6 @@ export function OwnershipImportPage() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
-      <nav className="text-sm text-gray-500">
-        <Link to="/ownership" className="hover:text-blue-600 hover:underline">Ownership</Link>
-        <span className="mx-1">/</span>
-        <span className="text-gray-800">Import</span>
-      </nav>
-
-      {/* Header */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-800">
-          Import Ownership Data
-        </h2>
-        <p className="text-sm text-gray-500">
-          Bulk import ownership assignments from a CSV or JSON file.
-        </p>
-      </div>
-
       {/* Format selector */}
       <div className="card">
         <h3 className="card-header">Import Format</h3>

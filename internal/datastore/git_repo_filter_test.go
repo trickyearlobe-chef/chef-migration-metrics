@@ -204,3 +204,97 @@ func TestBuildGitRepoFilterCountQuery(t *testing.T) {
 		t.Fatalf("expected 2 args, got %d", len(args))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// The failure register as a filter
+//
+// A repo somebody has overruled still carries the materialised cookstyle and
+// tk statuses that were overruled — those columns report what each tool said
+// and are not rewritten. So finding the overruled ones has to go to the
+// register, not to those columns.
+// ---------------------------------------------------------------------------
+
+func TestBuildGitRepoFilterQuery_HumanVerdictBroken(t *testing.T) {
+	q, args := buildGitRepoFilterQuery(GitRepoFilter{HumanVerdict: "broken"})
+
+	if len(args) != 1 {
+		t.Fatalf("expected 1 arg, got %d", len(args))
+	}
+	if args[0] != "broken" {
+		t.Errorf("expected arg 'broken', got %v", args[0])
+	}
+	if !strings.Contains(q, "failure_register_entries") {
+		t.Errorf("the filter does not reach the register: %s", q)
+	}
+	// Only standing verdicts: a superseded or resolved one is history, not
+	// somebody's current opinion.
+	if !strings.Contains(q, "status = 'open'") {
+		t.Errorf("the filter does not restrict to standing verdicts: %s", q)
+	}
+	// Keyed on the repo name, because repo URLs are volatile and the name is
+	// the stable part.
+	if !strings.Contains(q, "subject_name = git_repos.name") {
+		t.Errorf("the filter does not join on the repo name: %s", q)
+	}
+}
+
+func TestBuildGitRepoFilterQuery_HumanVerdictAny(t *testing.T) {
+	q, args := buildGitRepoFilterQuery(GitRepoFilter{HumanVerdict: "any"})
+
+	// "any" asks whether a person has an opinion at all, so it must not
+	// constrain which way the verdict went.
+	if len(args) != 0 {
+		t.Fatalf("expected no args for 'any', got %d: %v", len(args), args)
+	}
+	if !strings.Contains(q, "EXISTS") {
+		t.Errorf("expected an EXISTS check: %s", q)
+	}
+	if strings.Contains(q, "verdict =") {
+		t.Errorf("'any' must not filter on which verdict it was: %s", q)
+	}
+}
+
+func TestBuildGitRepoFilterQuery_HumanVerdictNone(t *testing.T) {
+	q, _ := buildGitRepoFilterQuery(GitRepoFilter{HumanVerdict: "none"})
+
+	if !strings.Contains(q, "NOT EXISTS") {
+		t.Errorf("expected a NOT EXISTS check: %s", q)
+	}
+}
+
+// An unrecognised value must not silently return the whole estate as though
+// no filter had been asked for.
+func TestBuildGitRepoFilterQuery_HumanVerdictRejectsNonsense(t *testing.T) {
+	q, args := buildGitRepoFilterQuery(GitRepoFilter{HumanVerdict: "probably"})
+
+	if strings.Contains(q, "failure_register_entries") {
+		t.Errorf("an unrecognised verdict reached the query: %s", q)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected no args, got %v", args)
+	}
+}
+
+// The filter has to compose with the ones already there rather than replacing
+// them — the git repo list is busy and people arrive at it already filtered.
+func TestBuildGitRepoFilterQuery_HumanVerdictComposesWithOthers(t *testing.T) {
+	q, args := buildGitRepoFilterQuery(GitRepoFilter{
+		CookstyleStatus: "blocked",
+		HumanVerdict:    "not_broken",
+	})
+
+	if len(args) != 2 {
+		t.Fatalf("expected 2 args, got %d: %v", len(args), args)
+	}
+	if !strings.Contains(q, "cookstyle_status = ANY($1)") {
+		t.Errorf("the cookstyle filter was lost: %s", q)
+	}
+	if !strings.Contains(q, "AND") {
+		t.Errorf("the filters are not combined: %s", q)
+	}
+	// This combination is the interesting one: CookStyle says blocked and a
+	// person says it is not. That is the false-positive list.
+	if !strings.Contains(q, "verdict = $2") {
+		t.Errorf("the verdict filter did not take the second placeholder: %s", q)
+	}
+}

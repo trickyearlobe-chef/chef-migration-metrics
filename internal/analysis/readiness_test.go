@@ -36,7 +36,8 @@ type fakeReadinessDS struct {
 	complexities    map[string]*datastore.ServerCookbookComplexity
 	gitCSResults    map[string]*datastore.GitRepoCookstyleResult
 	gitComplexities map[string]*datastore.GitRepoComplexity
-	gitTKStatuses   map[string]string // repoName|target → "passed"/"failed"/"partial"
+	gitTKStatuses   map[string]string                    // repoName|target → "passed"/"failed"/"partial"
+	humanVerdicts   map[string]datastore.StandingVerdict // repoName → standing verdict
 	upserted        []datastore.UpsertNodeReadinessParams
 
 	// Error injection
@@ -48,6 +49,7 @@ type fakeReadinessDS struct {
 	gitCSErr               error
 	gitComplexityErr       error
 	gitTKErr               error
+	humanVerdictErr        error
 	upsertErr              error
 
 	// Call counters
@@ -63,6 +65,7 @@ func newFakeReadinessDS() *fakeReadinessDS {
 		gitCSResults:    make(map[string]*datastore.GitRepoCookstyleResult),
 		gitComplexities: make(map[string]*datastore.GitRepoComplexity),
 		gitTKStatuses:   make(map[string]string),
+		humanVerdicts:   make(map[string]datastore.StandingVerdict),
 	}
 }
 
@@ -261,6 +264,13 @@ func (f *fakeReadinessDS) ListGitKitchenCountsByTargetVersions(_ context.Context
 	return result, nil
 }
 
+func (f *fakeReadinessDS) ListOpenFailureVerdicts(_ context.Context) (map[string]datastore.StandingVerdict, error) {
+	if f.humanVerdictErr != nil {
+		return nil, f.humanVerdictErr
+	}
+	return f.humanVerdicts, nil
+}
+
 // buildFakeCache constructs a readinessCache directly from the fake's in-memory
 // maps without going through the bulk-load DB path. This lets unit tests for
 // checkCookbookCompatibility and evaluateOne work with the cache directly.
@@ -272,6 +282,7 @@ func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 		serverComplexity: make(map[string]*datastore.ServerCookbookComplexity),
 		gitComplexity:    make(map[string]*datastore.GitRepoComplexity),
 		gitTKStatuses:    make(map[string]string),
+		humanVerdicts:    make(map[string]datastore.StandingVerdict),
 	}
 	for name, gr := range f.gitRepos {
 		cache.gitRepos[name] = gr
@@ -290,6 +301,9 @@ func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 	}
 	for k, v := range f.gitTKStatuses {
 		cache.gitTKStatuses[k] = v
+	}
+	for k, v := range f.humanVerdicts {
+		cache.humanVerdicts[k] = v
 	}
 	return cache
 }

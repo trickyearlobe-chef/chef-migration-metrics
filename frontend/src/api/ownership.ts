@@ -11,6 +11,11 @@ import type {
   ImportResponse,
   CookbookCommittersResponse,
   CommitterAssignResponse,
+  IntakeFieldMap,
+  IntakeMapping,
+  IntakeReport,
+  IntakeSourceProfile,
+  Pagination,
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
 import type { PaginationQuery } from "./client";
@@ -227,4 +232,86 @@ export function assignCookbookCommitters(
       body: JSON.stringify(body),
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Discovery-driven ownership intake
+//
+// Profile, preview and commit each open their own source, so each call carries
+// its own file and delimiter. Nothing is remembered between them on the server.
+// ---------------------------------------------------------------------------
+
+export interface IntakeRunOptions {
+  file: File;
+  delimiter?: string;
+  fieldMap?: IntakeFieldMap;
+  mappingId?: number;
+  createOwners?: boolean;
+}
+
+function intakeFormData(opts: IntakeRunOptions): FormData {
+  const formData = new FormData();
+  formData.append("file", opts.file);
+  if (opts.delimiter) formData.append("delimiter", opts.delimiter);
+  if (opts.fieldMap) formData.append("field_map", JSON.stringify(opts.fieldMap));
+  if (opts.mappingId !== undefined) formData.append("mapping_id", String(opts.mappingId));
+  // Only send the flag when switching creation off — the default is on.
+  if (opts.createOwners === false) formData.append("create_owners", "false");
+  return formData;
+}
+
+export function profileImportSource(
+  file: File,
+  delimiter?: string,
+): Promise<IntakeSourceProfile> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (delimiter) formData.append("delimiter", delimiter);
+  return apiFetch<IntakeSourceProfile>(buildUrl("/ownership/import/profile"), {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function previewOwnershipImport(opts: IntakeRunOptions): Promise<IntakeReport> {
+  return apiFetch<IntakeReport>(buildUrl("/ownership/import/preview"), {
+    method: "POST",
+    body: intakeFormData(opts),
+  });
+}
+
+export function commitOwnershipImport(opts: IntakeRunOptions): Promise<IntakeReport> {
+  return apiFetch<IntakeReport>(buildUrl("/ownership/import/commit"), {
+    method: "POST",
+    body: intakeFormData(opts),
+  });
+}
+
+export function fetchImportMappings(): Promise<{
+  data: IntakeMapping[];
+  pagination: Pagination;
+}> {
+  return apiFetch(buildUrl("/ownership/import/mappings"));
+}
+
+export function fetchImportMapping(id: number): Promise<IntakeMapping> {
+  return apiFetch<IntakeMapping>(buildUrl(`/ownership/import/mappings/${id}`));
+}
+
+export function createImportMapping(body: {
+  name: string;
+  delimiter: string;
+  field_map: IntakeFieldMap;
+}): Promise<IntakeMapping> {
+  return apiFetch<IntakeMapping>(buildUrl("/ownership/import/mappings"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, source_kind: "csv" }),
+  });
+}
+
+export function deleteImportMapping(id: number): Promise<void> {
+  return apiFetch<void>(buildUrl(`/ownership/import/mappings/${id}`), {
+    method: "DELETE",
+  });
 }

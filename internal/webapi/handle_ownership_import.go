@@ -458,6 +458,29 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 			return
 		}
 
+		// Record the commit address the person was recognised by, whether or
+		// not the owner was created just now.
+		//
+		// One person commits under several addresses — a personal one, a
+		// noreply one, an old domain — and every address after the first
+		// finds the owner already there. Recording only on creation drops
+		// them, which is the case this is for.
+		//
+		// It is recorded as a git address because that is what it is: commit
+		// addresses and corporate addresses differ often enough that
+		// conflating them attaches work to the wrong person.
+		if _, aliasErr := r.db.InsertOwnerAlias(ctx, datastore.InsertOwnerAliasParams{
+			OwnerName:  owner.Name,
+			AliasType:  "git_email",
+			AliasValue: c.AuthorEmail,
+			Source:     "committer",
+		}); aliasErr != nil && !errors.Is(aliasErr, datastore.ErrAlreadyExists) {
+			// A missing alias costs later matching accuracy, not this
+			// assignment.
+			r.logf("WARN", "cookbook-committers-assign: seeding git_email alias %q for %s: %v",
+				c.AuthorEmail, owner.Name, aliasErr)
+		}
+
 		// Create a git_repo assignment linking the owner to the cookbook's repo URL.
 		_, err = r.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
 			OwnerName:        owner.Name,

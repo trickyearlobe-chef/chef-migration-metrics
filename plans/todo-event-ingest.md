@@ -6,6 +6,26 @@ Automate Data Feed), partitioned store + retention ticker, Node Detail Runs tab,
 top-level **Run events** view (list + node detail + export, feature-gated). Below =
 post-MVP follow-ups only. Spec: `specifications/event-ingest.md`.
 
+## Why this matters at the customer (2026-08-02)
+
+Context from the product owner, recorded so it is not rediscovered.
+
+The customer runs a **daily speculative converge against the new Chef version**, installed
+side by side with the current one. A run stops at the first failure, so the blockers in a
+runlist are enumerated **one per cycle** — three blocking cookbooks take three days to
+find. The blockers themselves are stacktraces in that converge history.
+
+**CMM does not have that history there.** It goes to a third-party analytics platform
+consuming the Automate event feed; a parallel feed into CMM is being negotiated and the
+obstacle is political, not technical. In the lab there is no equivalent platform, so the
+Data Feed path stands in for it — which is why lab captures are Data Feed shaped.
+
+**What the run data would buy, and what it would not.** Static readiness already holds
+*every* blocking cookbook per node, not just the first, so predicting the set does not need
+run data at all. What run data buys is **grading that prediction**: each failure either
+lands on a cookbook the static analysis named or on one it missed, and the misses measure
+how far the prediction can be trusted before work is dispatched from it.
+
 ## Open
 
 - [ ] **CC19 target-version failing-nodes preset mode.** The distinct-node rollup
@@ -28,6 +48,24 @@ post-MVP follow-ups only. Spec: `specifications/event-ingest.md`.
   shapes are accepted-not-persisted (`normalise.go:297`). Depsolve / missing-cookbook
   failures arrive attributes-only, so they are ingested but invisible. Decide whether/how
   to surface them.
+
+  **Sharpened 2026-08-02 — this is the gap that decides whether ingest can name a
+  blocker.** Fixtures show a converge failure carrying the failed resource's cookbook and
+  recipe on **both** the Automate and raw node/proxy shapes, so attribution does not depend
+  on the transport. What carries nothing is the attributes-only delivery, and that is a
+  property of the *failure*: a run that dies before it converges has declared no resources,
+  so on any transport there is nothing to attribute a cookbook to.
+
+  That is exactly the first-wave upgrade blocker — a depsolve failure, or a cookbook using
+  an API removed in the new version and failing at compile time before a resource exists.
+  For those the cookbook name is only in the **backtrace**, which is captured and bounded
+  but never parsed. So the open question is not whether telemetry arrives; it is whether
+  the blocker in it can be named.
+
+- [ ] **Force one 19.x compile-time / depsolve failure in the lab and look at what
+  arrives.** Settles the item above with evidence rather than reasoning, and is worth doing
+  before a parallel feed is negotiated rather than after — if a delivered failure cannot be
+  attributed to a cookbook, winning the negotiation buys less than it appears to.
 - [ ] **Lab cleanup.** The lab node still has `data_collector.rb` + `ssl_verify_mode
   :verify_none` set from MVP bring-up. Revert once validation is complete.
 

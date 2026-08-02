@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
+import { OwnerAliasesCard } from "../components/OwnerAliasesCard";
+import { OwnerMergeDialog } from "../components/OwnerMergeDialog";
 import { useAuth } from "../context/AuthContext";
 import {
   fetchOwnerDetail,
@@ -70,6 +72,8 @@ export function OwnerDetailPage() {
 
   const canEdit =
     user !== null && (user.role === "admin" || user.role === "operator");
+  // Merging removes an owner, which is what deleting one requires.
+  const canMerge = user !== null && user.role === "admin";
 
   // -- Owner detail state ---------------------------------------------------
   const [owner, setOwner] = useState<OwnerDetail | null>(null);
@@ -104,6 +108,9 @@ export function OwnerDetailPage() {
 
   // -- Delete state ---------------------------------------------------------
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // -- Merge state ----------------------------------------------------------
+  const [showMerge, setShowMerge] = useState(false);
 
   // -- Load owner detail ----------------------------------------------------
   const loadOwner = useCallback(() => {
@@ -281,6 +288,15 @@ export function OwnerDetailPage() {
             >
               Edit
             </button>
+            {canMerge && (
+              <button
+                type="button"
+                onClick={() => setShowMerge(true)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Merge into…
+              </button>
+            )}
             <button
               type="button"
               onClick={handleDelete}
@@ -410,21 +426,8 @@ export function OwnerDetailPage() {
         </div>
       )}
 
-      {/* Aliases section — link to dedicated page */}
-      <div className="card">
-        <div className="flex items-center justify-between">
-          <h3 className="card-header">Identity Aliases</h3>
-          <Link
-            to={`/ownership/aliases?owner=${encodeURIComponent(name!)}`}
-            className="text-sm font-medium text-blue-600 hover:text-blue-800"
-          >
-            Manage aliases →
-          </Link>
-        </div>
-        <p className="mt-1 text-sm text-gray-500">
-          Aliases link this owner to identities (emails, usernames, SAML IDs) for permission resolution and ownership matching.
-        </p>
-      </div>
+      {/* Aliases — edited here, on the person they belong to */}
+      <OwnerAliasesCard ownerName={owner.name} canEdit={canEdit} />
 
       {/* Assignments section */}
       <div className="card">
@@ -590,6 +593,18 @@ export function OwnerDetailPage() {
           </>
         )}
       </div>
+
+      {/* Merge dialog — this owner folds into one you pick */}
+      {showMerge && (
+        <OwnerMergeDialog
+          fromOwner={owner.name}
+          onCancel={() => setShowMerge(false)}
+          onMerged={(result) => {
+            setShowMerge(false);
+            navigate(`/ownership/${encodeURIComponent(result.into_owner)}`);
+          }}
+        />
+      )}
 
       {/* Edit modal */}
       {showEditModal && (

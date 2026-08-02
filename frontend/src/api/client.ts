@@ -137,6 +137,8 @@ export interface GitRepoFilterQuery extends PaginationQuery {
   clone_status?: string;
   has_test_suite?: string;
   target_chef_version?: string;
+  /** "broken", "not_broken", "any" (somebody has an opinion) or "none". */
+  human_verdict?: string;
   search?: string;
   sort?: string;
   order?: string;

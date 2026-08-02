@@ -49,6 +49,12 @@ type Router struct {
 	version       string
 	schemaVersion int
 
+	// duplicateScanRunning guards the possible-duplicate-owners scan. The scan
+	// walks the whole owner catalogue, which takes tens of seconds on a large
+	// one, so it runs detached from the request that asked for it and only one
+	// runs at a time.
+	duplicateScanRunning atomic.Bool
+
 	// tlsStatus reports whether the server fell back to plain HTTP because the
 	// configured static TLS listener could not be started (see tls.md § 2.4).
 	// nil on plain-HTTP/ACME deployments — the status endpoint then reports
@@ -850,10 +856,28 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints)
+	// Discovery-driven intake. Registered as exact patterns beside the
+	// fixed-header route above, which stays in service unchanged.
+	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/mappings", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/mappings/", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases)
 	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases)
 	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport)
 	r.protect("/api/v1/ownership/aliases/suggest", r.handleOwnershipAliasSuggest)
+	// Identity management: recognising a duplicate person, and folding one
+	// into another so the correction survives the next ingest.
+	r.protect("/api/v1/ownership/duplicates", r.handleOwnershipDuplicates)
+	r.protect("/api/v1/ownership/duplicates/rescan", r.handleOwnershipDuplicatesRescan)
+	r.protect("/api/v1/ownership/merge", r.handleOwnershipMerge)
+
+	// The failure register: a person's verdict on whether a cookbook actually
+	// works, which outranks CookStyle and Test Kitchen. Reads are viewer;
+	// recording, revising and resolving need operator or admin.
+	r.protect("/api/v1/failure-register", r.handleFailureRegister)
+	r.protect("/api/v1/failure-register/", r.handleFailureRegister)
 
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)

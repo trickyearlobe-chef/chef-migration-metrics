@@ -69,11 +69,11 @@ Append-only log of all ownership changes. Every mutation to the `owners` and `ow
 |-------|------|----------|-------------|
 | `id` | UUID | No | Primary key |
 | `timestamp` | TIMESTAMPTZ | No | When the action occurred |
-| `action` | TEXT | No | One of: `owner_created`, `owner_updated`, `owner_deleted`, `assignment_created`, `assignment_deleted`, `assignment_reassigned` |
+| `action` | TEXT | No | What was done. In use: `owner_created`, `owner_updated`, `owner_deleted`, `owner_merged`, `assignment_created`, `assignment_deleted`, `assignment_reassigned`. **Not constrained** — an audit log records what happened, including kinds of event that did not exist when the column was defined, and a rejected write is only logged so a discarded entry would look exactly like a recorded one. Adding an action needs no migration. See [audit-log](audit-log.md). |
 | `actor` | TEXT | No | Username of the authenticated user who performed the action, or `system` for auto-derivation and startup cleanup operations |
 | `owner_name` | TEXT | No | Name of the owner involved |
-| `entity_type` | TEXT | Yes | Entity type of the assignment (null for owner-level actions like `owner_created`, `owner_updated`) |
-| `entity_key` | TEXT | Yes | Entity key of the assignment (null for owner-level actions) |
+| `entity_type` | TEXT | Yes | Entity type of the assignment. Null for owner-level actions like `owner_created`. |
+| `entity_key` | TEXT | Yes | Entity key of the assignment. Null for owner-level actions. **Both halves or neither** — a CHECK enforces the pair, because half a reference cannot be looked up. Which actions carry one is the caller's decision, not the schema's. |
 | `organisation` | TEXT | Yes | Organisation name for org-scoped assignments (null for cross-org or owner-level actions) |
 | `details` | JSONB | Yes | Additional context. Contents vary by action type (see below). |
 
@@ -84,6 +84,7 @@ Append-only log of all ownership changes. Every mutation to the `owners` and `ow
 | `owner_created` | `{"owner_type": "team"}` |
 | `owner_updated` | `{"changed_fields": ["display_name", "contact_email"]}` — list of fields that were modified |
 | `owner_deleted` | `{"assignments_cascaded": 12}` — number of assignments deleted by cascade |
+| `owner_merged` | The merge result — which owner was folded into which, and the counts of assignments and aliases moved. Recorded against the surviving owner. |
 | `assignment_created` | `{"assignment_source": "manual", "confidence": "definitive"}` |
 | `assignment_deleted` | `{"assignment_source": "manual", "confidence": "definitive"}` |
 | `assignment_reassigned` | `{"from_owner": "old-team", "to_owner": "new-team", "previous_source": "auto_rule", "new_source": "manual"}` |

@@ -193,6 +193,26 @@ Recorded 2026-06-19 (`feature/orphan-sweep-ticker`).
 
 - [ ] **Scheduled orphan sweep is scoped by name prefix + age only — no folder filter.** `StartSweepTicker` wires a live, dynamic scheduled sweep that does **real** destroys, matching the existing manual `POST /kitchen/orphan-sweep` behaviour. But `bulk-kitchen-scanning.md` acceptance says "Orphan sweep only touches VMs **in the configured folder**, matching the prefix, and older than the age threshold", and `ListManagedVMs(ctx, prefix)` (`hypervisor.go:35`, `proxmox.go:122`, `vcenter.go:188`) has **no folder parameter**. The production customer is shared vSphere ([[lab-vs-customer-hypervisor]]), where the `kitchen-*` uptime fallback can match VMs owned by other tools. A one-time WARN is logged at ticker start. **Decision (2026-06-19, owner):** ship the scheduled real-destroy unscoped now; defer folder scoping. **Strategic fix:** add an optional folder filter to `ListManagedVMs` reading `driver_settings.targetfolder` — vSphere supports `GET /api/vcenter/vm?folders={f}&names={prefix}-*`; proxmox has no folders so falls back to prefix-only. Touches the `Hypervisor` interface, both impls, `NullHypervisor`, `orphan.go`/`sweep.go` callers, the manual handler, and mocks. This is a **known divergence** from the spec acceptance criterion — reconcile the spec (owner sign-off) when the filter lands.
 
+## Architecture — Audit logging is per-subject and best-effort
+
+Recorded 2026-08-02 (`feature/owner-ingest-discovery`), found while adding an `owner_merged`
+action. Design and the way out: `specifications/audit-log.md`; work items:
+`plans/todo-audit.md`.
+
+- [ ] **The pattern is copied, not shared.** `cookstyle_audit_log` was built by mirroring
+  `ownership_audit_log` for a different subject; its own comment says so. A third subject
+  would be a third table. **Expedient because** each was the smallest change at the time.
+  **Proper fix:** one table keyed on a subject pair, per `specifications/audit-log.md`.
+- [ ] **The audit write is best-effort** (`handle_ownership.go`, `auditOwnership` logs a
+  WARN and continues), so any failure to record leaves an action that looks audited and is
+  not. `InsertAuditEntryTx` exists for a transactional write and nothing uses it.
+- [ ] **Actions are written as string literals** at each call site. Now that the database
+  no longer constrains the vocabulary, a typo is recorded rather than rejected — the better
+  failure, but shared constants are what actually prevents it.
+- [ ] **Configuration edits and triggered processes are not audited at all.**
+  `config_store` keeps only who last touched a key; rescan-all and the ownership duplicate
+  scan write to the application log, which is shipped to a broadly-readable Splunk.
+
 ## Architecture — Duplicated Derived Calculations
 
 - [ ] **Client-side filtering/sorting/dashboarding is fragile** — derived values like blast radius scores, complexity calculations, and TK pass/fail/partial statuses are computed independently in multiple places (API handlers, frontend sort comparators, dashboard aggregation, export formatters). When the calculation logic drifts between copies, filters disagree with dashboards and sort order doesn't match displayed values. **Strategic fix:** push derived calculations into the database as materialised columns or summary tables, computed once at collection time. API surfaces then filter/sort/aggregate on pre-computed values rather than re-deriving them. This also enables server-side pagination with correct sort order and eliminates the class of paging bugs caused by client-side recomputation. Relates to the platform filter tree multiselect item (server-side group filtering). **Note (Phase 2 caption):** adding `platform_caption` introduces a 4th input to `ResolveInfo` that is re-derived at 6 call sites — increases urgency of materialising platform display/group into DB columns.
@@ -505,6 +525,21 @@ Recorded 2026-07-16 with `feature/event-ingest-mvp` (`specifications/event-inges
   encrypted config store, with the value handed to the producer side. Automate's Data
   Feed already sends basic-auth creds we currently ignore, so that shape needs no client
   change; the node/proxy shapes do. Revisit before any non-lab exposure.
+
+## Human Verdict Is Rendered As A CookStyle Qualifier (MVP)
+
+Recorded 2026-08-02 with the failure register (`specifications/failure-register.md`).
+
+- [ ] **The overruled marker on the git repo list sits inside the CookStyle status cell**,
+  which reads as a qualifier on that one scan. A human verdict is not CookStyle-specific:
+  it outranks Test Kitchen too, and it is recorded against the repo or cookbook rather than
+  against any scan. Accepted for the MVP because this customer's CookStyle coverage is wide
+  and their Test Kitchen coverage is almost non-existent, so in practice it is nearly always
+  CookStyle being overruled — the placement is right by accident of the data, not by design.
+  **Proper fix:** move the marker beside the repo name, where it qualifies the row rather
+  than one cell, and leave every scan badge untouched. Cheap (it is one component and one
+  cell), and worth doing before any customer whose Test Kitchen coverage is real. The
+  limitation is also noted in `OverruledMarker.tsx` so whoever moves it finds the reasoning.
 
 ## Phasing Notes
 

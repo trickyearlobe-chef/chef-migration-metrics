@@ -198,95 +198,104 @@ func (db *DB) deleteAssignment(ctx context.Context, q queryable, id int64) error
 // assignments.
 func (db *DB) ReassignOwnership(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (reassigned, skipped int, err error) {
 	err = db.Tx(ctx, func(tx *sql.Tx) error {
-		// Build filter clause.
-		where := "WHERE owner_name = $1"
-		args := []any{fromOwnerName}
-		argN := 2
-
-		if entityType != "" {
-			where += fmt.Sprintf(" AND entity_type = $%d", argN)
-			args = append(args, entityType)
-			argN++
-		}
-		if organisationName != "" {
-			where += fmt.Sprintf(" AND organisation_name = $%d", argN)
-			args = append(args, organisationName)
-		}
-
-		// Fetch matching assignments from the source owner.
-		selectQuery := fmt.Sprintf(`
-			SELECT id, entity_type, entity_key, organisation_name, notes
-			FROM ownership_assignments
-			%s
-		`, where)
-
-		rows, err := tx.QueryContext(ctx, selectQuery, args...)
-		if err != nil {
-			return fmt.Errorf("listing assignments for reassignment: %w", err)
-		}
-		defer rows.Close()
-
-		type assignmentInfo struct {
-			id               int64
-			entityType       string
-			entityKey        string
-			organisationName sql.NullString
-			notes            sql.NullString
-		}
-		var toMove []assignmentInfo
-		for rows.Next() {
-			var a assignmentInfo
-			if err := rows.Scan(&a.id, &a.entityType, &a.entityKey, &a.organisationName, &a.notes); err != nil {
-				return fmt.Errorf("scanning assignment for reassignment: %w", err)
-			}
-			toMove = append(toMove, a)
-		}
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("iterating assignments for reassignment: %w", err)
-		}
-
-		for _, a := range toMove {
-			// Check if target owner already has this assignment.
-			var exists bool
-			err := tx.QueryRowContext(ctx, `
-				SELECT EXISTS(
-					SELECT 1 FROM ownership_assignments
-					WHERE owner_name = $1 AND entity_type = $2 AND entity_key = $3
-					AND COALESCE(organisation_name, '__none__') =
-					    COALESCE($4, '__none__')
-				)
-			`, toOwnerName, a.entityType, a.entityKey, a.organisationName).Scan(&exists)
-			if err != nil {
-				return fmt.Errorf("checking duplicate assignment: %w", err)
-			}
-
-			if exists {
-				// Delete the source assignment (duplicate).
-				if _, err := tx.ExecContext(ctx, `DELETE FROM ownership_assignments WHERE id = $1`, a.id); err != nil {
-					return fmt.Errorf("deleting duplicate assignment: %w", err)
-				}
-				skipped++
-			} else {
-				// Move the assignment to the target owner.
-				_, err := tx.ExecContext(ctx, `
-					UPDATE ownership_assignments
-					SET owner_name = $1,
-					    assignment_source = 'manual',
-					    confidence = 'definitive',
-					    auto_rule_name = NULL,
-					    updated_at = now()
-					WHERE id = $2
-				`, toOwnerName, a.id)
-				if err != nil {
-					return fmt.Errorf("reassigning assignment: %w", err)
-				}
-				reassigned++
-			}
-		}
-
-		return nil
+		reassigned, skipped, err = reassignOwnershipTx(ctx, tx, fromOwnerName, toOwnerName, entityType, organisationName)
+		return err
 	})
 	return reassigned, skipped, err
+}
+
+// reassignOwnershipTx moves assignments between two owners inside a caller's
+// transaction. MergeOwners uses it so that moving the work and moving the
+// identity that resolves to it either both happen or neither does.
+func reassignOwnershipTx(ctx context.Context, tx *sql.Tx, fromOwnerName, toOwnerName string, entityType, organisationName string) (reassigned, skipped int, err error) {
+	// Build filter clause.
+	where := "WHERE owner_name = $1"
+	args := []any{fromOwnerName}
+	argN := 2
+
+	if entityType != "" {
+		where += fmt.Sprintf(" AND entity_type = $%d", argN)
+		args = append(args, entityType)
+		argN++
+	}
+	if organisationName != "" {
+		where += fmt.Sprintf(" AND organisation_name = $%d", argN)
+		args = append(args, organisationName)
+	}
+
+	// Fetch matching assignments from the source owner.
+	selectQuery := fmt.Sprintf(`
+		SELECT id, entity_type, entity_key, organisation_name, notes
+		FROM ownership_assignments
+		%s
+	`, where)
+
+	rows, err := tx.QueryContext(ctx, selectQuery, args...)
+	if err != nil {
+		return 0, 0, fmt.Errorf("listing assignments for reassignment: %w", err)
+	}
+	defer rows.Close()
+
+	type assignmentInfo struct {
+		id               int64
+		entityType       string
+		entityKey        string
+		organisationName sql.NullString
+		notes            sql.NullString
+	}
+	var toMove []assignmentInfo
+	for rows.Next() {
+		var a assignmentInfo
+		if err := rows.Scan(&a.id, &a.entityType, &a.entityKey, &a.organisationName, &a.notes); err != nil {
+			return 0, 0, fmt.Errorf("scanning assignment for reassignment: %w", err)
+		}
+		toMove = append(toMove, a)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, fmt.Errorf("iterating assignments for reassignment: %w", err)
+	}
+	rows.Close()
+
+	for _, a := range toMove {
+		// Check if target owner already has this assignment.
+		var exists bool
+		err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM ownership_assignments
+				WHERE owner_name = $1 AND entity_type = $2 AND entity_key = $3
+				AND COALESCE(organisation_name, '__none__') =
+				    COALESCE($4, '__none__')
+			)
+		`, toOwnerName, a.entityType, a.entityKey, a.organisationName).Scan(&exists)
+		if err != nil {
+			return 0, 0, fmt.Errorf("checking duplicate assignment: %w", err)
+		}
+
+		if exists {
+			// Delete the source assignment (duplicate).
+			if _, err := tx.ExecContext(ctx, `DELETE FROM ownership_assignments WHERE id = $1`, a.id); err != nil {
+				return 0, 0, fmt.Errorf("deleting duplicate assignment: %w", err)
+			}
+			skipped++
+		} else {
+			// Move the assignment to the target owner.
+			_, err := tx.ExecContext(ctx, `
+				UPDATE ownership_assignments
+				SET owner_name = $1,
+				    assignment_source = 'manual',
+				    confidence = 'definitive',
+				    auto_rule_name = NULL,
+				    updated_at = now()
+				WHERE id = $2
+			`, toOwnerName, a.id)
+			if err != nil {
+				return 0, 0, fmt.Errorf("reassigning assignment: %w", err)
+			}
+			reassigned++
+		}
+	}
+
+	return reassigned, skipped, nil
 }
 
 // LookupOwnership returns all owners for a given entity, using the

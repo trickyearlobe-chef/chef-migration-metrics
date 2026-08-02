@@ -151,3 +151,90 @@ The `owner` query parameter is added to all existing list and dashboard endpoint
 - `GET /api/v1/dependency-graph`
 - `GET /api/v1/dependency-graph/table`
 - `GET /api/v1/exports` (POST — as a filter in the request body)
+
+---
+
+### 4.6 Identity Management
+
+Behaviour and intent: [ownership-identity.md](ownership-identity.md). This section is the endpoint
+contract only.
+
+#### `POST /api/v1/ownership/merge`
+
+Fold one owner into another. Unlike `/ownership/reassign`, which moves assignments and leaves the
+source owner and its aliases in place, a merge moves the identities as well and removes the source
+— which is what makes a correction survive the next ingest.
+
+**Request body:**
+
+```json
+{
+  "from_owner": "fat-tommy",
+  "into_owner": "thomas-smith"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `from_owner` | string | Yes | The owner being folded away. Must exist. |
+| `into_owner` | string | Yes | The surviving owner. Must exist, and must differ from `from_owner`. |
+
+**Response (200):** the counts of what moved — assignments reassigned, assignments the target
+already held (removed rather than duplicated), aliases moved, aliases dropped, and whether the
+source owner's own name was added to the target as a `custom` alias. The authoritative shape is
+`datastore.MergeOwnersResult`.
+
+**Behaviour:**
+- All of it happens in one transaction, or none of it does.
+- An alias the target already answers to is dropped rather than moved — the uniqueness constraint
+  on `(alias_type, alias_value)` is global.
+- The source owner's name is seeded as a `custom` alias of the target, unless that value is already
+  taken. Not seeding it is not an error.
+- Writes an `owner_merged` audit entry against the surviving owner.
+- `404` if either owner is unknown; `400` if either is missing or they are the same.
+
+**Authorisation:** `admin` — a merge deletes an owner, which is what `DELETE /api/v1/owners/:name`
+requires.
+
+---
+
+#### `GET /api/v1/ownership/duplicates`
+
+The stored list of owner pairs that may be the same person, strongest first.
+
+**Query parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `min_similarity` | number | Floor on the similarity score. Clamped up to the scan's own floor — the list cannot report pairs the scan never recorded. |
+| `page` | integer | Page number (default: 1) |
+| `per_page` | integer | Items per page |
+
+**Response (200):** `data` (the pairs, shape `datastore.OwnerDuplicateCandidate`), `pagination`,
+plus:
+
+| Field | Description |
+|-------|-------------|
+| `scan` | When the catalogue was last scanned and how many pairs that scan found. **Absent when it has never been scanned** — which is not the same as a scan that found nothing. |
+| `scan_running` | Whether a scan is running now. The list is the previous one until it finishes. |
+| `coverage` | `owners_total` and `owners_without_alias`, so the reader can see how much of the catalogue is compared by name alone. Absent if the count could not be taken — a failed count must not blank the list. |
+
+**Authorisation:** `viewer`, `operator`, `admin`
+
+---
+
+#### `POST /api/v1/ownership/duplicates/rescan`
+
+Rebuild the stored duplicate list.
+
+**Response (202):** `{"started": true}`, or `{"started": false, "reason": "..."}` when a scan is
+already running.
+
+**Behaviour:**
+- Returns as soon as the scan has been **started**. It walks every owner and every alias, which is
+  tens of seconds on a large catalogue — long enough that holding the request open invites a proxy
+  timeout and a retry that would start a second scan.
+- Only one scan runs at a time.
+- Readers keep the previous list until the new one commits.
+
+**Authorisation:** `operator`, `admin`

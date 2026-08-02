@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ApiError, createOwnerAlias, deleteOwnerAlias, fetchOwnerAliases, importOwnerAliases, suggestOwnerAliases } from "../api";
+import { ALIAS_TYPES, ApiError, createOwnerAlias, deleteOwnerAlias, fetchOwnerAliases, importOwnerAliases, suggestOwnerAliases } from "../api";
 import type { AliasImportResponse, AliasSuggestion, OwnerAlias } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ErrorAlert, LoadingSpinner } from "../components/Feedback";
@@ -8,8 +8,7 @@ import { EmptyState, ErrorAlert, LoadingSpinner } from "../components/Feedback";
 const INPUT_CLASS = "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 const SELECT_CLASS = "block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
 const FILE_INPUT_CLASS = `${INPUT_CLASS} file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-gray-700`;
-const ALIAS_TYPES = ["email", "name", "username", "saml_id"];
-const ALIAS_STYLES: Record<string, string> = { email: "bg-sky-100 text-sky-700", name: "bg-violet-100 text-violet-700", username: "bg-amber-100 text-amber-700", saml_id: "bg-emerald-100 text-emerald-700" };
+const ALIAS_STYLES: Record<string, string> = { email: "bg-sky-100 text-sky-700", git_email: "bg-violet-100 text-violet-700", git_name: "bg-indigo-100 text-indigo-700", username: "bg-amber-100 text-amber-700", custom: "bg-gray-100 text-gray-700" };
 const TABS = [{ key: "browse", label: "Browse" }, { key: "import", label: "Import" }] as const;
 const STATS = [
   { key: "imported", label: "Imported", className: "text-green-600" },
@@ -44,7 +43,9 @@ export function OwnerAliasesPage() {
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [savingAlias, setSavingAlias] = useState(false);
   const [deletingAliasId, setDeletingAliasId] = useState<string | null>(null);
-  const [aliasForm, setAliasForm] = useState({ owner_name: "", alias_type: "email", alias_value: "" });
+  // Pre-filled from the same place as the browse box, so the two owner fields
+  // on this screen cannot start out disagreeing with each other.
+  const [aliasForm, setAliasForm] = useState({ owner_name: initialOwner, alias_type: "email", alias_value: "" });
   const [importFormat, setImportFormat] = useState<"csv" | "json">("csv");
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -166,7 +167,7 @@ export function OwnerAliasesPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-gray-900">Owner Aliases</h2>
-        <p className="mt-1 text-sm text-gray-500">Search for likely owner matches, review aliases by owner, and manage imported identity mappings.</p>
+        <p className="mt-1 text-sm text-gray-500">Search across every recorded alias, and import identity mappings in bulk. To add or remove the aliases of one person, open that owner and edit them there.</p>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">

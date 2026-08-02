@@ -23,6 +23,7 @@ import { ExportButton } from "../components/ExportButton";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CookStyleStatusBadge } from "../components/StatusBadge";
+import { OverruledMarker } from "../components/OverruledMarker";
 
 // ---------------------------------------------------------------------------
 // Git Repos list page — paginated table from GET /api/v1/git-repos showing
@@ -102,6 +103,12 @@ export function GitReposPage() {
   const [kitchenFilter, setKitchenFilter] = useState<string[]>(
     searchParams.get("has_test_suite")?.split(",").filter(Boolean) ?? [],
   );
+  // The failure register. Not answerable from the status columns above: those
+  // report what each tool said and are not rewritten when a person overrules
+  // them, so an overruled repo still reads as blocked there.
+  const [humanVerdict, setHumanVerdict] = useState<string[]>(
+    searchParams.get("human_verdict")?.split(",").filter(Boolean) ?? [],
+  );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -127,7 +134,8 @@ export function GitReposPage() {
       searchParams.has("name") ||
       searchParams.has("tk_status") ||
       searchParams.has("clone_status") ||
-      searchParams.has("has_test_suite")
+      searchParams.has("has_test_suite") ||
+      searchParams.has("human_verdict")
     ) {
       setSearchParams({}, { replace: true });
     }
@@ -143,6 +151,10 @@ export function GitReposPage() {
     if (tkStatus.length > 0) q.tk_status = tkStatus.join(",");
     if (cloneStatus.length > 0) q.clone_status = cloneStatus.join(",");
     if (kitchenFilter.length > 0) q.has_test_suite = kitchenFilter.join(",");
+    // Both sides selected asks whether anybody has an opinion at all, which
+    // the API spells "any" rather than as a pair of verdicts.
+    if (humanVerdict.length === 1) q.human_verdict = humanVerdict[0];
+    else if (humanVerdict.length > 1) q.human_verdict = "any";
     if (selectedTargetVersion) q.target_chef_version = selectedTargetVersion;
     if (sortField) q.sort = sortField;
     if (sortOrder) q.order = sortOrder;
@@ -153,6 +165,9 @@ export function GitReposPage() {
     tkStatus,
     cloneStatus,
     kitchenFilter,
+    // Omitting this left the chip and the count updating while the request
+    // never changed — a list that looked filtered and was not.
+    humanVerdict,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -194,6 +209,7 @@ export function GitReposPage() {
     tkStatus.length > 0 ? 1 : 0,
     cloneStatus.length > 0 ? 1 : 0,
     kitchenFilter.length > 0 ? 1 : 0,
+    humanVerdict.length > 0 ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
   const clearFilters = () => {
@@ -202,6 +218,7 @@ export function GitReposPage() {
     setTkStatus([]);
     setCloneStatus([]);
     setKitchenFilter([]);
+    setHumanVerdict([]);
   };
 
   // The current selection in the vocabulary a saved filter stores. Sort, page and
@@ -283,6 +300,15 @@ export function GitReposPage() {
           ]}
           selected={cloneStatus}
           onChange={setCloneStatus}
+        />
+        <FilterMultiCheckbox
+          label="Team verdict"
+          options={[
+            { value: "broken", label: "Person says broken" },
+            { value: "not_broken", label: "Person says OK" },
+          ]}
+          selected={humanVerdict}
+          onChange={setHumanVerdict}
         />
         <FilterMultiCheckbox
           label="Kitchen"
@@ -421,9 +447,15 @@ export function GitReposPage() {
                         )}
                       </td>
                       <td>
+                        {/* The scan's badge is left as it was; the marker says
+                            a person has overruled it. */}
                         <CookStyleStatusBadge
                           status={repo.cookstyle_status ?? "untested"}
                           size="sm"
+                        />
+                        <OverruledMarker
+                          verdict={repo.human_verdict}
+                          reason={repo.human_verdict_reason}
                         />
                       </td>
                       <td>

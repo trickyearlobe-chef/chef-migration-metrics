@@ -140,3 +140,118 @@ export interface ImportError {
 export type OwnerListResponse = PaginatedResponse<Owner>;
 export type AssignmentListResponse = PaginatedResponse<OwnershipAssignment>;
 export type AuditLogResponse = PaginatedResponse<OwnershipAuditEntry>;
+
+// ---------------------------------------------------------------------------
+// Discovery-driven ownership intake
+//
+// The source's shape is not known in advance, so the administrator profiles the
+// file, maps its columns onto these fields, previews the result, then commits.
+// See specifications/ownership-intake.md.
+// ---------------------------------------------------------------------------
+
+export type IntakeTargetField =
+  | "owner"
+  | "entity_type"
+  | "entity_key"
+  | "organisation"
+  | "notes"
+  | "display_name";
+
+export interface IntakeColumnProfile {
+  name: string;
+  sample_values: string[];
+  non_empty_pct: number;
+  distinct_count: number;
+}
+
+export interface IntakeSourceProfile {
+  columns: IntakeColumnProfile[];
+  row_count: number;
+  malformed_rows: number;
+  warnings: string[];
+}
+
+export interface IntakeSource {
+  kind: "column" | "constant" | "concat";
+  column?: string;
+  value?: string;
+  columns?: string[];
+  separator?: string;
+}
+
+export interface IntakeTransform {
+  kind: string;
+  value?: string;
+  from?: string;
+  to?: string;
+  pattern?: string;
+}
+
+export interface IntakeFieldMapping {
+  source: IntakeSource;
+  transforms?: IntakeTransform[];
+}
+
+export type IntakeFieldMap = Partial<Record<IntakeTargetField, IntakeFieldMapping>>;
+
+export interface IntakeOwnerSuggestion {
+  owner_name: string;
+  score: number;
+}
+
+export interface IntakeReportRow {
+  source_row: number;
+  malformed: boolean;
+  raw: Record<string, string>;
+  owner: string;
+  owner_raw: string;
+  entity_type: string;
+  entity_key: string;
+  organisation: string;
+  notes: string;
+  display_name: string;
+  rejected_reason?: string;
+  owner_match: string;
+  entity_match: string;
+  outcome: string;
+  creates_owner: boolean;
+  existing_owners?: string[];
+  alias_conflict: boolean;
+  alias_conflict_owner?: string;
+  owner_suggestions?: IntakeOwnerSuggestion[];
+}
+
+export interface IntakeUnmatchedOwner {
+  value: string;
+  count: number;
+}
+
+export interface IntakeNewOwner {
+  name: string;
+  display_name: string;
+  source_value: string;
+  row_count: number;
+  suggestions?: IntakeOwnerSuggestion[];
+}
+
+export interface IntakeReport {
+  rows: IntakeReportRow[];
+  new_owners: IntakeNewOwner[];
+  counts: Record<string, number>;
+  alias_conflict_count: number;
+  row_count: number;
+  unmatched_owners: IntakeUnmatchedOwner[];
+  committed: boolean;
+  created: number;
+}
+
+export interface IntakeMapping {
+  id: number;
+  name: string;
+  source_kind: string;
+  delimiter: string;
+  field_map?: IntakeFieldMap;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}

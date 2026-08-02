@@ -45,6 +45,11 @@ Moved to [ownership-datastore.md](ownership-datastore.md).
 
 Moved to [ownership-api.md](ownership-api.md) and [ownership-api-2.md](ownership-api-2.md).
 
+## 4a. Identity and Alias Management
+
+Aliases, possible-duplicate owners, and merging one owner into another:
+[ownership-identity.md](ownership-identity.md).
+
 ## 5. Dashboard / Visualisation Changes
 
 Moved to [ownership-visualisation.md](ownership-visualisation.md).

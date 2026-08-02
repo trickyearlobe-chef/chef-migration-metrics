@@ -16,6 +16,7 @@
 | Specification | Summary |
 |---------------|---------|
 | [analysis](analysis.md) | Cookbook usage analysis, compatibility testing (Test Kitchen + CookStyle), remediation guidance, and per-node upgrade readiness. |
+| [audit-log](audit-log.md) | ⚠️ Proposed, not built. One append-only record of who did what — ownership, configuration, credentials, triggered processes — replacing two narrow per-subject tables and no coverage of config or jobs. |
 | [auth](auth.md) | Authentication: local bcrypt accounts and SAML 2.0 SSO, with viewer/operator/admin RBAC. |
 | [backup-restore](backup-restore.md) | Backup and restore of the datastore and application configuration. |
 | [batch-estimate](batch-estimate.md) | Estimation and sizing of migration batches. |
@@ -36,6 +37,7 @@
 | [encrypted-config-store](encrypted-config-store.md) | Encrypted storage backend for configuration values. |
 | [enriched-metric-snapshots](enriched-metric-snapshots.md) | Periodic enriched metric snapshots for historical trending. |
 | [event-ingest](event-ingest.md) | Passive HTTP receiver for Chef run telemetry (node / Server proxy / Automate Data Feed) → partitioned `converge_runs` → Node Detail Runs tab. MVP, no auth. |
+| [failure-register](failure-register.md) | ⚠️ Specified, not built. A person's verdict on whether a cookbook actually works — two-sided, so it overrules a wrong automated verdict as well as recording one nothing caught — plus the standup view that reads it back. |
 | [filter-ux-overhaul](filter-ux-overhaul.md) | Dashboard filtering UX across org, environment, role, policy, platform, and owner. |
 | [git-repo-file-browser](git-repo-file-browser.md) | Browsing files within cloned git cookbook repositories. |
 | [kitchen-analyser](kitchen-analyser.md) | Analysis of Test Kitchen configurations and results. |
@@ -46,6 +48,7 @@
 | [node-list-enhancements](node-list-enhancements.md) | Enhancements to the node list view (columns, filters). |
 | [node-tags](node-tags.md) | Ingest Chef node tags; filter the node list by them (pinned `prepare`/`upgrade`/`rollback` + searchable long tail); include in exports. |
 | [ownership](ownership.md) | Ownership model: owners, assignments, bulk reassignment, audit log, and committer-to-owner workflows. |
+| [ownership-intake](ownership-intake.md) | Discovery-driven ownership import: source profiling, column mapping, preview and the match report. |
 | [packaging](packaging.md) | RPM/DEB/Docker packaging. CookStyle/Test Kitchen are not bundled — they come from Chef Workstation on the host (resolved from `PATH`). |
 | [parallel-deployment-tracking](parallel-deployment-tracking.md) | Tracking parallel, per-version deployment progress across the fleet. |
 | [performance-diagnostics](performance-diagnostics.md) | Performance diagnostics and profiling. |
