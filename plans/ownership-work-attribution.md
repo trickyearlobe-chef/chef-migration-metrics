@@ -294,6 +294,53 @@ What follows:
   coverage improves, so this is a demand-driven activity with no finish line — which is the right
   shape, and should not be planned as a one-time exercise.
 
+## Blockers are discovered serially and predicted in parallel
+
+Stated by the product owner, 2026-08-02, describing how the customer works today: a daily
+speculative run against the new Chef version, installed side by side with the current one,
+surfaces the cookbooks blocking each runlist. A run stops at the first failure, so fixing it
+reveals the next — a runlist with three blocking cookbooks takes three cycles to enumerate.
+
+**CMM already holds the whole set.** Static readiness records every blocking cookbook per node,
+not just the first, so the second and third are known on the day the run is still failing on the
+first. Fixing them together collapses three cycles into one, and — the point for this plan —
+identifies all three owners at once so the work dispatches in parallel instead of one owner per
+day. That is journey 2 with the sequencing removed.
+
+Bounds on that, all of which matter before anyone dispatches work from the prediction:
+
+- **Static and runtime see different things.** The scan reads what it can; the run finds what
+  actually breaks. Neither is a superset, so the prediction is a head start, not a replacement.
+- **Membership is predicted, order is not.** Which failure comes first depends on runlist order
+  and compile-versus-converge phase. Presenting the set as a sequence would be a false claim.
+- **The blind spot inverts here.** Cookbooks invoked through an override runlist or a special job
+  are absent from static readiness, and a real run is the only thing that finds them. For that
+  class the speculative run is the better detector, not the slower one.
+
+**The most valuable use of the daily run may be grading the prediction rather than producing it.**
+Every failure either lands on a cookbook the static analysis named or on one it missed, and the
+misses measure how far the prediction can be trusted.
+
+**But CMM does not have the converge history at the customer.** The blockers are stacktraces in a
+converge history that goes to a third-party analytics platform consuming the Automate event feed.
+A parallel feed into CMM is being negotiated and the obstacle is political, not technical. Until
+it lands, the static prediction has to stand on its own — which it does: telling somebody all the
+blockers in a runlist rather than the one they are currently failing on needs no run data at all.
+
+**Two of the three ingest producer shapes bypass Automate entirely.** The spec has CMM accepting a
+node's own data collector and a Chef Infra Server proxy as well as the Automate feed. The
+speculative runs are orchestrated deliberately, so pointing *those* runs' data collector at CMM
+would deliver exactly the failing runs that matter without adding a consumer to anybody's Automate
+or touching production telemetry. **Unverified:** every run captured to date arrived by the
+Automate feed and the other two shapes have never received one, so this is a lead to exercise in
+the lab, not a position to take into the negotiation.
+
+**Verify the failure path in the lab first, either way.** Every converge run captured so far
+succeeded, so the failure decode has never run against real data, and a depsolve or
+missing-cookbook failure is known to arrive without resource detail — the blocker class the
+speculative runs are finding. Attribution may therefore be weakest exactly where it is needed.
+One forced failure settles both questions at once.
+
 ## Decisions already taken
 
 - Accountability attaches to git repos, keyed on name.
