@@ -143,6 +143,28 @@ human verdict inside the readiness rollup are built.
 - [ ] **Nothing surfaces the register on the repo or node it affects.** A node blocked by a
   human verdict carries the reason in `blocking_cookbooks`, and no view reads it yet.
 
+## Ownership filtering in the list views — IN PROGRESS, next thread starts here
+
+Journey 1 ("what's mine") and the unowned question both need the list views to filter on
+ownership. Findings from wiring it up 2026-08-02:
+
+- **Cookbooks and nodes already had the backend** — `parseOwnerFilter` → `resolveOwnershipFilter`
+  → `filterByOwnershipKey`, with in-memory paging while the filter is active.
+- **Git repos did not, and now does** (`handle_git_repos.go`), same pattern, with tests.
+- **No list view has any UI for it.** That is the whole remaining gap, and it is why
+  "no screen answers 'show me every repo with no owner'" was true.
+
+- [ ] **Git repo list — the filter control.** Backend done. Needs the UI: a filter on owner
+  (multi-select, per journey 1's "several people at once") and an unowned toggle. Model it on
+  the `FilterMultiCheckbox` controls already on that page, and mind that the page is busy —
+  the same objection that kept the team-verdict marker out of its own column.
+- [ ] **Cookbook list — UI only.** The backend already works.
+- [ ] **Node list — UI only**, and deferred: there is no node ownership dataset yet, so it
+  cannot be tested against anything real.
+
+**Beware the `owner` and `unowned` parameters are mutually exclusive** — the API returns 400 if
+both are sent, so the control has to make that unreachable rather than rely on the error.
+
 ## Identity and alias management — what is left
 
 - [ ] **Surface it at the point of use**, per the journey-1 refinement in
@@ -154,9 +176,35 @@ human verdict inside the readiness rollup are built.
 to be right where somebody has to act. Everything below is an optimisation on a list that may be
 small enough to work through by hand. **Measure that list before building any of it.**
 
-- [ ] **Blocking and unowned, ordered by affected nodes.** Needs no matching, no rules and no new
-  collection — a join over cookstyle results, complexity and assignments. It is both the answer to
-  journey 3 and the number that decides whether anything else here is worth building.
+- [x] **Blocking and unowned — MEASURED 2026-08-02 against the real estate. This answers the
+  question the rest of this section was waiting on.**
+
+  A real ownership export was imported: 18,821 assignments, 1,862 owners created, 37 seconds.
+
+  | | |
+  |---|---|
+  | repos CMM knows | 2,126 |
+  | repos with an owner | 1,963 (**92%**) |
+  | blocking **and** unowned | **126** |
+
+  **The conclusion: node and repo matching are probably not worth building.** Both chunks were
+  scoped on the assumption that ownership was largely absent. It is 92% present, and 126 repos is
+  a list somebody works through by hand in a couple of days — cheaper than an engine that would
+  still need a human to confirm every uncertain match. Re-scope or drop them; do not start either
+  without revisiting this number.
+
+  **The 126 are mostly CookStyle-blocked with Test Kitchen untested** — the least trustworthy
+  state the product has, and the one the failure register exists to correct. So they are not 126
+  repos needing owners; they are **126 unverified claims**. Verify the top few by affected nodes
+  on a real converge and record the verdicts, before anybody spends a day hunting owners for
+  cookbooks that may run fine. That also seeds the register with real entries chosen by impact.
+
+  The impact-weighted list (the `ORDER BY affected nodes` half) was not run. It is a
+  `jsonb_array_elements` over `node_readiness.blocking_cookbooks` joined to the unowned set, and
+  it is what turns 126 into the twenty that matter.
+
+  **Note:** `2,126`, not the `2,210` quoted elsewhere in these plans. Correct the older figure
+  where it is load-bearing.
 
 Raised by the product owner 2026-08-02. Assigning ownership from git committers is one
 *provider* of candidates, wired directly to assignment. The general shape is: for an
@@ -165,6 +213,26 @@ trusted; a human picks. Findings and evidence:
 `specifications/ownership-identity.md` § Where ownership candidates come from.
 
 Providers, most authoritative first:
+
+- [ ] **The source repository platform's own ownership data — Stash today, GitLab soon.**
+  Raised by the product owner 2026-08-02: a system account may be granted to read repo
+  ownership directly from the Stash and/or GitLab APIs. The consolidated database the
+  spreadsheets came from is believed — not confirmed — to be fed from Stash, so this would be
+  the same data at its source rather than an export of unknown age.
+
+  **What it fixes:** staleness. It removes the whole reconciliation problem below — no
+  generations, no age-out, no wondering when a file was pulled.
+
+  **What it does not fix:** coverage, which is already 92%. That weakens the case for building
+  a collector, credential handling and rate limiting, so decide on freshness value alone.
+
+  **The caution that matters:** repository *permissions* are not accountability. "Owner" in
+  Stash or GitLab usually means whoever administers the repo, and on a large estate that is
+  often a platform admin holding it across hundreds. **Check the cardinality before trusting
+  it** — one name against four hundred repos is an access-control artefact, not an owner.
+
+  Worth requesting the system account now regardless: approval is slow and costs nothing to
+  start while the decision is open.
 
 - [ ] **CODEOWNERS** — a deliberate, machine-readable declaration, honoured by both GitHub
   and GitLab. Not collected. **Ask whether the customer uses it** before building for it.
