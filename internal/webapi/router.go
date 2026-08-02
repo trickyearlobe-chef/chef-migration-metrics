@@ -850,6 +850,13 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints)
+	// Discovery-driven intake. Registered as exact patterns beside the
+	// fixed-header route above, which stays in service unchanged.
+	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/mappings", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/mappings/", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases)
 	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases)
 	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport)

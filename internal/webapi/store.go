@@ -621,6 +621,44 @@ type DataStore interface {
 	SuggestOwnerAliases(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error)
 
 	// -----------------------------------------------------------------
+	// Discovery-driven ownership intake
+	// -----------------------------------------------------------------
+
+	// InsertImportMapping creates a saved column mapping. Returns
+	// datastore.ErrAlreadyExists when the name is taken.
+	InsertImportMapping(ctx context.Context, p datastore.InsertImportMappingParams) (datastore.ImportMapping, error)
+
+	// ListImportMappings returns saved mappings without their field maps,
+	// with the total count for pagination.
+	ListImportMappings(ctx context.Context, limit, offset int) ([]datastore.ImportMapping, int, error)
+
+	// GetImportMapping returns one saved mapping including its field map.
+	// Returns datastore.ErrNotFound when no mapping has that id.
+	GetImportMapping(ctx context.Context, id int64) (datastore.ImportMapping, error)
+
+	// UpdateImportMapping replaces a saved mapping's name, delimiter and
+	// field map.
+	UpdateImportMapping(ctx context.Context, id int64, p datastore.UpdateImportMappingParams) (datastore.ImportMapping, error)
+
+	// DeleteImportMapping removes a saved mapping.
+	DeleteImportMapping(ctx context.Context, id int64) error
+
+	// LookupAssignmentOwnersByEntity returns the assignments that already
+	// exist on each of the given entity keys. Keys with no assignment are
+	// absent from the map rather than present and empty.
+	LookupAssignmentOwnersByEntity(ctx context.Context, entityType string, entityKeys []string) (map[string][]datastore.EntityAssignment, error)
+
+	// EntityKeysExist reports which of the given keys name an entity CMM
+	// has collected. Informational only: assignments are soft references,
+	// so an absent key is reported, never rejected.
+	EntityKeysExist(ctx context.Context, entityType string, keys []string) (map[string]bool, error)
+
+	// SuggestOwnersByEmailLocalpart finds owners whose email-shaped aliases
+	// share a localpart with the given one. Suggestions only — the same
+	// localpart under two domains is as often two people as one.
+	SuggestOwnersByEmailLocalpart(ctx context.Context, localpart string, limit int) ([]datastore.AliasSuggestion, error)
+
+	// -----------------------------------------------------------------
 	// Owner detail summaries
 	// -----------------------------------------------------------------
 
