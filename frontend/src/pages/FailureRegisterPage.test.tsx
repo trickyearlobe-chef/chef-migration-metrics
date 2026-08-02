@@ -186,8 +186,8 @@ describe("FailureRegisterPage", () => {
     );
     render(<FailureRegisterPage />, { wrapper: Wrapper });
 
-    expect(await screen.findByText(/No plan recorded yet/)).toBeInTheDocument();
-    expect(screen.getByText(/Nobody is on it/)).toBeInTheDocument();
+    expect(await screen.findByText(/No plan yet/)).toBeInTheDocument();
+    expect(screen.getByText(/Nobody on it/)).toBeInTheDocument();
   });
 
   // Journey 4: recording a failure nobody predicted.

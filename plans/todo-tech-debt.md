@@ -526,6 +526,21 @@ Recorded 2026-07-16 with `feature/event-ingest-mvp` (`specifications/event-inges
   Feed already sends basic-auth creds we currently ignore, so that shape needs no client
   change; the node/proxy shapes do. Revisit before any non-lab exposure.
 
+## Human Verdict Is Rendered As A CookStyle Qualifier (MVP)
+
+Recorded 2026-08-02 with the failure register (`specifications/failure-register.md`).
+
+- [ ] **The overruled marker on the git repo list sits inside the CookStyle status cell**,
+  which reads as a qualifier on that one scan. A human verdict is not CookStyle-specific:
+  it outranks Test Kitchen too, and it is recorded against the repo or cookbook rather than
+  against any scan. Accepted for the MVP because this customer's CookStyle coverage is wide
+  and their Test Kitchen coverage is almost non-existent, so in practice it is nearly always
+  CookStyle being overruled — the placement is right by accident of the data, not by design.
+  **Proper fix:** move the marker beside the repo name, where it qualifies the row rather
+  than one cell, and leave every scan badge untouched. Cheap (it is one component and one
+  cell), and worth doing before any customer whose Test Kitchen coverage is real. The
+  limitation is also noted in `OverruledMarker.tsx` so whoever moves it finds the reasoning.
+
 ## Phasing Notes
 
 These are not debt — they are deliberate holds awaiting prerequisites.

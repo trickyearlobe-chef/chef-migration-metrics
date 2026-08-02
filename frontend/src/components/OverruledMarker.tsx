@@ -17,6 +17,12 @@ interface Props {
  * The scan's own badge is left exactly as it was. That is deliberate — the
  * losing verdict stays visible, and what changes is that it no longer gets the
  * last word without saying so.
+ *
+ * **Known limitation.** A human verdict is not CookStyle-specific: it outranks
+ * Test Kitchen too, so hanging it off the CookStyle cell reads as a qualifier
+ * on that one scan. It is right for this customer only because their CookStyle
+ * coverage is wide and their Test Kitchen coverage is almost non-existent.
+ * Accepted for the MVP and recorded in plans/todo-tech-debt.md.
  */
 export function OverruledMarker({ verdict, reason }: Props) {
   if (!verdict) return null;

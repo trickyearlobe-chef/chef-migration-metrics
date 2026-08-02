@@ -191,26 +191,41 @@ export function FailureRegisterPage() {
           />
         </div>
       ) : (
-        <div className="space-y-3">
-          {entries.map((entry) => (
-            <EntryCard
-              key={entry.id}
-              entry={entry}
-              canEdit={isOperator}
-              onRevise={() => {
-                setNotice(null);
-                setRevising(entry);
-              }}
-              onReverse={() => {
-                setNotice(null);
-                setReversing(entry);
-              }}
-              onResolve={() => void handleResolve(entry)}
-            />
-          ))}
+        <div className="card p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-3 py-2">Cookbook</th>
+                  <th className="px-3 py-2">Why</th>
+                  <th className="px-3 py-2">Being done about it</th>
+                  <th className="px-3 py-2">Raised</th>
+                  {isOperator && <th className="px-3 py-2" />}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {entries.map((entry) => (
+                  <EntryRow
+                    key={entry.id}
+                    entry={entry}
+                    canEdit={isOperator}
+                    onRevise={() => {
+                      setNotice(null);
+                      setRevising(entry);
+                    }}
+                    onReverse={() => {
+                      setNotice(null);
+                      setReversing(entry);
+                    }}
+                    onResolve={() => void handleResolve(entry)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {pagination && (
-            <div className="card">
+            <div className="border-t border-gray-100 px-3 py-2">
               <Pagination pagination={pagination} onPageChange={setPage} />
             </div>
           )}
@@ -280,18 +295,18 @@ function RegisterSummary({ summary }: { summary: FailureRegisterSummary }) {
         : "border-gray-200 bg-gray-50 text-gray-700";
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="On the register" value={summary.open} />
-        <Stat
-          label="Broken — the tools missed it"
-          value={summary.open_broken}
-        />
-        <Stat
-          label="Not broken — the tools got it wrong"
-          value={summary.open_not_broken}
-        />
-        <Stat label="Nobody on it" value={summary.open_without_holder} />
+    <div className="space-y-2">
+      {/* One strip rather than four tall tiles: this page is read with a lot
+          of entries below it, and the counts are context for the list, not
+          the point of the page. */}
+      <div className="card flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
+        <Stat label="on the register" value={summary.open} />
+        <Stat label="the tools missed" value={summary.open_broken} />
+        <Stat label="the tools got wrong" value={summary.open_not_broken} />
+        <Stat label="nobody on it" value={summary.open_without_holder} />
+        {summary.open_overdue > 0 && (
+          <Stat label="past target" value={summary.open_overdue} alarming />
+        )}
       </div>
 
       <div
@@ -313,16 +328,28 @@ function RegisterSummary({ summary }: { summary: FailureRegisterSummary }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({
+  label,
+  value,
+  alarming,
+}: {
+  label: string;
+  value: number;
+  alarming?: boolean;
+}) {
   return (
-    <div className="card py-3">
-      <div className="text-2xl font-bold text-gray-800">{value}</div>
-      <div className="mt-0.5 text-xs text-gray-500">{label}</div>
+    <div className="flex items-baseline gap-1.5">
+      <span
+        className={`text-xl font-bold ${alarming ? "text-red-700" : "text-gray-800"}`}
+      >
+        {value}
+      </span>
+      <span className="text-xs text-gray-500">{label}</span>
     </div>
   );
 }
 
-function EntryCard({
+function EntryRow({
   entry,
   canEdit,
   onRevise,
@@ -336,123 +363,123 @@ function EntryCard({
   onResolve: () => void;
 }) {
   const broken = entry.verdict === "broken";
+  const open = entry.status === "open";
   const overdue =
-    entry.status === "open" &&
-    !!entry.target_date &&
-    new Date(entry.target_date) < new Date();
+    open && !!entry.target_date && new Date(entry.target_date) < new Date();
 
   return (
-    <div className="card space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-base font-semibold text-gray-800">
-              {entry.cookbook_name}
-            </h3>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                broken
-                  ? "bg-red-100 text-red-800"
-                  : "bg-green-100 text-green-800"
-              }`}
-            >
-              {broken ? "Broken" : "Not broken"}
-            </span>
-            {entry.status !== "open" && (
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                {entry.status === "resolved" ? "Resolved" : "Overturned"}
-              </span>
-            )}
-          </div>
-          {/* The repo is the subject; the cookbook above is the label. */}
-          <Link
-            to={`/git-repos?search=${encodeURIComponent(entry.subject_name)}`}
-            className="mt-0.5 inline-block text-xs text-blue-600 hover:underline"
+    <tr className="align-top hover:bg-gray-50">
+      <td className="px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-medium text-gray-800">
+            {entry.cookbook_name}
+          </span>
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+              broken ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
+            }`}
           >
-            {entry.subject_name}
-          </Link>
+            {broken ? "Broken" : "Not broken"}
+          </span>
+          {!open && (
+            <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+              {entry.status === "resolved" ? "Resolved" : "Overturned"}
+            </span>
+          )}
         </div>
+        {/* The subject: the repo where the fix is made, or the cookbook
+            itself where no repo has been collected. */}
+        <Link
+          to={
+            entry.subject_type === "cookbook"
+              ? `/cookbooks?search=${encodeURIComponent(entry.subject_name)}`
+              : `/git-repos/${encodeURIComponent(entry.subject_name)}`
+          }
+          className="text-xs text-blue-600 hover:underline"
+        >
+          {entry.subject_name}
+        </Link>
+        {entry.subject_type === "cookbook" && (
+          <span className="ml-1 text-[10px] text-gray-400">no repo</span>
+        )}
+      </td>
 
-        {canEdit && entry.status === "open" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={onRevise}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Update plan
-            </button>
-            <button
-              type="button"
-              onClick={onReverse}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-            >
-              Change verdict
-            </button>
-            <button
-              type="button"
-              onClick={onResolve}
-              className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
-            >
-              Resolve
-            </button>
+      {/* Why, at a glance rather than a click away. */}
+      <td className="max-w-md px-3 py-2 text-gray-700">
+        <div className="break-words">{entry.reason}</div>
+        {entry.diagnosis && (
+          <div className="mt-0.5 break-words text-xs text-gray-500">
+            {entry.diagnosis}
           </div>
         )}
-      </div>
-
-      {/* Why it is broken, at a glance rather than a click away. */}
-      <p className="text-sm text-gray-700">{entry.reason}</p>
-
-      {entry.diagnosis && (
-        <p className="text-sm text-gray-600">
-          <span className="font-medium text-gray-700">Diagnosis: </span>
-          {entry.diagnosis}
-        </p>
-      )}
+      </td>
 
       {/* What is being done about it. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+      <td className="max-w-md px-3 py-2 text-xs text-gray-600">
         {entry.plan ? (
-          <span>
-            <span className="font-medium text-gray-700">Plan: </span>
-            {entry.plan}
-          </span>
+          <div className="break-words">{entry.plan}</div>
         ) : (
-          entry.status === "open" && (
-            <span className="text-amber-700">No plan recorded yet.</span>
-          )
+          open && <div className="text-amber-700">No plan yet.</div>
         )}
-        {entry.holder_ref ? (
-          <span>
-            <span className="font-medium text-gray-700">
-              {HOLDER_LABELS[entry.holder_type ?? ""] ?? "Held by"}:{" "}
+        <div className="mt-0.5 flex flex-wrap gap-x-3">
+          {entry.holder_ref ? (
+            <span>
+              <span className="text-gray-500">
+                {HOLDER_LABELS[entry.holder_type ?? ""] ?? "Held by"}:{" "}
+              </span>
+              {entry.holder_ref}
             </span>
-            {entry.holder_ref}
-          </span>
-        ) : (
-          entry.status === "open" && (
-            <span className="text-amber-700">Nobody is on it.</span>
-          )
-        )}
-        {entry.target_date && (
-          <span className={overdue ? "font-medium text-red-700" : ""}>
-            Target {formatDate(entry.target_date)}
-            {overdue && " — overdue"}
-          </span>
-        )}
-      </div>
+          ) : (
+            open && <span className="text-amber-700">Nobody on it.</span>
+          )}
+          {entry.target_date && (
+            <span className={overdue ? "font-medium text-red-700" : ""}>
+              {formatDate(entry.target_date)}
+              {overdue && " — overdue"}
+            </span>
+          )}
+        </div>
+      </td>
 
-      <div className="border-t border-gray-100 pt-2 text-xs text-gray-400">
-        Raised by {entry.raised_by} on {formatDate(entry.raised_at)}
+      <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-400">
+        {entry.raised_by}
+        <div>{formatDate(entry.raised_at)}</div>
         {entry.resolved_at && (
-          <>
-            {" · "}resolved by {entry.resolved_by} on{" "}
-            {formatDate(entry.resolved_at)}
-            {entry.resolution_note && ` — ${entry.resolution_note}`}
-          </>
+          <div title={entry.resolution_note}>
+            resolved {formatDate(entry.resolved_at)}
+          </div>
         )}
-        {entry.status === "superseded" && " · overturned by a later verdict"}
-      </div>
-    </div>
+      </td>
+
+      {canEdit && (
+        <td className="whitespace-nowrap px-3 py-2 text-right">
+          {open && (
+            <div className="flex justify-end gap-1">
+              <button
+                type="button"
+                onClick={onRevise}
+                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Update plan
+              </button>
+              <button
+                type="button"
+                onClick={onReverse}
+                className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Change verdict
+              </button>
+              <button
+                type="button"
+                onClick={onResolve}
+                className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+              >
+                Resolve
+              </button>
+            </div>
+          )}
+        </td>
+      )}
+    </tr>
   );
 }
