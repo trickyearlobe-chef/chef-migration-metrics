@@ -17,50 +17,29 @@ repo matching are worth building at all. That decision bought the measurement at
 having work on `main` that has not been through a full MVP sign-off — if it has to come out,
 see the backout note below. Later chunks should branch fresh from `main`.
 
-**Backout, should it be needed.** Redeploy the previous package; the code side is that
-simple. There is **no down-migration runner** — only `MigrateUp` exists — so a schema
-rollback is `psql` by hand or a restore, and a `pg_dump` before deploying is the real
-control. Most of it needs no rollback at all: 0056, 0057, 0060 and 0061 are new tables the
-old binary ignores, and 0058 only loosened constraints. The one residue is 0059, which
-back-fills `owner_aliases` from `owners.contact_email` — old code reads that table, so those
-rows would persist. Its down script removes exactly them
-(`DELETE FROM owner_aliases WHERE source = 'contact_email'`), leaving hand-recorded ones.
+**If a rollback is ever needed:** redeploy the previous package, and note there is **no
+down-migration runner** — only `MigrateUp` exists, so a schema rollback is `psql` by hand or a
+restore. Take a `pg_dump` before any deploy. Only migration 0059 leaves a residue the old binary
+reads (`owner_aliases` back-filled from `owners.contact_email`); its down script removes exactly
+those rows.
 
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
 Work order and journeys live in that plan; per-chunk scope lives in
 `plans/todo-ownership.md`. Do not re-plan either.
 
-**Chunk 1, owner ingest — done and reviewed by the product owner, 2026-08-02.** Behaviour is
-`specifications/ownership-intake.md`. Two decisions departed from the written plan and were
-confirmed in review: unresolved people are created rather than rejected, and a fuzzy
-candidate no longer rejects the row. Both stay.
+**Chunks 1–3 are built and shipped** (owner ingest, identity and alias management, the failure
+register). Behaviour lives in `specifications/ownership-intake.md`, `ownership-identity.md` and
+`failure-register.md`. Three decisions from those chunks still bind:
 
-**Chunk 2, identity and alias management — done and reviewed by the product owner, 2026-08-02.**
-Aliases editable on the owner's own page; a possible-duplicate-owners view at
-`/ownership/duplicates`; and a merge folding one owner into another, moving the aliases and
-keeping the folded-away name reachable so a correction survives a re-ingest. Behaviour is
-`specifications/ownership-identity.md`.
-
-Reviewed against real data, which found two defects since fixed: the scan had to compare display
-names (the only signal that survives a hosting platform rewriting a commit address), and the
-committer path was dropping every commit address after a person's first.
-
-**Read `specifications/ownership-identity.md` § Proposed before extending any of this.** A long
-design session established that the alias model is wrong in a way that is recorded but not fixed —
-`alias_type` conflates what shape an identifier is with where it came from, and uniqueness
-includes the provenance, so one address can belong to two owners. The rough edges are all in that
-file and in `plans/todo-ownership.md`; none is a blocker for what shipped.
-
-**Chunk 3, the failure register** (`specifications/failure-register.md`) — **built and shipped
-(v2.18.13), reviewed in use rather than in a sitting.** Moved ahead of both matching chunks on 2026-08-02 because both automated
-blocker signals are currently untrustworthy — CookStyle marks cookbooks blocked that run fine, and
-Test Kitchen reports environment failures as cookbook failures. A person's verdict outranks both.
-Journeys 4 and 6, declared in scope from the start and previously missing from the work order.
-
-The load-bearing assumption held: `node_readiness.blocking_cookbooks` already carried a per-source
-verdicts array, so a human verdict joins it as a fourth source rather than becoming a parallel list.
-Seed it with the ten real cookbooks before reviewing — the register is only as good as what is in it.
+- Ingest **creates** unresolved people rather than rejecting the row, and a fuzzy candidate does
+  not reject it either. Correction is deferred to the point of use, by design.
+- **Read `specifications/ownership-identity.md` § Proposed before extending aliases.**
+  `alias_type` conflates what shape an identifier is with where it came from, and uniqueness
+  includes the provenance, so one address can belong to two owners. Recorded, not fixed.
+- A human verdict in the failure register **outranks CookStyle and Test Kitchen** and joins the
+  existing per-source verdicts on `node_readiness.blocking_cookbooks` rather than sitting beside
+  them.
 
 **Node and git repo matching are probably dead.** The measurement they were waiting on has been
 taken against the real estate: **92% of repos carry an owner, and 126 are blocking and unowned**.
@@ -98,23 +77,12 @@ none would have come from a code review. Reproduce, write the failing test, then
 
 ## Dependabot — settled 2026-08-02, do not re-triage
 
-All 12 open alerts were dismissed as **inaccurate**, with the evidence on each alert.
-Every one named a version outside its own advisory's vulnerable range: undici 7.28.0
-against `< 7.28.0`, brace-expansion 5.0.7 against `< 5.0.7`, postcss 8.5.18 against
-`<= 8.5.17`, react-router 7.18.0 against `< 7.18.0`, and react-router-dom 7.18.0 against
-an advisory covering only `6.30.2 - 6.30.4`.
-
-**The local gates were right and GitHub was wrong**, which is the reverse of the usual
-assumption and the reason this took a while to see. Trivy scans
-`frontend/package-lock.json` — the resolved tree that actually ships — and passes;
-govulncheck covers reachable Go code and is clean. Dependabot was reporting against
-manifest resolution that did not match the lockfile.
-
-**Do not "fix" this by unpinning `overrides` in `frontend/package.json`.** The ranges
-their parents ask for (`jsdom` wants `undici ^7.25.0`, `minimatch` wants
-`brace-expansion ^5.0.5`) already permit the patched versions, so unpinning changes the
-tree not at all — and several other pins there exist because the Harness registry
-quarantines very recent versions, so removing them trades a working build for nothing.
+All 12 open alerts were dismissed as **inaccurate**: every one named a version outside its own
+advisory's vulnerable range. **The local gates were right and GitHub was wrong**, which is the
+reverse of the usual assumption — Trivy scans the lockfile that ships, Dependabot was resolving
+the manifest. Do not "fix" this by unpinning `overrides` in `frontend/package.json`; the parent
+ranges already permit the patched versions, and several pins exist because the Harness registry
+quarantines recent versions.
 
 ## Release preconditions (the bump target runs no tests)
 
