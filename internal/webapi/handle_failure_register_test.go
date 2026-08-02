@@ -186,7 +186,6 @@ func TestRecordFailure_SurvivesAFailedRecompute(t *testing.T) {
 // which repos are broken, why, what is being done, and whether the list is
 // growing — all in one read, not one request per entry.
 func TestListFailureRegister_TheStandupView(t *testing.T) {
-	target := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
 	var gotFilter datastore.FailureRegisterFilter
 	store := &mockStore{
 		ListFailureRegisterEntriesFn: func(_ context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error) {
@@ -194,7 +193,7 @@ func TestListFailureRegister_TheStandupView(t *testing.T) {
 			return []datastore.FailureRegisterEntry{{
 				ID: "entry-1", SubjectName: "acme-nginx", CookbookName: "nginx",
 				Verdict: "broken", Reason: "fails on a real converge",
-				Plan: "rewrite the template", TargetDate: &target,
+				Plan: "rewrite the template", TargetDate: "2026-09-30",
 				HolderType: "ticket", HolderRef: "PLAT-4821",
 				Status: datastore.FailureStatusOpen,
 			}}, 1, nil

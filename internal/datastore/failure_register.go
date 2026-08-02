@@ -75,9 +75,14 @@ type FailureRegisterEntry struct {
 	// contradicts the scan. It must never reach an index.
 	Evidence string `json:"evidence,omitempty"`
 
-	Diagnosis  string     `json:"diagnosis,omitempty"`
-	Plan       string     `json:"plan,omitempty"`
-	TargetDate *time.Time `json:"target_date,omitempty"`
+	Diagnosis string `json:"diagnosis,omitempty"`
+	Plan      string `json:"plan,omitempty"`
+
+	// TargetDate is a calendar date, YYYY-MM-DD, and empty where none has
+	// been given. Deliberately not a timestamp: the column is a DATE, and
+	// serialising it as midnight UTC both breaks a date input that has to
+	// parse it back and renders the previous day for anyone west of UTC.
+	TargetDate string `json:"target_date,omitempty"`
 
 	HolderType string `json:"holder_type,omitempty"`
 	HolderRef  string `json:"holder_ref,omitempty"`
@@ -200,8 +205,7 @@ func scanFailureEntry(s interface{ Scan(...any) error }) (FailureRegisterEntry, 
 		return FailureRegisterEntry{}, err
 	}
 	if targetDate.Valid {
-		d := targetDate.Time
-		e.TargetDate = &d
+		e.TargetDate = targetDate.Time.Format("2006-01-02")
 	}
 	if resolvedAt.Valid {
 		r := resolvedAt.Time
@@ -237,23 +241,31 @@ func validateSubjectType(subjectType string) (string, error) {
 	}
 }
 
-// validateHolder enforces that a commitment holder is a recognised type and a
-// reference together, or neither. Half a reference cannot be chased.
-func validateHolder(holderType, holderRef string) error {
+// resolveHolder normalises a commitment holder to the pair that gets stored.
+//
+// A reference is what makes a commitment chaseable, so it decides: with no
+// reference there is no holder, and whatever kind was left behind is dropped
+// rather than rejected. That is what lets an entry be unassigned again —
+// requiring the pair to be emptied together made "nobody is on it" a state
+// reachable only at the moment an entry was raised, so the count of unowned
+// failures could only ever fall.
+//
+// A reference with no kind is still an error: it cannot be looked up, and
+// guessing which system it belongs to is how a ticket becomes a person.
+func resolveHolder(holderType, holderRef string) (string, string, error) {
 	holderType = strings.TrimSpace(holderType)
 	holderRef = strings.TrimSpace(holderRef)
 
-	if holderType == "" && holderRef == "" {
-		return nil
-	}
-	if holderType == "" || holderRef == "" {
-		return errors.New("datastore: a commitment holder needs both a type and a reference")
+	if holderRef == "" {
+		return "", "", nil
 	}
 	switch holderType {
 	case HolderTypeOwner, HolderTypeUser, HolderTypeTicket:
-		return nil
+		return holderType, holderRef, nil
+	case "":
+		return "", "", errors.New("datastore: a commitment holder needs to say what kind of reference it is")
 	default:
-		return fmt.Errorf("datastore: %q is not a kind of commitment holder", holderType)
+		return "", "", fmt.Errorf("datastore: %q is not a kind of commitment holder", holderType)
 	}
 }
 
@@ -270,9 +282,9 @@ func (db *DB) RecordFailureVerdict(ctx context.Context, p RecordFailureVerdictPa
 	if strings.TrimSpace(p.CookbookName) == "" {
 		return FailureRegisterEntry{}, errors.New("datastore: a verdict needs the cookbook it is labelled with")
 	}
-	subjectType, err := validateSubjectType(p.SubjectType)
-	if err != nil {
-		return FailureRegisterEntry{}, err
+	subjectType, serr := validateSubjectType(p.SubjectType)
+	if serr != nil {
+		return FailureRegisterEntry{}, serr
 	}
 	if err := validateVerdict(p.Verdict); err != nil {
 		return FailureRegisterEntry{}, err
@@ -283,7 +295,8 @@ func (db *DB) RecordFailureVerdict(ctx context.Context, p RecordFailureVerdictPa
 	if strings.TrimSpace(p.Reason) == "" {
 		return FailureRegisterEntry{}, errors.New("datastore: a verdict needs a reason")
 	}
-	if err := validateHolder(p.HolderType, p.HolderRef); err != nil {
+	holderType, holderRef, err := resolveHolder(p.HolderType, p.HolderRef)
+	if err != nil {
 		return FailureRegisterEntry{}, err
 	}
 	if strings.TrimSpace(p.RaisedBy) == "" {
@@ -325,7 +338,7 @@ func (db *DB) RecordFailureVerdict(ctx context.Context, p RecordFailureVerdictPa
 			p.SubjectName, subjectType, p.CookbookName, p.Verdict, strings.TrimSpace(p.Reason),
 			nullStringPtr(p.Evidence), nullStringPtr(p.Diagnosis), nullStringPtr(p.Plan),
 			nullTimePtr(p.TargetDate),
-			nullStringPtr(strings.TrimSpace(p.HolderType)), nullStringPtr(strings.TrimSpace(p.HolderRef)),
+			nullStringPtr(holderType), nullStringPtr(holderRef),
 			p.RaisedBy,
 		)
 		entry, err = scanFailureEntry(row)
@@ -391,7 +404,8 @@ func (db *DB) ReviseFailureEntry(ctx context.Context, id string, p ReviseFailure
 	if p.HolderRef != nil {
 		holderRef = *p.HolderRef
 	}
-	if err := validateHolder(holderType, holderRef); err != nil {
+	holderType, holderRef, err = resolveHolder(holderType, holderRef)
+	if err != nil {
 		return FailureRegisterEntry{}, err
 	}
 
@@ -409,7 +423,7 @@ func (db *DB) ReviseFailureEntry(ctx context.Context, id string, p ReviseFailure
 		id,
 		stringPtrArg(p.Diagnosis), stringPtrArg(p.Plan), stringPtrArg(p.Evidence),
 		nullTimePtr(p.TargetDate),
-		nullStringPtr(strings.TrimSpace(holderType)), nullStringPtr(strings.TrimSpace(holderRef)),
+		nullStringPtr(holderType), nullStringPtr(holderRef),
 	)
 	entry, err := scanFailureEntry(row)
 	if errors.Is(err, sql.ErrNoRows) {

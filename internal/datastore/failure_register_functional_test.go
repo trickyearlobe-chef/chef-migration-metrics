@@ -260,7 +260,7 @@ func TestReviseFailureEntry_PlanAndHolderOnly(t *testing.T) {
 		Verdict:      VerdictBroken,
 		Reason:       "the config template uses a removed DSL method",
 	})
-	if entry.Plan != "" || entry.TargetDate != nil || entry.HolderRef != "" {
+	if entry.Plan != "" || entry.TargetDate != "" || entry.HolderRef != "" {
 		t.Error("a new entry should carry no plan, holder or target date unless one was given")
 	}
 
@@ -278,8 +278,8 @@ func TestReviseFailureEntry_PlanAndHolderOnly(t *testing.T) {
 	if revised.Plan != "rewrite the template and re-release" {
 		t.Errorf("plan = %q", revised.Plan)
 	}
-	if revised.TargetDate == nil || !revised.TargetDate.Equal(target) {
-		t.Errorf("target date = %v, want %v", revised.TargetDate, target)
+	if revised.TargetDate != "2026-09-30" {
+		t.Errorf("target date = %q, want 2026-09-30 — a date, not a timestamp", revised.TargetDate)
 	}
 	if revised.HolderType != HolderTypeTicket || revised.HolderRef != "PLAT-4821" {
 		t.Errorf("holder = %q/%q", revised.HolderType, revised.HolderRef)
@@ -301,9 +301,12 @@ func TestReviseFailureEntry_PlanAndHolderOnly(t *testing.T) {
 	}
 }
 
-// A holder is a type and a reference together, or neither. Half a reference
-// cannot be looked up and cannot be chased.
-func TestReviseFailureEntry_RejectsHalfAHolder(t *testing.T) {
+// The reference is what makes a commitment chaseable, so it decides whether
+// there is a holder at all. A kind on its own carries nothing to chase and is
+// dropped; a reference whose kind is unknown cannot be looked up and is
+// refused, because guessing which system it belongs to is how a ticket
+// becomes a person.
+func TestReviseFailureEntry_HolderNeedsAReferenceToExist(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
 
@@ -314,21 +317,27 @@ func TestReviseFailureEntry_RejectsHalfAHolder(t *testing.T) {
 		Reason:       "agent fails to register",
 	})
 
-	if _, err := db.ReviseFailureEntry(ctx, entry.ID, ReviseFailureEntryParams{
+	// A kind with nothing to chase is nobody on it, not an error.
+	kindOnly, err := db.ReviseFailureEntry(ctx, entry.ID, ReviseFailureEntryParams{
 		HolderType: strPtr(HolderTypeOwner),
-	}); err == nil {
-		t.Error("a holder type with no reference was accepted")
+	})
+	if err != nil {
+		t.Fatalf("a holder kind with no reference: %v", err)
 	}
+	if kindOnly.HolderType != "" || kindOnly.HolderRef != "" {
+		t.Errorf("holder = %q/%q, want nobody on it", kindOnly.HolderType, kindOnly.HolderRef)
+	}
+
 	if _, err := db.ReviseFailureEntry(ctx, entry.ID, ReviseFailureEntryParams{
 		HolderRef: strPtr("someone"),
 	}); err == nil {
-		t.Error("a holder reference with no type was accepted")
+		t.Error("a holder reference with no kind was accepted")
 	}
 	if _, err := db.ReviseFailureEntry(ctx, entry.ID, ReviseFailureEntryParams{
 		HolderType: strPtr("slack_channel"),
 		HolderRef:  strPtr("#platform"),
 	}); err == nil {
-		t.Error("an unrecognised holder type was accepted")
+		t.Error("an unrecognised holder kind was accepted")
 	}
 }
 
@@ -703,5 +712,47 @@ func TestRecordFailureVerdict_OneStandingVerdictPerName(t *testing.T) {
 	}
 	if reread.Status != FailureStatusSuperseded {
 		t.Errorf("the first verdict is %q; the second should have superseded it rather than standing beside it", reread.Status)
+	}
+}
+
+// Somebody put on an entry can be taken off it again. Work gets reassigned,
+// and a ticket reference recorded by mistake has to be removable — otherwise
+// the "nobody on it" count can only ever go down, and the standup loses the
+// one number that says what is unowned.
+func TestReviseFailureEntry_ClearsTheHolder(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	entry := recordEntry(t, db, RecordFailureVerdictParams{
+		SubjectName:  "acme-unassign",
+		CookbookName: "unassign",
+		Verdict:      VerdictBroken,
+		Reason:       "broken",
+		HolderType:   HolderTypeTicket,
+		HolderRef:    "PLAT-1",
+	})
+	if entry.HolderRef != "PLAT-1" {
+		t.Fatalf("precondition: holder = %q/%q", entry.HolderType, entry.HolderRef)
+	}
+
+	// Emptying the reference is saying nobody is on it. The kind that is left
+	// behind carries no information, so it goes too.
+	cleared, err := db.ReviseFailureEntry(ctx, entry.ID, ReviseFailureEntryParams{
+		HolderRef: strPtr(""),
+	})
+	if err != nil {
+		t.Fatalf("clearing the holder: %v", err)
+	}
+	if cleared.HolderRef != "" || cleared.HolderType != "" {
+		t.Errorf("holder = %q/%q, want both cleared", cleared.HolderType, cleared.HolderRef)
+	}
+
+	// And the summary has to notice, or the count is a number nobody can move.
+	summary, err := db.FailureRegisterSummary(ctx, 7)
+	if err != nil {
+		t.Fatalf("FailureRegisterSummary: %v", err)
+	}
+	if summary.OpenWithoutHolder < 1 {
+		t.Errorf("open-without-holder = %d; the entry just cleared is not counted", summary.OpenWithoutHolder)
 	}
 }
