@@ -114,6 +114,10 @@ export interface NodeFilterQuery extends PaginationQuery {
 
 export interface CookbookFilterQuery extends PaginationQuery {
   organisation?: string;
+  /** Comma-separated owner names. Rejected with a 400 alongside `unowned`. */
+  owner?: string;
+  /** "true" for the cookbooks nobody owns. Rejected with a 400 alongside `owner`. */
+  unowned?: string;
   active?: string;
   name?: string;
   compatibility?: string;
@@ -137,6 +141,10 @@ export interface GitRepoFilterQuery extends PaginationQuery {
   target_chef_version?: string;
   /** "broken", "not_broken", "any" (somebody has an opinion) or "none". */
   human_verdict?: string;
+  /** Comma-separated owner names. Rejected with a 400 alongside `unowned`. */
+  owner?: string;
+  /** "true" for the repos nobody owns. Rejected with a 400 alongside `owner`. */
+  unowned?: string;
   sort?: string;
   order?: string;
 }

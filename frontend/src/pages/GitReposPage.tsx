@@ -6,6 +6,7 @@ import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { FilterInput } from "../components/FilterInputs";
 import { FilterMultiCheckbox } from "../components/FilterMultiCheckbox";
+import { OwnerFilter } from "../components/OwnerFilter";
 import { fetchGitRepos } from "../api";
 import type { GitRepoFilterQuery } from "../api/client";
 import type {
@@ -109,6 +110,14 @@ export function GitReposPage() {
   const [humanVerdict, setHumanVerdict] = useState<string[]>(
     searchParams.get("human_verdict")?.split(",").filter(Boolean) ?? [],
   );
+  // Ownership. The two halves are one selection because the API rejects them
+  // together — see OwnerFilter.
+  const [ownerNames, setOwnerNames] = useState<string[]>(
+    searchParams.get("owner")?.split(",").filter(Boolean) ?? [],
+  );
+  const [unowned, setUnowned] = useState(
+    searchParams.get("unowned") === "true",
+  );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -135,7 +144,9 @@ export function GitReposPage() {
       searchParams.has("tk_status") ||
       searchParams.has("clone_status") ||
       searchParams.has("has_test_suite") ||
-      searchParams.has("human_verdict")
+      searchParams.has("human_verdict") ||
+      searchParams.has("owner") ||
+      searchParams.has("unowned")
     ) {
       setSearchParams({}, { replace: true });
     }
@@ -155,6 +166,10 @@ export function GitReposPage() {
     // the API spells "any" rather than as a pair of verdicts.
     if (humanVerdict.length === 1) q.human_verdict = humanVerdict[0];
     else if (humanVerdict.length > 1) q.human_verdict = "any";
+    // Never both: the API answers a request carrying the pair with a 400, and
+    // the control cannot produce it. This mirrors that rather than trusting it.
+    if (unowned) q.unowned = "true";
+    else if (ownerNames.length > 0) q.owner = ownerNames.join(",");
     if (selectedTargetVersion) q.target_chef_version = selectedTargetVersion;
     if (sortField) q.sort = sortField;
     if (sortOrder) q.order = sortOrder;
@@ -168,6 +183,8 @@ export function GitReposPage() {
     // Omitting this left the chip and the count updating while the request
     // never changed — a list that looked filtered and was not.
     humanVerdict,
+    ownerNames,
+    unowned,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -197,6 +214,8 @@ export function GitReposPage() {
     tkStatus,
     cloneStatus,
     kitchenFilter,
+    ownerNames,
+    unowned,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -210,6 +229,7 @@ export function GitReposPage() {
     cloneStatus.length > 0 ? 1 : 0,
     kitchenFilter.length > 0 ? 1 : 0,
     humanVerdict.length > 0 ? 1 : 0,
+    ownerNames.length > 0 || unowned ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
   const clearFilters = () => {
@@ -219,6 +239,8 @@ export function GitReposPage() {
     setCloneStatus([]);
     setKitchenFilter([]);
     setHumanVerdict([]);
+    setOwnerNames([]);
+    setUnowned(false);
   };
 
   // The current selection in the vocabulary a saved filter stores. Sort, page and
@@ -268,6 +290,14 @@ export function GitReposPage() {
           value={nameFilter}
           onChange={setNameFilter}
           placeholder="Filter by name"
+        />
+        <OwnerFilter
+          owners={ownerNames}
+          unowned={unowned}
+          onChange={(next) => {
+            setOwnerNames(next.owners);
+            setUnowned(next.unowned);
+          }}
         />
         <FilterMultiCheckbox
           label="CookStyle"
