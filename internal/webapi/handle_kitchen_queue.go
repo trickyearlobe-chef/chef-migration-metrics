@@ -53,9 +53,9 @@ func (r *Router) handleKitchenQueueList(w http.ResponseWriter, req *http.Request
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"items": items,
 		"stats": map[string]any{
-			"queued":          stats.Queued,
-			"running":         stats.Running,
-			"workers_active":  workerCount,
+			"queued":         stats.Queued,
+			"running":        stats.Running,
+			"workers_active": workerCount,
 		},
 	})
 }

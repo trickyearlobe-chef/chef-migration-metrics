@@ -97,8 +97,8 @@ func (r *Router) handleGitKitchenResults(w http.ResponseWriter, req *http.Reques
 
 // gitKitchenRunRequest is the request body for POST /api/v1/kitchen/git/run.
 type gitKitchenRunRequest struct {
-	GitRepoName      string `json:"git_repo_name"`
-	InstanceName     string `json:"instance_name"`
+	GitRepoName       string `json:"git_repo_name"`
+	InstanceName      string `json:"instance_name"`
 	TargetChefVersion string `json:"target_chef_version"`
 }
 
@@ -332,10 +332,10 @@ func (r *Router) handleGitKitchenRunAll(w http.ResponseWriter, req *http.Request
 	}
 
 	WriteJSON(w, http.StatusAccepted, map[string]any{
-		"message":        "Instances queued for execution",
-		"queued_count":   len(queued),
-		"skipped_count":  skipped,
-		"queue_ids":      queued,
+		"message":       "Instances queued for execution",
+		"queued_count":  len(queued),
+		"skipped_count": skipped,
+		"queue_ids":     queued,
 	})
 }
 

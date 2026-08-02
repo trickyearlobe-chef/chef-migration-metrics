@@ -536,3 +536,97 @@ func TestDuplicateOwners_ListSurvivesACoverageCountFailure(t *testing.T) {
 		t.Errorf("got %d candidates, want the list regardless of the coverage count", len(resp.Data))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/ownership/duplicates/dismiss
+//
+// Without it the view offers a merge and nothing else, so a rejected pair
+// returns on every scan and the list can never reach nothing.
+// ---------------------------------------------------------------------------
+
+func TestDismissDuplicate_RecordsWhoAndAudits(t *testing.T) {
+	var gotA, gotB, gotReason, gotBy string
+	var audited []string
+	store := &mockStore{
+		DismissOwnerDuplicateFn: func(_ context.Context, a, b, reason, by string) error {
+			gotA, gotB, gotReason, gotBy = a, b, reason, by
+			return nil
+		},
+		InsertAuditEntryFn: func(_ context.Context, p datastore.InsertAuditEntryParams) error {
+			audited = append(audited, p.Action)
+			return nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/duplicates/dismiss",
+		strings.NewReader(`{"owner_a":"alice.brown","owner_b":"bob.jones","reason":"different people"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if gotA != "alice.brown" || gotB != "bob.jones" {
+		t.Errorf("dismissed %q / %q", gotA, gotB)
+	}
+	if gotReason != "different people" {
+		t.Errorf("reason = %q", gotReason)
+	}
+	if gotBy == "" {
+		t.Error("the dismissal does not say who decided it")
+	}
+	if len(audited) != 1 || audited[0] != "owner_duplicate_dismissed" {
+		t.Errorf("audit actions = %v, want one owner_duplicate_dismissed", audited)
+	}
+}
+
+// A rejection with no reason is still worth recording — demanding one is how
+// dismissals stop being recorded at all, and this only ever removes a
+// suggestion.
+func TestDismissDuplicate_ReasonIsOptional(t *testing.T) {
+	called := false
+	store := &mockStore{
+		DismissOwnerDuplicateFn: func(_ context.Context, _, _, _, _ string) error {
+			called = true
+			return nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/duplicates/dismiss",
+		strings.NewReader(`{"owner_a":"alice.brown","owner_b":"bob.jones"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK || !called {
+		t.Errorf("status = %d, reached store = %v", w.Code, called)
+	}
+}
+
+// An empty list that was worked down to nothing is a different message from
+// one nobody has looked at.
+func TestListDuplicates_ReportsHowManyWereRejected(t *testing.T) {
+	store := &mockStore{
+		ListOwnerDuplicateCandidatesFn: func(_ context.Context, _ datastore.OwnerDuplicateFilter) ([]datastore.OwnerDuplicateCandidate, int, error) {
+			return nil, 0, nil
+		},
+		CountOwnerDuplicateDismissalsFn: func(_ context.Context) (int, error) { return 7, nil },
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/ownership/duplicates", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		DismissedPairs int `json:"dismissed_pairs"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.DismissedPairs != 7 {
+		t.Errorf("dismissed_pairs = %d, want 7", resp.DismissedPairs)
+	}
+}

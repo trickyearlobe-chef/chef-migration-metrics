@@ -362,3 +362,87 @@ func isSeedOwner(name string) bool {
 	}
 	return false
 }
+
+// A pair somebody has looked at and rejected has to stay rejected. The scan
+// rebuilds the candidate table on every run, so a dismissal that lived there
+// would be swept away and the pair would come back — which is the whole
+// complaint.
+func TestDismissOwnerDuplicate_SurvivesARescan(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	// Two people who genuinely do look alike, so the scan keeps finding them.
+	for _, n := range []string{"dave.taylor", "dave.tailor"} {
+		if _, err := db.InsertOwner(ctx, InsertOwnerParams{Name: n, OwnerType: "individual"}); err != nil {
+			t.Fatalf("InsertOwner(%q): %v", n, err)
+		}
+		defer func(n string) { _, _ = db.DeleteOwner(context.Background(), n) }(n)
+	}
+
+	if _, err := db.RecomputeOwnerDuplicateCandidates(ctx); err != nil {
+		t.Fatalf("first scan: %v", err)
+	}
+	if !pairPresent(t, db, "dave.tailor", "dave.taylor") {
+		t.Fatal("precondition: the scan should pair two names this alike")
+	}
+
+	if err := db.DismissOwnerDuplicate(ctx, "dave.tailor", "dave.taylor",
+		"different people, confirmed with both", "tester"); err != nil {
+		t.Fatalf("DismissOwnerDuplicate: %v", err)
+	}
+	if pairPresent(t, db, "dave.tailor", "dave.taylor") {
+		t.Error("the pair is still listed immediately after being dismissed")
+	}
+
+	// The point of the whole thing.
+	if _, err := db.RecomputeOwnerDuplicateCandidates(ctx); err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+	if pairPresent(t, db, "dave.tailor", "dave.taylor") {
+		t.Error("the dismissed pair came back after a rescan")
+	}
+}
+
+// Dismissing works whichever way round the caller names the two, because the
+// reader clicking it has no idea which order the scan stored them in.
+func TestDismissOwnerDuplicate_OrderIndependent(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	for _, n := range []string{"erin.walsh", "erin.walshe"} {
+		if _, err := db.InsertOwner(ctx, InsertOwnerParams{Name: n, OwnerType: "individual"}); err != nil {
+			t.Fatalf("InsertOwner(%q): %v", n, err)
+		}
+		defer func(n string) { _, _ = db.DeleteOwner(context.Background(), n) }(n)
+	}
+	if _, err := db.RecomputeOwnerDuplicateCandidates(ctx); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	// Named in the reverse of the stored order.
+	if err := db.DismissOwnerDuplicate(ctx, "erin.walshe", "erin.walsh", "", "tester"); err != nil {
+		t.Fatalf("DismissOwnerDuplicate: %v", err)
+	}
+	if pairPresent(t, db, "erin.walsh", "erin.walshe") {
+		t.Error("dismissing with the pair named in the other order had no effect")
+	}
+
+	// Saying it twice is not an error — a second click must not fail.
+	if err := db.DismissOwnerDuplicate(ctx, "erin.walsh", "erin.walshe", "again", "tester"); err != nil {
+		t.Errorf("dismissing twice: %v", err)
+	}
+}
+
+func pairPresent(t *testing.T, db *DB, a, b string) bool {
+	t.Helper()
+	pairs, _, err := db.ListOwnerDuplicateCandidates(context.Background(), OwnerDuplicateFilter{Limit: 200})
+	if err != nil {
+		t.Fatalf("ListOwnerDuplicateCandidates: %v", err)
+	}
+	for _, p := range pairs {
+		if (p.OwnerA == a && p.OwnerB == b) || (p.OwnerA == b && p.OwnerB == a) {
+			return true
+		}
+	}
+	return false
+}

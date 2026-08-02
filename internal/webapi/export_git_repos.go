@@ -35,7 +35,6 @@ func newGitRepoExportSource(ctx context.Context, r *Router, req *http.Request) (
 	return export.NewSliceSource(anyRows), nil
 }
 
-
 // gitRepoExportColumns is the single source of truth for the git-repo export's
 // CSV header and JSON keys.
 func gitRepoExportColumns() []export.Column {

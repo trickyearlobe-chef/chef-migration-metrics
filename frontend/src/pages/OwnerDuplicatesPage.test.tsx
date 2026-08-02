@@ -14,6 +14,7 @@ vi.mock("../api", async () => {
     fetchOwnerDuplicates: vi.fn(),
     mergeOwners: vi.fn(),
     rescanOwnerDuplicates: vi.fn(),
+    dismissOwnerDuplicate: vi.fn(),
   };
 });
 
@@ -201,5 +202,63 @@ describe("OwnerDuplicatesPage", () => {
     expect(
       screen.queryByRole("button", { name: /scan for duplicates/i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("OwnerDuplicatesPage — rejecting a pair", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({
+      isOperator: true,
+      isAdmin: true,
+      user: { role: "admin", username: "test" },
+    });
+    vi.mocked(api.fetchOwnerDuplicates).mockResolvedValue(response());
+    vi.mocked(api.dismissOwnerDuplicate).mockResolvedValue({ dismissed: true });
+  });
+
+  // Without this the view offers a merge and nothing else, so a pair somebody
+  // has already looked at comes back on every scan.
+  it("records that two owners are not the same person", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "prompt").mockReturnValue("different people");
+
+    render(<OwnerDuplicatesPage />, { wrapper: Wrapper });
+    await user.click(
+      await screen.findByRole("button", { name: /Not a duplicate/i }),
+    );
+
+    await waitFor(() => {
+      expect(api.dismissOwnerDuplicate).toHaveBeenCalledWith({
+        owner_a: "thomas-smith",
+        owner_b: "tommy-smith",
+        reason: "different people",
+      });
+    });
+  });
+
+  it("does nothing if the reason prompt is cancelled", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+
+    render(<OwnerDuplicatesPage />, { wrapper: Wrapper });
+    await user.click(
+      await screen.findByRole("button", { name: /Not a duplicate/i }),
+    );
+
+    expect(api.dismissOwnerDuplicate).not.toHaveBeenCalled();
+  });
+
+  // An empty list worked down to nothing means something different from one
+  // nobody has read.
+  it("says an empty list was worked down rather than never scanned", async () => {
+    vi.mocked(api.fetchOwnerDuplicates).mockResolvedValue(
+      response({ data: [], dismissed_pairs: 7 }),
+    );
+    render(<OwnerDuplicatesPage />, { wrapper: Wrapper });
+
+    expect(
+      await screen.findByText(/7 have been rejected as different people/i),
+    ).toBeInTheDocument();
   });
 });

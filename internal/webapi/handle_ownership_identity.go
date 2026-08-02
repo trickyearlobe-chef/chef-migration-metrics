@@ -127,6 +127,51 @@ func (r *Router) handleOwnershipDuplicatesRescan(w http.ResponseWriter, req *htt
 	WriteJSON(w, http.StatusAccepted, map[string]any{"started": true})
 }
 
+// POST /api/v1/ownership/duplicates/dismiss
+//
+// "These two are not the same person." Without it the view offers a merge and
+// nothing else, so a pair somebody has already rejected returns on every scan
+// and the list can never be worked down to nothing — which is the only state
+// that makes it worth opening.
+func (r *Router) handleOwnershipDuplicatesDismiss(w http.ResponseWriter, req *http.Request) {
+	if !requireMethod(w, req, http.MethodPost) {
+		return
+	}
+	if !requireOperatorOrAdmin(w, req) {
+		return
+	}
+
+	var body struct {
+		OwnerA string `json:"owner_a"`
+		OwnerB string `json:"owner_b"`
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+		return
+	}
+	if body.OwnerA == "" || body.OwnerB == "" {
+		WriteBadRequest(w, "owner_a and owner_b are required.")
+		return
+	}
+	if body.OwnerA == body.OwnerB {
+		WriteBadRequest(w, "owner_a and owner_b must be different.")
+		return
+	}
+
+	if err := r.db.DismissOwnerDuplicate(req.Context(), body.OwnerA, body.OwnerB,
+		body.Reason, adminUsername(req)); err != nil {
+		r.logf("ERROR", "ownership/duplicates: dismissing %s / %s: %v", body.OwnerA, body.OwnerB, err)
+		WriteBadRequest(w, "Failed to dismiss the pair: "+err.Error())
+		return
+	}
+
+	details, _ := json.Marshal(body)
+	r.auditOwnership(req, "owner_duplicate_dismissed", body.OwnerA, "", "", "", details)
+
+	WriteJSON(w, http.StatusOK, map[string]any{"dismissed": true})
+}
+
 func (r *Router) handleOwnershipDuplicates(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -175,6 +220,15 @@ func (r *Router) handleOwnershipDuplicates(w http.ResponseWriter, req *http.Requ
 		"pagination":   NewPaginationResponse(pg, total),
 		"coverage":     coverage,
 		"scan_running": r.duplicateScanRunning.Load(),
+	}
+
+	// An empty list that was worked down to nothing means something different
+	// from one nobody has looked at, so the count of rejections is reported
+	// alongside it. Failing to read it must not take the list with it.
+	if dismissed, derr := r.db.CountOwnerDuplicateDismissals(req.Context()); derr != nil {
+		r.logf("WARN", "ownership/duplicates: counting dismissals: %v", derr)
+	} else {
+		body["dismissed_pairs"] = dismissed
 	}
 	scan, err := r.db.GetOwnerDuplicateScan(req.Context())
 	if err == nil {

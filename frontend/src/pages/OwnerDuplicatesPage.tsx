@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchOwnerDuplicates, rescanOwnerDuplicates } from "../api";
+import {
+  dismissOwnerDuplicate,
+  fetchOwnerDuplicates,
+  rescanOwnerDuplicates,
+} from "../api";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ErrorAlert, LoadingSpinner } from "../components/Feedback";
 import { Pagination } from "../components/Pagination";
@@ -42,6 +46,7 @@ export function OwnerDuplicatesPage() {
   const [merged, setMerged] = useState<string | null>(null);
   const [scanRequested, setScanRequested] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [dismissing, setDismissing] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -66,6 +71,35 @@ export function OwnerDuplicatesPage() {
   const scan = response?.scan;
   const scanRunning = (response?.scan_running ?? false) || scanRequested;
   const neverScanned = response !== null && !scan;
+
+  // Saying "not the same person". The rejection outlives a rescan, so the list
+  // can actually be worked down to nothing rather than returning intact.
+  async function handleDismiss(candidate: OwnerDuplicateCandidate) {
+    const key = `${candidate.owner_a}|${candidate.owner_b}`;
+    const reason = window.prompt(
+      `Recording that ${candidate.owner_a} and ${candidate.owner_b} are different people.\n\nWhy? (optional)`,
+      "",
+    );
+    if (reason === null) return;
+    setDismissing(key);
+    try {
+      await dismissOwnerDuplicate({
+        owner_a: candidate.owner_a,
+        owner_b: candidate.owner_b,
+        reason,
+      });
+      setMerged(
+        `${candidate.owner_a} and ${candidate.owner_b} will not be paired again.`,
+      );
+      await load();
+    } catch (e: unknown) {
+      setScanError(
+        e instanceof Error ? e.message : "Failed to dismiss the pair.",
+      );
+    } finally {
+      setDismissing(null);
+    }
+  }
 
   async function handleRescan() {
     setScanError(null);
@@ -172,7 +206,11 @@ export function OwnerDuplicatesPage() {
           ) : (
             <EmptyState
               title="No possible duplicates found"
-              description="No two owners look enough alike to pair. This covers owner names and every recorded alias."
+              description={
+                (response?.dismissed_pairs ?? 0) > 0
+                  ? `No pairs left to look at. ${response?.dismissed_pairs} have been rejected as different people and will not be paired again.`
+                  : "No two owners look enough alike to pair. This covers owner names and every recorded alias."
+              }
             />
           )}
         </div>
@@ -186,7 +224,7 @@ export function OwnerDuplicatesPage() {
                   <th className="px-3 py-2">Possibly the same as</th>
                   <th className="px-3 py-2">Matched on</th>
                   <th className="px-3 py-2">Similarity</th>
-                  {isAdmin && <th className="px-3 py-2">Action</th>}
+                  {isOperator && <th className="px-3 py-2">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -218,18 +256,36 @@ export function OwnerDuplicatesPage() {
                     <td className="px-3 py-2 font-medium text-gray-700">
                       {percent(candidate.similarity)}
                     </td>
-                    {isAdmin && (
+                    {isOperator && (
                       <td className="px-3 py-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMerged(null);
-                            setMerging(candidate);
-                          }}
-                          className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
-                        >
-                          Merge…
-                        </button>
+                        <div className="flex gap-2">
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMerged(null);
+                                setMerging(candidate);
+                              }}
+                              className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+                            >
+                              Merge…
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={
+                              dismissing ===
+                              `${candidate.owner_a}|${candidate.owner_b}`
+                            }
+                            onClick={() => {
+                              setMerged(null);
+                              void handleDismiss(candidate);
+                            }}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                          >
+                            Not a duplicate
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>

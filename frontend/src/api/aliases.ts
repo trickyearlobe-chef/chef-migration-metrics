@@ -95,6 +95,26 @@ export function rescanOwnerDuplicates(): Promise<OwnerDuplicateRescanResponse> {
 }
 
 /**
+ * Records that two owners are not the same person. The rejection outlives a
+ * rescan — without it a pair somebody has already looked at returns every time
+ * the scan runs, and the list can never be worked down to nothing.
+ */
+export function dismissOwnerDuplicate(body: {
+  owner_a: string;
+  owner_b: string;
+  reason?: string;
+}): Promise<{ dismissed: boolean }> {
+  return apiFetch<{ dismissed: boolean }>(
+    buildUrl("/ownership/duplicates/dismiss"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
  * Folds one owner into another. The work moves, every identity the source was
  * known by moves with it, and the source owner is removed — which is what
  * stops the next ingest from undoing the correction.

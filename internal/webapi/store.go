@@ -618,6 +618,14 @@ type DataStore interface {
 	// of them have no alias recorded.
 	CountOwnersMissingAliases(ctx context.Context) (total, missing int, err error)
 
+	// DismissOwnerDuplicate records that two owners are not the same person.
+	// The rejection outlives a rescan.
+	DismissOwnerDuplicate(ctx context.Context, ownerA, ownerB, reason, dismissedBy string) error
+
+	// CountOwnerDuplicateDismissals returns how many pairs have been
+	// rejected, so an empty list can be told apart from an unread one.
+	CountOwnerDuplicateDismissals(ctx context.Context) (int, error)
+
 	// --- The failure register: a person's verdict about a git repo. ---
 
 	// RecordFailureVerdict records a verdict, superseding any standing one

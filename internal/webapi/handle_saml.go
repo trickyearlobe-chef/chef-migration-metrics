@@ -30,10 +30,10 @@ type SAMLEndpoints struct {
 
 // SAMLHandler holds the SAML-related HTTP handlers and their dependencies.
 type SAMLHandler struct {
-	provisioner *jit.Provisioner
-	sessions    *auth.SessionManager
-	userStore   SAMLUserStore
-	logger      func(level, msg string)
+	provisioner  *jit.Provisioner
+	sessions     *auth.SessionManager
+	userStore    SAMLUserStore
+	logger       func(level, msg string)
 	trustedProxy bool
 
 	// mu guards provider and endpoints, which are swapped together on a live

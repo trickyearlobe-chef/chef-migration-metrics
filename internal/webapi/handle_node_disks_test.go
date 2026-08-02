@@ -150,11 +150,11 @@ func TestHandleNodeDisks_HappyPath_Linux(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "pandora.home.arpa",
+				NodeName:         "pandora.home.arpa",
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     fsData,
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       fsData,
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -268,11 +268,11 @@ func TestHandleNodeDisks_HappyPath_Windows(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "win11-001.home.arpa",
+				NodeName:         "win11-001.home.arpa",
 				OrganisationName: "org-1",
-				Platform:       "windows",
-				Filesystem:     fsData,
-				CollectedAt:    now,
+				Platform:         "windows",
+				Filesystem:       fsData,
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -326,11 +326,11 @@ func TestHandleNodeDisks_NullFilesystem(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "empty-node",
+				NodeName:         "empty-node",
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     nil,
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       nil,
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -428,11 +428,11 @@ func TestHandleNodeDisks_FiltersVirtualFS(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "linux-host",
+				NodeName:         "linux-host",
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     fsData,
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       fsData,
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -494,11 +494,11 @@ func TestHandleNodeDisks_ShowAllIncludesVirtualFS(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "linux-host",
+				NodeName:         "linux-host",
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     fsData,
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       fsData,
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -530,11 +530,11 @@ func TestHandleNodeDisks_NodeNameWithSlash(t *testing.T) {
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			calledWith = nodeName
 			return datastore.NodeSnapshot{
-				NodeName:       nodeName,
+				NodeName:         nodeName,
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     nil,
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       nil,
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -559,11 +559,11 @@ func TestHandleNodeDisks_MalformedJSON(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "bad-json",
+				NodeName:         "bad-json",
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     json.RawMessage(`{not valid json`),
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       json.RawMessage(`{not valid json`),
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -598,11 +598,11 @@ func TestHandleNodeDisks_EmptyByMountpoint(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "empty-mounts",
+				NodeName:         "empty-mounts",
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     fsData,
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       fsData,
+				CollectedAt:      now,
 			}, nil
 		},
 	}
@@ -635,11 +635,11 @@ func TestHandleNodeDisks_NoByMountpointKey(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:       "no-mount-key",
+				NodeName:         "no-mount-key",
 				OrganisationName: "org-1",
-				Platform:       "ubuntu",
-				Filesystem:     fsData,
-				CollectedAt:    now,
+				Platform:         "ubuntu",
+				Filesystem:       fsData,
+				CollectedAt:      now,
 			}, nil
 		},
 	}

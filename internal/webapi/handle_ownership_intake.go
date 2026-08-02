@@ -591,11 +591,11 @@ func (r *Router) createIntakeOwner(req *http.Request, row *ownershipimport.Repor
 // ---------------------------------------------------------------------------
 
 type mappingRequestBody struct {
-	Name       string                            `json:"name"`
-	SourceKind string                            `json:"source_kind"`
-	Delimiter  string                            `json:"delimiter"`
-	FieldMap   ownershipimport.FieldMap          `json:"field_map"`
-	rawMap     json.RawMessage                   `json:"-"`
+	Name       string                   `json:"name"`
+	SourceKind string                   `json:"source_kind"`
+	Delimiter  string                   `json:"delimiter"`
+	FieldMap   ownershipimport.FieldMap `json:"field_map"`
+	rawMap     json.RawMessage          `json:"-"`
 }
 
 func (r *Router) handleIntakeMappingCollection(w http.ResponseWriter, req *http.Request) {

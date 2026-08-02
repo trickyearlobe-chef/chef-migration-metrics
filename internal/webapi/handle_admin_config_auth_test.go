@@ -58,10 +58,10 @@ func TestAdminConfigAuth_GET_UsesHolder(t *testing.T) {
 	cfg := testConfig()
 	cfg.Auth = config.AuthConfig{
 		Providers: []config.AuthProvider{{
-			Type:                   "saml",
-			IDPMetadataURL:         "https://idp.example.com/metadata",
-			SPEntityID:             "https://app.example.com",
-			SPPrivateKeyCredential: "saml-sp-key",
+			Type:                    "saml",
+			IDPMetadataURL:          "https://idp.example.com/metadata",
+			SPEntityID:              "https://app.example.com",
+			SPPrivateKeyCredential:  "saml-sp-key",
 			SPCertificateCredential: "saml-sp-cert",
 		}},
 	}

@@ -46,13 +46,13 @@ func (r *Router) handleDiagnosticBundle(w http.ResponseWriter, req *http.Request
 	// --- bundle_info.json ---
 	host := hostname()
 	if err := writeZipJSON(zw, "bundle_info.json", map[string]any{
-		"timestamp":            time.Now().UTC(),
-		"app_version":          r.version,
-		"hostname":             host,
-		"go_version":           runtime.Version(),
-		"include_identifiers":  params.includeIdentifiers,
-		"include_depth_stats":  params.includeDepthStats,
-		"log_days":             params.logDays,
+		"timestamp":           time.Now().UTC(),
+		"app_version":         r.version,
+		"hostname":            host,
+		"go_version":          runtime.Version(),
+		"include_identifiers": params.includeIdentifiers,
+		"include_depth_stats": params.includeDepthStats,
+		"log_days":            params.logDays,
 	}); err != nil {
 		errs["bundle_info"] = err.Error()
 	}

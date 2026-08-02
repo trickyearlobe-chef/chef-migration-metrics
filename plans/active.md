@@ -68,7 +68,7 @@ Both were scoped against the whole estate. The first item in `plans/todo-ownersh
 and unowned, ordered by affected nodes — needs no matching at all and decides how much matching is
 worth building, if any.
 
-**Next free migration number: 0062.**
+**Next free migration number: 0063.**
 
 ## Snagging (`plans/todo-snagging.md`)
 

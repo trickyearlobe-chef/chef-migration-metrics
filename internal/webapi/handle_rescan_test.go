@@ -557,8 +557,6 @@ func TestTriggerCollectionInBackground_Error(t *testing.T) {
 	}
 }
 
-
-
 // ---------------------------------------------------------------------------
 // rescan-all must clear the materialised git repo verdicts
 // ---------------------------------------------------------------------------

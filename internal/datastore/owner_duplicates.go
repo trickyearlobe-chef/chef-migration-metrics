@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -232,8 +233,14 @@ func (db *DB) ListOwnerDuplicateCandidates(ctx context.Context, f OwnerDuplicate
 	}
 
 	var total int
+	// The total has to agree with the rows, so it excludes dismissals too.
 	if err := db.pool.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM owner_duplicate_candidates WHERE similarity >= $1`,
+		`SELECT COUNT(*) FROM owner_duplicate_candidates d
+		 WHERE d.similarity >= $1
+		   AND NOT EXISTS (
+		       SELECT 1 FROM owner_duplicate_dismissals x
+		       WHERE x.owner_a = d.owner_a AND x.owner_b = d.owner_b
+		   )`,
 		minSimilarity,
 	).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("datastore: counting duplicate owner candidates: %w", err)
@@ -249,6 +256,10 @@ func (db *DB) ListOwnerDuplicateCandidates(ctx context.Context, f OwnerDuplicate
 		LEFT JOIN counts ca ON ca.owner_name = d.owner_a
 		LEFT JOIN counts cb ON cb.owner_name = d.owner_b
 		WHERE d.similarity >= $1
+		  AND NOT EXISTS (
+		      SELECT 1 FROM owner_duplicate_dismissals x
+		      WHERE x.owner_a = d.owner_a AND x.owner_b = d.owner_b
+		  )
 		ORDER BY d.similarity DESC, d.owner_a, d.owner_b
 		LIMIT $2 OFFSET $3
 	`
@@ -290,4 +301,54 @@ func (db *DB) CountOwnersMissingAliases(ctx context.Context) (total, missing int
 		return 0, 0, fmt.Errorf("datastore: counting owners without aliases: %w", err)
 	}
 	return total, missing, nil
+}
+
+// DismissOwnerDuplicate records that two owners are not the same person.
+//
+// Kept apart from the candidate table on purpose. The scan deletes and rebuilds
+// that table on every run, so a dismissal stored there would be swept away and
+// the pair would return — which is the complaint this answers. A dismissal is a
+// judgement about the scan's output rather than part of it, and it outlives any
+// number of rescans.
+//
+// The pair is ordered before storing, so it matches however the caller happens
+// to name the two. Saying it twice is not an error: a reader clicking again has
+// changed nothing, and failing there would be noise.
+func (db *DB) DismissOwnerDuplicate(ctx context.Context, ownerA, ownerB, reason, dismissedBy string) error {
+	if ownerA == ownerB {
+		return errors.New("datastore: an owner cannot be dismissed as a duplicate of itself")
+	}
+	if strings.TrimSpace(dismissedBy) == "" {
+		return errors.New("datastore: dismissing needs to say who decided it")
+	}
+
+	// Same ordering the candidate table uses.
+	if ownerA > ownerB {
+		ownerA, ownerB = ownerB, ownerA
+	}
+
+	_, err := db.pool.ExecContext(ctx, `
+		INSERT INTO owner_duplicate_dismissals (owner_a, owner_b, reason, dismissed_by)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (owner_a, owner_b) DO UPDATE
+		SET reason = EXCLUDED.reason,
+		    dismissed_by = EXCLUDED.dismissed_by,
+		    dismissed_at = now()
+	`, ownerA, ownerB, nullStringPtr(strings.TrimSpace(reason)), dismissedBy)
+	if err != nil {
+		return fmt.Errorf("datastore: dismissing a duplicate pair: %w", err)
+	}
+	return nil
+}
+
+// CountOwnerDuplicateDismissals returns how many pairs have been rejected, so a
+// reader can tell an empty list that was worked down from one nobody has looked
+// at.
+func (db *DB) CountOwnerDuplicateDismissals(ctx context.Context) (int, error) {
+	var n int
+	if err := db.pool.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM owner_duplicate_dismissals`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("datastore: counting dismissed duplicate pairs: %w", err)
+	}
+	return n, nil
 }

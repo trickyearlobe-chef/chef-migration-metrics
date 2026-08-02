@@ -36,9 +36,9 @@ func TestReclassificationQueue_CoalescesSameCop(t *testing.T) {
 	q.enqueue("Chef/X", "t")
 	q.enqueue("Chef/X", "t")
 
-	release <- struct{}{}                       // finish run 1 → one coalesced re-run
-	recvWithin(t, started, "coalesced re-run")  // run 2 begins
-	release <- struct{}{}                       // finish run 2 → cop no longer pending
+	release <- struct{}{}                      // finish run 1 → one coalesced re-run
+	recvWithin(t, started, "coalesced re-run") // run 2 begins
+	release <- struct{}{}                      // finish run 2 → cop no longer pending
 
 	// No third run should start.
 	if gotRunWithin(started, 100*time.Millisecond) {

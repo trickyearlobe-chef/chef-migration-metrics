@@ -26,7 +26,7 @@ func (mockSessionStore) InsertSession(_ context.Context, _ datastore.InsertSessi
 func (mockSessionStore) GetValidSession(_ context.Context, _ string) (datastore.Session, error) {
 	return datastore.Session{}, datastore.ErrNotFound
 }
-func (mockSessionStore) DeleteSession(_ context.Context, _ string) error           { return nil }
+func (mockSessionStore) DeleteSession(_ context.Context, _ string) error { return nil }
 func (mockSessionStore) DeleteSessionsByUsername(_ context.Context, _ string) (int, error) {
 	return 0, nil
 }
@@ -42,7 +42,7 @@ func (mockLocalAuthStore) GetUserByUsername(_ context.Context, _ string) (datast
 func (mockLocalAuthStore) IncrementFailedLoginAttempts(_ context.Context, _ string) (int, error) {
 	return 0, nil
 }
-func (mockLocalAuthStore) LockUser(_ context.Context, _ string) error        { return nil }
+func (mockLocalAuthStore) LockUser(_ context.Context, _ string) error           { return nil }
 func (mockLocalAuthStore) RecordLoginSuccess(_ context.Context, _ string) error { return nil }
 
 // testRouterWithAuth returns a Router wired with real auth middleware. The

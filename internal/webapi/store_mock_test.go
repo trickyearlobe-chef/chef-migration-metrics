@@ -129,6 +129,8 @@ type mockStore struct {
 	RecomputeOwnerDuplicateCandidatesFn                    func(ctx context.Context) (int, error)
 	GetOwnerDuplicateScanFn                                func(ctx context.Context) (datastore.OwnerDuplicateScan, error)
 	CountOwnersMissingAliasesFn                            func(ctx context.Context) (int, int, error)
+	DismissOwnerDuplicateFn                                func(ctx context.Context, ownerA, ownerB, reason, dismissedBy string) error
+	CountOwnerDuplicateDismissalsFn                        func(ctx context.Context) (int, error)
 	RecordFailureVerdictFn                                 func(ctx context.Context, p datastore.RecordFailureVerdictParams) (datastore.FailureRegisterEntry, error)
 	ReviseFailureEntryFn                                   func(ctx context.Context, id string, p datastore.ReviseFailureEntryParams) (datastore.FailureRegisterEntry, error)
 	ResolveFailureEntryFn                                  func(ctx context.Context, id, resolvedBy, note string) (datastore.FailureRegisterEntry, error)
@@ -1140,6 +1142,20 @@ func (m *mockStore) FailureRegisterSummary(ctx context.Context, windowDays int) 
 		return m.FailureRegisterSummaryFn(ctx, windowDays)
 	}
 	return datastore.FailureRegisterSummary{}, nil
+}
+
+func (m *mockStore) DismissOwnerDuplicate(ctx context.Context, ownerA, ownerB, reason, dismissedBy string) error {
+	if m.DismissOwnerDuplicateFn != nil {
+		return m.DismissOwnerDuplicateFn(ctx, ownerA, ownerB, reason, dismissedBy)
+	}
+	return nil
+}
+
+func (m *mockStore) CountOwnerDuplicateDismissals(ctx context.Context) (int, error) {
+	if m.CountOwnerDuplicateDismissalsFn != nil {
+		return m.CountOwnerDuplicateDismissalsFn(ctx)
+	}
+	return 0, nil
 }
 
 func (m *mockStore) ListOpenFailureVerdicts(ctx context.Context) (map[string]datastore.StandingVerdict, error) {

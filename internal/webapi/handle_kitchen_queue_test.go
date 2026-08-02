@@ -139,11 +139,11 @@ func TestHandleKitchenQueueGet_ReturnsItem(t *testing.T) {
 	store := &mockStore{
 		GetKitchenQueueItemFn: func(_ context.Context, id string) (*datastore.KitchenQueueItem, error) {
 			return &datastore.KitchenQueueItem{
-				ID:         id,
-				RunType:    "git",
+				ID:          id,
+				RunType:     "git",
 				GitRepoName: "example-repo",
-				Status:     "running",
-				EnqueuedAt: now,
+				Status:      "running",
+				EnqueuedAt:  now,
 			}, nil
 		},
 	}

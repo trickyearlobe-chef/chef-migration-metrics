@@ -36,6 +36,9 @@ export interface OwnerDuplicateCandidate {
 }
 
 export interface OwnerDuplicatesResponse {
+  /** How many pairs have been rejected — an empty list worked down to nothing
+   * means something different from one nobody has read. */
+  dismissed_pairs?: number;
   data: OwnerDuplicateCandidate[];
   pagination: {
     page: number;

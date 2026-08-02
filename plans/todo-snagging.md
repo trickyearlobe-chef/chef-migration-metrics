@@ -11,17 +11,27 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
-- [ ] **No way to say "not a duplicate".** The duplicates view offers a merge and nothing
-  else, so a pair a person has looked at and rejected stays on the list — and the scan
-  rebuilds the table each run, so it comes back every time. The consequence is that the
-  list can only grow in the reader's mind: there is no way to work it down to nothing,
-  which is the only state that makes it worth opening. Needs a dismissal that survives a
-  rescan, so it has to live outside `owner_duplicate_candidates` (the scan deletes and
-  rebuilds that table), keyed on the ordered pair and cascading with the owners.
+*(nothing outstanding)*
 
 ---
 
 ## Fixed
+
+- **No way to say "not a duplicate".** The view offered a merge and nothing else, so a
+  pair somebody had already rejected returned on every scan and the list could never be
+  worked down to nothing — the only state that makes it worth opening.
+
+  Dismissals live in their own table (migration 0062) rather than in
+  `owner_duplicate_candidates`, because the scan deletes and rebuilds that on every run
+  and a rejection stored there would be swept away. Keyed on the ordered pair so it
+  matches whichever way round the caller names the two, and cascading with the owners so
+  merging one away takes the dismissal with it. A reason is optional: demanding one is
+  how dismissals stop being recorded, and this only ever removes a suggestion.
+
+  Dismissing is an **operator** action rather than admin — it removes a suggestion, not a
+  person — so the action column now shows for operators, with merge still admin-only. An
+  empty list reports how many pairs were rejected, so "worked down to nothing" reads
+  differently from "nobody has looked".
 
 - **The duplicates view paired three unrelated people with each other.** Owners added by
   email address all carry their address as an alias (migration 0059 seeds it), and the

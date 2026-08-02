@@ -78,9 +78,9 @@ func TestIsRelativePath(t *testing.T) {
 		{"/", true},
 		{"/path/to/resource", true},
 		{"//evil.com", false},
-		{`/\evil.com`, false},   // backslash bypass: browsers read /\ as //
-		{`/\/evil.com`, false},  // mixed slash/backslash authority bypass
-		{`/\\evil.com`, false},  // backslash variant
+		{`/\evil.com`, false},  // backslash bypass: browsers read /\ as //
+		{`/\/evil.com`, false}, // mixed slash/backslash authority bypass
+		{`/\\evil.com`, false}, // backslash variant
 		{"https://evil.com", false},
 		{"http://evil.com", false},
 		{"relative/path", false},

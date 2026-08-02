@@ -183,7 +183,7 @@ database has already seen — so a shared test database quietly applies nothing.
 `idx_owners_name_trgm`, `0058` — `owner_merged` audit action and `0059` — owner display-name
 index plus contact-email aliases (identity and alias management); `0060` —
 `failure_register_entries` and `0061` — a verdict subject that may be a repo or a cookbook
-(the failure register). The next free number is `0062`; take numbers in the order chunks actually land,
+(the failure register); `0062` — `owner_duplicate_dismissals`. The next free number is `0063`; take numbers in the order chunks actually land,
 never in the order they were planned. Ingest landed first and therefore took the lowest free number: shipping a higher one would
 have made every lower-numbered migration unappliable on any database that had seen the release.
 This is not hypothetical — the shared `cmm_test` database already carried a version `0057` from an
