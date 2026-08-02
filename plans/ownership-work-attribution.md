@@ -161,6 +161,14 @@ Never delete an ownership row.
 **Converge run data is ephemeral.** Range-partitioned with a short default retention, no foreign
 keys, and switched off by default. Snapshot the evidence you need at capture time; never reference it.
 
+**Comparing every owner with every other owner does not finish.** Owner names cluster hard —
+people share surnames, and committer-derived names are email localparts — so a trigram sweep of
+the catalogue is quadratic in that density, not in the row count. Measured: a ten-thousand-owner
+catalogue of that shape had not returned after two minutes; the same data scanned in 24 seconds
+once each row was limited to its nearest few candidates (a GiST `<->` nearest-neighbour scan,
+which is what `gist_trgm_ops` is for; the GIN `%` operator cannot do it). Anything that pairs
+records by similarity must be bounded per row and computed away from the request that reads it.
+
 **Unbounded text in a btree index has already caused a production outage here.** Hash a bounded,
 canonicalised projection instead. The rule and the canonicalisation are written and normative in
 `specifications/failure-register.md`.
@@ -169,9 +177,10 @@ canonicalised projection instead. The rule and the canonicalisation are written 
 startup before anything applies, and the runner silently skips any version at or below what a
 database has already seen — so a shared test database quietly applies nothing.
 
-**Assigned so far:** `0056` — `ownership_import_mappings` (owner ingest, merged). The next free
-number is `0057`; take numbers in the order chunks actually land, never in the order they were
-planned. Ingest landed first and therefore took the lowest free number: shipping a higher one would
+**Assigned so far:** `0056` — `ownership_import_mappings` (owner ingest); `0057` —
+`idx_owners_name_trgm` and `0058` — `owner_merged` audit action (identity and alias
+management). The next free number is `0059`; take numbers in the order chunks actually land,
+never in the order they were planned. Ingest landed first and therefore took the lowest free number: shipping a higher one would
 have made every lower-numbered migration unappliable on any database that had seen the release.
 This is not hypothetical — the shared `cmm_test` database already carried a version `0057` from an
 earlier, discarded attempt, and had to be recreated before its own tests could run.

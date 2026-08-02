@@ -24,14 +24,18 @@ Work order and journeys live in that plan; per-chunk scope lives in
 confirmed in review: unresolved people are created rather than rejected, and a fuzzy
 candidate no longer rejects the row. Both stay.
 
-**Chunk 2, identity and alias management — cleared to start.** Moved ahead of node matching
-because it is the tool you debug matching failures with. Three strands, one chunk, sharing
-machinery: a person's aliases editable inline on their own page; a standing
-possible-duplicate-owners view; and a merge action folding one owner into another — which is
-also what makes a correction survive a re-ingest. Scope and the gotchas that shape it are in
-`plans/todo-ownership.md`.
+**Chunk 2, identity and alias management — built, awaiting the product owner's review.** Three
+strands landed: aliases editable inline on the owner's own page; a standing
+possible-duplicate-owners view at `/ownership/duplicates`; and a merge action folding one owner
+into another, which moves the aliases and keeps the folded-away name reachable so a correction
+survives a re-ingest. Three decisions to confirm in review: the duplicate report compares owner
+names as well as alias values (so an owner with no alias is still visible); the committer-assign
+path now records the commit address as a `git_email` alias; and the duplicate list is built by
+an explicit scan rather than computed per request — comparing everything with everything does
+not finish, see the gotcha of that name.
 
-Then node matching, then git repo matching.
+**Chunk 3, node matching, is next — do not start it until chunk 2 is reviewed.** Then git repo
+matching.
 
 ## QUEUED behind the ownership MVP
 
