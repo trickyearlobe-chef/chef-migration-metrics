@@ -57,6 +57,14 @@ Remaining:
   and any candidate owners, one action from being merged.
 ## Where owners come from — generalise the committer flow
 
+**Read the scoping decision first** — `plans/ownership-work-attribution.md` § Ownership only has
+to be right where somebody has to act. Everything below is an optimisation on a list that may be
+small enough to work through by hand. **Measure that list before building any of it.**
+
+- [ ] **Blocking and unowned, ordered by affected nodes.** Needs no matching, no rules and no new
+  collection — a join over cookstyle results, complexity and assignments. It is both the answer to
+  journey 3 and the number that decides whether anything else here is worth building.
+
 Raised by the product owner 2026-08-02. Assigning ownership from git committers is one
 *provider* of candidates, wired directly to assignment. The general shape is: for an
 entity, every provider offers candidates with their evidence and how far that source is

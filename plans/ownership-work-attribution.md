@@ -267,6 +267,33 @@ its people, no scheduling detail. Use `example-corp` / `acme` placeholders.
 
 ---
 
+## Ownership only has to be right where somebody has to act
+
+Stated by the product owner, 2026-08-02. **This bounds the whole problem and reorders the work.**
+
+An owner needs to be accurate when a cookbook or repo has a problem somebody must fix. A repo with
+no detected problem can wait. So the set needing accurate ownership is not the estate — it is
+*blocking and unowned*, which is a join over data that already exists, and is smaller than the
+estate by orders of magnitude.
+
+This is the journey-1 deferral generalised: correction was already deferred to the point of use;
+so is establishment. Not a new principle, the same one applied a level up.
+
+What follows:
+
+- **Manual assignment is probably sufficient.** If the blocking set is hundreds rather than
+  thousands, working through it by hand in the UI that already exists is practical — which makes
+  automated matching, candidate-provider ranking and identity re-modelling optimisations on a
+  tractable list rather than prerequisites. **Establish the size of that list before building any
+  of them.**
+- **Ordering is already derivable** — unowned and blocking, sorted by affected nodes, is blast
+  radius crossed with the ownership gap.
+- **It is rolling, not a cleanup.** "No detected problem *yet*" depends on detection coverage,
+  which is known incomplete: static coverage of Ruby removals has gaps, and only cookbooks
+  reachable from node objects are tested at all. The deferred set will keep producing work as
+  coverage improves, so this is a demand-driven activity with no finish line — which is the right
+  shape, and should not be planned as a one-time exercise.
+
 ## Decisions already taken
 
 - Accountability attaches to git repos, keyed on name.
