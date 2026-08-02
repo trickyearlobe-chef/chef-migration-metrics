@@ -5,7 +5,7 @@ Single source of truth for what is in flight. **Read this first at session start
 Only work that is in flight or next lives here. Everything else is in a `todo-*.md`
 backlog — do not re-summarise it here; the duplication is what makes this file stale.
 
-## Branch map (2026-08-02)
+## Branch map (2026-08-03)
 
 `main` — **v2.18.13** tagged and pushed. Collection is hourly. A few commits sit unpushed on
 top of the tag: the git repo owner filter, and the snagging fixes made after it was cut.
@@ -13,6 +13,10 @@ top of the tag: the git repo owner filter, and the snagging fixes made after it 
 `feature/owner-ingest-discovery` — merged into `main` 2026-08-02. **Gate 2 was overridden
 deliberately by the product owner**, ahead of the MVP being complete, to get a build deployable
 at customer scale and take the measurements below. Later chunks branch fresh from `main`.
+
+`feature/ownership-list-filters` — **unmerged, awaiting sign-off**, tree clean and every gate
+green. The ownership filter on the git repo and cookbook lists, plus the two snagging fixes and
+migration 0063 found while using it. 0063 is already applied to the dev DB.
 
 **If a rollback is ever needed:** there is **no down-migration runner** — only `MigrateUp` — so a
 schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Two
@@ -68,10 +72,10 @@ signal is.
 Scope and the decisions that bind: `plans/todo-ownership.md` § Ownership filtering in the list
 views.
 
-The git repo and cookbook lists carry the control (`feature/ownership-list-filters`). The node
-list is the remainder, and stays deferred — there is no node ownership data to test it against.
-**Not yet looked at in the running app**: the filter bar was already busy and one more control
-went into it.
+The git repo and cookbook lists carry the control, and it was driven in the running app on
+2026-08-03: both questions answer correctly. Using it left one open item — the selected-owner
+chips stretch the filter bar — which is the last thing on this chunk. The node list stays
+deferred; there is no node ownership data to test it against.
 
 ## Snagging (`plans/todo-snagging.md`)
 
@@ -83,10 +87,8 @@ none would have come from a code review. Reproduce, write the failing test, then
 
 ## QUEUED behind the ownership MVP
 
-- **CC19 target-version failing-nodes preset** (`plans/todo-event-ingest.md`) — wiring
-  `useTargetChefVersion` into `RunEventsPage`; copy an existing call site, not new behaviour.
-- **General audit log** (`plans/todo-audit.md`, spec `specifications/audit-log.md`) — who
-  changed config, who triggered a rescan. Proposed, not started.
+CC19 target-version preset (`plans/todo-event-ingest.md`) and the general audit log
+(`plans/todo-audit.md`). Scope lives there; do not restate it here.
 
 ## Dependabot — settled 2026-08-02, do not re-triage
 

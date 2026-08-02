@@ -162,6 +162,12 @@ anything that extends it:
   from a filtered list reachable, and the git-repo export was returning the whole estate with
   nothing in the file to say so.
 
+- [ ] **The chips stretch the filter bar** — seen in the running app 2026-08-03 with seven
+  owners selected: the selected-owner chips widen the control and push CookStyle, TK, Clone
+  and the rest off to the right. The busy-page objection was well founded. Options are a
+  capped row ("+4 more"), a row of their own under the bar, or dropping them for the button's
+  count — but the count alone loses the ability to see and remove one person. The last item
+  on this chunk.
 - [ ] **Node list — UI only**, and deferred: there is no node ownership dataset yet, so it
   cannot be tested against anything real. `OwnerFilter` drops straight in.
 - [ ] **Ownership is not part of a saved filter.** `savedFilterVocabulary` does not accept
