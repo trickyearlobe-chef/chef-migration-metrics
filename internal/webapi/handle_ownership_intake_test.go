@@ -874,8 +874,9 @@ func TestIntakeReingest_CorrectionSurvivesWhenTheAliasIsMoved(t *testing.T) {
 // resolves to the owner the work was moved off, and the next ingest puts it
 // straight back.
 //
-// This test documents that, so the behaviour cannot change silently and the
-// gap stays visible until the merge action closes it.
+// This test documents that, so the behaviour cannot change silently. The
+// durable correction is POST /api/v1/ownership/merge, which moves the aliases
+// as well as the work; reassignment on its own is still what is described here.
 func TestIntakeReingest_ReassignmentAloneIsUndoneByTheNextIngest(t *testing.T) {
 	var writtenTo []string
 	store := &mockStore{

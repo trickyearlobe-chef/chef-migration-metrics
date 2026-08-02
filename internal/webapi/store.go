@@ -597,6 +597,27 @@ type DataStore interface {
 	// Returns the number reassigned and the number skipped (duplicates).
 	ReassignOwnership(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (reassigned, skipped int, err error)
 
+	// MergeOwners folds one owner into another: the work moves, the
+	// identities the source was known by move with it, and the source
+	// owner is removed. Returns datastore.ErrNotFound if either is absent.
+	MergeOwners(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error)
+
+	// ListOwnerDuplicateCandidates returns stored pairs of owners that may
+	// be the same person, with the total number found.
+	ListOwnerDuplicateCandidates(ctx context.Context, f datastore.OwnerDuplicateFilter) ([]datastore.OwnerDuplicateCandidate, int, error)
+
+	// RecomputeOwnerDuplicateCandidates rescans the catalogue and returns
+	// the number of pairs found.
+	RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error)
+
+	// GetOwnerDuplicateScan returns when the catalogue was last scanned.
+	// Returns datastore.ErrNotFound if it never has been.
+	GetOwnerDuplicateScan(ctx context.Context) (datastore.OwnerDuplicateScan, error)
+
+	// CountOwnersMissingAliases returns the number of owners and how many
+	// of them have no alias recorded.
+	CountOwnersMissingAliases(ctx context.Context) (total, missing int, err error)
+
 	// LookupOwnership returns the owners of a given entity, including
 	// inherited ownership.
 	LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)

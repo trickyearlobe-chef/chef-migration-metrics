@@ -124,6 +124,11 @@ type mockStore struct {
 	GetAssignmentFn                                        func(ctx context.Context, id int64) (datastore.OwnershipAssignment, error)
 	DeleteAssignmentFn                                     func(ctx context.Context, id int64) error
 	ReassignOwnershipFn                                    func(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (int, int, error)
+	MergeOwnersFn                                          func(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error)
+	ListOwnerDuplicateCandidatesFn                         func(ctx context.Context, f datastore.OwnerDuplicateFilter) ([]datastore.OwnerDuplicateCandidate, int, error)
+	RecomputeOwnerDuplicateCandidatesFn                    func(ctx context.Context) (int, error)
+	GetOwnerDuplicateScanFn                                func(ctx context.Context) (datastore.OwnerDuplicateScan, error)
+	CountOwnersMissingAliasesFn                            func(ctx context.Context) (int, int, error)
 	LookupOwnershipFn                                      func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
 	ResolveOwnerByAliasFn                                  func(ctx context.Context, aliasType, aliasValue string) (string, error)
 	SuggestOwnerAliasesFn                                  func(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error)
@@ -1074,6 +1079,41 @@ func (m *mockStore) DeleteAssignment(ctx context.Context, id int64) error {
 func (m *mockStore) ReassignOwnership(ctx context.Context, fromOwnerName, toOwnerName string, entityType, organisationName string) (int, int, error) {
 	if m.ReassignOwnershipFn != nil {
 		return m.ReassignOwnershipFn(ctx, fromOwnerName, toOwnerName, entityType, organisationName)
+	}
+	return 0, 0, nil
+}
+
+func (m *mockStore) MergeOwners(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error) {
+	if m.MergeOwnersFn != nil {
+		return m.MergeOwnersFn(ctx, fromOwnerName, intoOwnerName)
+	}
+	return datastore.MergeOwnersResult{}, nil
+}
+
+func (m *mockStore) ListOwnerDuplicateCandidates(ctx context.Context, f datastore.OwnerDuplicateFilter) ([]datastore.OwnerDuplicateCandidate, int, error) {
+	if m.ListOwnerDuplicateCandidatesFn != nil {
+		return m.ListOwnerDuplicateCandidatesFn(ctx, f)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockStore) RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error) {
+	if m.RecomputeOwnerDuplicateCandidatesFn != nil {
+		return m.RecomputeOwnerDuplicateCandidatesFn(ctx)
+	}
+	return 0, nil
+}
+
+func (m *mockStore) GetOwnerDuplicateScan(ctx context.Context) (datastore.OwnerDuplicateScan, error) {
+	if m.GetOwnerDuplicateScanFn != nil {
+		return m.GetOwnerDuplicateScanFn(ctx)
+	}
+	return datastore.OwnerDuplicateScan{}, datastore.ErrNotFound
+}
+
+func (m *mockStore) CountOwnersMissingAliases(ctx context.Context) (int, int, error) {
+	if m.CountOwnersMissingAliasesFn != nil {
+		return m.CountOwnersMissingAliasesFn(ctx)
 	}
 	return 0, 0, nil
 }
