@@ -538,6 +538,10 @@ function IntakeReportView({
   onCommit: () => void;
 }) {
   const rejected = report.rows.filter((row) => row.outcome === "rejected");
+  // The authoritative figure is the server's tally over every row. The list is
+  // what survived any truncation of the detail — normally the same, but the
+  // two must never be presented as if the list were the count.
+  const rejectedTotal = report.counts["rejected"] ?? rejected.length;
 
   return (
     <div className="space-y-6">
@@ -677,9 +681,9 @@ function IntakeReportView({
         </div>
       )}
 
-      {rejected.length > 0 && (
+      {rejectedTotal > 0 && (
         <div className="card">
-          <h3 className="card-header">Rows not imported ({rejected.length})</h3>
+          <h3 className="card-header">Rows not imported ({rejectedTotal})</h3>
           <div className="table-container">
             <table className="table">
               <thead>
@@ -708,7 +712,7 @@ function IntakeReportView({
           </div>
           {rejected.length > 200 && (
             <p className="mt-2 text-xs text-gray-500">
-              Showing the first 200 of {rejected.length}.
+              Showing the first 200 of {rejectedTotal}.
             </p>
           )}
         </div>

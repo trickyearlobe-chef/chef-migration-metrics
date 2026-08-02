@@ -1289,3 +1289,67 @@ func TestIntakeCommit_TruncatedDetailDoesNotShortenTheImport(t *testing.T) {
 		t.Errorf("committed %d assignments, want %d — truncating the display must not shorten the import", created, rows)
 	}
 }
+
+// Rejected rows are the only ones anybody has to act on, and there are few of
+// them. Taking a flat prefix of the report dropped the ones sitting late in
+// the file, so the list header disagreed with the outcome tally — 41 against
+// 156 — with nothing to say which was right.
+func TestIntakePreview_TruncationKeepsEveryRejectedRow(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("cookbook,person,category\n")
+	const total = intakeMaxReportRows + 400
+	const rejectedEvery = 30
+	wantRejected := 0
+	for i := 0; i < total; i++ {
+		// A blank owner is rejected. Scattered throughout, and deliberately
+		// past the truncation point as well as before it.
+		if i%rejectedEvery == 0 {
+			fmt.Fprintf(&b, "cookbook-%d,,owner\n", i)
+			wantRejected++
+			continue
+		}
+		fmt.Fprintf(&b, "cookbook-%d,alice.brown,owner\n", i)
+	}
+
+	r := ownershipRouter(&mockStore{})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, intakeRequest(t, "/api/v1/ownership/import/preview",
+		b.String(), intakeFieldsWithFilter("category", "owner")))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Rows []struct {
+			Outcome string `json:"outcome"`
+		} `json:"rows"`
+		Counts        map[string]int `json:"counts"`
+		RowsTruncated bool           `json:"rows_truncated"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if !resp.RowsTruncated {
+		t.Fatal("precondition: this source should have overflowed the detail cap")
+	}
+
+	inList := 0
+	for _, row := range resp.Rows {
+		if row.Outcome == "rejected" {
+			inList++
+		}
+	}
+	// The list and the tally have to agree, or a reader cannot tell which of
+	// two numbers on one page is the truth.
+	if inList != wantRejected {
+		t.Errorf("the returned list holds %d rejected rows but %d were rejected", inList, wantRejected)
+	}
+	if resp.Counts["rejected"] != wantRejected {
+		t.Errorf("counts.rejected = %d, want %d", resp.Counts["rejected"], wantRejected)
+	}
+	if len(resp.Rows) > intakeMaxReportRows {
+		t.Errorf("returned %d rows, which exceeds the cap of %d", len(resp.Rows), intakeMaxReportRows)
+	}
+}

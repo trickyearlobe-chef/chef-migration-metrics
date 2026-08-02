@@ -221,10 +221,7 @@ func (r *Router) handleIntakeRun(w http.ResponseWriter, req *http.Request, commi
 	// deliberate: truncating report.Rows itself would silently shorten the
 	// import, which is the one mistake this must not make.
 	resp := report
-	if len(report.Rows) > intakeMaxReportRows {
-		resp.Rows = report.Rows[:intakeMaxReportRows]
-		resp.RowsTruncated = true
-	}
+	resp.Rows = trimReportRows(report.Rows, &resp.RowsTruncated)
 
 	WriteJSON(w, http.StatusOK, resp)
 }
@@ -986,4 +983,55 @@ func (r *Router) resolveFieldMap(w http.ResponseWriter, req *http.Request) (owne
 		return nil, false
 	}
 	return fieldMap, true
+}
+
+// trimReportRows bounds the per-row detail returned to the caller, keeping the
+// rejected rows in preference to the rest.
+//
+// A rejected row is the only kind anybody has to act on, and there are few of
+// them; the accepted rows are bulk. Taking a flat prefix instead dropped
+// rejected rows that happened to sit late in the file, so a caller counting the
+// list saw fewer than the outcome tally and had no way to tell which was right.
+//
+// Source order is preserved, so the list still reads against the file.
+func trimReportRows(rows []ownershipimport.ReportRow, truncated *bool) []ownershipimport.ReportRow {
+	if len(rows) <= intakeMaxReportRows {
+		return rows
+	}
+
+	rejected := 0
+	for i := range rows {
+		if rows[i].Outcome == ownershipimport.OutcomeRejected {
+			rejected++
+		}
+	}
+
+	// Whatever is left after the rejected rows is spent on the others. If the
+	// rejected rows alone overflow the budget they are themselves capped —
+	// truncated is set either way, so the caller is never told a short list is
+	// the whole story.
+	othersBudget := intakeMaxReportRows - rejected
+	if othersBudget < 0 {
+		othersBudget = 0
+	}
+
+	kept := make([]ownershipimport.ReportRow, 0, intakeMaxReportRows)
+	rejectedKept, othersKept := 0, 0
+	for i := range rows {
+		if rows[i].Outcome == ownershipimport.OutcomeRejected {
+			if rejectedKept >= intakeMaxReportRows {
+				continue
+			}
+			kept = append(kept, rows[i])
+			rejectedKept++
+			continue
+		}
+		if othersKept < othersBudget {
+			kept = append(kept, rows[i])
+			othersKept++
+		}
+	}
+
+	*truncated = true
+	return kept
 }

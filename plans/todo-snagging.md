@@ -17,6 +17,21 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Fixed
 
+- **The rejected-row list disagreed with the rejected-row count.** Capping the per-row
+  detail in the response took a flat prefix, so rejected rows sitting late in the file
+  were dropped from the list while the outcome tally still counted them — 41 shown
+  against 156 counted, with nothing on the page to say which was right. Self-inflicted,
+  by the truncation added the same afternoon.
+
+  Rejected rows are now kept in preference to accepted ones: they are the only kind
+  anybody has to act on and there are few of them, while accepted rows are bulk. Source
+  order is preserved. The heading also reads from the server's tally rather than from the
+  length of the list, so the two cannot drift again.
+
+  **The import was never affected** — the commit runs from the full report, and only the
+  display was short. But a page showing two different numbers for one thing is worse than
+  a page showing one wrong number, because it costs the reader their trust in both.
+
 - **A rejection could not be undone.** Dismissing hid the pair from the list, so a
   mis-click suppressed it permanently *and* invisibly — nothing left to click. Rejected
   pairs are now listed separately with who rejected them and why, and each can be undone.
