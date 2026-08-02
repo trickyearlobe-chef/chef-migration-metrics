@@ -40,11 +40,15 @@ design session established that the alias model is wrong in a way that is record
 includes the provenance, so one address can belong to two owners. The rough edges are all in that
 file and in `plans/todo-ownership.md`; none is a blocker for what shipped.
 
-**Chunk 3 is now the failure register** (`specifications/failure-register.md`), moved ahead of
-both matching chunks on 2026-08-02 because both automated blocker signals are currently
-untrustworthy — CookStyle marks cookbooks blocked that run fine, and Test Kitchen reports
-environment failures as cookbook failures. A person's verdict outranks both. Journeys 4 and 6,
-declared in scope from the start and previously missing from the work order.
+**Chunk 3, the failure register** (`specifications/failure-register.md`) — **built, awaiting the
+product owner's review.** Moved ahead of both matching chunks on 2026-08-02 because both automated
+blocker signals are currently untrustworthy — CookStyle marks cookbooks blocked that run fine, and
+Test Kitchen reports environment failures as cookbook failures. A person's verdict outranks both.
+Journeys 4 and 6, declared in scope from the start and previously missing from the work order.
+
+The load-bearing assumption held: `node_readiness.blocking_cookbooks` already carried a per-source
+verdicts array, so a human verdict joins it as a fourth source rather than becoming a parallel list.
+Seed it with the ten real cookbooks before reviewing — the register is only as good as what is in it.
 
 **Node and git repo matching are demoted behind it** and must be re-scoped before they start: see
 `plans/ownership-work-attribution.md` § Ownership only has to be right where somebody has to act.
@@ -52,7 +56,7 @@ Both were scoped against the whole estate. The first item in `plans/todo-ownersh
 and unowned, ordered by affected nodes — needs no matching at all and decides how much matching is
 worth building, if any.
 
-**Next free migration number: 0060.**
+**Next free migration number: 0061.**
 
 ## QUEUED behind the ownership MVP
 

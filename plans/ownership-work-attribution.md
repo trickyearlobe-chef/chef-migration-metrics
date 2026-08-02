@@ -180,8 +180,9 @@ startup before anything applies, and the runner silently skips any version at or
 database has already seen — so a shared test database quietly applies nothing.
 
 **Assigned so far:** `0056` — `ownership_import_mappings` (owner ingest); `0057` —
-`idx_owners_name_trgm` and `0058` — `owner_merged` audit action (identity and alias
-management). The next free number is `0059`; take numbers in the order chunks actually land,
+`idx_owners_name_trgm`, `0058` — `owner_merged` audit action and `0059` — owner display-name
+index plus contact-email aliases (identity and alias management); `0060` —
+`failure_register_entries` (the failure register). The next free number is `0061`; take numbers in the order chunks actually land,
 never in the order they were planned. Ingest landed first and therefore took the lowest free number: shipping a higher one would
 have made every lower-numbered migration unappliable on any database that had seen the release.
 This is not hypothetical — the shared `cmm_test` database already carried a version `0057` from an

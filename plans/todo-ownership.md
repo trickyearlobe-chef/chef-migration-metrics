@@ -50,6 +50,27 @@ Remaining:
   "not seen in the last N runs" report is probably the safe form. Needs a decision before
   ingest is put on a schedule.
 
+## Failure register — what is left
+
+Behaviour is `specifications/failure-register.md`. Manual entry, the standup view and the
+human verdict inside the readiness rollup are built.
+
+- [ ] **A register entry only reaches readiness when the repo name matches a cookbook name.**
+  The evaluator resolves a cookbook to its repo through `cache.gitRepos[cookbookName]`, and the
+  register lookup rides on the same key. Where the two names differ the entry is recorded and
+  visible in the register but changes nobody's readiness — silently. This is the matching work
+  that is deliberately deferred; **measure how often it happens before building for it.**
+- [ ] **The accuracy report is not defensible over time.** Every `broken` entry is counted as a
+  failure the tools missed and every `not_broken` as a verdict they got wrong, but what the
+  scans actually said at the moment the entry was raised is not snapshotted — so the numbers
+  drift as scans are re-run. One read of the repo's materialised status at record time would
+  fix it. Not built: it needs deciding what to record when a repo has never been scanned.
+- [ ] **Repeat occurrences are not recognised as the same failure.** The spec's fingerprint
+  design (hash a bounded, canonicalised projection) is deliberately unbuilt — it only matters
+  once entries come from telemetry rather than by hand, which is out of scope.
+- [ ] **Nothing surfaces the register on the repo or node it affects.** A node blocked by a
+  human verdict carries the reason in `blocking_cookbooks`, and no view reads it yet.
+
 ## Identity and alias management — what is left
 
 - [ ] **Surface it at the point of use**, per the journey-1 refinement in
