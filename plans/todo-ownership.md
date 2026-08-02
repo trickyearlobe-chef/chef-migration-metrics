@@ -28,6 +28,49 @@ and not `saml_subject`.
 - [ ] **Guardrails:** stamp `source` on every auto-created alias (auditable,
   reversible); never overwrite a `manual` alias.
 
+## Owner ingest — what is left
+
+The discovery-driven CSV intake is in (`specifications/ownership-intake.md`).
+Remaining:
+
+- [ ] **SQL source.** Journey 5 asks for a database as well as a file: choose a table
+  and pick fields, or supply a query and pick fields from what it returns, with a
+  preview. `RowSource` was designed for a streaming cursor, so this is a new source
+  plus connection and credential handling. PostgreSQL needs no new dependency; MSSQL
+  needs a driver and a supply-chain check before any code.
+- [ ] **Reuse a saved mapping from the UI.** The mapping CRUD endpoints ship and the
+  UI can save one, but cannot yet load one back — a repeat import still re-maps by hand.
+- [ ] **Download the match report as CSV.** The report is on screen only.
+- [ ] **`policy` entity existence is never confirmed.** CMM collects no policy objects,
+  so a policy key always reports as not collected. Harmless — an uncollected entity
+  never rejects a row — but the UI should say why rather than implying a miss.
+
+## Blocking a scheduled ingest — merge two people into one
+
+**Reassignment alone does not survive a re-ingest**, and that makes scheduled ownership
+ingest unsafe today. `ReassignOwnership` moves assignments and leaves the source owner and
+its aliases untouched, so the raw string still resolves to the owner the work was moved
+off and the next run puts it back. Both behaviours are pinned by tests in
+`internal/webapi/handle_ownership_intake_test.go`.
+
+The durable correction is to move the **alias**, and doing that by hand today means
+deleting the old alias first — `uq_owner_alias` is global — then recreating it against the
+right owner, then clearing up the emptied owner. Three steps, none obvious, and getting
+only the first two right leaves a duplicate person in the catalogue.
+
+- [ ] **Merge action: fold owner A into owner B.** One operation that reassigns the work,
+  moves A's aliases onto B (tolerating collisions), and removes A. This is what makes a
+  correction stick across a scheduled re-ingest, and it is the natural home for the
+  "who owns this? … I wonder if that's Thomas Smith" moment.
+- [ ] **Surface it at the point of use**, per the journey-1 refinement in
+  `plans/ownership-work-attribution.md`: wherever an owner is read, show the raw string
+  and any candidate owners, one action from being merged.
+- [ ] **Ingest is additive — decide what a disappeared row should mean.** A row dropped
+  from the source never removes the assignment it created, so revoked ownership persists.
+  Deleting on absence is dangerous (a truncated export would wipe the estate); a
+  "not seen in the last N runs" report is probably the safe form. Needs a decision before
+  ingest is put on a schedule.
+
 Dependency on stable username: the whole graph assumes `username` stays stable
 (driven by `username_attr` → a stable claim). If `username_attr` is unset,
 username falls back to the (possibly transient) NameID and both login anchoring

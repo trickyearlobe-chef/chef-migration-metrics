@@ -33,8 +33,20 @@ still being refined with the product owner:
   their own aliases alongside the sources we derive.
 
 Where a match is uncertain it is **suggested for a person to confirm, never applied
-silently** — a wrong owner is worse than no owner. Fuzzy matching already exists in CMM and
-may serve this.
+silently**. Fuzzy matching already exists in CMM and may serve this.
+
+**Refined by the product owner, 2026-08-02 — this supersedes "a wrong owner is worse than no
+owner".** An imperfect owner is acceptable *provided the clue survives*, because people are good at
+getting to the right person from a recognisable one: they reach "Thomas Smith" from "Tommy Smith",
+"Smithy" or "Fat Tommy". That makes it correctable — as an alias, or at source. What is not
+acceptable is a silent guess or a discarded string, because both destroy the clue.
+
+**Correction is deferred to the point of use, not done at ingest.** *"Fixing a 20,000 user import at
+ingest is time consuming. Correction can be deferred and fixed later when we are looking at who
+needs to fix something — who owns this repo… Fat Tommy… I wonder if that's Thomas Smith."* So ingest
+takes the data as it finds it, and the correction moment belongs to journeys 2 and 6, where somebody
+has the context. Consequence for those journeys: wherever an owner is *read*, the raw string and any
+candidate owners must be visible and one action away from being corrected.
 
 **Teams do not exist as data, and owners can be several people.** There is no source for who
 is in a team, so teams would have to be constructed by hand. **For MVP that is avoided:**
@@ -124,8 +136,10 @@ of the work, not an optimisation.
 
 **A commit address is not a corporate address.** Noreply addresses, personal SCM accounts,
 contractors. Treating them as the same thing silently attaches work to the wrong person. Where they
-genuinely differ, resolution should **fail** and route to a human-confirmed suggestion — an empty
-result is correct, a wrong owner is not.
+genuinely differ, resolution must **not** quietly bridge them: the candidate is surfaced for a human
+to confirm. It does not follow that the row should be dropped — see the refinement under journey 1.
+Note the localpart signal: the same username under several domains is a strong *lead* and a bad
+*match*, because the committer-assign path already collapses owner names to the localpart.
 
 **The SAML subject is a login token, not an identity.** It is refreshed every login, drifts with a
 transient NameID, and appears in no other system, so it can never join to anything. Identity anchors
@@ -155,6 +169,13 @@ canonicalised projection instead. The rule and the canonicalisation are written 
 startup before anything applies, and the runner silently skips any version at or below what a
 database has already seen — so a shared test database quietly applies nothing.
 
+**Assigned so far:** `0056` — `ownership_import_mappings` (owner ingest, merged). The next free
+number is `0057`; take numbers in the order chunks actually land, never in the order they were
+planned. Ingest landed first and therefore took the lowest free number: shipping a higher one would
+have made every lower-numbered migration unappliable on any database that had seen the release.
+This is not hypothetical — the shared `cmm_test` database already carried a version `0057` from an
+earlier, discarded attempt, and had to be recreated before its own tests could run.
+
 **Specs may not contain algorithms**, and a pre-commit hook enforces it by scanning
 language-labelled fences. Reference data belongs in unlabelled ones.
 
@@ -169,6 +190,10 @@ there are real owners to match against. Ingest first is what makes the rest test
 against reality rather than against fixtures we invented.
 
 1. **Get owner ingest solid.** Owners come in before anything can be matched to them.
+   CSV is in; the SQL source (MSSQL/PostgreSQL table-or-query discovery) is deliberately
+   deferred — the `RowSource` contract was built for a streaming cursor, so it is a new source
+   plus connection handling, not a rewrite. MSSQL needs a driver dependency and its supply-chain
+   check first.
 2. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
    previous attempt.
 3. **Git repo matching.** Repos resolve to their owners. The previous attempt treated this
