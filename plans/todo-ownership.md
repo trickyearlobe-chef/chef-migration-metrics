@@ -38,6 +38,23 @@ Remaining:
   preview. `RowSource` was designed for a streaming cursor, so this is a new source
   plus connection and credential handling. PostgreSQL needs no new dependency; MSSQL
   needs a driver and a supply-chain check before any code.
+
+  **The file-import protections carry over free**, because they all sit above the
+  source abstraction: the row cap and the value filter in `handleIntakeRun`, the
+  distinct-value cap in `Profile(src RowSource)`, and the report truncation. A SQL
+  source inherits every one without change.
+
+  **One does not, and it is the dangerous one.** `Profile` reads to the end of the
+  source. For a file that is bounded by the file, which somebody already has. For a
+  query it is bounded by what the query returns — so a mistyped `WHERE` makes CMM scan
+  the whole table before anyone sees a preview. Raised by the product owner 2026-08-02:
+  a DB source *can* pre-filter on the identity-type column, but a filter that can be
+  written can be written wrongly, so the bound must not depend on it being right.
+
+  Shape to aim for: **profile a bounded sample** (`LIMIT`, or a cursor stopped after N)
+  and report it as "profiled the first N rows" rather than as a row count, plus a
+  statement timeout on the connection. A true count, if wanted, is a separate cheap
+  `COUNT(*)` rather than a side effect of reading everything.
 - [ ] **Reuse a saved mapping from the UI.** The mapping CRUD endpoints ship and the
   UI can save one, but cannot yet load one back — a repeat import still re-maps by hand.
 - [ ] **Download the match report as CSV.** The report is on screen only.
