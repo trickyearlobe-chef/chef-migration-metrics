@@ -62,6 +62,25 @@ only the first two right leaves a duplicate person in the catalogue.
   moves A's aliases onto B (tolerating collisions), and removes A. This is what makes a
   correction stick across a scheduled re-ingest, and it is the natural home for the
   "who owns this? … I wonder if that's Thomas Smith" moment.
+- [ ] **A standing "possible duplicate owners" view.** Inventing people is deliberate — *"that's
+  where we will get the alias candidates from"* — but the only screen that ever pairs a new
+  person with who they might already be is the import match report, which is React state and
+  gone on navigation. Afterwards you can only find a duplicate you already suspect, by typing
+  the name into the Aliases page suggestion box.
+
+  Cheap to close: the raw string is permanent (the import seeds it as a `custom` alias) and
+  `SuggestOwnerAliases` recomputes similarity live over `owner_aliases.alias_value`
+  (`internal/datastore/owner_aliases.go`, `similarity > 0.3`), so this is a listing over
+  machinery that already works, not new matching. Pair it with the merge action so a
+  recognised duplicate is one click from being folded away.
+
+  **Caveat that shapes the view:** that search sees `owner_aliases` only, and the
+  committer-assign path creates owners with no alias row, so those owners cannot appear as
+  either side of a suggested pair. Imported owners are findable exactly because this chunk
+  seeds the alias. Either seed on the committer path too, or say plainly in the UI that the
+  list only covers owners with a known alias — silently omitting half the catalogue from a
+  duplicate report is worse than not having one.
+
 - [ ] **Alias editing is organised around the alias table, not around the person.** This is
   one fault with two symptoms, both observed 2026-08-02 while testing the import.
 
