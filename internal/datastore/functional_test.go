@@ -8,6 +8,7 @@ package datastore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -43,7 +44,63 @@ func testDB(t *testing.T) *DB {
 		t.Logf("applied %d migration(s)", applied)
 	}
 
+	assertMigrationsNotAhead(t, db)
+
 	return db
+}
+
+// assertMigrationsNotAhead fails when the test database has recorded a
+// migration version higher than any file in migrations/.
+//
+// A long-lived test database outlives the branches that migrated it. The runner
+// skips any version at or below the database's maximum
+// (see MigrateUpFS in datastore.go), so a version left behind by a branch that
+// was abandoned or discarded permanently blocks every lower-numbered migration
+// added afterwards — silently. The symptom is a brand-new migration's tests
+// failing with "relation ... does not exist", which reads like a broken query
+// rather than a migration that never ran.
+//
+// This is checked rather than written down because the failure is silent, the
+// diagnosis is not obvious from the symptom, and a note only helps whoever
+// happens to read it. The fix is in the message.
+func assertMigrationsNotAhead(t *testing.T, db *DB) {
+	t.Helper()
+
+	var dbVersion int
+	err := db.pool.QueryRowContext(context.Background(),
+		`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&dbVersion)
+	if err != nil {
+		t.Fatalf("reading the test database's migration version: %v", err)
+	}
+
+	entries, err := os.ReadDir("../../migrations")
+	if err != nil {
+		t.Fatalf("reading the migrations directory: %v", err)
+	}
+
+	var highestOnDisk int
+	for _, entry := range entries {
+		var version int
+		if _, err := fmt.Sscanf(entry.Name(), "%04d_", &version); err != nil {
+			continue
+		}
+		if version > highestOnDisk {
+			highestOnDisk = version
+		}
+	}
+
+	if dbVersion > highestOnDisk {
+		t.Fatalf(`test database is at migration %04d but the highest on disk is %04d.
+
+It has kept a migration from a branch that no longer exists. Any migration
+numbered %04d or below will now be skipped forever on this database, so new
+tables will silently not exist.
+
+Recreate it (it holds no data worth keeping):
+  docker exec docker-compose-db-1 psql -U chef_migration_metrics -d postgres \
+    -c "DROP DATABASE cmm_test" -c "CREATE DATABASE cmm_test"`,
+			dbVersion, highestOnDisk, dbVersion)
+	}
 }
 
 // cleanupTestData removes rows created during the test to avoid polluting
