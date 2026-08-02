@@ -62,6 +62,17 @@ only the first two right leaves a duplicate person in the catalogue.
   moves A's aliases onto B (tolerating collisions), and removes A. This is what makes a
   correction stick across a scheduled re-ingest, and it is the natural home for the
   "who owns this? … I wonder if that's Thomas Smith" moment.
+- [ ] **Show a person's aliases on their own page.** Owner detail has an *Identity Aliases*
+  card that only links out to `/ownership/aliases?owner=<name>` (the link does work and
+  auto-loads). But assignments and aliases answer two different questions — *what they own*
+  versus *what they are called elsewhere* — and only the first is on the page. Observed
+  2026-08-02: the assignments table was read as the alias list, and the conclusion was that
+  the alias editor must be somewhere else entirely. Correction is an alias job, so the thing
+  you correct with should not be the thing that is a page away.
+- [ ] **Owner detail's alias blurb claims "SAML IDs".** The `alias_type` CHECK permits
+  `email`, `git_name`, `git_email`, `username`, `custom` — never a SAML subject. This is the
+  stale `saml_subject` claim surfacing in shipped UI copy, sending a reader to look for
+  something that cannot exist. One string.
 - [ ] **Surface it at the point of use**, per the journey-1 refinement in
   `plans/ownership-work-attribution.md`: wherever an owner is read, show the raw string
   and any candidate owners, one action from being merged.
