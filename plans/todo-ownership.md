@@ -98,12 +98,27 @@ Providers, most authoritative first:
   But `parseOwnerFilter` is wired into the platform dashboard and remediation only: not the
   git repo list, not the cookbook list, and the frontend never sends `unowned` anywhere. No
   screen answers "show me every repo with no owner".
-- [ ] **Characterise the estate before writing any rules.** 2210 repos across Stash, GitLab
-  and Jenkins will carry several patterns, not one. Per repo: how often author and committer
-  differ, the distinct identities on each side, and which addresses appear across many repos
-  — that last one is the service-account detector, since a person contributes to a handful
-  and a pipeline account to hundreds. Customer access is VDI or file transfer, so it has to
-  produce a small aggregated artefact that can be carried back, not a console dump.
+- [ ] **Characterise the estate before writing any rules — extend the diagnostic bundle.**
+  `specifications/diagnostic-bundle.md` is already the right vehicle: read-only, produces a
+  file that can be carried back, and built around aggregate counts with identifiers as an
+  explicit opt-in. **No new deployable, and nothing from an unmerged branch** — it can answer
+  at scale on the version the customer already runs.
+
+  Two measurements, both read-only, both needed on the same trip:
+
+  **Identity landscape.** 2210 repos across several hosting platforms and CI systems will
+  carry several patterns, not one. Per repo: how often author and committer differ, the
+  distinct identities on each side, and — the service-account detector — which addresses
+  appear across many repos, since a person contributes to a handful and a pipeline account to
+  hundreds.
+
+  **Blocking-set composition.** Not the size of the blocking set, its provenance: how much is
+  Test Kitchen alone with CookStyle disagreeing, how much is CookStyle alone, how much is
+  corroborated by both. Only the corroborated part is worth dispatching work from today.
+  Within the Test Kitchen share, how much is environmental — `timed_out` is already counted
+  as a cookbook failure, which gives a free lower bound. *(This half is about compatibility
+  signals rather than ownership; it is here because it rides the same trip and the same
+  bundle, and because it decides whether the ownership question is worth asking yet.)*
 
 - [ ] **Rules for platform identities, bots and maintainers — write them against real data.**
   Findings and measurements: `specifications/ownership-identity.md` § Git identities are

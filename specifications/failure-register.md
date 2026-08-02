@@ -63,6 +63,12 @@ cookbook, the verdicts of every source that had an opinion, each tagged with whi
 from, and a rule that decides which one wins. Today those sources are CookStyle (from the server
 and from git) and Test Kitchen.
 
+> **Verify this before designing against it.** It is the single load-bearing assumption in this
+> spec — everything below depends on that per-source verdict structure existing and being
+> extensible. It was checked against real data on 2026-08-02 and the tree moves. If it turns out
+> to be wrong, stop and report rather than adapting the design quietly, because the alternative
+> shape is a parallel list and that is the thing this section exists to rule out.
+
 **A register entry joins that set as another source, and outranks all of them.** It does not
 create a second place where truth lives.
 
