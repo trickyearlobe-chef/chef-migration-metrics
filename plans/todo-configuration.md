@@ -1,5 +1,38 @@
 # Configuration — ToDo
 
+### Temporarily disregard a compatibility signal
+
+Raised by the product owner 2026-08-02, as a backlog item.
+
+**Why.** The failure register corrects one repo at a time, which is right when a signal is
+occasionally wrong. It is the wrong instrument when a signal is wrong *everywhere*: Test
+Kitchen failures on this estate are mostly auth and DHCP rather than cookbooks
+(`plans/todo-bulk-kitchen-scanning.md`), and CookStyle offences are reported as badly curated
+for this kind of work. Correcting that repo by repo is hundreds of manual verdicts to say one
+thing.
+
+**What.** Configuration to disregard a whole signal — CookStyle, Test Kitchen, and whatever is
+added later (ChefSpec was named) — so readiness stops taking it into account until it is worth
+trusting again.
+
+**Precedent to follow:** `readiness.review_blocks_readiness` already does this shape. It is a
+config-store value read live, snapshotted into `readinessCache` at build time so every node in a
+batch evaluates against one consistent value. Copy that; do not invent a second mechanism.
+
+**The dangers, which are the whole design:**
+
+- **Disregarding a signal makes everything look ready.** That is a confidently wrong answer in
+  the opposite direction, and more dangerous than the over-blocking it fixes, because nobody
+  goes looking for work that is not on a list. Every view that shows readiness must say a signal
+  is being disregarded — not a settings page nobody revisits.
+- **"Temp" has to be enforced, not intended.** An expiry on the disregard, after which it lapses
+  and readiness returns to normal, is the difference between a deliberate exception and a
+  permanent one nobody remembers making. Prefer an expiry date over a boolean.
+- **Retain the disregarded verdicts.** The same rule as the failure register: the losing signal
+  stays visible, so a reader can see what was ignored and why. Do not stop collecting it.
+- It is **not** a substitute for fixing the signal. Record it as a stated exception with a
+  reason, so the fix stays visible as owed work rather than being quietly settled for.
+
 ### Compatibility Guardrails (read before implementing)
 
 The fixes below MUST NOT break existing deployments. Hard rules:
