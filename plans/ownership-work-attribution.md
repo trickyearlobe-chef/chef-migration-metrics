@@ -317,30 +317,12 @@ Bounds on that, all of which matter before anyone dispatches work from the predi
   are absent from static readiness, and a real run is the only thing that finds them. For that
   class the speculative run is the better detector, not the slower one.
 
-**The most valuable use of the daily run may be grading the prediction rather than producing it.**
-Every failure either lands on a cookbook the static analysis named or on one it missed, and the
-misses measure how far the prediction can be trusted.
-
-**But CMM does not have the converge history at the customer.** The blockers are stacktraces in a
-converge history that goes to a third-party analytics platform consuming the Automate event feed.
-A parallel feed into CMM is being negotiated and the obstacle is political, not technical. Until
-it lands, the static prediction has to stand on its own — which it does: telling somebody all the
-blockers in a runlist rather than the one they are currently failing on needs no run data at all.
-
-**Attribution does not depend on the transport.** Captured fixtures show a converge failure
-carrying the failed resource's cookbook and recipe on both the Automate shape and the raw
-node/proxy shape. What carries nothing is an *attributes-only* delivery — and that is a property
-of the failure, not the path: a run that dies before it converges has declared no resources, so on
-any transport there is nothing to attribute a cookbook to.
-
-**That is exactly the first-wave blocker.** A depsolve failure, or a cookbook using an API removed
-in the new version and blowing up at compile time, produces no resources. For those the cookbook
-is only inferable from the backtrace, which is captured but never parsed. So the risk is not
-whether the telemetry arrives; it is whether the blocker in it can be named. **Forcing one such
-failure in the lab settles that, and it is worth knowing before a parallel feed is negotiated
-rather than after.**
-
-Detail on the ingest side belongs in `plans/todo-event-ingest.md`, not here.
+**The prediction stands without run data.** CMM does not receive the customer's converge history
+and may not for a while, for reasons that are not technical. It does not need to: naming all the
+blockers in a runlist rather than the one somebody is failing on today comes from static readiness
+alone. Whether that prediction can be *graded* against real failures — and what that would take —
+is an event-ingest question, recorded in `plans/todo-event-ingest.md` § Why this matters at the
+customer.
 
 ## Decisions already taken
 
