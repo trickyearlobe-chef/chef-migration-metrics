@@ -25,6 +25,11 @@ interface Props {
   onRevise?: (body: ReviseFailureEntryBody) => Promise<void>;
 }
 
+// What a bare reference is assumed to be. Most commitments are tracked
+// elsewhere, and the alternatives are a named owner or user — both of which
+// somebody picks deliberately.
+const HolderTypeTicketDefault: HolderType = "ticket";
+
 const HOLDER_TYPES: { value: HolderType; label: string }[] = [
   { value: "ticket", label: "A ticket or work item" },
   { value: "owner", label: "An owner" },
@@ -98,14 +103,13 @@ export function FailureEntryDialog({
     e.preventDefault();
     setError(null);
 
-    // A holder is a type and a reference together, or neither: half a
-    // reference cannot be chased.
-    if ((holderType === "") !== (holderRef.trim() === "")) {
-      setError(
-        "A commitment holder needs both what kind it is and the reference.",
-      );
-      return;
-    }
+    // A holder is a kind and a reference together, or neither — half a
+    // commitment cannot be chased. That rule is enforced by resolving the two
+    // fields rather than by refusing the form: a reference on its own has
+    // already been defaulted to a ticket as it was typed, and a kind with no
+    // reference carries no information, so it is nobody on it.
+    const effectiveHolderRef = holderRef.trim();
+    const effectiveHolderType = effectiveHolderRef === "" ? "" : holderType;
 
     setSubmitting(true);
     try {
@@ -115,8 +119,8 @@ export function FailureEntryDialog({
           plan,
           evidence,
           target_date: targetDate,
-          holder_type: holderType === "" ? undefined : holderType,
-          holder_ref: holderRef,
+          holder_type: effectiveHolderType === "" ? undefined : effectiveHolderType,
+          holder_ref: effectiveHolderRef,
         });
       } else {
         await onSubmit?.({
@@ -128,8 +132,8 @@ export function FailureEntryDialog({
           diagnosis: diagnosis || undefined,
           plan: plan || undefined,
           target_date: targetDate || undefined,
-          holder_type: holderType === "" ? undefined : holderType,
-          holder_ref: holderRef || undefined,
+          holder_type: effectiveHolderType === "" ? undefined : effectiveHolderType,
+          holder_ref: effectiveHolderRef || undefined,
         });
       }
     } catch (err: unknown) {
@@ -318,7 +322,15 @@ export function FailureEntryDialog({
               <input
                 type="text"
                 value={holderRef}
-                onChange={(e) => setHolderRef(e.target.value)}
+                onChange={(e) => {
+                  setHolderRef(e.target.value);
+                  // Typing a reference is saying somebody is on it. Most are
+                  // tickets, so the kind follows — shown in the control beside
+                  // it, and overridable, rather than demanded afterwards.
+                  if (e.target.value.trim() !== "" && holderType === "") {
+                    setHolderType(HolderTypeTicketDefault);
+                  }
+                }}
                 className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </Field>
