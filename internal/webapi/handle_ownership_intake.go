@@ -26,12 +26,19 @@ import (
 // unchanged handler. See specifications/ownership-intake.md.
 // ---------------------------------------------------------------------------
 
-// intakeMaxUploadBytes bounds what is buffered from an upload.
+// intakeMaxUploadBytes is the in-memory threshold for a multipart upload, NOT
+// a size limit.
 //
-// Raised from 10MB after a real export arrived at roughly 270,000 rows: the
-// byte cap rejected the file before the row cap was ever reached, so the two
-// have to move together or the second one is decorative.
-const intakeMaxUploadBytes = 128 << 20
+// It is passed to ParseMultipartForm as maxMemory: anything larger spills to a
+// temporary file on disk and the upload still succeeds. So raising it does not
+// admit bigger files — it only makes CMM hold more of one in RAM before
+// spilling, per concurrent request. It was briefly raised to 128MB on the
+// mistaken belief that it capped upload size; a 74MB spreadsheet exporting to
+// several hundred megabytes of CSV is exactly the case it must NOT try to hold
+// in memory.
+//
+// The real bound on an import is intakeMaxRows.
+const intakeMaxUploadBytes = 10 << 20
 
 // intakeMaxRows bounds a single import. Profiling reads to the end of the
 // source, so an unbounded file would be an unbounded allocation.
