@@ -18,7 +18,7 @@ reviewing earlier drafts of this plan was in that layer. Derive it; do not inher
 Stated by the product owner, 2026-08-02. These are the requirement. Anything below that
 does not serve one of these is scaffolding and can go.
 
-**Needed for this deliverable: 1, 2 and 4.**
+**In scope for Monday: 1, 2, 4 and 5.** Complexity is not a reason to drop one.
 
 **1. "What's mine."** A team lead sees only their own estate — the nodes and git repos they
 own — and works from that list. Several people can be selected at once: working groups are
@@ -30,18 +30,21 @@ node, reach the repo holding the fix and the person accountable for it.
 
 **3. "What is blocking migration, and where is the work tracked?"** A programme manager needs
 to see what is blocking migration, what work has an owner, what is progressing, and **where to
-find the actual work tracking** — which may be comments in CMM, or may be Jira. Open question:
-how CMM points at externally-tracked work.
+find the actual work tracking** — which may be comments in CMM, or may be tracked elsewhere.
+CMM points at externally-tracked work by **URL or ticket number**, which may address a Jira
+issue, a ServiceNow task, or anything else. CMM does not integrate with those systems; it
+holds the reference.
 
 **4. "Something broke that testing didn't catch."** An engineer records a failure nobody
 predicted: what broke, the diagnosis, what they plan to do about it, and a target date if one
 has been given. Recorded by hand, with no telemetry configured.
 
 **5. "Get our ownership data in."** An admin brings existing ownership data in from a CSV
-**and/or a database** — probably MSSQL, possibly PostgreSQL. **We do not have the schema, so
-discovery happens in the UI:** choose a table and pick fields from it, or supply a SQL query and
-pick fields from what it returns, with a data preview to make the choice possible. More complex
-than the others; not part of this deliverable.
+**and/or a database** — probably MSSQL, possibly PostgreSQL. **We will not have the schema, so
+discovery happens in the UI:** choose a table and pick fields from it, **or** supply a SQL query
+and pick fields from what it returns, with a **data preview** to make that choice possible. It
+must succeed while the source data is still inconsistent, and report what matched, what did not,
+and why.
 
 ---
 
