@@ -41,6 +41,8 @@ matching.
 
 - **CC19 target-version failing-nodes preset** (`plans/todo-event-ingest.md`) — wiring
   `useTargetChefVersion` into `RunEventsPage`; copy an existing call site, not new behaviour.
+- **General audit log** (`plans/todo-audit.md`, spec `specifications/audit-log.md`) — who
+  changed config, who triggered a rescan. Proposed, not started.
 - **Dependabot triage** — below.
 
 ## Dependabot triage
