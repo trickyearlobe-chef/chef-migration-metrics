@@ -65,6 +65,22 @@ human verdict inside the readiness rollup are built.
   and today that nuance lives in the reason and evidence text. Keying entries on a version would
   fragment one problem into several and would need the evaluator to match versions too. Revisit
   only if the seeded entries show the free text is not enough.
+- [ ] **Group the register by assignee, for taking standup in turns.** Raised by the product
+  owner 2026-08-02, and agreed as MVP 2 rather than MVP. Each person reads their own items,
+  so the list clusters by who is on it rather than by when it was raised.
+
+  **The wrinkle to settle first: a holder is not necessarily a person.** It may be an owner,
+  a user, or a ticket reference, and the record form defaults a bare reference to a ticket —
+  so on today's data most holders would be ticket numbers, which cannot take a turn. Grouping
+  is only as good as the proportion of holders that resolve to people, which makes this
+  dependent on owner resolution rather than on grouping being hard to build.
+
+  Cheapest useful form, if the dependency proves slow: sort or group on the holder as stored,
+  and let a ticket-held item fall into an "elsewhere" group. Saved filters already exist for
+  the git repo list (`SavedFilterBar`), so a saved per-person filter needs no new concept —
+  and needs no team entity either, which is what journey 1 already concluded about
+  multi-select over people.
+
 - [ ] **The accuracy report is not defensible over time.** Every `broken` entry is counted as a
   failure the tools missed and every `not_broken` as a verdict they got wrong, but what the
   scans actually said at the moment the entry was raised is not snapshotted — so the numbers

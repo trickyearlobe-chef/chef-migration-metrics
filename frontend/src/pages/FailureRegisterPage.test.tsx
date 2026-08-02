@@ -169,6 +169,26 @@ describe("FailureRegisterPage", () => {
     expect(screen.getByText("Not broken")).toBeInTheDocument();
   });
 
+  // Who is on it is its own standup question — "what is being done" and "who
+  // is doing it" get different answers, and trailing the holder after a long
+  // plan makes it unscannable.
+  it("gives who is on it a column of its own", async () => {
+    render(<FailureRegisterPage />, { wrapper: Wrapper });
+
+    const header = await screen.findByRole("columnheader", {
+      name: /Who.s on it/i,
+    });
+    expect(header).toBeInTheDocument();
+
+    const cells = screen.getAllByRole("cell");
+    const holderCell = cells.find((c) => c.textContent?.includes("PLAT-4821"));
+    expect(holderCell).toBeDefined();
+    // The plan lives in a different cell — that is the point of the split.
+    expect(holderCell?.textContent).not.toContain(
+      "rewrite the template and re-release",
+    );
+  });
+
   // An entry nobody has been put on is a standup question in its own right.
   it("points out entries with no plan and nobody on them", async () => {
     vi.mocked(api.fetchFailureRegister).mockResolvedValue(

@@ -202,6 +202,7 @@ export function FailureRegisterPage() {
                   <th className="px-3 py-2">Cookbook</th>
                   <th className="px-3 py-2">Why</th>
                   <th className="px-3 py-2">Being done about it</th>
+                  <th className="px-3 py-2">Who’s on it</th>
                   <th className="px-3 py-2">Raised</th>
                   {isOperator && <th className="px-3 py-2" />}
                 </tr>
@@ -424,24 +425,28 @@ function EntryRow({
         ) : (
           open && <div className="text-amber-700">No plan yet.</div>
         )}
-        <div className="mt-0.5 flex flex-wrap gap-x-3">
-          {entry.holder_ref ? (
-            <span>
-              <span className="text-gray-500">
-                {HOLDER_LABELS[entry.holder_type ?? ""] ?? "Held by"}:{" "}
-              </span>
-              {entry.holder_ref}
-            </span>
-          ) : (
-            open && <span className="text-amber-700">Nobody on it.</span>
-          )}
-          {entry.target_date && (
-            <span className={overdue ? "font-medium text-red-700" : ""}>
-              {formatDate(entry.target_date)}
-              {overdue && " — overdue"}
-            </span>
-          )}
-        </div>
+      </td>
+
+      {/* Who is on it, and by when. A column of its own because it is a
+          different standup question from what is being done — and because
+          trailing it after a long plan is the same as not showing it. */}
+      <td className="whitespace-nowrap px-3 py-2 text-xs">
+        {entry.holder_ref ? (
+          <>
+            <div className="font-medium text-gray-800">{entry.holder_ref}</div>
+            <div className="text-gray-500">
+              {HOLDER_LABELS[entry.holder_type ?? ""] ?? "Held by"}
+            </div>
+          </>
+        ) : (
+          open && <div className="font-medium text-amber-700">Nobody on it</div>
+        )}
+        {entry.target_date && (
+          <div className={overdue ? "font-medium text-red-700" : "text-gray-500"}>
+            {formatDate(entry.target_date)}
+            {overdue && " — overdue"}
+          </div>
+        )}
       </td>
 
       <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-400">
