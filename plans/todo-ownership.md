@@ -51,6 +51,16 @@ Remaining:
   a DB source *can* pre-filter on the identity-type column, but a filter that can be
   written can be written wrongly, so the bound must not depend on it being right.
 
+  **A commit is one synchronous request, and that is the scale ceiling.** Measured
+  2026-08-02 on real data: 18,821 assignments plus 1,862 new owners took 37 seconds,
+  about 500 rows a second on a per-row insert path. The same rate puts a 267,000-row
+  import near eight minutes of a single held-open request — past most default proxy
+  timeouts. Nothing is transactional, so a timeout mid-commit leaves a partial import
+  **and no report**, which is worse than a refusal: there is no record of where it
+  stopped. Batching the inserts would buy most of it back; making the commit
+  resumable or asynchronous is the real fix, and neither is needed while imports are
+  filtered to the tens of thousands.
+
   Shape to aim for: **profile a bounded sample** (`LIMIT`, or a cursor stopped after N)
   and report it as "profiled the first N rows" rather than as a row count, plus a
   statement timeout on the connection. A true count, if wanted, is a separate cheap
