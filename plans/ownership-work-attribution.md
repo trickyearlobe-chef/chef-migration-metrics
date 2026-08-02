@@ -36,6 +36,16 @@ Where a match is uncertain it is **suggested for a person to confirm, never appl
 silently** — a wrong owner is worse than no owner. Fuzzy matching already exists in CMM and
 may serve this.
 
+**Teams do not exist as data, and owners can be several people.** There is no source for who
+is in a team, so teams would have to be constructed by hand. **For MVP that is avoided:**
+filtering on a multi-select of users covers the working-group case without a team entity —
+which is why journey 1 says people rather than teams.
+
+The source data already carries **multiple owners for a single cookbook or node**, quite
+possibly the customer's own workaround for the missing team data. That leaves an **open
+question: when several people own something, who is specifically on the hook to fix it?**
+Unresolved, and it lands on journey 2, which promises "the person accountable".
+
 **2. "Who can unblock this?"** A node is blocked. Its owner carries the outcome but usually
 cannot do the work, because the fix lives in a git repo someone else owns. From the blocked
 node, reach the repo holding the fix and the person accountable for it.
