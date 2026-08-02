@@ -26,6 +26,7 @@ func gitRepoFilterFromValues(q url.Values) datastore.GitRepoFilter {
 		CookstyleStatus:     valueOr(q, "cookstyle_status", ""),
 		TKStatus:            valueOr(q, "tk_status", ""),
 		CloneStatus:         valueOr(q, "clone_status", ""),
+		HumanVerdict:        valueOr(q, "human_verdict", ""),
 		Sort:                valueOr(q, "sort", "name"),
 		SortOrder:           valueOr(q, "order", "asc"),
 	}
@@ -83,6 +84,17 @@ type gitRepoResp struct {
 	TKStatus          string `json:"tk_status"`
 	TKPassed          int    `json:"tk_passed"`
 	TKTotal           int    `json:"tk_total"`
+
+	// The standing verdict from the failure register, where somebody has
+	// recorded one. Empty otherwise.
+	//
+	// This does not replace the status columns above and must not be used to
+	// rewrite them: those report what CookStyle and Test Kitchen said, and the
+	// disagreement is meant to stay visible. It is here so the list stops
+	// silently contradicting the register — a repo a person has called fine
+	// otherwise reads as blocked with nothing to say why.
+	HumanVerdict       string `json:"human_verdict,omitempty"`
+	HumanVerdictReason string `json:"human_verdict_reason,omitempty"`
 }
 
 //
@@ -136,6 +148,21 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		targetChefVersion = r.defaultTargetVersion()
 	}
 
+	// The standing human verdicts, so a row a person has overruled says so.
+	// One small query — the register holds one row per repo somebody currently
+	// has an opinion about — rather than a join, which would mean changing the
+	// scan path shared by every other git repo read.
+	//
+	// Best-effort: a register that cannot be read must not take the repo list
+	// with it. The rows then carry no marker, which is the same as nobody
+	// having recorded anything — a degradation, but not a contradiction.
+	var humanVerdicts map[string]datastore.StandingVerdict
+	if v, verr := r.db.ListOpenFailureVerdicts(ctx); verr != nil {
+		r.logf("WARN", "git-repos: reading the failure register: %v", verr)
+	} else {
+		humanVerdicts = v
+	}
+
 	// Build response objects from materialised columns.
 	result := make([]gitRepoResp, 0, len(repos))
 	for _, gr := range repos {
@@ -169,6 +196,10 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 		}
 		if !gr.LastFetchedAt.IsZero() {
 			resp.LastFetchedAt = gr.LastFetchedAt.Format("2006-01-02T15:04:05Z")
+		}
+		if hv, ok := humanVerdicts[gr.Name]; ok {
+			resp.HumanVerdict = hv.Verdict
+			resp.HumanVerdictReason = hv.Reason
 		}
 		result = append(result, resp)
 	}

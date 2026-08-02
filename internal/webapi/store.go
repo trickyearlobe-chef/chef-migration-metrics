@@ -647,6 +647,10 @@ type DataStore interface {
 	// it is moving over the last windowDays days.
 	FailureRegisterSummary(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error)
 
+	// ListOpenFailureVerdicts returns the standing verdicts keyed on git repo
+	// name, so a list view can mark the rows a person has overruled.
+	ListOpenFailureVerdicts(ctx context.Context) (map[string]datastore.StandingVerdict, error)
+
 	// LookupOwnership returns the owners of a given entity, including
 	// inherited ownership.
 	LookupOwnership(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)

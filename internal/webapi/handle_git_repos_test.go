@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -389,5 +390,131 @@ func TestHandleGitRepos_HasTestSuiteFilter_Both(t *testing.T) {
 
 	if len(resp.Data) != 4 {
 		t.Fatalf("expected all 4 repos when both selected, got %d", len(resp.Data))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The failure register on the git repo list
+//
+// The materialised cookstyle and tk columns report what each tool said and are
+// deliberately not rewritten when a person overrules them. Without the
+// standing verdict on the row, the list would go on showing a repo as blocked
+// that the register says is fine — the two views contradicting each other in
+// public, which is the credibility problem the register exists to prevent.
+// ---------------------------------------------------------------------------
+
+func TestGitRepos_MarksARepoAPersonHasOverruled(t *testing.T) {
+	store := &mockStore{
+		ListGitReposFilteredFn: func(_ context.Context, _ datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			return []datastore.GitRepo{
+				{Name: "acme-apache", GitRepoURL: "https://git.example.com/acme-apache.git", CookstyleStatus: "blocked"},
+				{Name: "acme-nginx", GitRepoURL: "https://git.example.com/acme-nginx.git", CookstyleStatus: "ready"},
+			}, 2, nil
+		},
+		ListOpenFailureVerdictsFn: func(_ context.Context) (map[string]datastore.StandingVerdict, error) {
+			return map[string]datastore.StandingVerdict{
+				"acme-apache": {
+					GitRepoName: "acme-apache", CookbookName: "apache",
+					Verdict: datastore.VerdictNotBroken,
+					Reason:  "kitchen never converged; this runs on 4000 nodes",
+				},
+			}, nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/git-repos", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data []struct {
+			Name            string `json:"name"`
+			CookstyleStatus string `json:"cookstyle_status"`
+			HumanVerdict    string `json:"human_verdict,omitempty"`
+			HumanReason     string `json:"human_verdict_reason,omitempty"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Data) != 2 {
+		t.Fatalf("got %d rows, want 2", len(resp.Data))
+	}
+
+	byName := map[string]string{}
+	reasons := map[string]string{}
+	statuses := map[string]string{}
+	for _, row := range resp.Data {
+		byName[row.Name] = row.HumanVerdict
+		reasons[row.Name] = row.HumanReason
+		statuses[row.Name] = row.CookstyleStatus
+	}
+
+	if byName["acme-apache"] != "not_broken" {
+		t.Errorf("acme-apache human verdict = %q, want not_broken", byName["acme-apache"])
+	}
+	if reasons["acme-apache"] == "" {
+		t.Error("the reason did not reach the row; the marker is unreadable without it")
+	}
+	// The scan's own verdict is retained exactly as it was — the register
+	// overrules it, it does not rewrite it.
+	if statuses["acme-apache"] != "blocked" {
+		t.Errorf("cookstyle status = %q, want it left as blocked", statuses["acme-apache"])
+	}
+	// A repo nobody has an opinion about carries no marker.
+	if byName["acme-nginx"] != "" {
+		t.Errorf("acme-nginx carries a verdict %q; nobody recorded one", byName["acme-nginx"])
+	}
+}
+
+// The register failing must not take the repo list with it.
+func TestGitRepos_SurvivesTheRegisterBeingUnreadable(t *testing.T) {
+	store := &mockStore{
+		ListGitReposFilteredFn: func(_ context.Context, _ datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			return []datastore.GitRepo{{Name: "acme-apache", CookstyleStatus: "blocked"}}, 1, nil
+		},
+		ListOpenFailureVerdictsFn: func(_ context.Context) (map[string]datastore.StandingVerdict, error) {
+			return nil, context.DeadlineExceeded
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/git-repos", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — the list is still worth having: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "acme-apache") {
+		t.Error("the list was dropped because the register was unreadable")
+	}
+}
+
+// The filter reaches the datastore, so pagination counts the filtered set
+// rather than the page being filtered after the fact.
+func TestGitRepos_HumanVerdictFilterReachesTheStore(t *testing.T) {
+	var got datastore.GitRepoFilter
+	store := &mockStore{
+		ListGitReposFilteredFn: func(_ context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			got = f
+			return nil, 0, nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet,
+		"/api/v1/git-repos?human_verdict=not_broken&cookstyle_status=blocked", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	if got.HumanVerdict != "not_broken" {
+		t.Errorf("human verdict filter = %q, want not_broken", got.HumanVerdict)
+	}
+	// It composes rather than replacing — this pair is the false-positive list.
+	if got.CookstyleStatus != "blocked" {
+		t.Errorf("the cookstyle filter was lost: %+v", got)
 	}
 }

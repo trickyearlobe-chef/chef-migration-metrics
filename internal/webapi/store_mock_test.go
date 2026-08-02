@@ -136,6 +136,7 @@ type mockStore struct {
 	ListFailureRegisterEntriesFn                           func(ctx context.Context, f datastore.FailureRegisterFilter) ([]datastore.FailureRegisterEntry, int, error)
 	ListFailureRegisterHistoryFn                           func(ctx context.Context, gitRepoName string) ([]datastore.FailureRegisterEntry, error)
 	FailureRegisterSummaryFn                               func(ctx context.Context, windowDays int) (datastore.FailureRegisterSummary, error)
+	ListOpenFailureVerdictsFn                              func(ctx context.Context) (map[string]datastore.StandingVerdict, error)
 	LookupOwnershipFn                                      func(ctx context.Context, entityType, entityKey, organisationID string) ([]datastore.OwnershipLookupResult, error)
 	ResolveOwnerByAliasFn                                  func(ctx context.Context, aliasType, aliasValue string) (string, error)
 	SuggestOwnerAliasesFn                                  func(ctx context.Context, input string, limit int) ([]datastore.AliasSuggestion, error)
@@ -1139,6 +1140,13 @@ func (m *mockStore) FailureRegisterSummary(ctx context.Context, windowDays int) 
 		return m.FailureRegisterSummaryFn(ctx, windowDays)
 	}
 	return datastore.FailureRegisterSummary{}, nil
+}
+
+func (m *mockStore) ListOpenFailureVerdicts(ctx context.Context) (map[string]datastore.StandingVerdict, error) {
+	if m.ListOpenFailureVerdictsFn != nil {
+		return m.ListOpenFailureVerdictsFn(ctx)
+	}
+	return nil, nil
 }
 
 func (m *mockStore) MergeOwners(ctx context.Context, fromOwnerName, intoOwnerName string) (datastore.MergeOwnersResult, error) {
