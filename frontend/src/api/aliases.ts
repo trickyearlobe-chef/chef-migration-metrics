@@ -6,6 +6,7 @@ import type {
   MergeOwnersResult,
   OwnerAlias,
   OwnerDuplicateRescanResponse,
+  OwnerDuplicateDismissal,
   OwnerDuplicatesResponse,
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
@@ -106,6 +107,34 @@ export function dismissOwnerDuplicate(body: {
 }): Promise<{ dismissed: boolean }> {
   return apiFetch<{ dismissed: boolean }>(
     buildUrl("/ownership/duplicates/dismiss"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** The pairs already rejected, so one can be undone. */
+export function fetchOwnerDuplicateDismissals(): Promise<{
+  data: OwnerDuplicateDismissal[];
+}> {
+  return apiFetch<{ data: OwnerDuplicateDismissal[] }>(
+    buildUrl("/ownership/duplicates/dismissed"),
+  );
+}
+
+/**
+ * Undoes a rejection. It does not assert the pair is a duplicate — only that
+ * nobody has ruled on it. If the scan no longer considers the two similar, the
+ * pair stays absent, which is the honest outcome.
+ */
+export function restoreOwnerDuplicate(body: {
+  owner_a: string;
+  owner_b: string;
+}): Promise<{ restored: boolean }> {
+  return apiFetch<{ restored: boolean }>(
+    buildUrl("/ownership/duplicates/restore"),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

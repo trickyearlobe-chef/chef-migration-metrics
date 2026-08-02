@@ -73,3 +73,14 @@ export interface MergeOwnersResult {
   aliases_dropped: number;
   source_name_aliased: boolean;
 }
+
+/** A pair somebody has recorded as different people. Listed separately because
+ * a dismissed pair is hidden from the candidate list — without somewhere to see
+ * it, there is nothing to click to undo one. */
+export interface OwnerDuplicateDismissal {
+  owner_a: string;
+  owner_b: string;
+  reason?: string;
+  dismissed_by: string;
+  dismissed_at: string;
+}

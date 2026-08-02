@@ -15,6 +15,8 @@ vi.mock("../api", async () => {
     mergeOwners: vi.fn(),
     rescanOwnerDuplicates: vi.fn(),
     dismissOwnerDuplicate: vi.fn(),
+    fetchOwnerDuplicateDismissals: vi.fn(),
+    restoreOwnerDuplicate: vi.fn(),
   };
 });
 
@@ -260,5 +262,92 @@ describe("OwnerDuplicatesPage — rejecting a pair", () => {
     expect(
       await screen.findByText(/7 have been rejected as different people/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("OwnerDuplicatesPage — undoing a rejection", () => {
+  const rejectedPair = {
+    owner_a: "alice.brown",
+    owner_b: "bob.jones",
+    reason: "different people, confirmed",
+    dismissed_by: "richard",
+    dismissed_at: "2026-08-02T10:00:00Z",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({
+      isOperator: true,
+      isAdmin: true,
+      user: { role: "admin", username: "test" },
+    });
+    vi.mocked(api.fetchOwnerDuplicates).mockResolvedValue(
+      response({ dismissed_pairs: 1 }),
+    );
+    vi.mocked(api.fetchOwnerDuplicateDismissals).mockResolvedValue({
+      data: [rejectedPair],
+    });
+    vi.mocked(api.restoreOwnerDuplicate).mockResolvedValue({ restored: true });
+  });
+
+  // A rejected pair is hidden from the list above, so without somewhere to see
+  // it a mis-click suppresses a pair permanently and invisibly.
+  it("shows what has been rejected, and why", async () => {
+    const user = userEvent.setup();
+    render(<OwnerDuplicatesPage />, { wrapper: Wrapper });
+
+    await user.click(
+      await screen.findByRole("button", { name: /Rejected pairs/i }),
+    );
+
+    const panel = await screen.findByTestId("rejected-pairs");
+    expect(panel).toHaveTextContent("alice.brown");
+    expect(panel).toHaveTextContent("bob.jones");
+    expect(panel).toHaveTextContent(/different people, confirmed/);
+    expect(panel).toHaveTextContent("richard");
+  });
+
+  it("undoes a rejection", async () => {
+    const user = userEvent.setup();
+    render(<OwnerDuplicatesPage />, { wrapper: Wrapper });
+
+    await user.click(
+      await screen.findByRole("button", { name: /Rejected pairs/i }),
+    );
+    await user.click(await screen.findByRole("button", { name: /^Undo$/i }));
+
+    await waitFor(() => {
+      expect(api.restoreOwnerDuplicate).toHaveBeenCalledWith({
+        owner_a: "alice.brown",
+        owner_b: "bob.jones",
+      });
+    });
+  });
+
+  // The count makes it discoverable — a panel nobody knows is there is the
+  // same as no panel.
+  it("says how many have been rejected", async () => {
+    render(<OwnerDuplicatesPage />, { wrapper: Wrapper });
+    expect(
+      await screen.findByRole("button", { name: /Rejected pairs \(1\)/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides undo from a viewer", async () => {
+    mockUseAuth.mockReturnValue({
+      isOperator: false,
+      isAdmin: false,
+      user: { role: "viewer", username: "test" },
+    });
+    const user = userEvent.setup();
+    render(<OwnerDuplicatesPage />, { wrapper: Wrapper });
+
+    await user.click(
+      await screen.findByRole("button", { name: /Rejected pairs/i }),
+    );
+    await screen.findByTestId("rejected-pairs");
+    expect(
+      screen.queryByRole("button", { name: /^Undo$/i }),
+    ).not.toBeInTheDocument();
   });
 });

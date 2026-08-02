@@ -17,6 +17,12 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Fixed
 
+- **A rejection could not be undone.** Dismissing hid the pair from the list, so a
+  mis-click suppressed it permanently *and* invisibly — nothing left to click. Rejected
+  pairs are now listed separately with who rejected them and why, and each can be undone.
+  Undoing only removes the rejection; it does not assert the pair is a duplicate, so if
+  the scan no longer finds the two similar they stay absent, which is the honest outcome.
+
 - **No way to say "not a duplicate".** The view offered a merge and nothing else, so a
   pair somebody had already rejected returned on every scan and the list could never be
   worked down to nothing — the only state that makes it worth opening.

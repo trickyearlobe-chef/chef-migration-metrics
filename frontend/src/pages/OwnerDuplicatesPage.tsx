@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   dismissOwnerDuplicate,
+  fetchOwnerDuplicateDismissals,
   fetchOwnerDuplicates,
   rescanOwnerDuplicates,
+  restoreOwnerDuplicate,
 } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ErrorAlert, LoadingSpinner } from "../components/Feedback";
@@ -13,6 +15,7 @@ import { Pagination } from "../components/Pagination";
 import { OwnerMergeDialog } from "../components/OwnerMergeDialog";
 import type {
   OwnerDuplicateCandidate,
+  OwnerDuplicateDismissal,
   OwnerDuplicatesResponse,
   Pagination as PaginationType,
 } from "../types";
@@ -47,6 +50,38 @@ export function OwnerDuplicatesPage() {
   const [scanRequested, setScanRequested] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<string | null>(null);
+  // A rejected pair is hidden from the list above, so it needs somewhere of
+  // its own to be seen — otherwise a mis-click suppresses a pair permanently
+  // and invisibly, which is worse than the problem dismissing solved.
+  const [showRejected, setShowRejected] = useState(false);
+  const [rejected, setRejected] = useState<OwnerDuplicateDismissal[]>([]);
+
+  const loadRejected = useCallback(() => {
+    return fetchOwnerDuplicateDismissals()
+      .then((r) => setRejected(r.data ?? []))
+      .catch(() => setRejected([]));
+  }, []);
+
+  useEffect(() => {
+    if (showRejected) void loadRejected();
+  }, [showRejected, loadRejected]);
+
+  async function handleRestore(pair: OwnerDuplicateDismissal) {
+    try {
+      await restoreOwnerDuplicate({
+        owner_a: pair.owner_a,
+        owner_b: pair.owner_b,
+      });
+      setMerged(
+        `${pair.owner_a} and ${pair.owner_b} can be paired again. They will reappear above if the scan still finds them similar.`,
+      );
+      await Promise.all([loadRejected(), load()]);
+    } catch (e: unknown) {
+      setScanError(
+        e instanceof Error ? e.message : "Failed to undo the rejection.",
+      );
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -138,6 +173,15 @@ export function OwnerDuplicatesPage() {
               {scanRunning ? "Scanning…" : "Scan for duplicates"}
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowRejected((v) => !v)}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          >
+            {showRejected ? "Hide rejected" : "Rejected pairs"}
+            {(response?.dismissed_pairs ?? 0) > 0 &&
+              ` (${response?.dismissed_pairs})`}
+          </button>
           <Link
             to="/ownership"
             className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
@@ -185,6 +229,57 @@ export function OwnerDuplicatesPage() {
             have no alias recorded, so those are compared by name alone.
           </p>
         )}
+
+      {showRejected && (
+        <div className="card" data-testid="rejected-pairs">
+          <h3 className="card-header">Rejected pairs</h3>
+          {rejected.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Nothing has been rejected yet.
+            </p>
+          ) : (
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className="px-3 py-2">Pair</th>
+                  <th className="px-3 py-2">Why</th>
+                  <th className="px-3 py-2">Rejected by</th>
+                  {isOperator && <th className="px-3 py-2" />}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rejected.map((pair) => (
+                  <tr key={`${pair.owner_a}|${pair.owner_b}`}>
+                    <td className="px-3 py-2">
+                      {pair.owner_a} &amp; {pair.owner_b}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {pair.reason || "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">
+                      {pair.dismissed_by}
+                      <div>
+                        {new Date(pair.dismissed_at).toLocaleDateString()}
+                      </div>
+                    </td>
+                    {isOperator && (
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => void handleRestore(pair)}
+                          className="rounded-md border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Undo
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {merged && (
         <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
