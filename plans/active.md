@@ -15,9 +15,15 @@ deliberately by the product owner**, ahead of the MVP being complete, to get a b
 at customer scale and take the measurements below. Later chunks branch fresh from `main`.
 
 **If a rollback is ever needed:** there is **no down-migration runner** — only `MigrateUp` — so a
-schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Only
-migration 0059 leaves a residue the old binary reads (`owner_aliases` back-filled from
-`owners.contact_email`); its down script removes exactly those rows.
+schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Two
+migrations leave a residue the old binary reads:
+
+- **0059** — `owner_aliases` back-filled from `owners.contact_email`; its down script removes
+  exactly those rows.
+- **0063** — git repo assignments re-keyed from the git URL to the repo name. An older binary
+  reads three of those paths by URL, so it would show those repos as unowned again. The down
+  script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
+  from one the import always held by name, and the redundant duplicates it removed are gone.
 
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
@@ -73,7 +79,7 @@ Defects found by the product owner using the shipped app. Faults in what is buil
 before new work. Seven found and fixed on 2026-08-02, six of them while importing real data —
 none would have come from a code review. Reproduce, write the failing test, then fix.
 
-**Next free migration number: 0063.**
+**Next free migration number: 0064.**
 
 ## QUEUED behind the ownership MVP
 
