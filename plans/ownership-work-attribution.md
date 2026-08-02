@@ -114,30 +114,22 @@ language-labelled fences. Reference data belongs in unlabelled ones.
 
 ---
 
-## Features
+## Work order
 
-| Journey | Feature | Notes |
-|---|---|---|
-| 1, 3, 4 | Owner filtering pushed into SQL, and a stable repo key | Enables everything else. The only chunk with a data migration and a shared read path — it lands alone. |
-| 1 | Owner facet, *Mine*, owner column, saved filters | Includes the alias seeding without which *Mine* returns nothing. |
-| 2 | The observed-failure register | Manual-first; pre-fills from run telemetry when it is enabled. Additive and cheap to revert. |
-| 3 | Blocked node → repo holding the fix → its owner | Falls out of the two ownership axes once the key is stable. |
-| 4 | Progress per owner, with the unowned remainder | Reuses the existing per-owner summary query. |
-| 5 | Discovery-driven intake with mapping and preview | CSV now; the seam takes a SQL source later. |
+Stated by the product owner, 2026-08-02. This supersedes any ordering in the part files.
 
-Chunk part files carry the per-feature detail: `-chunk0-specs.md`, `-chunk-a-filtering.md`,
-`-chunks-bcde.md`, `-testing.md`. Read the index, this file's testing part, and the part file for
-what you are implementing — plus any section your chunk is explicitly gated on, so you can see the
-constraint you inherit.
+1. **Get owner ingest solid.** Owners come in before anything can be matched to them.
+2. **Node matching.** Nodes resolve to their owners.
+3. **Git repo matching.** Repos resolve to their owners.
+4. **Alias management.** Last, but **not optional** — see below.
 
-**Dependencies.** Specifications block B, C, D and E. **Owner filtering (A) does not wait for
-them** — it carries its own one-line spec correction if the specs chunk has not run, and its part
-file says how. A blocks B, C and D. **Run C before B**: they are otherwise siblings, and doing the
-register first removes B's only soft dependency (the target date on node detail) instead of leaving
-it to be retrofitted. Progress-per-owner degrades to empty without the register.
+**The incoming ownership data is not clean.** It identifies people inconsistently: sometimes
+an email, sometimes a username, sometimes a team. Matching has to cope with all three, and
+alias management is what makes it correctable when it gets one wrong. Anything built on the
+assumption of a single clean identifier will be wrong on real data.
 
-**If scope is cut**, in order: progress-per-owner's frontend, then intake, then the register's
-standalone list view, then the cookbook owner column. Owner filtering and its parity tests stay.
+Chunk part files carry per-feature detail from an earlier draft. They are **subordinate to the
+journeys and this work order** — where they disagree, these win.
 
 ---
 
