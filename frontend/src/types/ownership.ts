@@ -162,6 +162,9 @@ export interface IntakeColumnProfile {
   sample_values: string[];
   non_empty_pct: number;
   distinct_count: number;
+  /** distinct_count stopped at the tracking cap, so it is a floor rather than
+   * a total. */
+  distinct_capped?: boolean;
 }
 
 export interface IntakeSourceProfile {

@@ -11,6 +11,17 @@ import "fmt"
 // from the first ten rows.
 const MaxSampleValues = 10
 
+// MaxDistinctTracked bounds the distinct values held per column while
+// profiling.
+//
+// The set exists to tell a categorical column from a free one. On a
+// consolidated export of several hundred thousand rows, columns like cookbook
+// or owner name are nearly all-distinct, so an unbounded set is one retained
+// string per row per column — hundreds of megabytes to compute a number
+// nobody uses. Anything past this cap is definitively not categorical, which
+// is the only question the count answers.
+const MaxDistinctTracked = 10000
+
 // ColumnProfile describes one source column.
 type ColumnProfile struct {
 	Name         string   `json:"name"`
@@ -20,6 +31,12 @@ type ColumnProfile struct {
 	// identifier column from a free-text one without opening the file.
 	NonEmptyPct   float64 `json:"non_empty_pct"`
 	DistinctCount int     `json:"distinct_count"`
+
+	// DistinctCapped reports that counting stopped at MaxDistinctTracked, so
+	// DistinctCount is a floor rather than a total. Without it the number
+	// reads as exact and a reader would conclude the column has exactly that
+	// many values.
+	DistinctCapped bool `json:"distinct_capped"`
 }
 
 // SourceProfile is what the profile endpoint returns. It persists nothing.
@@ -61,6 +78,11 @@ func Profile(src RowSource) (SourceProfile, error) {
 				continue
 			}
 			nonEmpty[i]++
+			// Once the cap is reached the column is known not to be
+			// categorical, so nothing further is retained.
+			if len(distinct[i]) >= MaxDistinctTracked {
+				continue
+			}
 			if !distinct[i][value] {
 				distinct[i][value] = true
 				if len(samples[i]) < MaxSampleValues {
@@ -86,10 +108,11 @@ func Profile(src RowSource) (SourceProfile, error) {
 			samples[i] = []string{}
 		}
 		profile.Columns[i] = ColumnProfile{
-			Name:          name,
-			SampleValues:  samples[i],
-			NonEmptyPct:   pct,
-			DistinctCount: len(distinct[i]),
+			Name:           name,
+			SampleValues:   samples[i],
+			NonEmptyPct:    pct,
+			DistinctCount:  len(distinct[i]),
+			DistinctCapped: len(distinct[i]) >= MaxDistinctTracked,
 		}
 	}
 

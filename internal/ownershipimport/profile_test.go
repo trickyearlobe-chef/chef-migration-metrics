@@ -172,3 +172,54 @@ func TestProfile_PropagatesSourceErrors(t *testing.T) {
 		t.Error("Profile() = nil error, want the source's error")
 	}
 }
+
+// Profiling holds a set of distinct values per column so it can report
+// cardinality. On a consolidated export — hundreds of thousands of rows, and
+// columns like cookbook and owner name where nearly every value is different —
+// that set is one string per row per column, which is the unbounded allocation
+// this file's own comment warns about.
+//
+// The cap costs nothing that matters: the number exists to tell a categorical
+// column from a free one, and anything past the cap is definitively not
+// categorical, so its exact count is not a fact anybody uses.
+func TestProfile_BoundsDistinctTracking(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("category,unique_id\n")
+	for i := 0; i < MaxDistinctTracked+500; i++ {
+		fmt.Fprintf(&b, "owner,value-%d\n", i)
+	}
+
+	src, err := NewCSVSource(strings.NewReader(b.String()), ',')
+	if err != nil {
+		t.Fatalf("NewCSVSource: %v", err)
+	}
+	profile, err := Profile(src)
+	if err != nil {
+		t.Fatalf("Profile: %v", err)
+	}
+
+	if profile.RowCount != MaxDistinctTracked+500 {
+		t.Errorf("row_count = %d — every row is still counted", profile.RowCount)
+	}
+
+	byName := map[string]ColumnProfile{}
+	for _, c := range profile.Columns {
+		byName[c.Name] = c
+	}
+
+	// The low-cardinality column is the one somebody filters on, and it must
+	// still report exactly.
+	if got := byName["category"]; got.DistinctCount != 1 || got.DistinctCapped {
+		t.Errorf("category: distinct=%d capped=%v, want an exact 1", got.DistinctCount, got.DistinctCapped)
+	}
+
+	// The high-cardinality one stops counting and says so, rather than
+	// reporting a number that took a gigabyte to produce.
+	high := byName["unique_id"]
+	if high.DistinctCount != MaxDistinctTracked {
+		t.Errorf("unique_id: distinct=%d, want it held at %d", high.DistinctCount, MaxDistinctTracked)
+	}
+	if !high.DistinctCapped {
+		t.Error("unique_id: the count is capped but does not say so, which reads as an exact figure")
+	}
+}

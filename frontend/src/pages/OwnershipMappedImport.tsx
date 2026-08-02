@@ -332,7 +332,10 @@ export function OwnershipMappedImport() {
                     <tr key={column.name}>
                       <td className="font-mono">{column.name}</td>
                       <td>{column.non_empty_pct.toFixed(0)}%</td>
-                      <td>{column.distinct_count.toLocaleString()}</td>
+                      <td>
+                        {column.distinct_count.toLocaleString()}
+                        {column.distinct_capped && "+"}
+                      </td>
                       <td className="whitespace-normal text-gray-500">
                         {column.sample_values.slice(0, 4).join(", ") || "—"}
                       </td>
