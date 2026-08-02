@@ -420,6 +420,83 @@ func TestCookbookCommittersAssign_SeedsTheCommitAddressAsAnAlias(t *testing.T) {
 	}
 }
 
+// Assigning an owner here wrote the git URL as the assignment's key, while
+// every screen that lists repos looks the ownership up by the repo name. The
+// owner was recorded where nothing that lists repos could read it, so a repo
+// somebody had just claimed went on reading as unowned — and appeared in the
+// unowned filter, which is the list the migration work is dispatched from.
+func TestCookbookCommittersAssign_KeysTheAssignmentByRepoName(t *testing.T) {
+	var assigned []datastore.InsertAssignmentParams
+	store := &mockStore{
+		GetGitRepoURLForCookbookFn: func(_ context.Context, _ string) (string, error) {
+			return "https://git.example.com/cookbooks/nginx.git", nil
+		},
+		GetOwnerByNameFn: func(_ context.Context, _ string) (datastore.Owner, error) {
+			return datastore.Owner{}, datastore.ErrNotFound
+		},
+		InsertOwnerFn: func(_ context.Context, p datastore.InsertOwnerParams) (datastore.Owner, error) {
+			return datastore.Owner{Name: p.Name, OwnerType: "individual"}, nil
+		},
+		InsertOwnerAliasFn: func(_ context.Context, _ datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error) {
+			return datastore.OwnerAlias{}, nil
+		},
+		InsertAssignmentFn: func(_ context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
+			assigned = append(assigned, p)
+			return datastore.OwnershipAssignment{ID: 1}, nil
+		},
+		InsertAuditEntryFn: func(_ context.Context, _ datastore.InsertAuditEntryParams) error { return nil },
+		ListServerCookbooksByNameFn: func(_ context.Context, _ string) ([]datastore.ServerCookbook, error) {
+			return nil, nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	body := `{"committers":[{"author_email":"jsmith@example.com","owner_name":"jsmith"}]}`
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/cookbooks/nginx/committers/assign", strings.NewReader(body)))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if len(assigned) != 1 {
+		t.Fatalf("created %d assignments, want 1", len(assigned))
+	}
+	if assigned[0].EntityKey != "nginx" {
+		t.Errorf("EntityKey = %q, want the repo name %q — the git URL is not what any list reads",
+			assigned[0].EntityKey, "nginx")
+	}
+}
+
+// The committers panel ticks the people already recorded as owners of the repo.
+// It asked for them by git URL while assignments are keyed by repo name, so it
+// never recognised one — and invited somebody to assign an owner already there.
+func TestCookbookCommitters_ChecksExistingOwnersByRepoName(t *testing.T) {
+	var askedFor string
+	store := &mockStore{
+		GetGitRepoURLForCookbookFn: func(_ context.Context, _ string) (string, error) {
+			return "https://git.example.com/cookbooks/nginx.git", nil
+		},
+		ListCommittersByRepoFn: func(_ context.Context, _ datastore.CommitterListFilter) ([]datastore.GitRepoCommitter, int, error) {
+			return []datastore.GitRepoCommitter{
+				{AuthorEmail: "jsmith@example.com", AuthorName: "Jane Smith"},
+			}, 1, nil
+		},
+		GetOwnerEmailsForGitRepoFn: func(_ context.Context, key string) (map[string]bool, error) {
+			askedFor = key
+			return map[string]bool{}, nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/git-repos/nginx/committers", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if askedFor != "nginx" {
+		t.Errorf("asked for owners of %q, want the repo name %q", askedFor, "nginx")
+	}
+}
+
 // One person commits under several addresses — a personal one, a noreply one,
 // an old domain. The second address finds the owner already there, and if the
 // alias is only recorded when the owner is created, every address after the

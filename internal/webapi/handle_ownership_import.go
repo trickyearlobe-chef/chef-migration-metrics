@@ -327,7 +327,7 @@ func (r *Router) handleCookbookCommitters(w http.ResponseWriter, req *http.Reque
 
 	// Look up which committer emails are already registered as owners of
 	// this git repo, so the frontend can pre-select them.
-	ownerEmails, ownerErr := r.db.GetOwnerEmailsForGitRepo(ctx, repoURL)
+	ownerEmails, ownerErr := r.db.GetOwnerEmailsForGitRepo(ctx, cookbookName)
 	if ownerErr != nil {
 		// Non-fatal: log but don't fail the request. Worst case is that
 		// the checkboxes are not pre-checked.
@@ -371,17 +371,18 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 
 	ctx := req.Context()
 
-	// Look up the git repo URL for this cookbook.
-	repoURL, err := r.db.GetGitRepoURLForCookbook(ctx, cookbookName)
-	if errors.Is(err, datastore.ErrNotFound) {
+	// Confirm the cookbook is git-sourced. The lookup matches git_repos on the
+	// name, so the repo's name is the one we were called with — and that name,
+	// not the URL it returns, is what an assignment is keyed by.
+	if _, err := r.db.GetGitRepoURLForCookbook(ctx, cookbookName); errors.Is(err, datastore.ErrNotFound) {
 		WriteNotFound(w, fmt.Sprintf("Cookbook %q is not git-sourced or does not exist.", cookbookName))
 		return
-	}
-	if err != nil {
+	} else if err != nil {
 		r.logf("ERROR", "cookbook-committers-assign: looking up git repo for %s: %v", cookbookName, err)
 		WriteInternalError(w, "Failed to look up cookbook git repository.")
 		return
 	}
+	repoName := cookbookName
 
 	var body struct {
 		Committers []struct {
@@ -481,11 +482,17 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 				c.AuthorEmail, owner.Name, aliasErr)
 		}
 
-		// Create a git_repo assignment linking the owner to the cookbook's repo URL.
+		// Create a git_repo assignment linking the owner to the repo.
+		//
+		// Keyed by the repo NAME, not its URL. Everything that lists repos —
+		// the repo list's owner filter, the unowned filter, the export — reads
+		// ownership by name, because repo URLs are volatile. Writing the URL
+		// here recorded the owner where none of them could read it, so a repo
+		// somebody had just claimed went on reading as unowned.
 		_, err = r.db.InsertAssignment(ctx, datastore.InsertAssignmentParams{
 			OwnerName:        owner.Name,
 			EntityType:       "git_repo",
-			EntityKey:        repoURL,
+			EntityKey:        repoName,
 			AssignmentSource: "manual",
 			Confidence:       "definitive",
 		})
@@ -494,7 +501,7 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 				skippedCount++
 				continue
 			}
-			r.logf("ERROR", "cookbook-committers-assign: creating assignment for %s -> %s: %v", c.OwnerName, repoURL, err)
+			r.logf("ERROR", "cookbook-committers-assign: creating assignment for %s -> %s: %v", c.OwnerName, repoName, err)
 			WriteInternalError(w, "Failed to create assignment.")
 			return
 		}
@@ -506,7 +513,7 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 			"cookbook_name":     cookbookName,
 			"author_email":      c.AuthorEmail,
 		})
-		r.auditOwnership(req, "assignment_created", c.OwnerName, "git_repo", repoURL, "", detailsJSON)
+		r.auditOwnership(req, "assignment_created", c.OwnerName, "git_repo", repoName, "", detailsJSON)
 
 		assignmentsCreated++
 	}
