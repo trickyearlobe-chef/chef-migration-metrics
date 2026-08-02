@@ -123,8 +123,13 @@ there are real owners to match against. Ingest first is what makes the rest test
 against reality rather than against fixtures we invented.
 
 1. **Get owner ingest solid.** Owners come in before anything can be matched to them.
-2. **Node matching.** Nodes resolve to their owners.
-3. **Git repo matching.** Repos resolve to their owners.
+2. **Node matching.** Nodes resolve to their owners. Found to be the low-hanging one on the
+   previous attempt.
+3. **Git repo matching.** Repos resolve to their owners. Harder, and known why: repo
+   ownership is keyed today on a URL that moves, so it has to be re-keyed onto the repo
+   name, and that change reaches every place a repo owner is read or written. See the repo
+   URL gotcha above — this is the one place where sequencing the change matters more than
+   the change itself.
 4. **Alias management.** Last, but **not optional** — see below.
 
 **The incoming ownership data is not clean.** It identifies people inconsistently: sometimes
