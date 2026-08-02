@@ -203,12 +203,12 @@ action. Design and the way out: `specifications/audit-log.md`; work items:
   `ownership_audit_log` for a different subject; its own comment says so. A third subject
   would be a third table. **Expedient because** each was the smallest change at the time.
   **Proper fix:** one table keyed on a subject pair, per `specifications/audit-log.md`.
-- [ ] **`ownership_audit_log.action` is a CHECK constraint**, so a new action cannot be
-  written until a migration lands. Migration `0058` exists only for that.
 - [ ] **The audit write is best-effort** (`handle_ownership.go`, `auditOwnership` logs a
-  WARN and continues). Combined with the CHECK above, a rejected entry produces an action
-  that looks audited and is not. `InsertAuditEntryTx` exists for a transactional write and
-  nothing uses it.
+  WARN and continues), so any failure to record leaves an action that looks audited and is
+  not. `InsertAuditEntryTx` exists for a transactional write and nothing uses it.
+- [ ] **Actions are written as string literals** at each call site. Now that the database
+  no longer constrains the vocabulary, a typo is recorded rather than rejected — the better
+  failure, but shared constants are what actually prevents it.
 - [ ] **Configuration edits and triggered processes are not audited at all.**
   `config_store` keeps only who last touched a key; rescan-all and the ownership duplicate
   scan write to the application log, which is shipped to a broadly-readable Splunk.

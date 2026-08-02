@@ -171,23 +171,81 @@ func TestFunctional_MergeOwners_SourceNameAlreadyAliasedIsNotAnError(t *testing.
 	}
 }
 
-// A merge deletes a person, so it has to be answerable for afterwards. The
-// audit table constrains its action column, and an action it does not know is
-// rejected — which the handler only logs, so an unaudited merge would look
-// exactly like an audited one.
-func TestFunctional_AuditLogAcceptsAMergeAction(t *testing.T) {
+// An audit log records what happened, including kinds of event nobody
+// anticipated when the table was defined. It used to reject an action outside
+// a fixed list — and the caller only logs a failed audit write, so a rejected
+// entry produced an action that looked audited and was not.
+//
+// A future kind of event must therefore be recordable without a migration.
+func TestFunctional_AuditLogRecordsAnyAction(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()
 
-	cleanupTestData(t, db, "DELETE FROM ownership_audit_log WHERE actor = 'merge-audit-test'")
+	cleanupTestData(t, db, "DELETE FROM ownership_audit_log WHERE actor = 'audit-vocabulary-test'")
 
-	err := db.InsertAuditEntry(ctx, InsertAuditEntryParams{
-		Action:    "owner_merged",
-		Actor:     "merge-audit-test",
-		OwnerName: "merge-audit-target",
-	})
-	if err != nil {
-		t.Fatalf("recording a merge in the audit log: %v", err)
+	for _, action := range []string{
+		// The one this branch added.
+		"owner_merged",
+		// Stand-ins for kinds of event that do not exist yet. Neither the
+		// names nor the subjects matter — that an unanticipated one is kept
+		// rather than discarded is the whole point.
+		"remediation_owner_assigned",
+		"ticket_linked",
+	} {
+		if err := db.InsertAuditEntry(ctx, InsertAuditEntryParams{
+			Action:    action,
+			Actor:     "audit-vocabulary-test",
+			OwnerName: "audit-vocabulary-subject",
+		}); err != nil {
+			t.Errorf("recording a %q entry: %v", action, err)
+		}
+	}
+
+	var recorded int
+	if err := db.pool.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM ownership_audit_log WHERE actor = 'audit-vocabulary-test'`,
+	).Scan(&recorded); err != nil {
+		t.Fatalf("counting recorded entries: %v", err)
+	}
+	if recorded != 3 {
+		t.Errorf("recorded %d entries, want 3", recorded)
+	}
+}
+
+// Half an entity reference cannot be looked up, so it is still refused — that
+// rule is about the pair being complete, not about which actions may carry one.
+func TestFunctional_AuditLogRefusesHalfAnEntityReference(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	cleanupTestData(t, db, "DELETE FROM ownership_audit_log WHERE actor = 'audit-entity-pair-test'")
+
+	if err := db.InsertAuditEntry(ctx, InsertAuditEntryParams{
+		Action:     "assignment_created",
+		Actor:      "audit-entity-pair-test",
+		OwnerName:  "audit-entity-pair-subject",
+		EntityType: "git_repo",
+		// No EntityKey.
+	}); err == nil {
+		t.Error("an entity type with no key was accepted")
+	}
+
+	// Both halves, or neither, are fine.
+	if err := db.InsertAuditEntry(ctx, InsertAuditEntryParams{
+		Action:     "assignment_created",
+		Actor:      "audit-entity-pair-test",
+		OwnerName:  "audit-entity-pair-subject",
+		EntityType: "git_repo",
+		EntityKey:  "audit-entity-pair-repo",
+	}); err != nil {
+		t.Errorf("a complete entity reference was refused: %v", err)
+	}
+	if err := db.InsertAuditEntry(ctx, InsertAuditEntryParams{
+		Action:    "ticket_linked",
+		Actor:     "audit-entity-pair-test",
+		OwnerName: "audit-entity-pair-subject",
+	}); err != nil {
+		t.Errorf("an entry naming no entity was refused: %v", err)
 	}
 }
 

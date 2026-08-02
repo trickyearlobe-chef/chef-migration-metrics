@@ -9,7 +9,9 @@ Not started. Parked behind the ownership MVP — raised 2026-08-02 while adding 
 
 - [ ] **A single audit table keyed on a subject pair**, not a column per subject kind, so
   owners, cops, configuration keys and job triggers all fit. No CHECK constraint on the
-  action vocabulary.
+  action vocabulary — `ownership_audit_log` already works this way, see migration `0058`.
+- [ ] **Shared action constants** at the call sites. The database no longer catches a
+  typo'd action, and nothing else does either.
 - [ ] **Decide how the write is made reliable** — same transaction as the change it
   describes, or a surfaced failure. Both are open; the current best-effort warning is not
   a third option. `InsertAuditEntryTx` already exists and nothing uses it.

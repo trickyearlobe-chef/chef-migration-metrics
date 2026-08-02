@@ -33,9 +33,10 @@ is also the wrong place for a record that names people and settings.
 
 Verify each of these before relying on them; they were true when written.
 
-- **`ownership_audit_log`** — ownership mutations only. `owner_name` is `NOT NULL`, the action
-  vocabulary is a CHECK constraint, and the indexes are owner- and entity-shaped. Retention is a
-  single configurable age, purged on a timer.
+- **`ownership_audit_log`** — ownership mutations only. `owner_name` is `NOT NULL` and the indexes
+  are owner- and entity-shaped, so a config key or a job has nowhere to go. Retention is a single
+  configurable age, purged on a timer. Its action vocabulary is **no longer constrained** —
+  migration `0058` removed that, so the invariant below already holds here.
 - **`cookstyle_audit_log`** — cop reclassification and custom-cop changes. Its own comment says it
   mirrors the ownership table but is cop-centric. Same shape, different subject, no shared code.
 - **`config_store`** — carries who last updated a key and when. Current state only.
@@ -65,6 +66,10 @@ un-generalisable.
 **An action the code does not recognise is still recorded.** The action vocabulary must not be a
 database constraint. A constrained vocabulary means every new action needs a schema migration
 before it can be written — and, combined with the next invariant, means the failure is invisible.
+
+The cost of dropping the constraint is that a typo is recorded rather than rejected. That is the
+better failure: a mislabelled entry is visible and correctable, where a rejected one is gone.
+Spelling is a job for shared constants at the call sites, not for the database.
 
 **A failed audit write is never silent.** Today the ownership audit write logs a warning and
 carries on, so an entry rejected by the action constraint produces an action that *looks* audited.
