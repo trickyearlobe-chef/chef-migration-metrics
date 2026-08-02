@@ -54,10 +54,16 @@ CREATE TABLE failure_register_entries (
     plan        TEXT,
     target_date DATE,
 
-    -- The commitment holder may be an owner, a user, or a ticket reference.
-    -- Where work is tracked elsewhere this holds the URL or ticket number;
-    -- CMM does not read or write the system behind it.
-    holder_type TEXT CHECK (holder_type IN ('owner', 'user', 'ticket')),
+    -- Who is on it: an owner, or a reference to work tracked in another
+    -- system. Where work is tracked elsewhere this holds the URL or ticket
+    -- number; CMM does not read or write the system behind it.
+    --
+    -- No separate 'user' kind. Everything person-shaped is an owner, and other
+    -- identities — including one sourced from SAML — reach an owner through an
+    -- alias; the signed-in CMM user resolves the same way, which is what makes
+    -- "what's mine" filtering possible. A second kind for people would be a
+    -- second identity space for the same thing.
+    holder_type TEXT CHECK (holder_type IN ('owner', 'ticket')),
     holder_ref  TEXT,
 
     -- Lifecycle. Resolution is recorded, not deleted: the standup view needs
