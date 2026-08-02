@@ -157,6 +157,39 @@ maintainers are best written against real patterns rather than guessed. That is 
 specifically because git history is re-derivable from the clones on disk, so no decision is
 foreclosed by waiting — which is not true of any signal discarded at ingest.
 
+### Where ownership candidates come from
+
+Assigning from git committers is one **provider** of candidates, wired directly to
+assignment. The general shape is that several sources can offer candidates for an entity,
+each with its evidence and how far that source is trusted, and a person picks.
+
+Ranked by authority — a declaration beats an inference:
+
+- **CODEOWNERS.** Deliberate and machine-readable, honoured by both major hosting platforms.
+  Not collected, and whether the customer uses it is unknown.
+- **`metadata.rb` maintainer.** Deliberate, and **already collected on every server
+  cookbook**. On sample data it distinguishes vendored from internal by itself: upstream
+  cookbooks name their upstream organisation, and the cookbook generator's default value
+  marks the ones where nobody ever set it — a value the product already treats as a smell
+  through a cookstyle rule, but does not connect to ownership. `maintainer_email` sits
+  beside it in the metadata and is returned by the Chef API, but is parsed and stored
+  nowhere: a name can only be matched by similarity, where an address joins to an identity.
+- **The ownership import.** Deliberate, and built.
+- **Git authors and committers.** Inferred, noisy, and rewritten by the hosting platform
+  (see above). The only provider wired to assignment today.
+
+**"Vendored and unowned" is then not a special case.** It is every provider returning no
+internal candidate, which is a reportable finding rather than a row that fails to match:
+nobody has been made responsible for keeping that dependency current, and matching harder
+will never produce an owner that does not exist. A migration programme needs that named —
+an unowned vendored cookbook that blocks the upgrade has nobody to fix it.
+
+**Two things follow for the git provider.** It must be gated on internal identities, or on a
+vendored cookbook it invents owners out of upstream contributors — and now seeds their commit
+addresses as aliases, where they can go on to match import rows. And the enabling primitive
+for that, for service-account detection, and for the vendored split is the same: **which
+email domains are internal**, which is configured nowhere.
+
 ### Open questions
 
 - **The import's raw string genuinely has no known shape** — sometimes an address, sometimes a

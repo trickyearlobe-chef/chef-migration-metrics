@@ -55,6 +55,48 @@ Remaining:
 - [ ] **Surface it at the point of use**, per the journey-1 refinement in
   `plans/ownership-work-attribution.md`: wherever an owner is read, show the raw string
   and any candidate owners, one action from being merged.
+## Where owners come from — generalise the committer flow
+
+Raised by the product owner 2026-08-02. Assigning ownership from git committers is one
+*provider* of candidates, wired directly to assignment. The general shape is: for an
+entity, every provider offers candidates with their evidence and how far that source is
+trusted; a human picks. Findings and evidence:
+`specifications/ownership-identity.md` § Where ownership candidates come from.
+
+Providers, most authoritative first:
+
+- [ ] **CODEOWNERS** — a deliberate, machine-readable declaration, honoured by both GitHub
+  and GitLab. Not collected. **Ask whether the customer uses it** before building for it.
+- [ ] **`metadata.rb` maintainer — already collected**, and enough on its own to separate
+  vendored from internal. Nothing in ownership reads it. `maintainer_email` is in the
+  metadata and returned by the Chef API but is parsed and stored nowhere — a name matches
+  by similarity, an address joins to an identity.
+- [ ] **The ownership import** — deliberate, built.
+- [ ] **git authors and committers** — inferred, noisy, rewritten by the hosting platform.
+  The only one wired to assignment today.
+
+- [ ] **Gate the committer flow on internal identities.** On a vendored cookbook it invents
+  owners from external contributors, and since 2026-08-02 seeds their commit addresses as
+  aliases too, where they can go on to match import rows.
+- [ ] **"Vendored and unowned" is not a special case** — it is every provider returning no
+  internal candidate. Report it rather than letting the row quietly fail to match: nobody
+  has been made responsible, which is a finding a migration programme needs, not a matching
+  failure to fix.
+- [ ] **Internal email domains are the enabling primitive**, and are configured nowhere.
+  One value powers vendored detection, service-account detection (internal domain, spread
+  across hundreds of repos) and keeping external contributors out of the catalogue.
+- [ ] **Finding the unowned is the gap, not assigning them.** Assignment without ingest
+  already works — owner detail takes an array, so bulk is a UI question, not an API one.
+  But `parseOwnerFilter` is wired into the platform dashboard and remediation only: not the
+  git repo list, not the cookbook list, and the frontend never sends `unowned` anywhere. No
+  screen answers "show me every repo with no owner".
+- [ ] **Characterise the estate before writing any rules.** 2210 repos across Stash, GitLab
+  and Jenkins will carry several patterns, not one. Per repo: how often author and committer
+  differ, the distinct identities on each side, and which addresses appear across many repos
+  — that last one is the service-account detector, since a person contributes to a handful
+  and a pipeline account to hundreds. Customer access is VDI or file transfer, so it has to
+  produce a small aggregated artefact that can be carried back, not a console dump.
+
 - [ ] **Rules for platform identities, bots and maintainers — write them against real data.**
   Findings and measurements: `specifications/ownership-identity.md` § Git identities are
   rewritten by the hosting platform. Deliberately deferred, and safe to defer because git
