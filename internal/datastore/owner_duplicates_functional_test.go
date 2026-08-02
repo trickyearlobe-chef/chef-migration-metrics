@@ -100,6 +100,77 @@ func TestFunctional_OwnerDuplicates_MatchesOnAliasValueToo(t *testing.T) {
 	}
 }
 
+// Two owners under the same display name is about the strongest duplicate
+// signal there is, and it is the shape the committer path produces: one person
+// commits under two addresses, so two owners are created with two unrelated
+// names and one identical display name.
+func TestFunctional_OwnerDuplicates_PairsOnDisplayName(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	// Nothing about the names or the aliases connects these two.
+	seedMergeOwner(t, db, "quenilda-stackhouse")
+	seedMergeOwner(t, db, "brambleworth")
+	for _, name := range []string{"quenilda-stackhouse", "brambleworth"} {
+		displayName := "Perpetua Wintergreen"
+		if _, err := db.UpdateOwner(ctx, name, UpdateOwnerParams{DisplayName: &displayName}); err != nil {
+			t.Fatalf("UpdateOwner(%q): %v", name, err)
+		}
+	}
+
+	got := scanForDuplicates(t, db)
+
+	c, ok := candidatesByPair(t, got)[pairKey("quenilda-stackhouse", "brambleworth")]
+	if !ok {
+		t.Fatalf("two owners under one display name were not paired; got %d candidates", len(got))
+	}
+	if c.MatchedOn != "display_name" {
+		t.Errorf("MatchedOn = %q, want %q", c.MatchedOn, "display_name")
+	}
+	if c.ValueA != "Perpetua Wintergreen" || c.ValueB != "Perpetua Wintergreen" {
+		t.Errorf("the matched display names were not reported: %+v", c)
+	}
+}
+
+// An owner's contact address is an identity we already hold. Left out of the
+// alias table it is invisible to every lookup that resolves a person — the
+// duplicate scan, the localpart signal, and an import matching on an address.
+func TestFunctional_OwnerDuplicates_ContactEmailIsAnAlias(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	// The name is unrelated to the address, so only the address can pair them.
+	if _, err := db.InsertOwner(ctx, InsertOwnerParams{
+		Name:         "wobbleton-perch",
+		OwnerType:    "individual",
+		ContactEmail: "gwendolen.fitzhammond@example-corp.test",
+	}); err != nil {
+		t.Fatalf("InsertOwner: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.DeleteOwner(context.Background(), "wobbleton-perch") })
+
+	seeded, err := db.SeedAliasesFromContactEmails(ctx)
+	if err != nil {
+		t.Fatalf("SeedAliasesFromContactEmails: %v", err)
+	}
+	if seeded < 1 {
+		t.Errorf("seeded %d aliases, want at least the one owner with a contact address", seeded)
+	}
+
+	owner, err := db.ResolveOwnerByAlias(ctx, "email", "gwendolen.fitzhammond@example-corp.test")
+	if err != nil {
+		t.Fatalf("the contact address does not resolve to its owner: %v", err)
+	}
+	if owner != "wobbleton-perch" {
+		t.Errorf("resolved to %q", owner)
+	}
+
+	// Running it again must not fail on what it already seeded.
+	if _, err := db.SeedAliasesFromContactEmails(ctx); err != nil {
+		t.Errorf("seeding twice: %v", err)
+	}
+}
+
 // Which way round to merge depends on how much work each side holds, so the
 // list has to carry it — otherwise the operator has to open both people.
 func TestFunctional_OwnerDuplicates_CarriesAssignmentCounts(t *testing.T) {

@@ -133,6 +133,36 @@ func (db *DB) DeleteOwnerAlias(ctx context.Context, id string) error {
 	return nil
 }
 
+// SeedAliasesFromContactEmails records every owner's contact address as an
+// alias, and returns how many it added.
+//
+// A contact address is an identity we already hold. Left out of the alias
+// table it is invisible to everything that resolves a person: the duplicate
+// scan, the email-localpart signal, and an import matching a row on an
+// address. The committer path sets one on every owner it creates.
+//
+// Idempotent. Alias uniqueness is global, so an address already recorded —
+// by hand, or against another owner — is left exactly as it is rather than
+// being moved or overwritten.
+func (db *DB) SeedAliasesFromContactEmails(ctx context.Context) (int, error) {
+	const query = `
+		INSERT INTO owner_aliases (owner_name, alias_type, alias_value, source)
+		SELECT name, 'email', contact_email, 'contact_email'
+		FROM owners
+		WHERE contact_email IS NOT NULL AND contact_email <> ''
+		ON CONFLICT (alias_type, alias_value) DO NOTHING
+	`
+	res, err := db.pool.ExecContext(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("datastore: seeding aliases from contact addresses: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("datastore: counting seeded contact aliases: %w", err)
+	}
+	return int(n), nil
+}
+
 // SuggestOwnerAliases uses trigram similarity to find potential alias matches.
 // Returns up to `limit` suggestions sorted by similarity (highest first).
 // Requires the pg_trgm extension.

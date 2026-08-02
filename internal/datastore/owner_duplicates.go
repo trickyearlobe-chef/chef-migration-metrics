@@ -18,8 +18,9 @@ type OwnerDuplicateCandidate struct {
 	OwnerA string `json:"owner_a"`
 	OwnerB string `json:"owner_b"`
 
-	// MatchedOn is "name" when the two owner names are similar, "alias" when
-	// two of their recorded identities are.
+	// MatchedOn is "name" when the two owner names are similar,
+	// "display_name" when the names people see are, and "alias" when two of
+	// their recorded identities are.
 	MatchedOn string `json:"matched_on"`
 
 	// ValueA and ValueB are the two strings that matched.
@@ -97,6 +98,29 @@ func (db *DB) RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error
 
 			UNION ALL
 
+			-- Two owners under one display name. The committer path produces
+			-- exactly this: one person committing under two addresses becomes
+			-- two owners with unrelated names and one identical display name,
+			-- which neither of the other two signals can see.
+			SELECT LEAST(a.name, near.name),
+			       GREATEST(a.name, near.name),
+			       'display_name',
+			       CASE WHEN a.name < near.name THEN a.display_name ELSE near.display_name END,
+			       CASE WHEN a.name < near.name THEN near.display_name ELSE a.display_name END,
+			       near.sim
+			FROM owners a
+			CROSS JOIN LATERAL (
+				SELECT b.name, b.display_name,
+				       similarity(a.display_name, b.display_name) AS sim
+				FROM owners b
+				WHERE b.name <> a.name AND b.display_name IS NOT NULL
+				ORDER BY b.display_name <-> a.display_name
+				LIMIT $1
+			) near
+			WHERE a.display_name IS NOT NULL AND near.sim >= $2
+
+			UNION ALL
+
 			SELECT LEAST(x.owner_name, near.owner_name),
 			       GREATEST(x.owner_name, near.owner_name),
 			       'alias',
@@ -116,6 +140,13 @@ func (db *DB) RecomputeOwnerDuplicateCandidates(ctx context.Context) (int, error
 		) candidates
 		ORDER BY owner_a, owner_b, sim DESC
 	`
+
+	// An owner created since the last scan may carry a contact address that
+	// has never reached the alias table, and the scan is the moment that
+	// matters — an identity we hold but do not index is invisible to it.
+	if _, err := db.SeedAliasesFromContactEmails(ctx); err != nil {
+		return 0, err
+	}
 
 	var found int
 	err := db.Tx(ctx, func(tx *sql.Tx) error {

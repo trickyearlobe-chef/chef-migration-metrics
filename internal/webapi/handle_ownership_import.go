@@ -451,32 +451,34 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 			} else {
 				ownersCreated++
 				r.logf("INFO", "cookbook-committers-assign: created owner %q for cookbook %s", c.OwnerName, cookbookName)
-
-				// Record the commit address the person was recognised by.
-				// Without it this owner carries no identity at all, so no
-				// later lookup — "who am I?", the duplicate report, an
-				// import matching on an address — can reach it.
-				//
-				// It is recorded as a git address because that is what it
-				// is: commit addresses and corporate addresses differ often
-				// enough that conflating them attaches work to the wrong
-				// person.
-				if _, aliasErr := r.db.InsertOwnerAlias(ctx, datastore.InsertOwnerAliasParams{
-					OwnerName:  owner.Name,
-					AliasType:  "git_email",
-					AliasValue: c.AuthorEmail,
-					Source:     "committer",
-				}); aliasErr != nil && !errors.Is(aliasErr, datastore.ErrAlreadyExists) {
-					// A missing alias costs later matching accuracy, not
-					// this assignment.
-					r.logf("WARN", "cookbook-committers-assign: seeding git_email alias %q for %s: %v",
-						c.AuthorEmail, owner.Name, aliasErr)
-				}
 			}
 		} else if err != nil {
 			r.logf("ERROR", "cookbook-committers-assign: looking up owner %s: %v", c.OwnerName, err)
 			WriteInternalError(w, "Failed to look up owner.")
 			return
+		}
+
+		// Record the commit address the person was recognised by, whether or
+		// not the owner was created just now.
+		//
+		// One person commits under several addresses — a personal one, a
+		// noreply one, an old domain — and every address after the first
+		// finds the owner already there. Recording only on creation drops
+		// them, which is the case this is for.
+		//
+		// It is recorded as a git address because that is what it is: commit
+		// addresses and corporate addresses differ often enough that
+		// conflating them attaches work to the wrong person.
+		if _, aliasErr := r.db.InsertOwnerAlias(ctx, datastore.InsertOwnerAliasParams{
+			OwnerName:  owner.Name,
+			AliasType:  "git_email",
+			AliasValue: c.AuthorEmail,
+			Source:     "committer",
+		}); aliasErr != nil && !errors.Is(aliasErr, datastore.ErrAlreadyExists) {
+			// A missing alias costs later matching accuracy, not this
+			// assignment.
+			r.logf("WARN", "cookbook-committers-assign: seeding git_email alias %q for %s: %v",
+				c.AuthorEmail, owner.Name, aliasErr)
 		}
 
 		// Create a git_repo assignment linking the owner to the cookbook's repo URL.

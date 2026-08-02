@@ -19,6 +19,7 @@ const percent = (similarity: number) => `${Math.round(similarity * 100)}%`;
 
 const MATCHED_ON_LABELS: Record<string, string> = {
   name: "owner name",
+  display_name: "display name",
   alias: "alias",
 };
 
@@ -294,7 +295,7 @@ function OwnerCell({
       >
         {name}
       </Link>
-      {matchedOn === "alias" && value !== name && (
+      {matchedOn !== "name" && value !== name && (
         <div className="text-xs text-gray-500">known as “{value}”</div>
       )}
       <div className="text-xs text-gray-400">

@@ -420,6 +420,52 @@ func TestCookbookCommittersAssign_SeedsTheCommitAddressAsAnAlias(t *testing.T) {
 	}
 }
 
+// One person commits under several addresses — a personal one, a noreply one,
+// an old domain. The second address finds the owner already there, and if the
+// alias is only recorded when the owner is created, every address after the
+// first is dropped. That is the whole multi-address case.
+func TestCookbookCommittersAssign_SeedsTheAddressForAnOwnerThatAlreadyExists(t *testing.T) {
+	var seeded []datastore.InsertOwnerAliasParams
+	store := &mockStore{
+		GetGitRepoURLForCookbookFn: func(_ context.Context, _ string) (string, error) {
+			return "https://git.example.com/cookbooks/nginx.git", nil
+		},
+		// The owner is already there — this is their second address.
+		GetOwnerByNameFn: func(_ context.Context, name string) (datastore.Owner, error) {
+			return datastore.Owner{Name: name, OwnerType: "individual"}, nil
+		},
+		InsertOwnerFn: func(_ context.Context, _ datastore.InsertOwnerParams) (datastore.Owner, error) {
+			t.Error("created an owner that already existed")
+			return datastore.Owner{}, nil
+		},
+		InsertOwnerAliasFn: func(_ context.Context, p datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error) {
+			seeded = append(seeded, p)
+			return datastore.OwnerAlias{}, nil
+		},
+		InsertAssignmentFn: func(_ context.Context, _ datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
+			return datastore.OwnershipAssignment{ID: 1}, nil
+		},
+		InsertAuditEntryFn: func(_ context.Context, _ datastore.InsertAuditEntryParams) error { return nil },
+		ListServerCookbooksByNameFn: func(_ context.Context, _ string) ([]datastore.ServerCookbook, error) {
+			return nil, nil
+		},
+	}
+	r := ownershipRouter(store)
+	w := httptest.NewRecorder()
+	body := `{"committers":[{"author_email":"jsmith@old-domain.example","owner_name":"jsmith"}]}`
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/cookbooks/nginx/committers/assign", strings.NewReader(body)))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if len(seeded) != 1 {
+		t.Fatalf("seeded %d aliases, want the second address recorded against the existing owner", len(seeded))
+	}
+	if seeded[0].AliasValue != "jsmith@old-domain.example" || seeded[0].OwnerName != "jsmith" {
+		t.Errorf("seeded %+v", seeded[0])
+	}
+}
+
 // The alias is a lead for later matching, not part of the assignment. Failing
 // to seed it must not fail the assignment the operator asked for.
 func TestCookbookCommittersAssign_AliasSeedFailureDoesNotFailTheAssignment(t *testing.T) {
