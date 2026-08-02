@@ -78,6 +78,8 @@ Three complementary layers — pick the cheapest that answers the question, esca
 
 ## Specifications
 
+- **THE SPECS ARE NOT TO BE TRUSTED. The code is the only source of truth.** Specs assert tables, columns, config flags, endpoints and processes that do not exist. Treat every spec claim as unverified until you have checked it against the tree at the current commit.
+- **NEVER plan, estimate, or write code from a spec claim you have not just verified in code.** Planning against stale specs cost a full sprint week. If a claim matters to what you are about to do, verify it; if it turns out to be wrong, correct the spec (with permission) or say so — never build to it.
 - Specs live under `specifications/<component>.md` (flat layout, no subdirectories).
 - NEVER silently diverge from a spec.
 - Do not modify specs without asking.

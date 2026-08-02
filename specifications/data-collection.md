@@ -306,7 +306,7 @@ A single collection run proceeds in the following order:
 
 Steps 1–5 are the responsibility of this component. Steps 6–8 are coordinated by the application's top-level orchestrator.
 
-When `ownership.enabled` is `true`, ownership auto-derivation (§ 6.2) runs between steps 5 and 6 — after stale node flagging and before analysis hand-off. Custom attribute collection (§ 6.3) is integrated into step 1 (node collection).
+Ownership auto-derivation (§ 6.2) runs between steps 5 and 6 — after stale node flagging and before analysis hand-off. Custom attribute collection (§ 6.3) is integrated into step 1 (node collection).
 
 ---
 
@@ -351,7 +351,7 @@ See the [Visualisation Specification](visualisation.md) for how the dependency g
 
 ## 6. Ownership Data Collection
 
-When `ownership.enabled` is `true`, the data collection component has two additional responsibilities: collecting git committer data and triggering ownership auto-derivation rules. These are fully specified in the [Ownership Specification](ownership.md) § 7 and summarised here.
+The data collection component has two additional ownership responsibilities: collecting git committer data and triggering ownership auto-derivation rules. These are fully specified in the [Ownership Specification](ownership.md) § 7 and summarised here.
 
 ### 6.1 Git Committer Collection
 
@@ -369,10 +369,9 @@ This data is stored in the `git_repo_committers` table (see [Datastore Specifica
 
 After each collection run completes for an organisation:
 
-1. If `ownership.enabled` is `false`, skip.
-2. Evaluate all configured auto-derivation rules against the newly collected data.
-3. Create `ownership_assignments` for new matches and remove stale `auto_rule` assignments from rules that no longer match.
-4. Log a summary at `INFO` severity with the rule count, assignments created, and stale assignments removed.
+1. Evaluate all configured auto-derivation rules against the newly collected data.
+2. Create `ownership_assignments` for new matches and remove stale `auto_rule` assignments from rules that no longer match.
+3. Log a summary at `INFO` severity with the rule count, assignments created, and stale assignments removed.
 
 Auto-derivation runs in the same sequence as the rest of the post-collection pipeline — after step 5 (stale node flagging) and before step 6 (hand off to analysis) in § 3.5.
 

@@ -25,6 +25,6 @@
 Ownership tracking is a new, additive feature. The migration path is:
 
 1. **Database migration** creates the `owners`, `ownership_assignments`, `git_repo_committers`, and `ownership_audit_log` tables, and adds the `custom_attributes` column to `node_snapshots`.
-2. **Feature disabled by default** — existing deployments see no change until `ownership.enabled` is set to `true`.
-3. **No breaking changes** — all existing API endpoints, filters, and behaviour remain unchanged. The `owner` filter parameter is simply ignored when ownership is disabled.
+2. **Always enabled** — there is no feature flag. Existing deployments gain the tables and endpoints at migration and see no owners until ownership data is imported or auto-derivation rules are configured.
+3. **No breaking changes** — all existing API endpoints, filters, and behaviour remain unchanged.
 4. **Incremental adoption** — teams can start by importing ownership for their most critical cookbooks and nodes, then gradually expand coverage and add auto-derivation rules.

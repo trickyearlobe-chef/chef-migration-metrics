@@ -284,7 +284,6 @@ ownership:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `ownership.enabled` | `false` | Enable ownership tracking. When disabled, tables still exist but are not populated and UI elements are hidden. |
 | `ownership.audit_log.retention_days` | `365` | Days to retain ownership audit log entries. Set to `0` to disable purging. |
 | `ownership.auto_rules` | `[]` | List of auto-derivation rules. See [Ownership Specification](ownership.md) § 2.2 for rule types and field definitions. |
 
