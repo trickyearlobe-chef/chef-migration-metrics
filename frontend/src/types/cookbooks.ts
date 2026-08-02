@@ -120,6 +120,17 @@ export interface GitRepoListItem {
   tk_status?: string;
   tk_passed?: number;
   tk_total?: number;
+
+  /**
+   * The standing verdict from the failure register, where somebody has
+   * recorded one.
+   *
+   * It does not replace cookstyle_status or tk_status — those go on reporting
+   * what each tool said, and the disagreement is meant to stay visible. It is
+   * here so the list stops silently contradicting the register.
+   */
+  human_verdict?: "broken" | "not_broken";
+  human_verdict_reason?: string;
 }
 
 export type GitRepoListResponse = PaginatedResponse<GitRepoListItem>;
