@@ -55,6 +55,7 @@ import { AdminPlatformDisplayNamesPage } from "./pages/AdminPlatformDisplayNames
 import { AdminBackupPage } from "./pages/AdminBackupPage";
 import { OwnerAliasesPage } from "./pages/OwnerAliasesPage";
 import { OwnerDuplicatesPage } from "./pages/OwnerDuplicatesPage";
+import { FailureRegisterPage } from "./pages/FailureRegisterPage";
 
 // ---------------------------------------------------------------------------
 // Route guard — redirects to /login when the user is not authenticated.
@@ -223,6 +224,10 @@ export function App() {
                 element={<RunEventNodeDetailPage />}
               />
               <Route path="/remediation" element={<RemediationPage />} />
+              <Route
+                path="/failure-register"
+                element={<FailureRegisterPage />}
+              />
               <Route path="/ownership" element={<OwnersPage />} />
               <Route
                 path="/ownership/aliases"
