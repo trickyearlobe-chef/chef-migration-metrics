@@ -48,6 +48,88 @@ offer exactly these. **A SAML subject is not among them** — it is refreshed on
 appears in no other system, so it can never join to anything. Identity anchors on username and
 email.
 
+**This list is known to be the wrong shape.** See *Proposed: shape is not source* below.
+
+---
+
+## Proposed: shape is not source
+
+> **Status: proposed, not built.** Everything above describes what ships. This section is a
+> design change raised 2026-08-02 after the model was exercised against real data.
+
+### The conflation
+
+`alias_type` carries two unrelated ideas at once:
+
+| value | what shape the identifier is | where we learned it |
+|---|---|---|
+| `email` | an address | typed in, imported, or a contact field |
+| `git_email` | an address | git commit history |
+| `git_name` | a person's name | git commit history |
+| `username` | a login name | intended: SSO |
+| `custom` | not determined | the ownership import's raw string |
+
+Two of the five are shape-and-source compounds, and `custom` means "source: import, shape:
+unknown". Meanwhile `source` already exists and already records provenance. **Provenance is held
+in two columns, inconsistently.**
+
+### What the conflation costs
+
+Each of these was observed, not predicted.
+
+- **Uniqueness includes provenance.** The constraint is on `(alias_type, alias_value)`, so one
+  address can be claimed by two different owners under two types. Resolution tries `email` before
+  `git_email`, so the second owner becomes unreachable by that address and nothing reports it.
+- **Resolution order is a confidence ranking expressed as a type list** — the raw import string
+  first, a commit address last. That is a statement about how far each *source* is trusted.
+- **Questions about shape must enumerate types.** The email-localpart signal asks for
+  `alias_type IN ('email','git_email')` — meaning "the address-shaped ones". Any new
+  address-bearing source silently falls outside it.
+
+### Shape is not enforced at the source
+
+**This is the constraint that shapes the fix.** No source guarantees that a value has the shape
+its field implies:
+
+- Git does not validate `author_email`. Real commit history in this project carries an address
+  with no top-level domain, tens of commits behind it.
+- A SAML deployment can point the identity attribute at the wrong claim — a display name in the
+  email attribute — and nothing downstream would know.
+
+So **what the source asserted and what the value looks like are different facts, and either can be
+wrong.** Deriving shape from the value is no more authoritative than trusting the field it arrived
+in.
+
+### The model that follows
+
+- **Record what the source asserted** — the field it came out of, not a conclusion about it.
+- **Record where it came from**, at a granularity that names the field: git commit author address,
+  a specific SAML attribute, an import column, an owner's contact field, a person typing it, a
+  merge.
+- **Treat the observed shape as an observation**, free to disagree with the assertion. A
+  disagreement is diagnostic, not an error: identities arriving from an address field that do not
+  look like addresses are how a misconfigured claim mapping is found. This is the same class of
+  problem as an unset `username_attr`.
+- **Confidence is a property of the source**, ranked in code, not a column and not a type list.
+- **Uniqueness keys on the identifier value alone**, canonicalised. One string belongs to one
+  person, whatever any source believes it to be. A second claim on the same string is then a
+  visible conflict — and a conflict is a strong duplicate-person signal, which is exactly what the
+  current model discards.
+
+Canonicalising on write would also remove the raw-then-lowercase retry the import resolution does
+today, which exists only because the column has no case-insensitive collation.
+
+### Open questions
+
+- **The import's raw string genuinely has no known shape** — sometimes an address, sometimes a
+  username, sometimes a team. Under this model it is recorded as asserted-unknown rather than
+  forced into a type.
+- **Migration collisions.** Collapsing the address types into one namespace means any string
+  currently held twice must resolve to one owner. Those are duplicate people, so the migration
+  must report them for a human rather than silently picking a winner.
+- **Timing.** Node and repo matching consume this resolution chain, so building them first means
+  revisiting them.
+
 ## Where aliases are edited
 
 **On the owner's own page.** What somebody owns and what they are called elsewhere are different

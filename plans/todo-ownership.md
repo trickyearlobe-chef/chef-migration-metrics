@@ -55,22 +55,17 @@ Remaining:
 - [ ] **Surface it at the point of use**, per the journey-1 refinement in
   `plans/ownership-work-attribution.md`: wherever an owner is read, show the raw string
   and any candidate owners, one action from being merged.
-- [ ] **One address can belong to two people, and the loser is unreachable.** Alias
-  uniqueness is on `(alias_type, alias_value)`, not on the value — verified by inserting
-  the same address as `email` for one owner and `git_email` for another; both succeeded.
-  Resolution tries `email` before `git_email`, so the second owner can never be reached by
-  that address and nothing reports the split.
+- [ ] **Re-model aliases: shape is not source.** Design and evidence:
+  `specifications/ownership-identity.md` § Proposed: shape is not source. Do not restate it
+  here.
 
-  **This customer makes it likely.** People hold several corporate addresses — a domain
-  change keeps the old ones deliverable — so the same address arrives from more than one
-  source, and only one of them is the login address. A shared localpart is caught (the
-  localpart signal, and the duplicate scan pairs near-identical strings); a domain change
-  that also changes the localpart is not caught by either.
+  **Timing is the open decision.** Node and repo matching consume the resolution chain this
+  changes, so doing it after them means revisiting them. Doing it now adds a chunk to the
+  MVP before matching starts. Row volume will never be smaller than it is today.
 
-  Options, in increasing cost: refuse to seed an address already held under another type
-  by a different owner, and report it; or treat address-shaped aliases as one namespace,
-  which needs a migration and a dedup of whatever is already there. **Decide against real
-  data — the shape of the collisions is the thing worth knowing first.**
+  The symptom that raised it — one address belonging to two owners under two types, the
+  second unreachable — is a consequence of the model, not a separate bug, and is fixed by
+  keying uniqueness on the value.
 
 Dependency on stable username: the whole graph assumes `username` stays stable
 (driven by `username_attr` → a stable claim). If `username_attr` is unset,
