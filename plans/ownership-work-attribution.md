@@ -217,7 +217,17 @@ journeys and this work order** — where they disagree, these win.
 
 **Per chunk:** its own branch, failing tests first, implement, green, then an independent adversarial
 review of the diff against that chunk's acceptance criteria whose job is to *refute* that it is done.
-Fix what the review confirms, re-run, then a human approves the merge. Nothing self-merges.
+Fix what the review confirms, re-run.
+
+**Nothing merges to `main` until the whole MVP is complete and the product owner has tested it to
+their own satisfaction.** This is a standing instruction, not a per-chunk approval — a green chunk is
+not a mergeable chunk, and passing tests are not the bar. Stated 2026-08-02, after an earlier
+attempt had to be backed out.
+
+So: **do not ask for merge permission at the end of a chunk.** Report what was built, leave the
+branch in place, and move on to the next one. Chunk branches accumulate deliberately here; that
+does not make them stale, and the session-start branch sweep must not treat them as such. The
+product owner initiates the merge conversation, not the assistant.
 
 **Verify before you rely.** Any citation here was true when written and the tree moves. Open the file.
 A mismatch means the surrounding reasoning may also be stale — report it rather than adjusting quietly.
