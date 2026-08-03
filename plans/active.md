@@ -43,7 +43,11 @@ a named cohort; enforced on the export path. Import from a file or from a databa
 tables a connection can see, pick one or write a query, map the columns, preview, import. The
 connection lives in a stored credential, so no password is typed on the import screen.
 
-**Not done, and the two that will be met in production rather than in a demo:**
+**Timeline:** screenshots for the change control form on Monday 2026-08-03; the customer wires
+it up in **production on Tuesday 2026-08-04**. So Monday is available to close the two below,
+and they are worth closing before Tuesday rather than after.
+
+**Not done, and the two that get met in production rather than in a demo:**
 
 1. **Entity type comes from a dropdown, not from a column.** A source table holding several
    kinds of asset must be imported once per kind, using the row filter. Nothing on screen says
