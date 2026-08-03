@@ -26,7 +26,20 @@ run data at all. What run data buys is **grading that prediction**: each failure
 lands on a cookbook the static analysis named or on one it missed, and the misses measure
 how far the prediction can be trusted before work is dispatched from it.
 
-## Failed-run summary page — designed 2026-08-03, not built
+## Failed-run summary page — designed 2026-08-03, BLOCKED on the depsolve gap below
+
+**Do not build this first.** The product owner reports that many failures across the real
+estate are not cookbook-compatibility failures at all: a run list naming a cookbook that does
+not exist, and conflicting cookbook version constraints in the expanded run list. Both die in
+depsolve, before any resource runs — which is precisely the delivery shape
+`normalise.go:297` accepts and does not persist. **Those runs are not in `converge_runs`, so a
+summary built on that table would omit the most common failures in the estate while looking
+authoritative.** Close the gap, then build the page.
+
+It also settles the question this design left open. `failed_resource` will be null for a large
+share of real failures, so the tree should be **class-first**, with cookbook underneath it once
+the backtrace can name one.
+
 
 A collapsible summary of failed converge runs. **Grouping: cookbook → "`<exception class>` at
 `<location>`".** Chef version is a **filter, not a grouping level** — during a migration it has
@@ -105,6 +118,12 @@ before any UI is written.
   on the transport. What carries nothing is the attributes-only delivery, and that is a
   property of the *failure*: a run that dies before it converges has declared no resources,
   so on any transport there is nothing to attribute a cookbook to.
+
+  **Confirmed against the real estate 2026-08-03:** the product owner reports many nodes
+  failing on exactly this, in two forms — a run list naming a cookbook that does not exist,
+  and conflicting cookbook version constraints in the expanded run list. Neither is a
+  compatibility problem; both are estate hygiene, and both are invisible to CMM today. This
+  is no longer a theoretical gap in coverage: it is most of what is breaking the fleet.
 
   That is exactly the first-wave upgrade blocker — a depsolve failure, or a cookbook using
   an API removed in the new version and failing at compile time before a resource exists.
