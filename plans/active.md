@@ -40,15 +40,18 @@ arrange, so the work is batched into one release rather than shipped piecemeal.
 
 Two things are named as not done:
 
-- **MSSQL ingest — half done, and the next session picks it up from here.**
+- **Database ingest (SQL Server *and* PostgreSQL) — half done, and the next session picks it
+  up from here. Both are first-class sources an administrator chooses between; PostgreSQL is
+  not merely the one used for testing.**
 
   **Done:** `internal/ownershipsql` reads ownership rows from a database as an
   `ownershipimport.RowSource`, so everything above the source abstraction — the row cap, the
   value filter, the distinct-value cap, report truncation — applies to a query result with no
-  change. It supports `sqlserver` and `postgres`, registers both drivers itself, verifies the
-  connection before running the query (an unreadable source must not read as an empty one),
-  and renders NULL as empty. Functional tests run against PostgreSQL, which needs no SQL
-  Server to hand; the SQL Server path differs only in driver name and connection string.
+  change. It supports `sqlserver` and `postgres` equally, registers both drivers itself, verifies
+  the connection before running the query (an unreadable source must not read as an empty
+  one), and renders NULL as empty. The functional tests run against PostgreSQL because it is
+  already to hand; the SQL Server path differs only in driver name and connection string, and
+  step 4 below covers testing it for real.
 
   **The dependency is settled — do not re-litigate it.** `github.com/microsoft/go-mssqldb`
   v1.10.0, pinned. It adds **4 modules** to `go.mod` (the driver plus `golang-sql/civil`,
@@ -65,8 +68,9 @@ Two things are named as not done:
   2. **Endpoints.** The intake already has profile/preview/run over a file; each opens its own
      source, which is why the SQL source is a single-pass cursor. Add the database as an
      alternative source for the same three, rather than a parallel flow.
-  3. **UI.** Choose file or database; enter the connection; supply a query; preview what it
-     returns; then the existing mapping flow, unchanged.
+  3. **UI.** Choose file or database; pick which database — SQL Server or PostgreSQL, both
+     offered; enter the connection; supply a query; preview what it returns; then the existing
+     mapping flow, unchanged.
   4. **A SQL Server to test against.** Run one in docker locally. Do not defer this for want
      of the customer's database — the whole point is that it is testable here.
 - **Node ownership — DONE.** The list carries the ownership control, the API already resolved

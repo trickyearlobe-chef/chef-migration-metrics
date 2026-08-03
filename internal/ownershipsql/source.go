@@ -23,18 +23,17 @@ import (
 	"strings"
 	"time"
 
-	// This package advertises both drivers, so it registers both rather than
-	// relying on whatever the binary happens to import. "sqlserver" is where
-	// the customer's owner list lives; "postgres" costs no new dependency and
-	// makes the reading path testable without a SQL Server to hand.
+	// Both are first-class sources an administrator can choose, not one real
+	// option and one for testing. The package registers both rather than
+	// relying on whatever the binary happens to import.
 	_ "github.com/lib/pq"
 	_ "github.com/microsoft/go-mssqldb"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
 )
 
-// Drivers are the database types an ownership query can be read from, as they
-// appear in the API and the UI.
+// The database types an ownership query can be read from, as they appear in the
+// API and the UI. Both are supported for real use.
 const (
 	DriverSQLServer = "sqlserver"
 	DriverPostgres  = "postgres"
