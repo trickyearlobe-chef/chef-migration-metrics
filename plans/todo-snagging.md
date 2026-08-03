@@ -163,3 +163,16 @@ item here got past a green suite, so a fix with no new test is a fix that will b
   One way only: owning a cookbook does not make somebody the owner of a repo. Names are the
   join, on the same one-cookbook-per-repo assumption the readiness evaluator already uses to
   look up a human verdict.
+
+- **A URL in the ticket field is now a link.** Asked for by the customer 2026-08-03 (a request,
+  not a fault): they paste ServiceNow and Jira addresses into the failure register's ticket
+  field, and a link you have to select and copy is a link nobody follows.
+
+  **Only `http` and `https` are linked.** The register is free text any operator can write and
+  everyone else reads, so a `javascript:` or `data:` address rendered as a link would be a
+  script one colleague runs in another's session. Anything else stays as text, which is also
+  the right answer for a bare ticket number — guessing a scheme would turn `INC0012345` into a
+  link to nowhere.
+
+  Shows the last part of the address, with the whole thing on hover, because a full URL pushes
+  a narrow column about.

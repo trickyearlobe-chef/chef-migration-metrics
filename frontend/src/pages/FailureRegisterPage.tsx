@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ErrorAlert, LoadingSpinner } from "../components/Feedback";
+import { HolderRef } from "../components/HolderRef";
 import { Pagination } from "../components/Pagination";
 import { FailureEntryDialog } from "../components/FailureEntryDialog";
 import type {
@@ -432,7 +433,9 @@ function EntryRow({
       <td className="whitespace-nowrap px-3 py-2 text-xs">
         {entry.holder_ref ? (
           <>
-            <div className="font-medium text-gray-800">{entry.holder_ref}</div>
+            <div className="font-medium text-gray-800">
+              <HolderRef value={entry.holder_ref} />
+            </div>
             <div className="text-gray-500">
               {HOLDER_LABELS[entry.holder_type ?? ""] ?? "Held by"}
             </div>

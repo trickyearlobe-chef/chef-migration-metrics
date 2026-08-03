@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useState } from "react";
+import { HolderRef } from "./HolderRef";
 import { Link } from "react-router-dom";
 import {
   fetchFailureRegisterHistory,
@@ -126,7 +127,7 @@ export function TeamVerdictCard({ gitRepoName, cookbookName }: Props) {
           {standing.holder_ref && (
             <p className="text-xs text-gray-600">
               <span className="font-medium text-gray-700">On it: </span>
-              {standing.holder_ref}
+              <HolderRef value={standing.holder_ref} />
             </p>
           )}
 
