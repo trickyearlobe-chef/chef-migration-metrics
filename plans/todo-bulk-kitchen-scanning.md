@@ -5,14 +5,15 @@
 **Found 2026-08-02, confirmed in code.** The most consequential open fault in the
 compatibility signals.
 
-`git_kitchen_results.go:228` counts a failure as `passed = false OR timed_out = true`.
-Nothing distinguishes a cookbook that genuinely fails to converge from a run that never
-got that far — an auth failure, an exhausted DHCP pool, a timeout. All land as `failed`.
+Every rollup counted a failure as `passed = false OR timed_out = true`, with nothing to
+distinguish a cookbook that genuinely fails to converge from a run that never got that far —
+an auth failure, an exhausted DHCP pool, a timeout. All landed as `failed`.
 
 That rolls up through `ComputeTKStatus` to `tk_status = "failed"`, and
 `checkCookbookCompatibility` treats **any** Test Kitchen failure as `StatusIncompatible`,
-overriding a CookStyle pass. So a lab that could not hand out an IP address marks the
-cookbook incompatible and blocks every node running it.
+overriding a CookStyle pass. So a lab that could not hand out an IP address marked the
+cookbook incompatible and blocked every node running it. **The counting is fixed below; what
+remains is that nothing yet shows a reader how much of the signal was the lab.**
 
 **Why this matters more than it looks.** The product owner reports that on the real estate
 a proper Test Kitchen run has only succeeded for a small fraction of cookbooks; the rest are
@@ -36,24 +37,38 @@ Shape to aim for, cheapest first:
   result is written. **The effect on the real estate has not been measured** — the dev DB
   holds 27 lab results and no timeouts at all, so the before/after has to be taken where the
   estate lives.
-- [ ] **Record *why* a run failed**, rather than only that it did. A run that never reached
-  converge is not evidence about the cookbook and should not be a verdict about it.
+- **A failed run records why it failed** (`git_kitchen_results.failure_kind`). Test Kitchen
+  names the phase in the output it already stores, and the phases map onto the distinction
+  that matters: converge and verify exercise the cookbook; create and destroy are the lab
+  building and tearing down a machine. Only the first pair counts against a cookbook. A
+  failure nobody can classify still counts, so nothing is unblocked by accident.
 
-  **The dominant class does not time out — it exits non-zero, so the timeout fix does not
-  touch it.** Of 15 failed instances in the lab DB, 3 are converge failures (the only ones
-  that are evidence about a cookbook), 3 failed to *create* the VM (a 300s clone timeout on
-  the hypervisor), 8 died on a tooling error before any instance existed. All 15 are recorded
-  identically: `passed = false`, `timed_out = false`, `error_message` empty. That is lab data,
-  not the estate — but it is the same failure shape the estate reports.
+  The rule lives in `tkstatus` (`ClassifyFailure`, `CountsAsCookbookFailure`) and every
+  rollup mirrors it — the four SQL ones and the Go summaries behind the repo detail, the
+  compatibility dashboard and remediation weighting. Migrations 0065-0067 add the column,
+  refresh `git_kitchen_results_active` (a view fixes its column list when created, so it
+  never saw the new column), and classify the rows captured before it. A functional test
+  pins the SQL classifier to the Go one, since a drift between them would re-verdict repos
+  on deploy by a rule nobody tested.
 
-  Test Kitchen names the phase itself, in the output already stored: `Failed to complete
-  #create action` / `#converge` / `#verify` / `#destroy`. That is the signature to classify
-  on — not vendor-specific DHCP or auth text, which varies by driver. The executor also
-  already knows which phase it ran and computes `NetworkTimeout`, then **throws it away**:
-  `git_executor.go` never persists it, and `git_kitchen_results` has no column for it.
+  **Why the timeout fix alone was not enough:** of 15 failed instances in the lab DB, only 3
+  are converge failures. Three failed to *create* the VM (a 300s clone timeout on the
+  hypervisor) and 8 died on a tooling error before any instance existed — all recorded
+  identically to a real failure: `passed = false`, `timed_out = false`, no error message.
+  Lab data, not the estate, but the same failure shape.
+
 - [ ] **Report the environmental share** so a reader can see how much of the Test Kitchen
-  signal is about the lab. Until then the failure register is the only instrument that can
-  correct it, one repo at a time, by hand.
+  signal is about the lab. **This is now the load-bearing gap:** a repo whose runs all failed
+  environmentally reads `untested`, which is honest about the cookbook but says nothing about
+  the lab being broken — and nothing yet displays `failure_kind`, which is recorded per
+  instance and reaches the API already. The dashboard has a `timed_out_repos` field that is
+  never incremented, so it reports 0 whatever happens; either wire it to the recorded kinds
+  or drop it.
+
+  **The measurement to take once this is deployed where the estate lives:** group
+  `git_kitchen_results` by `failure_kind`. That is the share of the Test Kitchen signal that
+  was never about a cookbook, and it is the number that says how much of the blocking list
+  was wrong. It cannot be taken here — the dev DB holds 27 lab results.
 
 **Interim, and available today:** a human verdict in the failure register outranks Test
 Kitchen, so a cookbook wrongly blocked by a lab failure can be recorded `not_broken` and

@@ -674,12 +674,13 @@ func (db *DB) getGitKitchenStatusMap(ctx context.Context, cookbookNames []string
 	rows, err := db.pool.QueryContext(ctx,
 		`SELECT git_repo_name,
 		        COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-		        COUNT(*) FILTER (WHERE passed = false) AS failed_count
+		        COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) AS failed_count
 		 FROM git_kitchen_results_active
 		 WHERE git_repo_name = ANY($1)
 		   AND target_chef_version = $2
 		 GROUP BY git_repo_name
-		 HAVING COUNT(*) FILTER (WHERE passed IS NOT NULL) > 0`,
+		 HAVING COUNT(*) FILTER (WHERE passed = true) > 0
+		     OR COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) > 0`,
 		pq.Array(cookbookNames), targetVersion,
 	)
 	if err != nil {

@@ -606,10 +606,14 @@ type tkRepoSummary struct {
 }
 
 // buildTKSummaryMap groups kitchen results by repo name and counts pass/fail.
+// A run the lab broke counts as neither — see the rule on
+// datastore.ListGitKitchenCountsByTargetVersions.
 func buildTKSummaryMap(results []datastore.GitKitchenResult) map[string]*tkRepoSummary {
 	m := make(map[string]*tkRepoSummary)
 	for _, res := range results {
-		if res.Passed == nil {
+		isPass := res.Passed != nil && *res.Passed
+		isFail := tkstatus.CountsAsCookbookFailure(res.Passed, res.FailureKind)
+		if !isPass && !isFail {
 			continue
 		}
 		s := m[res.GitRepoName]
@@ -618,7 +622,7 @@ func buildTKSummaryMap(results []datastore.GitKitchenResult) map[string]*tkRepoS
 			m[res.GitRepoName] = s
 		}
 		s.Total++
-		if *res.Passed {
+		if isPass {
 			s.Passed++
 		} else {
 			s.Failed++

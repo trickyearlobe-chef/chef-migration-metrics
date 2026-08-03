@@ -128,8 +128,8 @@ func (db *DB) RecomputeGitRepoTKStatus(ctx context.Context, gitRepoName, gitRepo
 		FROM (
 			SELECT
 				COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-				COUNT(*) FILTER (WHERE passed = false) AS failed_count,
-				COUNT(*) FILTER (WHERE passed IS NOT NULL) AS total_count
+				COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) AS failed_count,
+				COUNT(*) FILTER (WHERE passed = true OR (passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge'))) AS total_count
 			FROM git_kitchen_results_active
 			WHERE git_repo_name = $1
 			  AND git_repo_url = $2
@@ -160,8 +160,8 @@ func (db *DB) RecomputeGitRepoTKStatusByName(ctx context.Context, gitRepoName st
 		FROM (
 			SELECT git_repo_name, git_repo_url,
 				COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-				COUNT(*) FILTER (WHERE passed = false) AS failed_count,
-				COUNT(*) FILTER (WHERE passed IS NOT NULL) AS total_count
+				COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) AS failed_count,
+				COUNT(*) FILTER (WHERE passed = true OR (passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge'))) AS total_count
 			FROM git_kitchen_results_active
 			WHERE git_repo_name = $1
 			GROUP BY git_repo_name, git_repo_url

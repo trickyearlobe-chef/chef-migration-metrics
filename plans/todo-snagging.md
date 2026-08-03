@@ -123,3 +123,9 @@ item here got past a green suite, so a fix with no new test is a fix that will b
   fails *open*, and failing open looks like data rather than like breakage. The same shape
   caused the team-verdict filter to show every repo while displaying a filter chip. When a
   filter looks wrong, check the parameter reaches the query before suspecting the data.
+
+- **A saved filter does not carry the owner.** Found by use, 2026-08-03: "my repos" is
+  journey 1's own question and cannot be saved as a named cohort. Already open, with the
+  decision it needs, in `plans/todo-ownership.md` § Ownership filtering in the list views —
+  `savedFilterVocabulary` accepts neither `owner`/`unowned` nor `human_verdict`. Recorded
+  here only because it was found in the running app; fix it there.

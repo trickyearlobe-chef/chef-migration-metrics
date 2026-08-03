@@ -24,6 +24,11 @@ migrations leave a residue the old binary reads:
 
 - **0059** — `owner_aliases` back-filled from `owners.contact_email`; its down script removes
   exactly those rows.
+- **0064 / 0067** — `git_repos.tk_*` re-materialised under the new rule, where a lab failure is
+  not a cookbook failure. An older binary reads those columns and would show fewer repos as TK
+  failed until something rewrites them; each down script restores the old counting. **0065-0067
+  must be rolled back in reverse order** — 0066's down restores the view that names the column
+  0065's down drops.
 - **0063** — git repo assignments re-keyed from the git URL to the repo name. An older binary
   reads three of those paths by URL, so it would show those repos as unowned again. The down
   script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
@@ -60,9 +65,11 @@ any TK failure as incompatible — **overriding a CookStyle pass**. On this esta
 runs fail on auth or DHCP, lab failures are blocking real nodes. CookStyle offences are
 separately reported as badly curated for this work.
 
-Timeouts have been taken out of that count (migration 0064), but **that was the small half**: a
-lab failure usually exits non-zero rather than timing out, so it still reads as a cookbook
-failure. Recording *why* a run failed is the fix, and it is the open item in
+A failed run now records **why** it failed, and only a converge or verify failure counts
+against the cookbook (migrations 0064-0067). What is left is that nothing shows a reader how
+much of the Test Kitchen signal was the lab: a repo whose runs all failed environmentally now
+reads `untested`, which is honest about the cookbook and silent about the broken lab. That
+open item, and the measurement to take once this is deployed where the estate lives, are in
 `plans/todo-bulk-kitchen-scanning.md`.
 
 So the 126 **bounds** the unowned work rather than describing it, and the top open question is
@@ -88,7 +95,7 @@ Defects found by the product owner using the shipped app. Faults in what is buil
 before new work. Seven found and fixed on 2026-08-02, six of them while importing real data —
 none would have come from a code review. Reproduce, write the failing test, then fix.
 
-**Next free migration number: 0065.**
+**Next free migration number: 0068.**
 
 ## QUEUED behind the ownership MVP
 

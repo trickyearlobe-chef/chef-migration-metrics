@@ -207,16 +207,14 @@ func (p *dbResultProvider) GetLatestTestKitchenStatus(ctx context.Context, repoN
 	if len(results) == 0 {
 		return "untested", nil
 	}
-	// passed == nil is no verdict about the cookbook — a timed-out run included.
-	// See the rule on datastore.ListGitKitchenCountsByTargetVersions.
+	// A failure only counts when it was about the cookbook — see the rule on
+	// datastore.ListGitKitchenCountsByTargetVersions.
 	var passed, failed int
 	for _, r := range results {
-		if r.Passed == nil {
-			continue
-		}
-		if *r.Passed {
+		switch {
+		case r.Passed != nil && *r.Passed:
 			passed++
-		} else {
+		case tkstatus.CountsAsCookbookFailure(r.Passed, r.FailureKind):
 			failed++
 		}
 	}
