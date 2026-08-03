@@ -127,6 +127,25 @@ describe("CookbooksPage — the ownership filter", () => {
     }
   });
 
+  // The chips get a row of their own under the bar, so picking several owners
+  // cannot push the other filters sideways.
+  it("shows the chosen owner as a chip below the filter bar, not inside it", async () => {
+    const user = userEvent.setup();
+    render(<CookbooksPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchCookbooks).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+
+    const chip = await screen.findByRole("button", {
+      name: "Remove alice.brown",
+    });
+    expect(screen.getByTestId("filter-bar")).not.toContainElement(chip);
+  });
+
   it("drops the ownership filter from the request when cleared", async () => {
     const user = userEvent.setup();
     render(<CookbooksPage />, { wrapper: Wrapper });

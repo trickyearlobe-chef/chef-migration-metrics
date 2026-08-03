@@ -259,6 +259,34 @@ describe("GitReposPage — the ownership filter", () => {
     }
   });
 
+  // Seen in the running app with seven owners selected: chips hanging off the
+  // control widened it and shoved CookStyle, TK and Clone to the right. They
+  // belong under the bar, where they can wrap without moving anything.
+  it("shows the chosen owner as a chip below the filter bar, not inside it", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+
+    const chip = await screen.findByRole("button", {
+      name: "Remove alice.brown",
+    });
+    expect(screen.getByTestId("filter-bar")).not.toContainElement(chip);
+
+    // And removing one person only removes that person's filter.
+    await user.click(chip);
+    await waitFor(() => {
+      expect(vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0]?.owner).toBe(
+        undefined,
+      );
+    });
+  });
+
   it("drops the ownership filter from the request when cleared", async () => {
     const user = userEvent.setup();
     render(<GitReposPage />, { wrapper: Wrapper });

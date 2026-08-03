@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
-import { OwnerFilter } from "./OwnerFilter";
+import { OwnerFilter, OwnerFilterChips } from "./OwnerFilter";
 import * as api from "../api";
 import type { Owner } from "../types";
 
@@ -115,12 +115,26 @@ describe("OwnerFilter", () => {
     expect(screen.getByRole("checkbox", { name: /Alice Brown/ })).toBeDisabled();
   });
 
-  it("shows the chosen owners as removable chips", async () => {
-    const { onChange } = renderControl({ owners: ["alice.brown"] });
+  // The chips used to hang off the bottom of the control, which widened it and
+  // pushed CookStyle, TK and Clone off to the right once a few owners were
+  // picked. The control now stays a fixed-width button and the chips get a row
+  // of their own — see OwnerFilterChips.
+  it("stays a fixed-width button however many owners are chosen", () => {
+    renderControl({
+      owners: ["alice.brown", "bob.jones", "carol.diaz", "dan.evans"],
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove alice.brown" }));
+    expect(
+      screen.queryByRole("button", { name: /^Remove / }),
+    ).not.toBeInTheDocument();
+  });
 
-    expect(onChange).toHaveBeenCalledWith({ owners: [], unowned: false });
+  it("carries the number of chosen owners on the button", () => {
+    renderControl({ owners: ["alice.brown", "bob.jones"] });
+
+    expect(
+      screen.getByRole("button", { name: "Owner (2)" }),
+    ).toBeInTheDocument();
   });
 
   // An empty result reads as "nobody by that name", not as a broken control.
@@ -143,5 +157,47 @@ describe("OwnerFilter", () => {
     await open();
 
     expect(screen.getByText(/could not load owners/i)).toBeInTheDocument();
+  });
+});
+
+// The chips are what a count alone cannot do: say who is selected, and let one
+// person be taken off without clearing the rest.
+describe("OwnerFilterChips", () => {
+  it("shows a removable chip for every chosen owner", () => {
+    const onChange = vi.fn();
+    render(
+      <OwnerFilterChips
+        owners={["alice.brown", "bob.jones"]}
+        unowned={false}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByText("alice.brown")).toBeInTheDocument();
+    expect(screen.getByText("bob.jones")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove bob.jones" }));
+
+    expect(onChange).toHaveBeenCalledWith({
+      owners: ["alice.brown"],
+      unowned: false,
+    });
+  });
+
+  it("shows the no-owner question as its own removable chip", () => {
+    const onChange = vi.fn();
+    render(<OwnerFilterChips owners={[]} unowned onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove no owner/i }));
+
+    expect(onChange).toHaveBeenCalledWith({ owners: [], unowned: false });
+  });
+
+  it("takes up no room when nothing is chosen", () => {
+    const { container } = render(
+      <OwnerFilterChips owners={[]} unowned={false} onChange={vi.fn()} />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
   });
 });

@@ -17,6 +17,13 @@ import type { Owner } from "../types";
 // Owners are searched on the server, not filtered in the browser. The estate
 // carries thousands, so any page of them held locally would silently answer
 // "no such person" for anybody who did not make the first page.
+//
+// The selection is shown as chips, but by `OwnerFilterChips` and not by this
+// control: hung under the button they widened it, and with seven owners picked
+// they pushed CookStyle, TK and Clone off to the right. The count on the button
+// is not a substitute — it cannot say who is selected or take one person off —
+// so the chips get a full-width row of their own beneath the filter bar, where
+// they wrap without moving anything.
 // ---------------------------------------------------------------------------
 
 /** The whole selection, so the two mutually exclusive halves move together. */
@@ -119,11 +126,6 @@ export function OwnerFilter({
     onChange({ owners: [], unowned: !unowned });
   }
 
-  function removeOwner(name: string) {
-    onChange({ owners: owners.filter((o) => o !== name), unowned });
-  }
-
-  const selectionCount = owners.length + (unowned ? 1 : 0);
   const buttonLabel = unowned
     ? "Owner: nobody"
     : owners.length > 0
@@ -207,39 +209,61 @@ export function OwnerFilter({
         </div>
       )}
 
-      {selectionCount > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {unowned && (
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-              No owner
-              <button
-                type="button"
-                onClick={() => onChange({ owners: [], unowned: false })}
-                className="ml-0.5 text-amber-700 hover:text-amber-900"
-                aria-label="Remove no owner"
-              >
-                &times;
-              </button>
-            </span>
-          )}
-          {owners.map((name) => (
-            <span
-              key={name}
-              className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800"
-            >
-              {name}
-              <button
-                type="button"
-                onClick={() => removeOwner(name)}
-                className="ml-0.5 text-blue-600 hover:text-blue-900"
-                aria-label={`Remove ${name}`}
-              >
-                &times;
-              </button>
-            </span>
-          ))}
-        </div>
+    </div>
+  );
+}
+
+interface OwnerFilterChipsProps {
+  owners: string[];
+  unowned: boolean;
+  onChange: (next: OwnerSelection) => void;
+}
+
+/**
+ * The current ownership selection, one removable chip per entry. Render it in a
+ * row of its own beneath the filter bar — never inside it, or the bar grows
+ * with the selection and displaces every control to its right.
+ */
+export function OwnerFilterChips({
+  owners,
+  unowned,
+  onChange,
+}: OwnerFilterChipsProps) {
+  if (owners.length === 0 && !unowned) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {unowned && (
+        <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+          No owner
+          <button
+            type="button"
+            onClick={() => onChange({ owners: [], unowned: false })}
+            className="ml-0.5 text-amber-700 hover:text-amber-900"
+            aria-label="Remove no owner"
+          >
+            &times;
+          </button>
+        </span>
       )}
+      {owners.map((name) => (
+        <span
+          key={name}
+          className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800"
+        >
+          {name}
+          <button
+            type="button"
+            onClick={() =>
+              onChange({ owners: owners.filter((o) => o !== name), unowned })
+            }
+            className="ml-0.5 text-blue-600 hover:text-blue-900"
+            aria-label={`Remove ${name}`}
+          >
+            &times;
+          </button>
+        </span>
+      ))}
     </div>
   );
 }

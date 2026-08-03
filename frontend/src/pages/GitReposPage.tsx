@@ -6,7 +6,7 @@ import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { FilterInput } from "../components/FilterInputs";
 import { FilterMultiCheckbox } from "../components/FilterMultiCheckbox";
-import { OwnerFilter } from "../components/OwnerFilter";
+import { OwnerFilter, OwnerFilterChips } from "../components/OwnerFilter";
 import { fetchGitRepos } from "../api";
 import type { GitRepoFilterQuery } from "../api/client";
 import type {
@@ -284,7 +284,7 @@ export function GitReposPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div data-testid="filter-bar" className="flex flex-wrap items-end gap-3">
         <FilterInput
           label="Name"
           value={nameFilter}
@@ -364,6 +364,17 @@ export function GitReposPage() {
           onApply={applySavedFilter}
         />
       </div>
+
+      {/* The ownership selection, in a row of its own so the bar cannot grow
+          with it. */}
+      <OwnerFilterChips
+        owners={ownerNames}
+        unowned={unowned}
+        onChange={(next) => {
+          setOwnerNames(next.owners);
+          setUnowned(next.unowned);
+        }}
+      />
 
       {/* Table */}
       {loading && <LoadingSpinner message="Loading git repos…" />}
