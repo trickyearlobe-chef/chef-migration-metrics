@@ -36,9 +36,22 @@ depsolve, before any resource runs — which is precisely the delivery shape
 summary built on that table would omit the most common failures in the estate while looking
 authoritative.** Close the gap, then build the page.
 
-It also settles the question this design left open. `failed_resource` will be null for a large
-share of real failures, so the tree should be **class-first**, with cookbook underneath it once
-the backtrace can name one.
+**The primary question this page exists to answer, stated by the product owner 2026-08-03:
+which cookbooks block a specific Chef version.** Everything else is secondary. The broken run
+lists and conflicting version constraints are genuinely useful — they are most of what is
+breaking the fleet today — but they are estate hygiene, not migration blockers, and a page that
+lets them dominate answers the wrong question well.
+
+So: **split the failures by kind first — a compatibility failure or a hygiene one — then group
+compatibility failures by cookbook**, filtered to a Chef version. That serves the migration
+question while still surfacing the hygiene failures rather than hiding them. An earlier note
+here recommended class-first; that followed from the shape of the data (`failed_resource` is
+null for depsolve failures) rather than from the question, and the question wins.
+
+**Do not build for what this might become.** The product owner expects it may grow into a
+general-purpose management tool once the migration is done — six months out at least. Build for
+"which cookbooks block CC19" now; that horizon is far enough away that designing for it would
+cost more than it saves.
 
 
 A collapsible summary of failed converge runs. **Grouping: cookbook → "`<exception class>` at
