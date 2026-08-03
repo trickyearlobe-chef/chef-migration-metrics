@@ -266,7 +266,33 @@ small enough to work through by hand. **Measure that list before building any of
   | repos with an owner | 1,963 (**92%**) |
   | blocking **and** unowned | **126** |
 
-  **The conclusion: node and repo matching are probably not worth building.** Both chunks were
+  **2026-08-03: THIS NUMBER IS INFLATED AND THE CONCLUSION BELOW NO LONGER STANDS.** The
+  product owner reports that **roughly half of the repos are assigned to one person in the
+  Chef team, because the real owner is unknown**. That is a placeholder, not an owner. So
+  "92% carry an owner" is nearer 45% genuinely owned, and the 126 blocking-and-unowned is a
+  serious undercount — a repo assigned to the stand-in *has* an owner, so the unowned filter
+  cannot see it, and neither could the measurement.
+
+  **What follows:**
+
+  - Entity matching was retired on the strength of this number. It should be reopened, or at
+    least not treated as settled, until the real figure is known.
+  - "My stuff" for that one person would return around a thousand repos, which is useless to
+    them and is itself the tell.
+  - **The primitive already exists and has never been used.**
+    `ownership_assignments.confidence` takes `definitive` or `inferred`, and every write path
+    in the codebase hardcodes `definitive` — four call sites, all literals. Nothing sets it,
+    filters on it or displays it. A placeholder assignment is exactly "not definitive".
+  - Marking the *owner* as a stand-in is probably simpler than marking every assignment:
+    `owners.owner_type` already has a `custom` value, and one record is doing this job.
+    Whichever it is, **the unowned question has to be able to mean "nobody real"**, or it goes
+    on undercounting.
+
+  **The measurement to take, and it is one query:** assignments grouped by owner, descending.
+  The stand-in will be at the top by a wide margin, and the size of that first row is how
+  wrong the 92% is.
+
+  **The original conclusion, now in doubt:** Both chunks were
   scoped on the assumption that ownership was largely absent. It is 92% present, and 126 repos is
   a list somebody works through by hand in a couple of days — cheaper than an engine that would
   still need a human to confirm every uncertain match. Re-scope or drop them; do not start either

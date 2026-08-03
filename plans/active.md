@@ -108,7 +108,11 @@ name, git email) onto one owner record. That is what aliasing exists for, it is 
 needs, and it is open: `plans/todo-ownership.md` § Matching app users to owners. Do not let the
 92% figure be read as retiring it.
 
-The measurement itself: **92% of repos carry an owner, and 126 are blocking and unowned**.
+The measurement itself: **92% of repos carry an owner, and 126 are blocking and unowned** —
+but **that 92% is inflated**: the product owner reports about half the repos are assigned to one
+person in the Chef team as a stand-in for unknown ownership. Genuine coverage is nearer 45% and
+the 126 undercounts, because a repo with a placeholder owner is not unowned. See
+`plans/todo-ownership.md`; do not plan against the 92% until it is re-measured.
 Both chunks were scoped assuming ownership was largely absent. 126 is a hand-workable list. Full
 numbers and the reasoning are in `plans/todo-ownership.md`; do not start either chunk without
 revisiting them.
