@@ -663,6 +663,9 @@ func (db *DB) getGitRepoCookbookNames(ctx context.Context, candidates []string) 
 
 // getGitKitchenStatusMap returns aggregate TK status per cookbook name for a
 // given target version. Uses tkstatus.ComputeTKStatus for status derivation.
+//
+// Timed-out runs are counted as neither pass nor failure — see the rule on
+// ListGitKitchenCountsByTargetVersions.
 func (db *DB) getGitKitchenStatusMap(ctx context.Context, cookbookNames []string, targetVersion string) (map[string]string, error) {
 	result := make(map[string]string)
 	if len(cookbookNames) == 0 {
@@ -671,13 +674,12 @@ func (db *DB) getGitKitchenStatusMap(ctx context.Context, cookbookNames []string
 	rows, err := db.pool.QueryContext(ctx,
 		`SELECT git_repo_name,
 		        COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-		        COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count
+		        COUNT(*) FILTER (WHERE passed = false) AS failed_count
 		 FROM git_kitchen_results_active
 		 WHERE git_repo_name = ANY($1)
 		   AND target_chef_version = $2
 		 GROUP BY git_repo_name
-		 HAVING COUNT(*) FILTER (WHERE passed = true) > 0
-		     OR COUNT(*) FILTER (WHERE passed = false OR timed_out = true) > 0`,
+		 HAVING COUNT(*) FILTER (WHERE passed IS NOT NULL) > 0`,
 		pq.Array(cookbookNames), targetVersion,
 	)
 	if err != nil {

@@ -210,6 +210,25 @@ func (db *DB) ListActiveGitKitchenResults(ctx context.Context) ([]GitKitchenResu
 // (git_repo_name, target_chef_version) combination. The map is keyed by
 // "repoName|targetVersion". Callers use tkstatus.ComputeTKStatus to derive
 // the status string.
+//
+// What counts as a failure — the rule every TK rollup follows:
+//
+//	passed = true   → a pass
+//	passed = false  → a failure: the cookbook was converged and did not come up
+//	passed IS NULL  → no verdict, and no evidence about the cookbook
+//
+// A run that timed out leaves passed NULL, and `timed_out` says only that the
+// lab ran out of patience — most often waiting on a DHCP lease that never
+// arrived. Counting it as a failure made readiness call the cookbook
+// incompatible, overriding a CookStyle pass and blocking every node running it
+// for a reason that was never about the cookbook. It is counted as neither a
+// pass nor a failure, so a repo whose only evidence is a timeout reads
+// untested. A cookbook that genuinely fails to converge still fails.
+//
+// The same rule is applied in RecomputeGitRepoTKStatus[ByName],
+// getGitKitchenStatusMap and the batch-summary rollup in webapi; the Go-side
+// summaries (buildTKSummaryMap, the compatibility dashboard) already skipped
+// NULL, so this is also what makes the list and the detail view agree.
 func (db *DB) ListGitKitchenCountsByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]tkstatus.Counts, error) {
 	result := make(map[string]tkstatus.Counts)
 	if len(targetChefVersions) == 0 {
@@ -223,14 +242,15 @@ func (db *DB) ListGitKitchenCountsByTargetVersions(ctx context.Context, targetCh
 		args[i] = v
 	}
 
+	// passed = false only — a timeout is not a cookbook failure. See the rule
+	// documented above ListGitKitchenCountsByTargetVersions.
 	query := `SELECT git_repo_name, target_chef_version,
 	       COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-	       COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count
+	       COUNT(*) FILTER (WHERE passed = false) AS failed_count
 	FROM git_kitchen_results_active
 	WHERE target_chef_version IN (` + joinStrings(placeholders, ", ") + `)
 	GROUP BY git_repo_name, target_chef_version
-	HAVING COUNT(*) FILTER (WHERE passed = true) > 0
-	    OR COUNT(*) FILTER (WHERE passed = false OR timed_out = true) > 0`
+	HAVING COUNT(*) FILTER (WHERE passed IS NOT NULL) > 0`
 
 	rows, err := db.q().QueryContext(ctx, query, args...)
 	if err != nil {

@@ -54,12 +54,16 @@ numbers and the reasoning are in `plans/todo-ownership.md`; do not start either 
 revisiting them.
 
 **But the blocking signal itself is the real problem, and it is worse than "untrustworthy".**
-`git_kitchen_results.go:228` counts a Test Kitchen failure as `passed = false OR timed_out`,
-with nothing distinguishing a cookbook that fails to converge from a lab that could not
-authenticate or hand out an IP. That rolls up to `tk_status = failed`, and readiness treats any
-TK failure as incompatible — **overriding a CookStyle pass**. On this estate, where most TK runs
-fail on auth or DHCP, lab failures are blocking real nodes. CookStyle offences are separately
-reported as badly curated for this work.
+Nothing distinguishes a cookbook that fails to converge from a lab that could not authenticate
+or hand out an IP. A Test Kitchen failure rolls up to `tk_status = failed`, and readiness treats
+any TK failure as incompatible — **overriding a CookStyle pass**. On this estate, where most TK
+runs fail on auth or DHCP, lab failures are blocking real nodes. CookStyle offences are
+separately reported as badly curated for this work.
+
+Timeouts have been taken out of that count (migration 0064), but **that was the small half**: a
+lab failure usually exits non-zero rather than timing out, so it still reads as a cookbook
+failure. Recording *why* a run failed is the fix, and it is the open item in
+`plans/todo-bulk-kitchen-scanning.md`.
 
 So the 126 **bounds** the unowned work rather than describing it, and the top open question is
 no longer ownership — it is whether the blocking list is true at all. Detail and the shape of a
@@ -73,9 +77,10 @@ Scope and the decisions that bind: `plans/todo-ownership.md` § Ownership filter
 views.
 
 The git repo and cookbook lists carry the control, and it was driven in the running app on
-2026-08-03: both questions answer correctly. Using it left one open item — the selected-owner
-chips stretch the filter bar — which is the last thing on this chunk. The node list stays
-deferred; there is no node ownership data to test it against.
+2026-08-03: both questions answer correctly. The node list stays deferred; there is no node
+ownership data to test it against. What is left on this chunk is listed in that todo — the
+saved-filter vocabulary and the export path's acceptance of the contradiction the list view
+rejects; neither has been started.
 
 ## Snagging (`plans/todo-snagging.md`)
 
@@ -83,7 +88,7 @@ Defects found by the product owner using the shipped app. Faults in what is buil
 before new work. Seven found and fixed on 2026-08-02, six of them while importing real data —
 none would have come from a code review. Reproduce, write the failing test, then fix.
 
-**Next free migration number: 0064.**
+**Next free migration number: 0065.**
 
 ## QUEUED behind the ownership MVP
 

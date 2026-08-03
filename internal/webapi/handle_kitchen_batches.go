@@ -207,14 +207,17 @@ func (p *dbResultProvider) GetLatestTestKitchenStatus(ctx context.Context, repoN
 	if len(results) == 0 {
 		return "untested", nil
 	}
+	// passed == nil is no verdict about the cookbook — a timed-out run included.
+	// See the rule on datastore.ListGitKitchenCountsByTargetVersions.
 	var passed, failed int
 	for _, r := range results {
-		switch {
-		case r.Passed != nil && *r.Passed:
+		if r.Passed == nil {
+			continue
+		}
+		if *r.Passed {
 			passed++
-		case (r.Passed != nil && !*r.Passed) || r.TimedOut:
+		} else {
 			failed++
-			// r.Passed == nil && !r.TimedOut: result incomplete — skip
 		}
 	}
 	status := "untested"

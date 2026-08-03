@@ -29,14 +29,28 @@ converge must still block. What is missing is the distinction, not the severity.
 
 Shape to aim for, cheapest first:
 
-- [ ] **Stop counting `timed_out` as a cookbook failure.** One clause in the count query. A
-  timeout is already understood to be usually environmental, and the plan already called it
-  "a free lower bound" on the environmental share. Measure the effect before and after —
-  the size of the change is itself the measurement of how much of the blocking set was
-  never about cookbooks.
-- [ ] **Record *why* a run failed**, rather than only that it did. Auth and DHCP failures
-  have recognisable signatures in the output already stored. A run that never reached
+- **Timeouts no longer count as cookbook failures.** A run with `passed IS NULL` is neither a
+  pass nor a failure and is not in `tk_total`; the rule is documented on
+  `ListGitKitchenCountsByTargetVersions` and applied by every rollup. Migration 0064
+  re-materialises `git_repos.tk_*`, because those queries otherwise only run when a kitchen
+  result is written. **The effect on the real estate has not been measured** — the dev DB
+  holds 27 lab results and no timeouts at all, so the before/after has to be taken where the
+  estate lives.
+- [ ] **Record *why* a run failed**, rather than only that it did. A run that never reached
   converge is not evidence about the cookbook and should not be a verdict about it.
+
+  **The dominant class does not time out — it exits non-zero, so the timeout fix does not
+  touch it.** Of 15 failed instances in the lab DB, 3 are converge failures (the only ones
+  that are evidence about a cookbook), 3 failed to *create* the VM (a 300s clone timeout on
+  the hypervisor), 8 died on a tooling error before any instance existed. All 15 are recorded
+  identically: `passed = false`, `timed_out = false`, `error_message` empty. That is lab data,
+  not the estate — but it is the same failure shape the estate reports.
+
+  Test Kitchen names the phase itself, in the output already stored: `Failed to complete
+  #create action` / `#converge` / `#verify` / `#destroy`. That is the signature to classify
+  on — not vendor-specific DHCP or auth text, which varies by driver. The executor also
+  already knows which phase it ran and computes `NetworkTimeout`, then **throws it away**:
+  `git_executor.go` never persists it, and `git_kitchen_results` has no column for it.
 - [ ] **Report the environmental share** so a reader can see how much of the Test Kitchen
   signal is about the lab. Until then the failure register is the only instrument that can
   correct it, one repo at a time, by hand.
