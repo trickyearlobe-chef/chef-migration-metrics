@@ -33,10 +33,14 @@ when it is set up correctly. It is not set up right now — DHCP went, then the 
 changed, then the hardware was repurposed — so the answer is to stop Test Kitchen feeding
 blocking while that is true, and turn it back on when it is not.
 
-- [ ] **`tk_blocks_readiness` toggle**, beside `review_blocks_readiness` on Admin → Readiness.
-  Same shape: config store (not YAML), snapshotted into the readiness cache per run, and a
-  change triggers a readiness recompute. It gates the `anyTKFail` branch in
-  `checkCookbookCompatibility`.
+- **`tk_blocks_readiness` toggle**, beside `review_blocks_readiness` on Admin → Readiness.
+  Ships **on**, so nothing changes for anyone until it is turned off. It is a `*bool` for the
+  same reason `TestKitchen.Enabled` is: a plain bool cannot tell "not set" from "set to
+  false", and the default has to be on.
+
+  Off does not hide anything — the Test Kitchen verdict is still collected and still shown
+  next to the others. It simply stops counting, so a failed run no longer outranks a CookStyle
+  pass. Turn it off at the customer site while vSphere access is gone.
 
 **A finer fix was built and reverted on 2026-08-03** — classifying each failure by the phase
 Test Kitchen names in its output, so only converge and verify failures counted against a

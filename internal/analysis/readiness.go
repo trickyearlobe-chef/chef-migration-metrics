@@ -192,6 +192,12 @@ type readinessCache struct {
 	// cache-build time so every node in the batch evaluates against one
 	// consistent value. Off: Review cookbooks resolve to compatible.
 	reviewBlocksReadiness bool
+
+	// tkBlocksReadiness mirrors the live Test Kitchen toggle, snapshotted the
+	// same way. Off: Test Kitchen results are still shown but count towards
+	// nothing, because a lab that is not set up correctly fails every run for
+	// reasons that are not about the cookbook.
+	tkBlocksReadiness bool
 }
 
 // cacheKey builds a lookup key from two components (e.g. ID + target version).
@@ -208,6 +214,7 @@ func buildReadinessCache(
 	organisationID string,
 	targetChefVersions []string,
 	reviewBlocksReadiness bool,
+	tkBlocksReadiness bool,
 ) (*readinessCache, error) {
 	cache := &readinessCache{
 		gitRepos:              make(map[string]datastore.GitRepo),
@@ -218,6 +225,7 @@ func buildReadinessCache(
 		gitTKStatuses:         make(map[string]string),
 		humanVerdicts:         make(map[string]datastore.StandingVerdict),
 		reviewBlocksReadiness: reviewBlocksReadiness,
+		tkBlocksReadiness:     tkBlocksReadiness,
 	}
 
 	// 1. Git repos (all — small table)
@@ -306,6 +314,7 @@ type ReadinessEvaluator struct {
 	installSizeMBWindows    int
 	minRemainingFreePercent int
 	reviewBlocksReadiness   bool
+	tkBlocksReadiness       bool
 	// configFn, when set, returns the current readiness config dynamically.
 	// This allows the evaluator to pick up config changes without a restart.
 	configFn func() ReadinessEvalConfig
@@ -399,6 +408,10 @@ type ReadinessEvalConfig struct {
 	// readiness. Off (default): Review resolves to compatible. On: Review-only
 	// nodes become "needs review". See config.ReadinessConfig.
 	ReviewBlocksReadiness bool
+	// TKBlocksReadiness gates whether Test Kitchen results feed readiness at
+	// all. On (default): a TK failure marks the cookbook incompatible. Off:
+	// results are shown but count towards nothing. See config.ReadinessConfig.
+	TKBlocksReadiness bool
 }
 
 // NewReadinessEvaluatorFromConfig creates an evaluator with full per-platform
@@ -439,6 +452,7 @@ func NewReadinessEvaluatorFromConfig(
 		installSizeMBWindows:    cfg.InstallSizeMBWindows,
 		minRemainingFreePercent: cfg.MinRemainingFreePercent,
 		reviewBlocksReadiness:   cfg.ReviewBlocksReadiness,
+		tkBlocksReadiness:       cfg.TKBlocksReadiness,
 	}
 	for _, o := range opts {
 		o(e)
@@ -499,7 +513,8 @@ func (e *ReadinessEvaluator) EvaluateOrganisation(
 
 	// Step 3: Bulk-load all lookup data into an in-memory cache.
 	// This replaces ~12M individual DB queries with ~5 bulk queries.
-	cache, err := buildReadinessCache(ctx, e.db, organisationID, []string{targetChefVersion}, e.reviewBlocksReadinessNow())
+	cache, err := buildReadinessCache(ctx, e.db, organisationID, []string{targetChefVersion},
+		e.reviewBlocksReadinessNow(), e.tkBlocksReadinessNow())
 	if err != nil {
 		return nil, fmt.Errorf("readiness: building cache: %w", err)
 	}
@@ -948,8 +963,6 @@ func checkCookbookCompatibility(
 	if hasGitRepo && gitRepo.Name != "" && gitRepo.HasTestSuite && !gitRepo.KitchenExcluded {
 		tkStatus := cache.gitTKStatuses[cacheKey(gitRepo.Name, targetChefVersion)]
 		if tkStatus != "" {
-			hasTK = true
-			anyTested = true
 			v := CookbookSourceVerdict{
 				Source:  SourceGitTestKitchen,
 				Version: "HEAD",
@@ -957,14 +970,22 @@ func checkCookbookCompatibility(
 			switch tkStatus {
 			case "passed":
 				v.Status = StatusCompatible
-			case "failed":
+			case "failed", "partial":
 				v.Status = StatusIncompatible
-				anyTKFail = true
-			case "partial":
-				v.Status = StatusIncompatible
-				anyTKFail = true
 			}
+			// Always reported, so a reader can see what Test Kitchen said.
+			// Only counted when the switch is on: a lab that is not set up
+			// correctly fails every run for reasons that are not about the
+			// cookbook, and each of those failures would otherwise outrank a
+			// CookStyle pass and block every node running it.
 			verdicts = append(verdicts, v)
+			if cache.tkBlocksReadiness {
+				hasTK = true
+				anyTested = true
+				if v.Status == StatusIncompatible {
+					anyTKFail = true
+				}
+			}
 		}
 	}
 
@@ -1132,6 +1153,15 @@ func (e *ReadinessEvaluator) reviewBlocksReadinessNow() bool {
 		return e.configFn().ReviewBlocksReadiness
 	}
 	return e.reviewBlocksReadiness
+}
+
+// tkBlocksReadinessNow returns the live Test Kitchen toggle from configFn when
+// wired, otherwise the value baked at construction.
+func (e *ReadinessEvaluator) tkBlocksReadinessNow() bool {
+	if e.configFn != nil {
+		return e.configFn().TKBlocksReadiness
+	}
+	return e.tkBlocksReadiness
 }
 
 // evaluateDiskSpace determines the available disk space on the installation

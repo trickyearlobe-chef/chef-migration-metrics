@@ -56,6 +56,10 @@ export interface ReadinessConfig {
   // only issue is review-level cookbooks becomes "Needs review" (not ready).
   // Off (default) preserves blocker-only readiness.
   review_blocks_readiness: boolean;
+  // When false, Test Kitchen results are still collected and shown but count
+  // towards nothing. On (the default) a Test Kitchen failure marks the
+  // cookbook incompatible, outranking a CookStyle pass.
+  tk_blocks_readiness: boolean;
 }
 
 export interface ExportsConfig {

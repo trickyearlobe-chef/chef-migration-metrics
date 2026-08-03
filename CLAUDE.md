@@ -128,7 +128,7 @@ Three complementary layers — pick the cheapest that answers the question, esca
 
 - **The user is not the verification layer for internal technical claims.** They cannot audit volume, and they should not have to. If a claim matters, encode it as a **test that fails** — never as a sentence for a human to check.
 - **Division of verification:** tests verify facts; the assistant verifies agent claims; **the user verifies intent** — whether the work matches the requirement. That is the only check nobody else can perform, so protect their attention for it.
-- **Write findings in plain language**: what a user would see, or what breaks. Internal shorthand ("false derive of gin index ordinality") is unreviewable — it asks the reader to audit internals in the assistant's vocabulary. Plain statement first; the technical term only if it earns its place.
+- **Write findings, plans and progress in plain language**: what a user would see, or what breaks. Internal shorthand ("false derive of gin index ordinality") is unreviewable — it asks the reader to audit internals in the assistant's vocabulary. Plain statement first; the technical term only if it earns its place.
 - Report only what changes a decision. Volume defeats checking, and skimming is indistinguishable from verifying until it isn't.
 
 ## Permission Boundaries
