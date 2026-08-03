@@ -298,6 +298,8 @@ export function NodesPage() {
     staleTiers,
     sortField,
     sortOrder,
+    ownerNames,
+    unowned,
     selectedTargetVersion,
     readinessFilter,
     cookstyleFilter,

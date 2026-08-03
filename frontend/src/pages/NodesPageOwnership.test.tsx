@@ -38,29 +38,38 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
+// These contexts must hand back the SAME objects every render, as the real
+// ones do. Returning fresh arrays each time makes every memo in the page
+// recompute on every render, which hides a filter that was left out of a
+// dependency list — that is exactly how a broken owner filter shipped while
+// these tests passed.
+const orgContext = {
+  selectedOrg: "",
+  organisations: [],
+  loading: false,
+  error: null,
+  setSelectedOrg: vi.fn(),
+  refresh: vi.fn(),
+};
+const globalFilters = {
+  staleTiers: [],
+  setStaleTiers: vi.fn(),
+  targetChefVersion: "",
+  setTargetChefVersion: vi.fn(),
+};
+
 vi.mock("../context/OrgContext", () => ({
-  useOrg: () => ({
-    selectedOrg: "",
-    organisations: [],
-    loading: false,
-    error: null,
-    setSelectedOrg: vi.fn(),
-    refresh: vi.fn(),
-  }),
+  useOrg: () => orgContext,
 }));
 
 vi.mock("../context/GlobalFilterContext", () => ({
-  useGlobalFilters: () => ({
-    staleTiers: [],
-    setStaleTiers: vi.fn(),
-    targetChefVersion: "",
-    setTargetChefVersion: vi.fn(),
-  }),
+  useGlobalFilters: () => globalFilters,
   GlobalFilterProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+const targetVersion = { selectedTargetVersion: "", loading: false };
 vi.mock("../hooks/useTargetChefVersion", () => ({
-  useTargetChefVersion: () => ({ selectedTargetVersion: "", loading: false }),
+  useTargetChefVersion: () => targetVersion,
 }));
 
 import { NodesPage } from "./NodesPage";
