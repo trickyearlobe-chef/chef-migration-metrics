@@ -288,7 +288,33 @@ small enough to work through by hand. **Measure that list before building any of
     Whichever it is, **the unowned question has to be able to mean "nobody real"**, or it goes
     on undercounting.
 
-  **The measurement to take, and it is one query:** assignments grouped by owner, descending.
+  **The decision rule, and it has not changed:** ownership only has to be right where somebody
+  has to act. Twenty or thirty repos needing an owner is an afternoon of asking around; a
+  thousand is a project. So the number to get is not "how many repos are unowned" but **"how
+  many *blocking* repos have no owner once the stand-in is discounted"** — and two corrections
+  pull it in opposite directions. Placeholder ownership pushes it up; CookStyle and Test
+  Kitchen over-blocking push it down. Neither has been applied, which is why 126 means little.
+
+  ```sql
+  WITH standin AS (SELECT 'THE-STANDIN-OWNER-NAME'::text AS name),
+  real_owner AS (
+      SELECT DISTINCT oa.entity_key
+      FROM ownership_assignments oa, standin s
+      WHERE oa.entity_type = 'git_repo' AND oa.owner_name <> s.name
+  )
+  SELECT gr.cookstyle_status, gr.tk_status,
+         CASE WHEN ro.entity_key IS NULL THEN 'needs an owner' ELSE 'genuinely owned' END,
+         count(*)
+  FROM git_repos gr
+  LEFT JOIN real_owner ro ON ro.entity_key = gr.name
+  WHERE gr.cookstyle_status = 'blocked'
+  GROUP BY 1, 2, 3 ORDER BY 4 DESC;
+  ```
+
+  Joins verified against the dev database. Drop the `WHERE` to sanity-check it returns rows
+  before trusting a zero — a query that finds nothing and a query that is wrong look identical.
+
+  **The other measurement, and it is one query:** assignments grouped by owner, descending.
   The stand-in will be at the top by a wide margin, and the size of that first row is how
   wrong the 92% is.
 
