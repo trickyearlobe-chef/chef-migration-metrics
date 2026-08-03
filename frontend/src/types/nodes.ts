@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { PaginatedResponse } from "./common";
+import type { EntityOwnership } from "./cookbooks";
 import type { CookbookSourceVerdict } from "./cookbooks";
 
 export interface NodeReadinessSummary {
@@ -130,6 +131,7 @@ export interface NodeReadiness {
 
 export interface NodeDetailResponse {
   node: NodeSnapshot;
+  ownership?: EntityOwnership;
   organisation_name: string;
   readiness: NodeReadiness[] | null;
   install_path?: string;

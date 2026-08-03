@@ -18,6 +18,7 @@ import type {
 import type { CommitterFilterQuery } from "../api/ownership";
 import type { GitRepoFileEntry, GitRepoFileContentResponse } from "../api/git-repos";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
+import { OwnershipCard } from "../components/OwnershipCard";
 import { Pagination } from "../components/Pagination";
 import { StatusBadge, CookStyleStatusBadge } from "../components/StatusBadge";
 import { GitKitchenSection } from "../components/GitKitchenSection";
@@ -224,6 +225,9 @@ export function GitRepoDetailPage() {
               const gr = gd.git_repo;
               return (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {/* Who owns this — the same ownership the list filters on. */}
+                  <OwnershipCard ownership={gd.ownership} />
+
                   {/* Git Details card */}
                   <div className="card">
                     <h4 className="mb-3 text-sm font-semibold text-gray-700">Repository</h4>

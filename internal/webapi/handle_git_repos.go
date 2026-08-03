@@ -373,6 +373,7 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 		GitRepo    datastore.GitRepo                  `json:"git_repo"`
 		Cookstyle  []datastore.GitRepoCookstyleResult `json:"cookstyle,omitempty"`
 		Complexity []datastore.GitRepoComplexity      `json:"complexity,omitempty"`
+		Ownership  entityOwners                       `json:"ownership"`
 		TKStatus   string                             `json:"tk_status,omitempty"`
 		TKPassed   int                                `json:"tk_passed,omitempty"`
 		TKTotal    int                                `json:"tk_total,omitempty"`
@@ -411,6 +412,16 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 				details[i].TKPassed = s.Passed
 				details[i].TKTotal = s.Total
 			}
+		}
+	}
+
+	// Ownership, from the same helper the list uses — a detail view and a list
+	// view of one repo must not answer "who owns this" differently.
+	if owners, oErr := r.ownersForEntities(ctx, "git_repo", []string{name}); oErr != nil {
+		r.logf("WARN", "looking up owners for git repo %s: %v", name, oErr)
+	} else {
+		for i := range details {
+			details[i].Ownership = owners[details[i].GitRepo.Name]
 		}
 	}
 

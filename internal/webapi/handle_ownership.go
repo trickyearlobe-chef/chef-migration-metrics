@@ -1040,3 +1040,79 @@ func (r *Router) auditOwnership(req *http.Request, action, ownerName, entityType
 		r.logf("WARN", "ownership: failed to write audit log: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Who owns a thing — one derivation, every view
+//
+// A list view and a detail view of the same entity must not answer this
+// differently, so both read it from here rather than each looking it up its own
+// way. Ownership is also *derived* for cookbooks, from the repo they are built
+// from (see resolveOwnershipFilter), and that derivation belongs in one place
+// for the same reason.
+// ---------------------------------------------------------------------------
+
+// entityOwners is the ownership of one entity as any view reports it.
+type entityOwners struct {
+	// Owners is empty rather than nil when nobody owns it, so "nobody" and
+	// "not looked up" are distinguishable to a reader of the JSON.
+	Owners []string `json:"owners"`
+	// Derived says the ownership came from somewhere else — a cookbook owned
+	// through its git repo — so a view can say so rather than implying the
+	// assignment was made against this entity.
+	Derived bool `json:"derived,omitempty"`
+}
+
+// ownersForEntities returns the owners of each key, for the given entity type.
+// Keys with no owner are present with an empty list: a view has to be able to
+// say "nobody owns this", which is a different statement from saying nothing.
+//
+// Failure is not fatal to the caller. A view that cannot report ownership is
+// worth less than one that can, but it is worth much more than an error page,
+// so callers log and carry on with an empty map.
+func (r *Router) ownersForEntities(ctx context.Context, entityType string, keys []string) (map[string]entityOwners, error) {
+	out := make(map[string]entityOwners, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	for _, k := range keys {
+		out[k] = entityOwners{Owners: []string{}}
+	}
+
+	direct, err := r.db.LookupAssignmentOwnersByEntity(ctx, entityType, keys)
+	if err != nil {
+		return nil, err
+	}
+	for key, assignments := range direct {
+		names := make([]string, 0, len(assignments))
+		for _, a := range assignments {
+			names = append(names, a.OwnerName)
+		}
+		out[key] = entityOwners{Owners: names}
+	}
+
+	// A cookbook with no assignment of its own is owned by whoever owns the
+	// repo it is built from. Marked derived so a view can show where it came
+	// from instead of implying somebody assigned it here.
+	if entityType == "cookbook" {
+		var unowned []string
+		for _, k := range keys {
+			if len(out[k].Owners) == 0 {
+				unowned = append(unowned, k)
+			}
+		}
+		if len(unowned) > 0 {
+			fromRepos, rErr := r.db.LookupAssignmentOwnersByEntity(ctx, "git_repo", unowned)
+			if rErr != nil {
+				return nil, rErr
+			}
+			for key, assignments := range fromRepos {
+				names := make([]string, 0, len(assignments))
+				for _, a := range assignments {
+					names = append(names, a.OwnerName)
+				}
+				out[key] = entityOwners{Owners: names, Derived: true}
+			}
+		}
+	}
+	return out, nil
+}

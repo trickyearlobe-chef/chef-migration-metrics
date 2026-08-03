@@ -383,8 +383,18 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 		MinRemainingFreePercent: rc.MinRemainingFreePercent,
 	})
 
+	// Ownership, from the same helper the list uses. Failure to read it makes
+	// the page less useful; refusing to render the page makes it useless.
+	ownership := entityOwners{Owners: []string{}}
+	if owners, oErr := r.ownersForEntities(req.Context(), "node", []string{snapshot.NodeName}); oErr != nil {
+		r.logf("WARN", "looking up owners for node %s: %v", snapshot.NodeName, oErr)
+	} else {
+		ownership = owners[snapshot.NodeName]
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"node":                       snapshot,
+		"ownership":                  ownership,
 		"organisation_name":          org.Name,
 		"readiness":                  readiness,
 		"platform_display_name":      pdn,
