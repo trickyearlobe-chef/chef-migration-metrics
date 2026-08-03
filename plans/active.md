@@ -33,7 +33,31 @@ migrations leave a residue the old binary reads:
   script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
   from one the import always held by name, and the redundant duplicates it removed are gone.
 
-## DEADLINE — the ownership MVP must be complete TODAY, Monday 2026-08-03
+## WHERE THIS WAS LEFT — end of 2026-08-03
+
+`feature/ownership-sql-ingest`, 16 commits, unmerged, tree clean, every gate green. The app on
+:443 runs this build; SQL Server and PostgreSQL containers are up and seeded.
+
+**Working and demonstrable:** ownership filtering on nodes, git repos and cookbooks; savable as
+a named cohort; enforced on the export path. Import from a file or from a database — browse the
+tables a connection can see, pick one or write a query, map the columns, preview, import. The
+connection lives in a stored credential, so no password is typed on the import screen.
+
+**Not done, and the two that will be met in production rather than in a demo:**
+
+1. **Entity type comes from a dropdown, not from a column.** A source table holding several
+   kinds of asset must be imported once per kind, using the row filter. Nothing on screen says
+   so, and getting it wrong writes assignments of the wrong type — as happened here on
+   2026-08-03.
+2. **Nobody has watched a commit from a database source write into a real database.** Profile
+   and preview are proven end to end against SQL Server through the HTTP layer. Commit uses the
+   same seam and the same writer as a file import, and has never been observed.
+
+**Not done, cosmetic or deferrable:** "my stuff" (needs the SAML alias work first — see
+`plans/todo-ownership.md`), and the placeholder-ownership question, which is the one that
+decides whether unknown ownership matters at all.
+
+## DEADLINE — the ownership MVP was due Monday 2026-08-03
 
 Set by the product owner. **Scope is ownership only.** Deploy access is bureaucratic to
 arrange, so the work is batched into one release rather than shipped piecemeal.
