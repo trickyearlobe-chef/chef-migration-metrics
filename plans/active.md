@@ -40,9 +40,35 @@ arrange, so the work is batched into one release rather than shipped piecemeal.
 
 Two things are named as not done:
 
-- **MSSQL ingest.** Owners must be readable from a SQL Server database, not only a file.
-  See `plans/todo-ownership.md` § Owner ingest — SQL source. Needs a driver and a
-  supply-chain check before any code is written.
+- **MSSQL ingest — half done, and the next session picks it up from here.**
+
+  **Done:** `internal/ownershipsql` reads ownership rows from a database as an
+  `ownershipimport.RowSource`, so everything above the source abstraction — the row cap, the
+  value filter, the distinct-value cap, report truncation — applies to a query result with no
+  change. It supports `sqlserver` and `postgres`, registers both drivers itself, verifies the
+  connection before running the query (an unreadable source must not read as an empty one),
+  and renders NULL as empty. Functional tests run against PostgreSQL, which needs no SQL
+  Server to hand; the SQL Server path differs only in driver name and connection string.
+
+  **The dependency is settled — do not re-litigate it.** `github.com/microsoft/go-mssqldb`
+  v1.10.0, pinned. It adds **4 modules** to `go.mod` (the driver plus `golang-sql/civil`,
+  `golang-sql/sqlexp`, `shopspring/decimal`) and **compiles no Azure or Kerberos code** —
+  `go list -deps` shows none. `go.sum` does gain 12 Azure/Kerberos checksum lines, so expect
+  scanner advisories about code that never runs; that is the same false-positive pattern as
+  the settled Dependabot entries. `govulncheck` is clean. The archived `denisenkom` driver is
+  lighter but unmaintained, so it was rejected.
+
+  **What is left, in order:**
+  1. **Credentials.** The DSN carries a password, so it belongs in the encrypted config store
+     like every other secret — never in `config.yaml`, never returned to a client, never
+     logged. `Config.DSN` is already documented that way.
+  2. **Endpoints.** The intake already has profile/preview/run over a file; each opens its own
+     source, which is why the SQL source is a single-pass cursor. Add the database as an
+     alternative source for the same three, rather than a parallel flow.
+  3. **UI.** Choose file or database; enter the connection; supply a query; preview what it
+     returns; then the existing mapping flow, unchanged.
+  4. **A SQL Server to test against.** Run one in docker locally. Do not defer this for want
+     of the customer's database — the whole point is that it is testable here.
 - **Node ownership — DONE.** The list carries the ownership control, the API already resolved
   it, and the import always accepted `node`. Local data seeded in the dev DB: 8 nodes across 3
   owners, 5 unowned, so both questions show something.
