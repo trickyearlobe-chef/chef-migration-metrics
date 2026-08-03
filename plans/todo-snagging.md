@@ -176,3 +176,17 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
   Shows the last part of the address, with the whole thing on hover, because a full URL pushes
   a narrow column about.
+
+- **The console logs a 404 for platform coverage when opening remediation.** Found by use with
+  devtools open, 2026-08-03. Nothing is broken: `/cookbooks/:name/platform-coverage` answers
+  404 when coverage has never been computed, and the page treats it as optional and hides the
+  card. The browser logs any non-2xx, so the line appears regardless.
+
+  **What is worth fixing is not the console line.** The handler cannot tell "this cookbook has
+  no coverage yet" from "there is no such cookbook", and the page cannot tell either from "the
+  request failed" — see the tech-debt item on silent catches. The shape of the fix: 200 with an
+  explicit "not evaluated" for a cookbook that exists, 404 only for one that does not, and a
+  page that says "no coverage yet" rather than showing nothing.
+
+  **Expect more of these while navigating with the console open.** They are mostly this same
+  pattern rather than twelve separate faults.

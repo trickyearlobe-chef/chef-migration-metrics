@@ -547,3 +547,31 @@ These are not debt — they are deliberate holds awaiting prerequisites.
 
 - SAML authentication endpoints return 501 — waiting for customer environment access to test.
 - TLS ACME mode logged as "not yet implemented" in `main.go`.
+## Frontend — a failed fetch renders as "there are none"
+
+**12 sites, listed below, found 2026-08-03.** The pattern is
+`.catch(() => setSomething([]))`: a request that fails leaves the view showing an empty list,
+which is indistinguishable on screen from a list that is genuinely empty and means the
+opposite thing. Six of them are the Nodes page's own filter dropdowns, so a role or platform
+catalogue that fails to load tells an operator there are no roles.
+
+**This has already caused three reported faults on the ownership work alone** — an owner
+catalogue that failed to load, a `search` parameter the server ignored, and an owner list
+silently cut at fifty. It is the most reliable source of "the app quietly lied" in this
+codebase.
+
+**The fix is not a rewrite.** `OwnerFilter` already does it correctly: keep the empty list for
+rendering, set a `loadFailed` flag, and say "could not load" instead of "none". Each site is a
+few lines, and each one is independently shippable.
+
+- [ ] `pages/NodesPage.tsx` — policy names, policy groups, environments, roles, platforms (5)
+- [ ] `pages/RunEventsPage.tsx` — organisations, versions (2)
+- [ ] `pages/RemediationPage.tsx` — complexity labels
+- [ ] `pages/OwnershipMappedImport.tsx` — saved mappings
+- [ ] `pages/OwnerDuplicatesPage.tsx` — rejected pairs
+- [ ] `pages/AdminTestKitchenPage.tsx` — mapping status
+- [ ] `pages/CookbookDetailPage.tsx` — platform coverage (see `todo-snagging.md`; this one
+      also needs the API to distinguish "not evaluated" from "no such cookbook")
+
+**A lint rule would stop the thirteenth.** `.catch(() => set…([]))` with no error state is
+mechanically detectable, and is always this bug.
