@@ -33,11 +33,20 @@ and not `saml_subject`.
 The discovery-driven CSV intake is in (`specifications/ownership-intake.md`).
 Remaining:
 
-- [ ] **SQL source.** Journey 5 asks for a database as well as a file: choose a table
-  and pick fields, or supply a query and pick fields from what it returns, with a
-  preview. `RowSource` was designed for a streaming cursor, so this is a new source
-  plus connection and credential handling. PostgreSQL needs no new dependency; MSSQL
-  needs a driver and a supply-chain check before any code.
+- [ ] **SQL source — the reading half is built** (`internal/ownershipsql`), for SQL Server and
+  PostgreSQL equally. What remains is credentials in the encrypted config store, the
+  profile/preview/run endpoints taking a database as an alternative source, and the UI. See
+  `plans/active.md` for the ordered list.
+
+  **Testing it needs no customer database.** `make mssql-up`, `make seed-mssql`,
+  `make test-mssql` stand up SQL Server 2022 in a container, seed a sample system of record
+  and run the functional tests against it. The seed is deliberately awkward — a join across
+  two tables, a person who has left, an asset with no owner, an owner with no email, and date,
+  NVARCHAR and BIT columns — because those are what a PostgreSQL test cannot tell you about.
+
+  **MVP2: a permanent Linux VM running SQL Server in the Proxmox lab.** No arm64 image exists,
+  so the container runs under emulation on Apple Silicon; it works and is fine for
+  development, but a real VM is the better home for demos and anything long-lived.
 
   **The file-import protections carry over free**, because they all sit above the
   source abstraction: the row cap and the value filter in `handleIntakeRun`, the

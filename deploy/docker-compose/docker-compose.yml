@@ -35,6 +35,42 @@ services:
       timeout: 3s
       retries: 10
 
+  # SQL Server, for developing and demonstrating the database ownership ingest.
+  # Opt-in: it is not part of the default stack.
+  #
+  #   docker compose --profile mssql up -d mssql
+  #   make seed-mssql
+  #
+  # No arm64 image exists, so it runs under emulation on Apple Silicon. It is
+  # slower to start but works. If that becomes tiresome, a permanent Linux VM in
+  # the Proxmox lab is the better home for it (MVP2).
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    profiles: ["mssql"]
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      # A local development credential, deliberately not a secret. Never point
+      # this compose file at anything real.
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Cmm_Dev_Password_2026!}
+    ports:
+      - "${MSSQL_PORT:-1433}:1433"
+    volumes:
+      - mssqldata:/var/opt/mssql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
 volumes:
   pgdata:
+    driver: local
+  mssqldata:
     driver: local
