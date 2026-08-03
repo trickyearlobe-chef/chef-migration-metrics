@@ -14,10 +14,13 @@ top of the tag: the git repo owner filter, and the snagging fixes made after it 
 deliberately by the product owner**, ahead of the MVP being complete, to get a build deployable
 at customer scale and take the measurements below. Later chunks branch fresh from `main`.
 
-`feature/ownership-list-filters` — **unmerged, awaiting sign-off**, tree clean and every gate
-green. The ownership filter on the git repo and cookbook lists (savable as a named cohort,
-enforced on the export path), plus the snagging fixes and migration 0063 found while using it.
-0063 is applied to the dev DB.
+`feature/ownership-list-filters` — **merged into `main` 2026-08-03** after sign-off. The
+ownership filter on the git repo and cookbook lists (savable as a named cohort, enforced on the
+export path), the snagging fixes and migration 0063 found while using it, and the switch that
+stops Test Kitchen feeding blocking. 0063 is applied to the dev DB.
+
+**Turn `tk_blocks_readiness` off at the customer site** while vSphere access is gone. It ships
+on, so nothing changes until somebody does.
 
 **If a rollback is ever needed:** there is **no down-migration runner** — only `MigrateUp` — so a
 schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Two
