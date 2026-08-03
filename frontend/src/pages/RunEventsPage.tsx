@@ -12,6 +12,7 @@ import type { RunEventFilterQuery } from "../api/client";
 import type { RunEventItem } from "../api/run-events";
 import type { Pagination as PaginationType } from "../types";
 import { FilterInput, FilterSelect, FilterCombobox } from "../components/FilterInputs";
+import { runResourceSummary } from "../lib/runSummary";
 import { Pagination } from "../components/Pagination";
 import { ExportButton } from "../components/ExportButton";
 import type { ExportParams } from "../types";
@@ -315,6 +316,8 @@ export function RunEventsPage() {
                       onSort={handleSort}
                       className="px-3 py-2"
                     />
+                    <th className="px-3 py-2">Resources</th>
+                    <th className="px-3 py-2">Cookbook</th>
                     <th className="px-3 py-2">Failure</th>
                   </tr>
                 </thead>
@@ -359,6 +362,23 @@ export function RunEventsPage() {
                           <td className="px-3 py-1.5 whitespace-nowrap text-gray-600">
                             {r.end_time ? new Date(r.end_time).toLocaleString() : "—"}
                           </td>
+                          <td className="px-3 py-1.5 whitespace-nowrap text-xs text-gray-600">
+                            {runResourceSummary(r) || "—"}
+                          </td>
+                          <td className="px-3 py-1.5 whitespace-nowrap text-xs">
+                            {r.failed_resource?.cookbook_name ? (
+                              <span className="font-medium text-gray-800">
+                                {r.failed_resource.cookbook_name}
+                                {r.failed_resource.recipe_name && (
+                                  <span className="text-gray-500">
+                                    ::{r.failed_resource.recipe_name}
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                           <td className="px-3 py-1.5 text-xs text-gray-600">
                             {r.error?.message ? (
                               <span>
@@ -366,12 +386,6 @@ export function RunEventsPage() {
                                   {r.error.class}
                                 </span>
                                 : {r.error.message}
-                                {r.failed_resource?.cookbook_name && (
-                                  <span className="ml-1 text-gray-400">
-                                    ({r.failed_resource.cookbook_name}::
-                                    {r.failed_resource.recipe_name})
-                                  </span>
-                                )}
                               </span>
                             ) : (
                               "—"
@@ -380,7 +394,7 @@ export function RunEventsPage() {
                         </tr>
                         {isOpen && r.error && (
                           <tr className="bg-red-50/40">
-                            <td colSpan={6} className="px-3 py-2">
+                            <td colSpan={8} className="px-3 py-2">
                               <div className="text-sm font-medium text-red-800">
                                 {r.error.class}: {r.error.message}
                               </div>
