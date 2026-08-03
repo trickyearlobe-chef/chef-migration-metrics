@@ -61,18 +61,21 @@ Two things are named as not done:
   the settled Dependabot entries. `govulncheck` is clean. The archived `denisenkom` driver is
   lighter but unmaintained, so it was rejected.
 
-  **What is left, in order:**
-  1. **Credentials.** The DSN carries a password, so it belongs in the encrypted config store
-     like every other secret — never in `config.yaml`, never returned to a client, never
-     logged. `Config.DSN` is already documented that way.
-  2. **Endpoints.** The intake already has profile/preview/run over a file; each opens its own
-     source, which is why the SQL source is a single-pass cursor. Add the database as an
-     alternative source for the same three, rather than a parallel flow.
-  3. **UI.** Choose file or database; pick which database — SQL Server or PostgreSQL, both
-     offered; enter the connection; supply a query; preview what it returns; then the existing
-     mapping flow, unchanged.
-  4. **A SQL Server to test against.** Run one in docker locally. Do not defer this for want
-     of the customer's database — the whole point is that it is testable here.
+  **Credentials, the endpoints, the UI and table browsing are all built.** The connection
+  string is read from a stored credential by name and never accepted from a request, so there
+  is no password field on the import screen and it never reaches a browser. Profile, preview
+  and commit all take a database because the two sources meet at one function.
+
+  **Table browsing exists because whoever sets this up usually cannot inspect the database.**
+  `INFORMATION_SCHEMA` is the same in both, so it is one query; system schemas are excluded,
+  views are offered, and choosing one writes a quoted `SELECT` that is then editable — owners
+  normally need a join.
+
+  **What is left:**
+  1. **Watch a commit write, from a database source, into a real CMM database.** Profile and
+     preview are proven end to end against SQL Server through the HTTP layer; commit shares
+     the same seam and the same writer a file import uses, but has not been watched.
+  2. **Screenshots for the change control form** — not takeable from here.
 - **Node ownership — DONE.** The list carries the ownership control, the API already resolved
   it, and the import always accepted `node`. Local data seeded in the dev DB: 8 nodes across 3
   owners, 5 unowned, so both questions show something.

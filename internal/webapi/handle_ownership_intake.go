@@ -80,6 +80,8 @@ func (r *Router) handleOwnershipIntake(w http.ResponseWriter, req *http.Request)
 	path := req.URL.Path
 
 	switch {
+	case path == "/api/v1/ownership/import/tables":
+		r.handleIntakeListTables(w, req)
 	case path == "/api/v1/ownership/import/profile":
 		r.handleIntakeProfile(w, req)
 	case path == "/api/v1/ownership/import/preview":
@@ -1112,4 +1114,69 @@ func (r *Router) openIntakeDatabaseSource(w http.ResponseWriter, req *http.Reque
 	}
 
 	return src, func() { _ = src.Close() }, true
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/ownership/import/tables
+// ---------------------------------------------------------------------------
+
+// handleIntakeListTables lists the tables and views a stored connection can
+// see, so an administrator can choose one instead of writing a query against a
+// schema they cannot inspect. Whoever sets this up is often not the person who
+// knows the database.
+func (r *Router) handleIntakeListTables(w http.ResponseWriter, req *http.Request) {
+	if !requireMethod(w, req, http.MethodPost) {
+		return
+	}
+	if err := req.ParseMultipartForm(intakeMaxUploadBytes); err != nil {
+		WriteBadRequest(w, "Invalid multipart/form-data request.")
+		return
+	}
+
+	driver := req.FormValue("db_driver")
+	if !ownershipsql.IsSupportedDriver(driver) {
+		WriteBadRequest(w, fmt.Sprintf(
+			"db_driver must be one of: %s.", strings.Join(ownershipsql.SupportedDrivers, ", ")))
+		return
+	}
+	credName := req.FormValue("db_credential")
+	if credName == "" {
+		WriteBadRequest(w, "db_credential is required: the connection string is read from a stored credential, never from the request.")
+		return
+	}
+	if r.credentialStore == nil {
+		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
+			"Credential storage is not configured. Set CMM_CREDENTIAL_ENCRYPTION_KEY to enable.")
+		return
+	}
+
+	cred, err := r.credentialStore.Get(req.Context(), credName)
+	if err != nil {
+		WriteBadRequest(w, fmt.Sprintf("Could not read the credential %q: %v", credName, err))
+		return
+	}
+	dsn := string(cred.Plaintext)
+	defer secrets.ZeroBytes(cred.Plaintext)
+
+	tables, err := ownershipsql.ListTables(req.Context(), ownershipsql.Config{Driver: driver, DSN: dsn})
+	if err != nil {
+		r.logf("WARN", "ownership/import: listing tables on %s: %v", driver, err)
+		WriteBadRequest(w, "Could not list the tables: "+err.Error())
+		return
+	}
+	if tables == nil {
+		tables = []ownershipsql.Table{}
+	}
+
+	// The quoted name is built here rather than in the browser, because how an
+	// identifier is quoted is a property of the database, not of the UI.
+	type tableOut struct {
+		ownershipsql.Table
+		QualifiedName string `json:"qualified_name"`
+	}
+	out := make([]tableOut, len(tables))
+	for i, t := range tables {
+		out[i] = tableOut{Table: t, QualifiedName: t.QualifiedName(driver)}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }

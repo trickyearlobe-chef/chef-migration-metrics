@@ -197,3 +197,88 @@ func asText(v any) string {
 		return fmt.Sprintf("%v", t)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Browsing what is there
+//
+// An administrator setting this up may not know the database — ours certainly
+// does not know the customer's. Listing the tables lets them point at one
+// rather than write SQL against a schema nobody present can see.
+// ---------------------------------------------------------------------------
+
+// Table is one table or view the connection can see.
+type Table struct {
+	Schema string `json:"schema"`
+	Name   string `json:"name"`
+	// Kind is "table" or "view". A view is often exactly what an operations
+	// team has already built for reporting, so it is offered too.
+	Kind string `json:"kind"`
+}
+
+// QualifiedName is the table as it should appear in a query, quoted for its
+// database so a name with a space or a reserved word still works.
+func (t Table) QualifiedName(driver string) string {
+	if driver == DriverSQLServer {
+		return "[" + t.Schema + "].[" + t.Name + "]"
+	}
+	return `"` + t.Schema + `"."` + t.Name + `"`
+}
+
+// listTablesQuery is ANSI INFORMATION_SCHEMA, which both databases implement.
+// The system schemas differ, so each excludes its own.
+func listTablesQuery(driver string) string {
+	const base = `SELECT table_schema, table_name, table_type
+		FROM information_schema.tables
+		WHERE table_type IN ('BASE TABLE', 'VIEW')`
+	if driver == DriverSQLServer {
+		return base + ` AND table_schema NOT IN ('sys', 'INFORMATION_SCHEMA')
+			ORDER BY table_schema, table_name`
+	}
+	return base + ` AND table_schema NOT IN ('pg_catalog', 'information_schema')
+		ORDER BY table_schema, table_name`
+}
+
+// ListTables returns the tables and views the connection can see, so an
+// administrator can choose one instead of writing a query blind.
+func ListTables(ctx context.Context, cfg Config) ([]Table, error) {
+	if !IsSupportedDriver(cfg.Driver) {
+		return nil, fmt.Errorf("ownershipsql: unsupported driver %q", cfg.Driver)
+	}
+
+	db, err := sql.Open(cfg.Driver, cfg.DSN)
+	if err != nil {
+		return nil, fmt.Errorf("ownershipsql: opening %s connection: %w", cfg.Driver, err)
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+
+	timeout := cfg.ConnectTimeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
+		return nil, fmt.Errorf("ownershipsql: connecting to the %s database: %w", cfg.Driver, err)
+	}
+
+	rows, err := db.QueryContext(ctx, listTablesQuery(cfg.Driver))
+	if err != nil {
+		return nil, fmt.Errorf("ownershipsql: listing tables: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []Table
+	for rows.Next() {
+		var schema, name, tableType string
+		if err := rows.Scan(&schema, &name, &tableType); err != nil {
+			return nil, fmt.Errorf("ownershipsql: reading the table list: %w", err)
+		}
+		kind := "table"
+		if tableType == "VIEW" {
+			kind = "view"
+		}
+		out = append(out, Table{Schema: schema, Name: name, Kind: kind})
+	}
+	return out, rows.Err()
+}

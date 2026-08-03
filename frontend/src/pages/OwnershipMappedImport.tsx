@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import {
   profileImportSource,
   profileImportDatabase,
+  listImportDatabaseTables,
   previewOwnershipImport,
   commitOwnershipImport,
   createImportMapping,
@@ -9,7 +10,7 @@ import {
   fetchCredentials,
   ApiError,
 } from "../api";
-import type { IntakeDatabaseSource } from "../api";
+import type { IntakeDatabaseSource, IntakeDatabaseTable } from "../api";
 import type {
   IntakeFieldMap,
   IntakeFieldMapping,
@@ -201,6 +202,34 @@ export function OwnershipMappedImport() {
       cancelled = true;
     };
   }, [sourceKind]);
+
+  const [tables, setTables] = useState<IntakeDatabaseTable[] | null>(null);
+  const [tableFilter, setTableFilter] = useState("");
+
+  /** List what the connection can see, so a table can be picked rather than
+   * typed. The person setting this up often cannot inspect the database. */
+  async function handleBrowseTables() {
+    setError(null);
+    setLoading("Looking at what is there…");
+    try {
+      const res = await listImportDatabaseTables(dbDriver, dbCredential);
+      setTables(res.data ?? []);
+    } catch (err: unknown) {
+      // An unreadable list must not render as an empty one.
+      setTables(null);
+      reportError(err, "Could not list the tables.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  /** Choosing a table writes the query for you. It stays editable — a join
+   * across two tables is the common case, and this is the starting point. */
+  function handleChooseTable(t: IntakeDatabaseTable) {
+    setDbQuery(`SELECT * FROM ${t.qualified_name}`);
+    setTables(null);
+    setTableFilter("");
+  }
 
   function databaseSource(): IntakeDatabaseSource {
     return { driver: dbDriver, credential: dbCredential, query: dbQuery };
@@ -428,6 +457,58 @@ export function OwnershipMappedImport() {
               named anything — you map them in the next step.
             </p>
 
+            {tables !== null && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-gray-600">
+                    {tables.length} table{tables.length === 1 ? "" : "s"} and views
+                    this connection can see
+                  </span>
+                  <input
+                    type="text"
+                    value={tableFilter}
+                    onChange={(e) => setTableFilter(e.target.value)}
+                    placeholder="Filter…"
+                    className="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                  />
+                </div>
+                <ul className="max-h-52 divide-y divide-gray-200 overflow-auto rounded-md border border-gray-200 bg-white">
+                  {tables
+                    .filter((t) =>
+                      `${t.schema}.${t.name}`
+                        .toLowerCase()
+                        .includes(tableFilter.toLowerCase()),
+                    )
+                    .map((t) => (
+                      <li key={`${t.schema}.${t.name}`}>
+                        <button
+                          type="button"
+                          onClick={() => handleChooseTable(t)}
+                          className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-blue-50"
+                        >
+                          <span className="font-mono">
+                            {t.schema}.{t.name}
+                          </span>
+                          <span className="text-gray-400">{t.kind}</span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+                <p className="mt-2 text-xs text-gray-500">
+                  Choosing one writes a query for you. Edit it freely — owners
+                  usually need a join, and this is only the starting point.
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleBrowseTables}
+              disabled={!dbCredential || loading !== null}
+              className="mr-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              Browse tables
+            </button>
             <button
               type="button"
               onClick={handleReadQuery}

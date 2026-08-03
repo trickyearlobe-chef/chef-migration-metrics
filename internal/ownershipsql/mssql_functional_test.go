@@ -161,3 +161,84 @@ func TestFunctional_MSSQL_ReportsABadQuery(t *testing.T) {
 		t.Fatal("expected a bad query to be reported, got none")
 	}
 }
+
+// Browsing beats writing SQL blind, which is the position anyone setting this
+// up against somebody else's database is in.
+func TestFunctional_MSSQL_ListsTablesAndViews(t *testing.T) {
+	dsn := mssqlDSN(t)
+
+	tables, err := ListTables(context.Background(), Config{Driver: DriverSQLServer, DSN: dsn})
+	if err != nil {
+		t.Fatalf("listing tables: %v", err)
+	}
+
+	found := map[string]Table{}
+	for _, tbl := range tables {
+		found[tbl.Name] = tbl
+	}
+	for _, want := range []string{"staff", "asset_owner"} {
+		if _, ok := found[want]; !ok {
+			t.Errorf("table %q missing from the list: %v", want, found)
+		}
+	}
+	if got := found["staff"].Schema; got != "dbo" {
+		t.Errorf("staff schema = %q, want dbo", got)
+	}
+	if got := found["staff"].Kind; got != "table" {
+		t.Errorf("staff kind = %q, want table", got)
+	}
+
+	// SQL Server's own catalogue must not be offered as a source of owners.
+	for _, tbl := range tables {
+		if tbl.Schema == "sys" || tbl.Schema == "INFORMATION_SCHEMA" {
+			t.Errorf("system table offered: %s.%s", tbl.Schema, tbl.Name)
+		}
+	}
+
+	// The generated name is quoted the way SQL Server expects, so a table with
+	// an awkward name still produces a query that runs.
+	if got := found["staff"].QualifiedName(DriverSQLServer); got != "[dbo].[staff]" {
+		t.Errorf("qualified name = %q, want [dbo].[staff]", got)
+	}
+}
+
+// Choosing a table has to produce a query that actually runs — that is the
+// whole point of offering the list.
+func TestFunctional_MSSQL_AChosenTableProducesAWorkingQuery(t *testing.T) {
+	dsn := mssqlDSN(t)
+	ctx := context.Background()
+
+	tables, err := ListTables(ctx, Config{Driver: DriverSQLServer, DSN: dsn})
+	if err != nil {
+		t.Fatalf("listing tables: %v", err)
+	}
+	var staff Table
+	for _, tbl := range tables {
+		if tbl.Name == "staff" {
+			staff = tbl
+		}
+	}
+	if staff.Name == "" {
+		t.Fatal("staff table not found")
+	}
+
+	src, err := Open(ctx, Config{
+		Driver: DriverSQLServer, DSN: dsn,
+		Query: "SELECT * FROM " + staff.QualifiedName(DriverSQLServer),
+	})
+	if err != nil {
+		t.Fatalf("opening the generated query: %v", err)
+	}
+	defer func() { _ = src.Close() }()
+
+	n := 0
+	for src.Next() {
+		n++
+	}
+	if err := src.Err(); err != nil {
+		t.Fatalf("iterating: %v", err)
+	}
+	if n != 5 {
+		t.Errorf("read %d staff rows, want 5", n)
+	}
+}

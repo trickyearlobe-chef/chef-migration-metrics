@@ -306,6 +306,30 @@ export function profileImportSource(
   });
 }
 
+/** One table or view a connection can see. */
+export interface IntakeDatabaseTable {
+  schema: string;
+  name: string;
+  kind: "table" | "view";
+  /** The name quoted for its database, ready to drop into a query. */
+  qualified_name: string;
+}
+
+/** List what a connection can see, so a table can be chosen rather than typed.
+ * Whoever sets the import up often cannot inspect the database themselves. */
+export function listImportDatabaseTables(
+  driver: string,
+  credential: string,
+): Promise<{ data: IntakeDatabaseTable[] }> {
+  const formData = new FormData();
+  formData.append("db_driver", driver);
+  formData.append("db_credential", credential);
+  return apiFetch<{ data: IntakeDatabaseTable[] }>(
+    buildUrl("/ownership/import/tables"),
+    { method: "POST", body: formData },
+  );
+}
+
 /** Profile what a query returns, so the mapping screen can offer its columns. */
 export function profileImportDatabase(
   db: IntakeDatabaseSource,
