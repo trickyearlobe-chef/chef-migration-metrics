@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useEffect, useCallback, Fragment } from "react";
+import { runResourceSummary } from "../lib/runSummary";
 import { fetchNodeRuns } from "../api";
 import type { ConvergeRun, NodeRunsResponse } from "../types";
 
@@ -70,6 +71,7 @@ export function NodeRunsSection({
                 <th className="py-1 pr-3">Run List</th>
                 <th className="py-1 pr-3">Cookbooks</th>
                 <th className="py-1 pr-3">Resources</th>
+                <th className="py-1 pr-3">Cookbook</th>
               </tr>
             </thead>
             <tbody>
@@ -107,14 +109,27 @@ export function NodeRunsSection({
                       <td className="py-1 pr-3 text-xs text-gray-600">
                         {cookbookSummary(r.cookbooks)}
                       </td>
-                      <td className="py-1 pr-3 text-xs text-gray-600">
-                        {r.updated_resource_count ?? 0}/
-                        {r.total_resource_count ?? 0}
+                      <td className="py-1 pr-3 whitespace-nowrap text-xs text-gray-600">
+                        {runResourceSummary(r) || "—"}
+                      </td>
+                      <td className="py-1 pr-3 whitespace-nowrap text-xs">
+                        {r.failed_resource?.cookbook_name ? (
+                          <span className="font-medium text-gray-800">
+                            {r.failed_resource.cookbook_name}
+                            {r.failed_resource.recipe_name && (
+                              <span className="text-gray-500">
+                                ::{r.failed_resource.recipe_name}
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                     {failed && isOpen && r.error && (
                       <tr className="border-b bg-red-50/40">
-                        <td colSpan={6} className="px-3 py-2">
+                        <td colSpan={7} className="px-3 py-2">
                           <div className="text-sm font-medium text-red-800">
                             {r.error.class}: {r.error.message}
                           </div>

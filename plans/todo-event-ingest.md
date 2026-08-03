@@ -26,6 +26,69 @@ run data at all. What run data buys is **grading that prediction**: each failure
 lands on a cookbook the static analysis named or on one it missed, and the misses measure
 how far the prediction can be trusted before work is dispatched from it.
 
+## Failed-run summary page — designed 2026-08-03, BLOCKED on the depsolve gap below
+
+**Do not build this first.** The product owner reports that many failures across the real
+estate are not cookbook-compatibility failures at all: a run list naming a cookbook that does
+not exist, and conflicting cookbook version constraints in the expanded run list. Both die in
+depsolve, before any resource runs — which is precisely the delivery shape
+`normalise.go:297` accepts and does not persist. **Those runs are not in `converge_runs`, so a
+summary built on that table would omit the most common failures in the estate while looking
+authoritative.** Close the gap, then build the page.
+
+It also settles the question this design left open. `failed_resource` will be null for a large
+share of real failures, so the tree should be **class-first**, with cookbook underneath it once
+the backtrace can name one.
+
+
+A collapsible summary of failed converge runs. **Grouping: cookbook → "`<exception class>` at
+`<location>`".** Chef version is a **filter, not a grouping level** — during a migration it has
+only a handful of values, and the question is "show me the failures on 19.x", not "break every
+row down by version".
+
+**Why that second key.** Grouping on the exception *message* fragments almost to one group per
+node: Chef embeds package names, paths and exit codes in the message. The *class* is stable and
+numbers in the tens, and class-plus-location names a failure *mode* rather than an incident.
+
+**The constraint that shapes the whole thing: raw runs are kept for 2 days**
+(`Ingest.RetentionDays` defaults to 2; `PurgeConvergeRunPartitions` drops whole day
+partitions). A page reading raw runs can therefore never answer "did these failures drop after
+we fixed that cookbook", which is the question a migration actually asks.
+
+**So: keep a rollup, not raw history.** A table keyed by `(day, cookbook, chef_version,
+exception_class, location)` with a count. Ten thousand distinct combinations a day is 300k rows
+a month — nothing — and it outlives the purge. The page reads the rollup; drilling into example
+runs reads raw `converge_runs`, only works inside the retention window, and should say so
+rather than showing an empty list.
+
+**Scale, measured 2026-08-03:** 80k-120k nodes converging every 2 hours is ~1.2M runs/day. At
+the lab's 1,111 bytes/run that is ~1.3GB/day, and customer rows will be larger (longer run
+lists, more cookbooks). **Turn on `failures_only`** (off by default) unless the Run Events view
+needs successes — it removes whatever the success rate is, likely 95%.
+
+- [ ] **Extract the location from the first backtrace frame *under `cookbooks/`***, not the
+  first frame outright: the top of a Chef backtrace is usually inside Chef's own gems, whose
+  paths carry the Chef version and would explode the cardinality this design depends on.
+  Normalise to `nginx/recipes/default.rb:14`.
+- [ ] **Measure before building.** Nobody has yet seen a real failed run in this system: the
+  dev database holds 688 runs and no failures. The number that decides the grouping is how
+  often `failed_resource` is null on a genuine failure — a compile-time error, or a failure not
+  attached to a resource, has no cookbook, and if that is common the primary grouping is an
+  empty bucket and class-first is the better tree.
+
+  ```sql
+  SELECT count(*) FILTER (WHERE status='failure')                              AS failures,
+         count(*) FILTER (WHERE status='failure' AND failed_resource IS NULL)  AS no_cookbook,
+         count(DISTINCT error->>'class')                                       AS classes,
+         count(DISTINCT error->>'message')                                     AS messages,
+         count(DISTINCT failed_resource->>'cookbook_name')                     AS cookbooks
+  FROM converge_runs WHERE end_time > now() - interval '2 days';
+  ```
+
+**Risk:** the page itself is low — read-only, and the rollup makes it fast at any scale. The
+risk lives upstream, in the ingest volume and retention settings, and those want deciding
+before any UI is written.
+
 ## Open
 
 - [ ] **CC19 target-version failing-nodes preset mode.** The distinct-node rollup
@@ -55,6 +118,12 @@ how far the prediction can be trusted before work is dispatched from it.
   on the transport. What carries nothing is the attributes-only delivery, and that is a
   property of the *failure*: a run that dies before it converges has declared no resources,
   so on any transport there is nothing to attribute a cookbook to.
+
+  **Confirmed against the real estate 2026-08-03:** the product owner reports many nodes
+  failing on exactly this, in two forms — a run list naming a cookbook that does not exist,
+  and conflicting cookbook version constraints in the expanded run list. Neither is a
+  compatibility problem; both are estate hygiene, and both are invisible to CMM today. This
+  is no longer a theoretical gap in coverage: it is most of what is breaking the fleet.
 
   That is exactly the first-wave upgrade blocker — a depsolve failure, or a cookbook using
   an API removed in the new version and failing at compile time before a resource exists.
