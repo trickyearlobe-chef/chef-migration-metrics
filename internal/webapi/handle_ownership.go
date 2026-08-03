@@ -105,13 +105,49 @@ func (r *Router) resolveOwnershipFilter(ctx context.Context, of ownerFilter, ent
 	if !of.Active {
 		return nil, nil
 	}
-	if of.Unowned {
-		return r.resolveAllOwnedEntityKeys(ctx, entityType)
+
+	var (
+		keys map[string]bool
+		err  error
+	)
+	switch {
+	case of.Unowned:
+		keys, err = r.resolveAllOwnedEntityKeys(ctx, entityType)
+	case len(of.OwnerNames) > 0:
+		keys, err = r.resolveOwnedEntityKeys(ctx, of.OwnerNames, entityType)
+	default:
+		return nil, nil
 	}
-	if len(of.OwnerNames) > 0 {
-		return r.resolveOwnedEntityKeys(ctx, of.OwnerNames, entityType)
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+
+	// A cookbook's owner is whoever owns the git repo it is built from. Git is
+	// the code; a server cookbook is the deployed artefact, and a fix is made
+	// in the repo — which is why people say "cookbook" in standup and mean the
+	// repo. Recording it on both sides would be two truths that can disagree,
+	// so it is derived here, once, for every consumer of this function: the
+	// list, the export and the dashboard.
+	//
+	// The derivation runs one way only. Owning a cookbook does not make
+	// somebody the owner of a repo: that would invent authority over the source
+	// from a fact about an artefact.
+	//
+	// Names are the join, on the same one-cookbook-per-repo assumption the
+	// readiness evaluator already relies on when it looks up a human verdict.
+	if entityType == "cookbook" {
+		fromRepos, rErr := r.resolveOwnershipFilter(ctx, of, "git_repo")
+		if rErr != nil {
+			return nil, rErr
+		}
+		if keys == nil {
+			keys = map[string]bool{}
+		}
+		for k := range fromRepos {
+			keys[k] = true
+		}
+	}
+	return keys, nil
 }
 
 // ownershipInclude reports whether an entity with the given key should be
