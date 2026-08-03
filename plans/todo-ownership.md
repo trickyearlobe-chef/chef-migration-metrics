@@ -80,6 +80,25 @@ Remaining:
 - [ ] **`policy` entity existence is never confirmed.** CMM collects no policy objects,
   so a policy key always reports as not collected. Harmless — an uncollected entity
   never rejects a row — but the UI should say why rather than implying a miss.
+- [ ] **Scheduled imports, run one at a time. MVP2.** Raised by the product owner 2026-08-03:
+  several imports on a schedule, executed **serially** so a large source cannot be read
+  alongside another and blow the memory budget.
+
+  **Most of the parts already exist.** A saved mapping says how to read a source; a stored
+  credential holds the connection; the database source is a streaming cursor that reads a
+  query. A scheduled import is those three plus a trigger. `kitchenqueue.Manager` is the
+  precedent for serial execution with a DB-backed queue that survives a restart, rather than
+  goroutines and a timer.
+
+  **What has to be decided, not assumed:** what happens when a run is still going and the next
+  is due (skip, queue, or overlap — skip is the memory-safe answer); whether a failed run
+  retries or waits for the next slot; and how a run reports what it did, given a person is not
+  watching it. A scheduled import that quietly imports nothing is worse than one that fails.
+
+  **It makes the item below load-bearing rather than theoretical.** A nightly import against a
+  source that has changed will accrete ownership unless reconciliation is settled first: do
+  not schedule anything until it is.
+
 - [ ] **Ingest is additive — reconciling a refreshed source. MVP2.** A row dropped from
   the source never removes the assignment it created, so revoked ownership persists. With
   a refresh job on the source database this stops being theoretical: repeated imports make
