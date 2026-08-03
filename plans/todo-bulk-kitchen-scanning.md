@@ -34,9 +34,7 @@ Shape to aim for, cheapest first:
   pass nor a failure and is not in `tk_total`; the rule is documented on
   `ListGitKitchenCountsByTargetVersions` and applied by every rollup. Migration 0064
   re-materialises `git_repos.tk_*`, because those queries otherwise only run when a kitchen
-  result is written. **The effect on the real estate has not been measured** — the dev DB
-  holds 27 lab results and no timeouts at all, so the before/after has to be taken where the
-  estate lives.
+  result is written.
 - **A failed run records why it failed** (`git_kitchen_results.failure_kind`). Test Kitchen
   names the phase in the output it already stores, and the phases map onto the distinction
   that matters: converge and verify exercise the cookbook; create and destroy are the lab
@@ -57,18 +55,53 @@ Shape to aim for, cheapest first:
   identically to a real failure: `passed = false`, `timed_out = false`, no error message.
   Lab data, not the estate, but the same failure shape.
 
-- [ ] **Report the environmental share** so a reader can see how much of the Test Kitchen
-  signal is about the lab. **This is now the load-bearing gap:** a repo whose runs all failed
-  environmentally reads `untested`, which is honest about the cookbook but says nothing about
-  the lab being broken — and nothing yet displays `failure_kind`, which is recorded per
-  instance and reaches the API already. The dashboard has a `timed_out_repos` field that is
-  never incremented, so it reports 0 whatever happens; either wire it to the recorded kinds
-  or drop it.
+- **MEASURED against the customer estate, 2026-08-03, read-only and before any of this is
+  deployed there.** The classification was run inline as a `SELECT`, so the figures are the
+  clean "before". Roughly 230 instance results exist, across **116 repos out of 2,210**:
 
-  **The measurement to take once this is deployed where the estate lives:** group
-  `git_kitchen_results` by `failure_kind`. That is the share of the Test Kitchen signal that
-  was never about a cookbook, and it is the number that says how much of the blocking list
-  was wrong. It cannot be taken here — the dev DB holds 27 lab results.
+  | | share |
+  |---|---|
+  | passed | 19% |
+  | converge_failed | 4.2% |
+  | create_failed | 31% |
+  | no_converge | 41% |
+  | unknown | 4.2% |
+
+  **89% of the Test Kitchen failure signal was never about a cookbook.** Of the failures,
+  only the converge_failed slice — about ten rows in the whole estate — is a cookbook that
+  was converged and did not come up. Every one of the rest used to mark its cookbook
+  incompatible over a CookStyle pass, and block every node running it.
+
+  **`unknown` at 4.2% is what says the classification can be trusted here.** The phase
+  markers were taken from Proxmox output and the estate runs vSphere; had they not fitted,
+  that share would be large.
+
+  **Why those verdicts were permanent, not merely wrong.** vSphere access at the customer
+  site is gone — DHCP first, then changed credentials, then the hardware repurposed — so
+  nothing can re-run and supersede them. Until access is restored, the failure register is
+  the only way to correct one. The ~44 passes are in the same position: equally undated, and
+  still standing as current evidence.
+
+  Coverage is low for the same reason and not because the feature does not work: the batches
+  were deliberately small while it was being proven, and then the target went away.
+
+  **The classification can still be proven end to end.** The Proxmox driver is configured in
+  the local CMM, so a real batch exercises executor → queue → stored `failure_kind` → rollup
+  against a live hypervisor. Only the vSphere-specific behaviour is unverifiable while access
+  is gone; the rule itself is not.
+- [ ] **Report the environmental share** so a reader can see how much of the Test Kitchen
+  signal is about the lab. A repo whose runs all failed environmentally reads `untested`,
+  which is honest about the cookbook but says nothing about the lab being broken — and
+  nothing yet displays `failure_kind`, which is recorded per instance and reaches the API
+  already. The dashboard has a `timed_out_repos` field that is never incremented, so it
+  reports 0 whatever happens; either wire it to the recorded kinds or drop it.
+
+  **This matters most at the moment vSphere access returns:** it is what turns "runs are
+  failing again" into something visible on the day rather than a query somebody thinks to run
+  months later.
+- [ ] **Test Kitchen evidence carries no age or provenance.** A pass and a failure from the
+  lost vSphere environment both stand as current verdicts, indefinitely. Decide whether a
+  kitchen verdict should expire, or show when and where it was taken.
 
 **Interim, and available today:** a human verdict in the failure register outranks Test
 Kitchen, so a cookbook wrongly blocked by a lab failure can be recorded `not_broken` and
@@ -103,6 +136,9 @@ No wiring, cancellation, progress-endpoint, or restart-resilience work remains.
 - [x] Admin TK config UI exposes window + max-per-window
 
 ## Orphan Sweep
+
+**Buildable in the Proxmox lab; the vSphere specifics cannot be validated until customer
+access is restored.** The folder filter below is a vSphere parameter.
 
 - [ ] Extend `ListManagedVMs` with optional folder filter parameter (vSphere `?folders=` param)
 - [ ] Scoping: only touch VMs in configured `driver_settings.targetfolder`, matching prefix, older than age threshold
@@ -146,7 +182,8 @@ empirically on customer OS mix before relying on it.
 - [x] Per-platform command: Linux tolerant of `dhclient`/`dhcpcd`/`networkctl`/`nmcli`; Windows `ipconfig /release`; OS family from `analysis.NormalisePlatformName`
 - [x] Compose with any repo-provided `pre_destroy` hook (`writeLifecycleHook` + `readExistingPreDestroy`)
 - [x] Admin UI per-image opt-in checkbox (`AdminTestKitchenPage.tsx`)
-**ACTION — on-site validation (blocks "rely on it", not "ship it"):** run before trusting the hook. Per platform/image in the customer OS mix:
+**ACTION — on-site validation (blocks "rely on it", not "ship it"):** run before trusting the
+hook. **Blocked: this needs the customer OS mix on vSphere, and that access is gone.** Per platform/image in the customer OS mix:
 
 - [ ] Enable `release_ip_on_destroy` on one image; run a single kitchen instance; confirm the run result is **unchanged** vs the same run with it off (pass stays pass).
 - [ ] Confirm the DHCP lease is actually released (check the DHCP server's lease table / pool count drops for that IP after destroy) — i.e. the release packet left the guest before power-off.
