@@ -11,6 +11,7 @@ import type {
   ServerCookbookVersionDetail,
 } from "../types";
 import { LoadingSpinner, ErrorAlert, EmptyState } from "../components/Feedback";
+import { OwnershipCard } from "../components/OwnershipCard";
 import { PlatformCoverageCard } from "../components/PlatformCoverageCard";
 import { StatusBadge, CookStyleStatusBadge, TKBadge } from "../components/StatusBadge";
 import { CookstyleResultRow } from "../components/CookstyleResultRow";
@@ -149,6 +150,10 @@ export function CookbookDetailPage() {
           {rescanMsg}
         </div>
       )}
+
+      {/* Who owns this cookbook — usually derived from the git repo below, which
+          the card says so that a reader knows where to change it. */}
+      <OwnershipCard ownership={data.ownership} />
 
       {/* Link to the git repo detail page when a git repo exists for this cookbook */}
       {hasGitRepos && (

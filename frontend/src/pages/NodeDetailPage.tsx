@@ -15,6 +15,7 @@ import type {
   NodeDependencyGraphResponse,
 } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
+import { OwnershipCard } from "../components/OwnershipCard";
 import { StaleBadge, StatusBadge, DiskBadge, CookStyleBadge, TKBadge, DeploymentStateBadge, ConvergeBadge } from "../components/StatusBadge";
 import { DiskUsageBars, computeDiskBars } from "../components/DiskUsageBars";
 import { NodeRunsSection } from "../components/NodeRunsSection";
@@ -1019,6 +1020,9 @@ export function NodeDetailPage() {
             installPath={data.install_path}
             minRemainingFreePercent={data.min_remaining_free_percent}
           />
+
+          {/* Who owns this node — the same ownership the node list filters on. */}
+          <OwnershipCard ownership={data.ownership} />
 
           {/* Readiness — promoted above run list / roles / cookbooks for visibility */}
           <ReadinessSection data={data} org={org} nodeName={name} />

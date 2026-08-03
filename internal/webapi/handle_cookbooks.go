@@ -296,8 +296,19 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 		gitDetails = append(gitDetails, detail)
 	}
 
+	// Who owns this cookbook. Usually nobody assigned it directly: the owner is
+	// whoever owns the git repo above it on the page, which ownersForEntities
+	// derives and marks as such.
+	ownership := entityOwners{Owners: []string{}}
+	if owners, oErr := r.ownersForEntities(req.Context(), "cookbook", []string{name}); oErr != nil {
+		r.logf("WARN", "looking up owners for cookbook %s: %v", name, oErr)
+	} else {
+		ownership = owners[name]
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"name":             name,
+		"ownership":        ownership,
 		"server_cookbooks": serverDetails,
 		"git_repos":        gitDetails,
 	})

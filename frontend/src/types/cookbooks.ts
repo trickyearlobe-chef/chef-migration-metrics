@@ -135,8 +135,18 @@ export interface GitRepoListItem {
 
 export type GitRepoListResponse = PaginatedResponse<GitRepoListItem>;
 
+/** Who owns a thing, as every view reports it. `owners` is empty rather than
+ *  absent when nobody owns it, so "nobody" and "not looked up" stay distinct.
+ *  `derived` means it came from somewhere else — a cookbook owned through the
+ *  git repo it is built from. */
+export interface EntityOwnership {
+  owners: string[];
+  derived?: boolean;
+}
+
 export interface GitRepoDetail {
   git_repo: GitRepoListItem;
+  ownership?: EntityOwnership;
   cookstyle?: CookstyleResult[];
   test_kitchen?: TestKitchenResult[];
   complexity?: CookbookComplexity[];
@@ -147,6 +157,7 @@ export interface GitRepoDetail {
 
 export interface CookbookDetailResponse {
   name: string;
+  ownership?: EntityOwnership;
   server_cookbooks: ServerCookbookVersionDetail[];
   git_repos: GitRepoDetail[];
 }

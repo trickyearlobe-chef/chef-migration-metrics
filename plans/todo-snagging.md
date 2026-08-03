@@ -149,3 +149,30 @@ item here got past a green suite, so a fix with no new test is a fix that will b
   "Map columns" — so nothing anywhere told anybody the database option existed. A feature
   nobody can find is not shipped. Now "Import owners", "from a file, or from a database", and
   a tab called "File or database".
+
+- **Filtering by a person matched git repos but no cookbooks.** Reported by the customer
+  2026-08-03. Ownership had only ever been recorded against repos, and the cookbook list
+  resolved ownership against `entity_type = 'cookbook'`, so it correctly found nothing.
+
+  **The fix is derivation, not more data.** A cookbook's owner is whoever owns the git repo it
+  is built from: git is the code, a server cookbook is the deployed artefact, and a fix is made
+  in the repo — which is why people say "cookbook" in standup and mean the repo. Recording it
+  on both sides would be two truths that can disagree, so `resolveOwnershipFilter` derives it,
+  once, for the list, the export and the dashboard alike.
+
+  One way only: owning a cookbook does not make somebody the owner of a repo. Names are the
+  join, on the same one-cookbook-per-repo assumption the readiness evaluator already uses to
+  look up a human verdict.
+
+- **A URL in the ticket field is now a link.** Asked for by the customer 2026-08-03 (a request,
+  not a fault): they paste ServiceNow and Jira addresses into the failure register's ticket
+  field, and a link you have to select and copy is a link nobody follows.
+
+  **Only `http` and `https` are linked.** The register is free text any operator can write and
+  everyone else reads, so a `javascript:` or `data:` address rendered as a link would be a
+  script one colleague runs in another's session. Anything else stays as text, which is also
+  the right answer for a bare ticket number — guessing a scheme would turn `INC0012345` into a
+  link to nowhere.
+
+  Shows the last part of the address, with the whole thing on hover, because a full URL pushes
+  a narrow column about.
