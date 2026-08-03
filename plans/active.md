@@ -33,27 +33,29 @@ migrations leave a residue the old binary reads:
   script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
   from one the import always held by name, and the redundant duplicates it removed are gone.
 
-## DEADLINE — the ownership MVP must be complete by Monday 2026-08-10
+## DEADLINE — the ownership MVP must be complete TODAY, Monday 2026-08-03
 
-Set by the product owner on 2026-08-03. **Scope is ownership only.** Deploy access is
-bureaucratic to arrange, so the work is batched into one release rather than shipped piecemeal.
+Set by the product owner. **Scope is ownership only.** Deploy access is bureaucratic to
+arrange, so the work is batched into one release rather than shipped piecemeal.
 
 Two things are named as not done:
 
 - **MSSQL ingest.** Owners must be readable from a SQL Server database, not only a file.
   See `plans/todo-ownership.md` § Owner ingest — SQL source. Needs a driver and a
   supply-chain check before any code is written.
-- **Node ownership.** `node` is already a valid entity type in assignments; what is missing
-  is the data path and the node list filter, which was deferred for want of a dataset to test
-  against.
+- **Node ownership.** `node` is already a valid entity type in assignments; what is missing is
+  the data path and the node list filter. It was deferred for want of a dataset to test
+  against — a deferral nobody re-examined, and the reason it is not done.
 
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
 Work order and journeys live in that plan; per-chunk scope lives in
 `plans/todo-ownership.md`. Do not re-plan either.
 
-**Chunks 1–3 are built and shipped** (owner ingest, identity and alias management, the failure
-register). Behaviour lives in `specifications/ownership-intake.md`, `ownership-identity.md` and
+**Chunks 1–3 are partly built.** Identity and alias management and the failure register are
+shipped. **Owner ingest is not: it reads a file, and the SQL source has never been built.**
+Recording it as shipped is what hid the gap — the open item was in `todo-ownership.md` all
+along. Behaviour lives in `specifications/ownership-intake.md`, `ownership-identity.md` and
 `failure-register.md`. Three decisions from those chunks still bind:
 
 - Ingest **creates** unresolved people rather than rejecting the row, and a fuzzy candidate does
@@ -95,11 +97,9 @@ signal is.
 Scope and the decisions that bind: `plans/todo-ownership.md` § Ownership filtering in the list
 views.
 
-The git repo and cookbook lists carry the control, and it was driven in the running app on
-2026-08-03: both questions answer correctly. Ownership is savable as a named cohort, and the
-export path enforces the same rule as the list views. **The only thing left is the node list,
-which stays deferred** — there is no node ownership data to test it against, and `OwnerFilter`
-drops straight in when there is.
+The git repo and cookbook lists carry the control. Ownership is savable as a named cohort, and
+the export path enforces the same rule as the list views. **The node list is in scope for
+today** — see the deadline section.
 
 ## Snagging (`plans/todo-snagging.md`)
 
