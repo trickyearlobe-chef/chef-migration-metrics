@@ -213,6 +213,32 @@ anything that extends it:
   roles, which ignores ownership entirely — a contradictory request is nonsense whether or
   not the endpoint would have acted on it.
 
+## "My stuff" — the logged-in person's own estate
+
+Journey 1's actual question. **Not built.** What exists is "find yourself in the owner list and
+tick your own name", and save that as a private cohort. There is no control that says "mine",
+because nothing connects a session to an owner record.
+
+**How they link, decided by the product owner 2026-08-03:** the SAML email, or the user id, or
+the username / display name. All of those are already on a session — `/api/v1/auth/me` returns
+username, display name, email and provider — and `owner_aliases` already stores `email` and
+`custom` aliases, so the material is there.
+
+- [ ] **Resolve a session to an owner**, trying the identifiers above against `owner_aliases`
+  and the owner name. **The dangerous case is not "no match", it is "two matches":**
+  `alias_type` conflates the shape of an identifier with where it came from, and uniqueness
+  includes the provenance, so one address can legitimately belong to two owners (recorded in
+  `specifications/ownership-identity.md` § Proposed). Showing somebody else's estate under the
+  heading "mine" is worse than showing nothing, so an ambiguous match must refuse and say why.
+- [ ] **A "My stuff" control** on the node, git repo and cookbook lists, applying that owner.
+- [ ] **An honest answer for the majority who own nothing.** Most users will not resolve to an
+  owner. It must say so, not quietly show the whole estate — this branch has produced that
+  failure three times already (an owner catalogue that failed to load, a search parameter the
+  server ignored, a list silently cut at fifty).
+- [ ] **Display-name matching is the one to be careful with.** Two people share a name far more
+  often than they share an email. Prefer email, then username; treat a display-name match as a
+  suggestion rather than an answer.
+
 ## Identity and alias management — what is left
 
 - [ ] **Surface it at the point of use**, per the journey-1 refinement in
