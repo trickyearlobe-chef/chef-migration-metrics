@@ -219,10 +219,15 @@ Journey 1's actual question. **Not built.** What exists is "find yourself in the
 tick your own name", and save that as a private cohort. There is no control that says "mine",
 because nothing connects a session to an owner record.
 
-**How they link, decided by the product owner 2026-08-03:** the SAML email, or the user id, or
-the username / display name. All of those are already on a session — `/api/v1/auth/me` returns
+**How they link, confirmed by the product owner 2026-08-03:** the SAML email, or the user id,
+or the username / display name. All are already on a session — `/api/v1/auth/me` returns
 username, display name, email and provider — and `owner_aliases` already stores `email` and
-`custom` aliases, so the material is there.
+`custom` aliases.
+
+**This is the point of § Matching app users to owners at the top of this file** — the alias
+auto-creation on SAML login is what makes the resolution below possible, and neither is
+retired by the 92%-owned measurement, which was about entity matching. Build that section
+first; this one is its user-visible half.
 
 - [ ] **Resolve a session to an owner**, trying the identifiers above against `owner_aliases`
   and the owner name. **The dangerous case is not "no match", it is "two matches":**

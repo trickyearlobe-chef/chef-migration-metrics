@@ -100,8 +100,15 @@ along. Behaviour lives in `specifications/ownership-intake.md`, `ownership-ident
   existing per-source verdicts on `node_readiness.blocking_cookbooks` rather than sitting beside
   them.
 
-**Node and git repo matching are probably dead.** The measurement they were waiting on has been
-taken against the real estate: **92% of repos carry an owner, and 126 are blocking and unowned**.
+**Node and git repo matching are probably dead — but "matching" means two different things, and
+only one of them is dead.** What the measurement retired is *entity* matching: guessing which
+repo or node belongs to whom when nobody recorded it. What it says nothing about is *identity*
+matching — resolving the several identifiers one person has (SAML email, username, display
+name, git email) onto one owner record. That is what aliasing exists for, it is what "my stuff"
+needs, and it is open: `plans/todo-ownership.md` § Matching app users to owners. Do not let the
+92% figure be read as retiring it.
+
+The measurement itself: **92% of repos carry an owner, and 126 are blocking and unowned**.
 Both chunks were scoped assuming ownership was largely absent. 126 is a hand-workable list. Full
 numbers and the reasoning are in `plans/todo-ownership.md`; do not start either chunk without
 revisiting them.
