@@ -13,7 +13,7 @@ import { OwnershipMappedImport } from "./OwnershipMappedImport";
 // Two flows sit side by side:
 //   • Fixed format — the original path, for files already in CMM's column
 //     order. Unchanged.
-//   • Map columns — for a file whose shape we do not control: profile it, map
+//   • File or database — for a source whose shape we do not control: profile it, map
 //     its columns, preview, then commit.
 // ---------------------------------------------------------------------------
 
@@ -21,7 +21,7 @@ type ImportTab = "fixed" | "mapped";
 
 const TABS: { key: ImportTab; label: string }[] = [
   { key: "fixed", label: "Fixed format" },
-  { key: "mapped", label: "Map columns" },
+  { key: "mapped", label: "File or database" },
 ];
 
 export function OwnershipImportPage() {
@@ -74,7 +74,7 @@ export function OwnershipImportPage() {
           Import Ownership Data
         </h2>
         <p className="text-sm text-gray-500">
-          Bring existing ownership data into CMM from a file.
+          Bring existing ownership data into CMM from a file, or from a database.
         </p>
       </div>
 

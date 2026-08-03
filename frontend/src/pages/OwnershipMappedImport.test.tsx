@@ -281,7 +281,7 @@ describe("OwnershipImportPage tabs", () => {
     const user = userEvent.setup();
     render(<OwnershipImportPage />, { wrapper: Wrapper });
 
-    await user.click(screen.getByRole("button", { name: "Map columns" }));
+    await user.click(screen.getByRole("button", { name: "File or database" }));
 
     expect(
       screen.getByText("1. Choose where the owners come from"),
@@ -294,7 +294,7 @@ describe("OwnershipImportPage tabs", () => {
     render(<OwnershipImportPage />, { wrapper: Wrapper });
 
     expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Map columns" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "File or database" })).toBeNull();
   });
 });
 
