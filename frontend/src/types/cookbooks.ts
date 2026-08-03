@@ -157,6 +157,7 @@ export interface GitRepoDetail {
 
 export interface CookbookDetailResponse {
   name: string;
+  ownership?: EntityOwnership;
   server_cookbooks: ServerCookbookVersionDetail[];
   git_repos: GitRepoDetail[];
 }
