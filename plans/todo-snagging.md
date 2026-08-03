@@ -133,3 +133,13 @@ item here got past a green suite, so a fix with no new test is a fix that will b
   on the way to the request fails *open* and reads as data. The subject picker did the same
   with `search` vs `name`. A control that cannot be saved, or that returns the whole
   catalogue, is worth suspecting before the data is.
+
+- **The owner search box is not obvious, and the list quietly stops at 50.** Found by use,
+  2026-08-03. The control opens on a list of owners with a search field above it that nothing
+  draws the eye to, so it reads as "scroll this list" — which does not work on an estate with
+  1,862 owners, where the list is the first 50 with no sign there are more.
+
+  Fixed together: the cursor starts in the search box, and a capped list says "Showing 50 of
+  1,862 — type to narrow". **The general shape, for the third time on this branch:** a view
+  that shows part of a set without saying so reads as the whole set. The unloadable owner
+  catalogue and the ignored `search` parameter were the same fault wearing different clothes.
