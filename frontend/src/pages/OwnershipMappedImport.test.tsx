@@ -10,6 +10,8 @@ vi.mock("../api", async () => {
   return {
     ...actual,
     profileImportSource: vi.fn(),
+    profileImportDatabase: vi.fn(),
+    fetchCredentials: vi.fn(),
     previewOwnershipImport: vi.fn(),
     commitOwnershipImport: vi.fn(),
     createImportMapping: vi.fn(),
@@ -280,7 +282,9 @@ describe("OwnershipImportPage tabs", () => {
 
     await user.click(screen.getByRole("button", { name: "Map columns" }));
 
-    expect(screen.getByText("1. Choose a file")).toBeInTheDocument();
+    expect(
+      screen.getByText("1. Choose where the owners come from"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Import Format")).toBeNull();
   });
 
@@ -290,5 +294,99 @@ describe("OwnershipImportPage tabs", () => {
 
     expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Map columns" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Importing from a database
+//
+// The customer's owner list lives in a system of record, not always in an
+// export somebody remembered to take. The mapping flow after the source is
+// unchanged — only where the rows come from differs.
+// ---------------------------------------------------------------------------
+
+describe("importing owners from a database", () => {
+  beforeEach(() => {
+    mockUseAuth.mockReturnValue({
+      isOperator: true,
+      isAdmin: true,
+      user: { role: "admin", username: "test" },
+    });
+    vi.mocked(api.fetchCredentials).mockResolvedValue({
+      data: [
+        { name: "cmdb-connection", credential_type: "generic" },
+        { name: "chef-key", credential_type: "chef_client_key" },
+      ],
+    } as never);
+    vi.mocked(api.profileImportDatabase).mockResolvedValue(profile);
+  });
+
+  async function chooseDatabase(user: ReturnType<typeof userEvent.setup>) {
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+    await user.click(screen.getByRole("radio", { name: /A database/ }));
+  }
+
+  it("offers the saved credentials rather than asking for a password", async () => {
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    expect(
+      await screen.findByRole("option", { name: "cmdb-connection" }),
+    ).toBeInTheDocument();
+    // No password field anywhere: the connection string never comes through
+    // the browser.
+    expect(
+      document.querySelector('input[type="password"]'),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reads the query's columns into the mapping step", async () => {
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: /Connection/ }),
+      "cmdb-connection",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: /Query/ }),
+      "SELECT owner_email FROM asset_owner",
+    );
+    await user.click(screen.getByRole("button", { name: /Read the query/ }));
+
+    await waitFor(() => {
+      expect(api.profileImportDatabase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          driver: "sqlserver",
+          credential: "cmdb-connection",
+          query: "SELECT owner_email FROM asset_owner",
+        }),
+      );
+    });
+    // The query's columns are what the mapping step then offers.
+    expect((await screen.findAllByText("Owner Email")).length).toBeGreaterThan(0);
+  });
+
+  it("cannot read a query before a connection is chosen", async () => {
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /Query/ }),
+      "SELECT 1",
+    );
+    expect(screen.getByRole("button", { name: /Read the query/ })).toBeDisabled();
+  });
+
+  // An unreadable credential list must not render as an empty one: they read
+  // the same on screen and mean opposite things.
+  it("says so when the saved credentials cannot be loaded", async () => {
+    vi.mocked(api.fetchCredentials).mockRejectedValue(new Error("nope"));
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    expect(
+      await screen.findByText(/Could not load the saved credentials/),
+    ).toBeInTheDocument();
   });
 });

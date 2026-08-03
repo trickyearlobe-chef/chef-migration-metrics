@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import {
   profileImportSource,
+  profileImportDatabase,
   previewOwnershipImport,
   commitOwnershipImport,
   createImportMapping,
   fetchImportMappings,
+  fetchCredentials,
   ApiError,
 } from "../api";
+import type { IntakeDatabaseSource } from "../api";
 import type {
   IntakeFieldMap,
   IntakeFieldMapping,
@@ -167,6 +170,61 @@ export function OwnershipMappedImport() {
     );
   }
 
+  // Where the rows come from. A file, or a query against a database — the
+  // customer's owner list lives in a system of record, not always a export.
+  const [sourceKind, setSourceKind] = useState<"file" | "database">("file");
+  const [dbDriver, setDbDriver] = useState("sqlserver");
+  const [dbCredential, setDbCredential] = useState("");
+  const [dbQuery, setDbQuery] = useState("");
+  const [credentialNames, setCredentialNames] = useState<string[]>([]);
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+
+  // The connection string lives in a stored credential, so the picker offers
+  // the names of the ones already saved rather than asking for a password here.
+  useEffect(() => {
+    if (sourceKind !== "database") return;
+    let cancelled = false;
+    fetchCredentials()
+      .then((res) => {
+        if (cancelled) return;
+        setCredentialNames((res.data ?? []).map((c) => c.name));
+        setCredentialError(null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // An unreadable list must not render as an empty one: they read the
+        // same on screen and mean opposite things.
+        setCredentialNames([]);
+        setCredentialError("Could not load the saved credentials.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceKind]);
+
+  function databaseSource(): IntakeDatabaseSource {
+    return { driver: dbDriver, credential: dbCredential, query: dbQuery };
+  }
+
+  /** Read the query's columns, so the mapping below has something to offer. */
+  async function handleReadQuery() {
+    setProfile(null);
+    setChoices({});
+    setReport(null);
+    setError(null);
+    setSaved(null);
+    setLoading("Running the query…");
+    try {
+      const result = await profileImportDatabase(databaseSource());
+      setProfile(result);
+      setChoices(guessMapping(result));
+    } catch (err: unknown) {
+      reportError(err, "Could not read from the database.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
   function reportError(err: unknown, fallback: string) {
     setError(
       err instanceof ApiError || err instanceof Error ? err.message : fallback,
@@ -217,14 +275,22 @@ export function OwnershipMappedImport() {
   const mappingComplete =
     Boolean(choices.owner?.column) && Boolean(choices.entity_key?.column);
 
+  /** Ready to run when the mapping is complete and a source is chosen. */
+  const sourceReady =
+    sourceKind === "file" ? Boolean(file) : Boolean(dbCredential && dbQuery.trim());
+
   async function run(commit: boolean) {
-    if (!file || !mappingComplete) return;
+    if (!sourceReady || !mappingComplete) return;
 
     setLoading(commit ? "Importing…" : "Working out what would happen…");
     setError(null);
     try {
+      // Each call opens its own source; the server remembers nothing between
+      // them, so preview and commit each carry the query again.
       const opts = {
-        file,
+        ...(sourceKind === "database"
+          ? { database: databaseSource() }
+          : { file: file ?? undefined }),
         delimiter: delimiter || undefined,
         fieldMap: fieldMap(),
         filterColumn: filterColumn || undefined,
@@ -269,12 +335,113 @@ export function OwnershipMappedImport() {
   return (
     <div className="space-y-6">
       <div className="card">
-        <h3 className="card-header">1. Choose a file</h3>
+        <h3 className="card-header">1. Choose where the owners come from</h3>
         <p className="mb-3 text-sm text-gray-600">
-          Any delimited file. CMM reads its columns and shows you what it found —
-          the file does not have to be in CMM's format.
+          A file, or a query against a database. Either way CMM reads the columns
+          and shows you what it found — the source does not have to be in CMM's
+          format.
         </p>
-        <div className="flex flex-wrap items-center gap-3">
+
+        <div className="mb-4 flex gap-4">
+          {(["file", "database"] as const).map((kind) => (
+            <label key={kind} className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="radio"
+                name="intake-source"
+                checked={sourceKind === kind}
+                onChange={() => {
+                  setSourceKind(kind);
+                  setProfile(null);
+                  setChoices({});
+                  setReport(null);
+                  setError(null);
+                }}
+                className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {kind === "file" ? "A file" : "A database"}
+            </label>
+          ))}
+        </div>
+
+        {sourceKind === "database" && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-sm text-gray-700">
+                <span className="mb-1 block text-xs font-medium text-gray-500">
+                  Database
+                </span>
+                <select
+                  value={dbDriver}
+                  onChange={(e) => setDbDriver(e.target.value)}
+                  className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
+                >
+                  <option value="sqlserver">SQL Server</option>
+                  <option value="postgres">PostgreSQL</option>
+                </select>
+              </label>
+
+              <label className="text-sm text-gray-700">
+                <span className="mb-1 block text-xs font-medium text-gray-500">
+                  Connection
+                </span>
+                <select
+                  value={dbCredential}
+                  onChange={(e) => setDbCredential(e.target.value)}
+                  className="min-w-56 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
+                >
+                  <option value="">Choose a saved credential…</option>
+                  {credentialNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {credentialError ? (
+              <p className="text-xs text-red-600">{credentialError}</p>
+            ) : (
+              <p className="text-xs text-gray-500">
+                The connection string is held as a credential and never typed in
+                here, so the password is not sent to your browser. Add one under
+                Admin → Credentials.
+              </p>
+            )}
+
+            <label className="block text-sm text-gray-700">
+              <span className="mb-1 block text-xs font-medium text-gray-500">
+                Query
+              </span>
+              <textarea
+                value={dbQuery}
+                onChange={(e) => setDbQuery(e.target.value)}
+                rows={6}
+                spellCheck={false}
+                placeholder={"SELECT owner_email, asset_kind, asset_name\nFROM asset_owner\nJOIN staff ON ..."}
+                className="block w-full rounded-md border border-gray-300 px-2.5 py-1.5 font-mono text-xs"
+              />
+            </label>
+            <p className="text-xs text-gray-500">
+              Your query, run as it is written, under whatever that connection is
+              allowed to read. Return one row per assignment; the columns can be
+              named anything — you map them in the next step.
+            </p>
+
+            <button
+              type="button"
+              onClick={handleReadQuery}
+              disabled={!dbCredential || !dbQuery.trim() || loading !== null}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300"
+            >
+              Read the query
+            </button>
+          </div>
+        )}
+
+        <div
+          className={`flex flex-wrap items-center gap-3 ${sourceKind === "database" ? "hidden" : ""}`}
+        >
           <input
             ref={fileInputRef}
             type="file"
