@@ -17,6 +17,40 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Fixed
 
+- **A repo you had given an owner still read as unowned.** Reported by the product owner
+  2026-08-02: "none of my repos are owned according to the UI", with a repo showing two
+  owners on the owners page and sitting under "no owner" on the repo list.
+
+  The product disagreed with itself about what a `git_repo` assignment's `entity_key`
+  holds. The committers panel wrote the git **URL**; the repo list, the unowned filter
+  and the export all read by repo **name**. So an owner assigned in the app was recorded
+  where nothing that lists repos could read it, and the repo stayed on the list of work
+  nobody has been made responsible for.
+
+  It failed the other way too: the owner's own page and the cookbook's inherited owner
+  both matched on the URL, so the **name**-keyed assignments the ownership import wrote
+  were invisible to them. And the owner list's repo count counts assignment rows whatever
+  form the key is in — so the count agreed with neither list, which is why nothing caught
+  it.
+
+  The name is canonical (repo URLs are volatile — `handle_git_repos.go:129-133`), and it
+  is what the import already wrote. Fixed in the one writer that chose a form and the
+  three readers that assumed the other one, with migration 0063 rewriting existing
+  URL-keyed rows. Rows whose key matches no known repo are left alone: they name a repo
+  this instance has never collected, and guessing would turn a visible oddity into a
+  silent wrong answer.
+
+- **Every repo an owner owns was reported as incompatible.** Found by the test written for
+  the entry above, not by anybody using it. The owner page's git repo summary joined
+  `git_repo_complexity.git_repo_id` to `git_repos.id` — neither column exists, so the
+  query errored on every call, and the error was counted as "incompatible". A repo with a
+  clean CookStyle record read exactly like a repo with a failing one.
+
+  The join now matches on the name and URL the complexity table is actually keyed by, and
+  a query error is returned rather than counted as a verdict. That swallowing is what let
+  it survive: an owner page that said "this owner's repos are all incompatible" was
+  indistinguishable from a real answer.
+
 - **The rejected-row list disagreed with the rejected-row count.** Capping the per-row
   detail in the response took a flat prefix, so rejected rows sitting late in the file
   were dropped from the list while the outcome tally still counted them — 41 shown
@@ -89,3 +123,13 @@ item here got past a green suite, so a fix with no new test is a fix that will b
   fails *open*, and failing open looks like data rather than like breakage. The same shape
   caused the team-verdict filter to show every repo while displaying a filter chip. When a
   filter looks wrong, check the parameter reaches the query before suspecting the data.
+
+- **A saved filter did not carry the owner.** Found by use, 2026-08-03. It failed silently
+  in both directions: the page built its saved selection without ownership, so nothing was
+  sent, and the server's allowlist would have rejected it anyway. Fixed for `owner`,
+  `unowned` and `human_verdict`; the decision it records is in `plans/todo-ownership.md`.
+
+  **The general lesson, and it is the second time on this branch:** a filter that is dropped
+  on the way to the request fails *open* and reads as data. The subject picker did the same
+  with `search` vs `name`. A control that cannot be saved, or that returns the whole
+  catalogue, is worth suspecting before the data is.

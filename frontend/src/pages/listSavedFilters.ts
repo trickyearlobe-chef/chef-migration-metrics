@@ -12,6 +12,12 @@
 // control for (cookbooks/git-repos `compatibility`; `organisation`, which is the
 // global org selector rather than a filter-bar control) are not mapped: a saved
 // filter records what the view's filter bar can actually select.
+//
+// A saved owner selection names people, so it is a fixed cohort — "alice.brown's
+// repos" — which is what a shared one means to everyone who opens it. "What's
+// mine" is that cohort saved unshared. `owner` and `unowned` ask opposite
+// questions and the backend rejects the pair, at save time as well as on the
+// list request.
 // ---------------------------------------------------------------------------
 
 import type { SavedFilterParams } from "../types";
@@ -59,6 +65,8 @@ export interface CookbookFilterState {
   cookstyleStatus: string[];
   downloadStatus: string[];
   tkStatus: string[];
+  ownerNames: string[];
+  unowned: boolean;
 }
 
 export const EMPTY_COOKBOOK_FILTER_STATE: CookbookFilterState = {
@@ -67,6 +75,8 @@ export const EMPTY_COOKBOOK_FILTER_STATE: CookbookFilterState = {
   cookstyleStatus: [],
   downloadStatus: [],
   tkStatus: [],
+  ownerNames: [],
+  unowned: false,
 };
 
 export const COOKBOOK_FILTER_MAP: FilterParamMap<CookbookFilterState> = {
@@ -75,8 +85,10 @@ export const COOKBOOK_FILTER_MAP: FilterParamMap<CookbookFilterState> = {
     ["cookstyleStatus", "cookstyle_status"],
     ["downloadStatus", "download_status"],
     ["tkStatus", "tk_status"],
+    ["ownerNames", "owner"],
   ],
   scalars: [["nameFilter", "name"]],
+  booleans: [["unowned", "unowned"]],
 };
 
 export function cookbookStateToParams(
@@ -99,6 +111,9 @@ export interface GitRepoFilterState {
   tkStatus: string[];
   cloneStatus: string[];
   kitchenFilter: string[];
+  humanVerdict: string[];
+  ownerNames: string[];
+  unowned: boolean;
 }
 
 export const EMPTY_GIT_REPO_FILTER_STATE: GitRepoFilterState = {
@@ -107,6 +122,9 @@ export const EMPTY_GIT_REPO_FILTER_STATE: GitRepoFilterState = {
   tkStatus: [],
   cloneStatus: [],
   kitchenFilter: [],
+  humanVerdict: [],
+  ownerNames: [],
+  unowned: false,
 };
 
 export const GIT_REPO_FILTER_MAP: FilterParamMap<GitRepoFilterState> = {
@@ -115,8 +133,11 @@ export const GIT_REPO_FILTER_MAP: FilterParamMap<GitRepoFilterState> = {
     ["tkStatus", "tk_status"],
     ["cloneStatus", "clone_status"],
     ["kitchenFilter", "has_test_suite"],
+    ["humanVerdict", "human_verdict"],
+    ["ownerNames", "owner"],
   ],
   scalars: [["nameFilter", "name"]],
+  booleans: [["unowned", "unowned"]],
 };
 
 export function gitRepoStateToParams(

@@ -5,14 +5,15 @@
 **Found 2026-08-02, confirmed in code.** The most consequential open fault in the
 compatibility signals.
 
-`git_kitchen_results.go:228` counts a failure as `passed = false OR timed_out = true`.
-Nothing distinguishes a cookbook that genuinely fails to converge from a run that never
-got that far — an auth failure, an exhausted DHCP pool, a timeout. All land as `failed`.
+Every rollup counted a failure as `passed = false OR timed_out = true`, with nothing to
+distinguish a cookbook that genuinely fails to converge from a run that never got that far —
+an auth failure, an exhausted DHCP pool, a timeout. All landed as `failed`.
 
 That rolls up through `ComputeTKStatus` to `tk_status = "failed"`, and
 `checkCookbookCompatibility` treats **any** Test Kitchen failure as `StatusIncompatible`,
-overriding a CookStyle pass. So a lab that could not hand out an IP address marks the
-cookbook incompatible and blocks every node running it.
+overriding a CookStyle pass. So a lab that could not hand out an IP address marked the
+cookbook incompatible and blocked every node running it. **The counting is fixed below; what
+remains is that nothing yet shows a reader how much of the signal was the lab.**
 
 **Why this matters more than it looks.** The product owner reports that on the real estate
 a proper Test Kitchen run has only succeeded for a small fraction of cookbooks; the rest are
@@ -27,19 +28,41 @@ in the same direction — over-blocking — so that 126 bounds the work rather t
 **Do not fix this by weakening the rollup blindly.** A cookbook that genuinely fails to
 converge must still block. What is missing is the distinction, not the severity.
 
-Shape to aim for, cheapest first:
+**DECIDED 2026-08-03: a config switch, not a smarter signal.** Test Kitchen works on vSphere
+when it is set up correctly. It is not set up right now — DHCP went, then the credentials
+changed, then the hardware was repurposed — so the answer is to stop Test Kitchen feeding
+blocking while that is true, and turn it back on when it is not.
 
-- [ ] **Stop counting `timed_out` as a cookbook failure.** One clause in the count query. A
-  timeout is already understood to be usually environmental, and the plan already called it
-  "a free lower bound" on the environmental share. Measure the effect before and after —
-  the size of the change is itself the measurement of how much of the blocking set was
-  never about cookbooks.
-- [ ] **Record *why* a run failed**, rather than only that it did. Auth and DHCP failures
-  have recognisable signatures in the output already stored. A run that never reached
-  converge is not evidence about the cookbook and should not be a verdict about it.
-- [ ] **Report the environmental share** so a reader can see how much of the Test Kitchen
-  signal is about the lab. Until then the failure register is the only instrument that can
-  correct it, one repo at a time, by hand.
+- **`tk_blocks_readiness` toggle**, beside `review_blocks_readiness` on Admin → Readiness.
+  Ships **on**, so nothing changes for anyone until it is turned off. It is a `*bool` for the
+  same reason `TestKitchen.Enabled` is: a plain bool cannot tell "not set" from "set to
+  false", and the default has to be on.
+
+  Off does not hide anything — the Test Kitchen verdict is still collected and still shown
+  next to the others. It simply stops counting, so a failed run no longer outranks a CookStyle
+  pass. Turn it off at the customer site while vSphere access is gone.
+
+**A finer fix was built and reverted on 2026-08-03** — classifying each failure by the phase
+Test Kitchen names in its output, so only converge and verify failures counted against a
+cookbook. It worked and was fully tested, but it was more machinery than the situation needs:
+with the switch off it does nothing at all. Reverted along with migrations 0064-0067, none of
+which ever reached the customer. It is in git history if Test Kitchen comes back and the
+finer distinction is wanted then.
+
+**What the estate's kitchen results actually say — measured 2026-08-03, read-only.** About 230
+instance results exist, across 116 repos out of 2,210. Roughly: 19% passed, 4.2% were a real
+converge failure, 31% failed to build the VM, 41% died before Chef started, 4.2% could not be
+classified.
+
+**So 89% of the Test Kitchen failure signal was never about a cookbook**, and every one of
+those failures was marking its cookbook incompatible over a CookStyle pass. That is the number
+that justifies the switch. Coverage is low because the batches were deliberately small while
+the feature was being proven, and then the target went away — not because it does not work.
+
+The query that produced this is a plain `CASE` over `git_kitchen_results.output`, needing no
+schema change, so it can be re-run on any database at any version. Rebuild it from the phase
+markers Test Kitchen prints: `#create action`, `#converge action`, `#verify action`,
+`#destroy action`.
 
 **Interim, and available today:** a human verdict in the failure register outranks Test
 Kitchen, so a cookbook wrongly blocked by a lab failure can be recorded `not_broken` and
@@ -74,6 +97,9 @@ No wiring, cancellation, progress-endpoint, or restart-resilience work remains.
 - [x] Admin TK config UI exposes window + max-per-window
 
 ## Orphan Sweep
+
+**Buildable in the Proxmox lab; the vSphere specifics cannot be validated until customer
+access is restored.** The folder filter below is a vSphere parameter.
 
 - [ ] Extend `ListManagedVMs` with optional folder filter parameter (vSphere `?folders=` param)
 - [ ] Scoping: only touch VMs in configured `driver_settings.targetfolder`, matching prefix, older than age threshold
@@ -117,7 +143,8 @@ empirically on customer OS mix before relying on it.
 - [x] Per-platform command: Linux tolerant of `dhclient`/`dhcpcd`/`networkctl`/`nmcli`; Windows `ipconfig /release`; OS family from `analysis.NormalisePlatformName`
 - [x] Compose with any repo-provided `pre_destroy` hook (`writeLifecycleHook` + `readExistingPreDestroy`)
 - [x] Admin UI per-image opt-in checkbox (`AdminTestKitchenPage.tsx`)
-**ACTION — on-site validation (blocks "rely on it", not "ship it"):** run before trusting the hook. Per platform/image in the customer OS mix:
+**ACTION — on-site validation (blocks "rely on it", not "ship it"):** run before trusting the
+hook. **Blocked: this needs the customer OS mix on vSphere, and that access is gone.** Per platform/image in the customer OS mix:
 
 - [ ] Enable `release_ip_on_destroy` on one image; run a single kitchen instance; confirm the run result is **unchanged** vs the same run with it off (pass stays pass).
 - [ ] Confirm the DHCP lease is actually released (check the DHCP server's lease table / pool count drops for that IP after destroy) — i.e. the release packet left the guest before power-off.

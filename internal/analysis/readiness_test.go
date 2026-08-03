@@ -283,6 +283,9 @@ func (f *fakeReadinessDS) buildFakeCache() *readinessCache {
 		gitComplexity:    make(map[string]*datastore.GitRepoComplexity),
 		gitTKStatuses:    make(map[string]string),
 		humanVerdicts:    make(map[string]datastore.StandingVerdict),
+		// Mirrors the shipped default: Test Kitchen feeds readiness unless
+		// somebody turns it off.
+		tkBlocksReadiness: true,
 	}
 	for name, gr := range f.gitRepos {
 		cache.gitRepos[name] = gr
@@ -2271,7 +2274,7 @@ func TestBuildReadinessCache_PopulatesMaps(t *testing.T) {
 		ComplexityLabel:   "low",
 	}
 
-	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false)
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2324,7 +2327,7 @@ func TestBuildReadinessCache_FiltersTargetVersions(t *testing.T) {
 	ds.addCSResult("org-1", "apt", "7.4.0", "17.0", false)
 
 	// Build cache for only 18.0
-	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false)
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2343,7 +2346,7 @@ func TestBuildReadinessCache_IncludesNullTargetVersionCSResults(t *testing.T) {
 	// Server CS result with empty target version (scanned without profile)
 	ds.addCSResult("org-1", "apt", "7.4.0", "", true)
 
-	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false)
+	cache, err := buildReadinessCache(context.Background(), ds, "org-1", []string{"18.0"}, false, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -3167,5 +3170,81 @@ func TestReadinessEvaluator_EffectiveConcurrency_LiveOverride(t *testing.T) {
 	live = 0
 	if got := e2.effectiveConcurrency(); got != 3 {
 		t.Errorf("live concurrency with 0 = %d, want fallback 3", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The Test Kitchen blocking switch
+//
+// Test Kitchen works when the lab it targets is set up correctly. When it is
+// not — the credentials changed, the DHCP pool is empty, the hardware is gone —
+// every run fails for reasons that have nothing to do with a cookbook, and each
+// of those failures marks its cookbook incompatible over a CookStyle pass and
+// blocks every node running it. The switch stops Test Kitchen feeding blocking
+// while that is true, without deleting the results.
+// ---------------------------------------------------------------------------
+
+func TestCheckCookbookCompatibility_TKFailureBlocksWhenSwitchIsOn(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addGitRepoWithTK("apt", "abc123", true, false)
+	ds.addGitCSResult("apt", "18.0", true) // CookStyle says fine
+	ds.addGitTKStatus("apt", "18.0", "failed")
+
+	cache := ds.buildFakeCache()
+	cache.tkBlocksReadiness = true
+
+	status, source, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusIncompatible {
+		t.Errorf("status = %s, want %s — a TK failure outranks a CookStyle pass when the switch is on", status, StatusIncompatible)
+	}
+	if source != SourceGitTestKitchen {
+		t.Errorf("source = %s, want %s", source, SourceGitTestKitchen)
+	}
+}
+
+func TestCheckCookbookCompatibility_TKFailureDoesNotBlockWhenSwitchIsOff(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addGitRepoWithTK("apt", "abc123", true, false)
+	ds.addGitCSResult("apt", "18.0", true)
+	ds.addGitTKStatus("apt", "18.0", "failed")
+
+	cache := ds.buildFakeCache()
+	cache.tkBlocksReadiness = false
+
+	status, _, verdicts := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status == StatusIncompatible {
+		t.Errorf("status = %s — with the switch off a TK failure must not block", status)
+	}
+	// The result is still reported, so a reader can see what Test Kitchen said
+	// and that it was not counted.
+	var sawTK bool
+	for _, v := range verdicts {
+		if v.Source == SourceGitTestKitchen {
+			sawTK = true
+		}
+	}
+	if !sawTK {
+		t.Error("the Test Kitchen verdict should still be reported, just not counted")
+	}
+}
+
+// A Test Kitchen pass is evidence too, and the switch is about blocking. With
+// it off, a pass simply stops being one of the sources.
+func TestCheckCookbookCompatibility_TKPassIsNotCountedWhenSwitchIsOff(t *testing.T) {
+	ds := newFakeReadinessDS()
+	ds.addCookbookID("apt", "7.4.0", "org-1")
+	ds.addGitRepoWithTK("apt", "abc123", true, false)
+	ds.addGitCSResult("apt", "18.0", true)
+	ds.addGitTKStatus("apt", "18.0", "passed")
+
+	cache := ds.buildFakeCache()
+	cache.tkBlocksReadiness = false
+
+	status, _, _ := checkCookbookCompatibility("apt", "7.4.0", "18.0", ds.cookbookIDs, cache)
+	if status != StatusCompatibleCookstyleOnly {
+		t.Errorf("status = %s, want %s — with TK switched off, CookStyle is the only source counted",
+			status, StatusCompatibleCookstyleOnly)
 	}
 }

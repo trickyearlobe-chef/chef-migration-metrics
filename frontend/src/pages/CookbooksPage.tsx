@@ -7,6 +7,7 @@ import { useTargetChefVersion } from "../hooks/useTargetChefVersion";
 import { SortableColumnHeader } from "../components/SortableColumnHeader";
 import { FilterInput } from "../components/FilterInputs";
 import { FilterMultiCheckbox } from "../components/FilterMultiCheckbox";
+import { OwnerFilter, OwnerFilterChips } from "../components/OwnerFilter";
 import { fetchCookbooks, type CookbookFilterQuery } from "../api";
 import type {
   CookbookListItem,
@@ -92,6 +93,14 @@ export function CookbooksPage() {
   const [tkStatus, setTkStatus] = useState<string[]>(
     searchParams.get("tk_status")?.split(",").filter(Boolean) ?? [],
   );
+  // Ownership. The two halves are one selection because the API rejects them
+  // together — see OwnerFilter.
+  const [ownerNames, setOwnerNames] = useState<string[]>(
+    searchParams.get("owner")?.split(",").filter(Boolean) ?? [],
+  );
+  const [unowned, setUnowned] = useState(
+    searchParams.get("unowned") === "true",
+  );
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -115,7 +124,9 @@ export function CookbooksPage() {
       searchParams.has("name") ||
       searchParams.has("target_chef_version") ||
       searchParams.has("download_status") ||
-      searchParams.has("tk_status")
+      searchParams.has("tk_status") ||
+      searchParams.has("owner") ||
+      searchParams.has("unowned")
     ) {
       setSearchParams({}, { replace: true });
     }
@@ -133,6 +144,10 @@ export function CookbooksPage() {
     if (downloadStatus.length > 0)
       q.download_status = downloadStatus.join(",");
     if (tkStatus.length > 0) q.tk_status = tkStatus.join(",");
+    // Never both: the API answers a request carrying the pair with a 400, and
+    // the control cannot produce it. This mirrors that rather than trusting it.
+    if (unowned) q.unowned = "true";
+    else if (ownerNames.length > 0) q.owner = ownerNames.join(",");
     if (selectedTargetVersion) q.target_chef_version = selectedTargetVersion;
     if (sortField) q.sort = sortField;
     if (sortOrder) q.order = sortOrder;
@@ -144,6 +159,8 @@ export function CookbooksPage() {
     cookstyleStatus,
     downloadStatus,
     tkStatus,
+    ownerNames,
+    unowned,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -174,6 +191,8 @@ export function CookbooksPage() {
     cookstyleStatus,
     downloadStatus,
     tkStatus,
+    ownerNames,
+    unowned,
     selectedTargetVersion,
     sortField,
     sortOrder,
@@ -185,7 +204,8 @@ export function CookbooksPage() {
     (active.length > 0 ? 1 : 0) +
     (cookstyleStatus.length > 0 ? 1 : 0) +
     (downloadStatus.length > 0 ? 1 : 0) +
-    (tkStatus.length > 0 ? 1 : 0);
+    (tkStatus.length > 0 ? 1 : 0) +
+    (ownerNames.length > 0 || unowned ? 1 : 0);
 
   const clearFilters = () => {
     setNameFilter("");
@@ -193,6 +213,8 @@ export function CookbooksPage() {
     setCookstyleStatus([]);
     setDownloadStatus([]);
     setTkStatus([]);
+    setOwnerNames([]);
+    setUnowned(false);
   };
 
   // The current selection in the vocabulary a saved filter stores. Sort, page and
@@ -205,8 +227,18 @@ export function CookbooksPage() {
         cookstyleStatus,
         downloadStatus,
         tkStatus,
+        ownerNames,
+        unowned,
       }),
-    [nameFilter, active, cookstyleStatus, downloadStatus, tkStatus],
+    [
+      nameFilter,
+      active,
+      cookstyleStatus,
+      downloadStatus,
+      tkStatus,
+      ownerNames,
+      unowned,
+    ],
   );
 
   /**
@@ -221,6 +253,8 @@ export function CookbooksPage() {
     setCookstyleStatus(next.cookstyleStatus);
     setDownloadStatus(next.downloadStatus);
     setTkStatus(next.tkStatus);
+    setOwnerNames(next.ownerNames);
+    setUnowned(next.unowned);
     setPage(1);
   }, []);
 
@@ -236,12 +270,20 @@ export function CookbooksPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div data-testid="filter-bar" className="flex flex-wrap items-end gap-3">
         <FilterInput
           label="Name"
           value={nameFilter}
           onChange={setNameFilter}
           placeholder="Filter by name"
+        />
+        <OwnerFilter
+          owners={ownerNames}
+          unowned={unowned}
+          onChange={(next) => {
+            setOwnerNames(next.owners);
+            setUnowned(next.unowned);
+          }}
         />
         <FilterMultiCheckbox
           label="Active"
@@ -300,6 +342,17 @@ export function CookbooksPage() {
           onApply={applySavedFilter}
         />
       </div>
+
+      {/* The ownership selection, in a row of its own so the bar cannot grow
+          with it. */}
+      <OwnerFilterChips
+        owners={ownerNames}
+        unowned={unowned}
+        onChange={(next) => {
+          setOwnerNames(next.owners);
+          setUnowned(next.unowned);
+        }}
+      />
 
       {/* Table */}
       {loading && <LoadingSpinner message="Loading cookbooks…" />}

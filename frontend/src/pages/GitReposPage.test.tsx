@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "../api";
@@ -13,8 +13,17 @@ vi.mock("../api", async () => {
     ...actual,
     fetchGitRepos: vi.fn(),
     fetchSavedFilters: vi.fn(),
+    fetchOwners: vi.fn(),
   };
 });
+
+vi.mock("../api/savedFilters", () => ({
+  listSavedFilters: vi.fn(),
+  createSavedFilter: vi.fn(),
+  updateSavedFilter: vi.fn(),
+  deleteSavedFilter: vi.fn(),
+}));
+import * as savedFiltersApi from "../api/savedFilters";
 
 const mockUseAuth = vi.fn();
 vi.mock("../context/AuthContext", () => ({ useAuth: () => mockUseAuth() }));
@@ -65,6 +74,19 @@ describe("GitReposPage — the team verdict filter", () => {
     if (vi.isMockFunction(api.fetchSavedFilters)) {
       vi.mocked(api.fetchSavedFilters).mockResolvedValue({ data: [] });
     }
+    vi.mocked(savedFiltersApi.listSavedFilters).mockResolvedValue([]);
+    vi.mocked(api.fetchOwners).mockResolvedValue({
+      data: [
+        {
+          name: "alice.brown",
+          display_name: "Alice Brown",
+          owner_type: "person",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      pagination: { page: 1, per_page: 50, total_items: 1, total_pages: 1 },
+    });
   });
 
   // Marking a repo somebody has overruled is the point: without it the list
@@ -146,6 +168,216 @@ describe("GitReposPage — the team verdict filter", () => {
     await waitFor(() => {
       const last = vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0];
       expect(last?.human_verdict).toBeUndefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The ownership filter. The backend has answered "what's mine" and "what has
+// nobody" since 2026-08-02; until now no screen could ask either question.
+// ---------------------------------------------------------------------------
+
+describe("GitReposPage — the ownership filter", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({
+      isOperator: true,
+      isAdmin: true,
+      user: { role: "admin", username: "test" },
+    });
+    vi.mocked(api.fetchGitRepos).mockResolvedValue({
+      data: repos,
+      pagination: { page: 1, per_page: 25, total_items: 2, total_pages: 1 },
+    });
+    if (vi.isMockFunction(api.fetchSavedFilters)) {
+      vi.mocked(api.fetchSavedFilters).mockResolvedValue({ data: [] });
+    }
+    vi.mocked(savedFiltersApi.listSavedFilters).mockResolvedValue([]);
+    vi.mocked(api.fetchOwners).mockResolvedValue({
+      data: [
+        {
+          name: "alice.brown",
+          display_name: "Alice Brown",
+          owner_type: "person",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      pagination: { page: 1, per_page: 50, total_items: 1, total_pages: 1 },
+    });
+  });
+
+  it("asks the API for one person's repos", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+
+    await waitFor(() => {
+      expect(api.fetchGitRepos).toHaveBeenLastCalledWith(
+        expect.objectContaining({ owner: "alice.brown" }),
+      );
+    });
+  });
+
+  // The question the measurement was waiting on: the repos nobody has been
+  // made responsible for.
+  it("asks the API for the repos with nobody", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /No owner/i }));
+
+    await waitFor(() => {
+      const last = vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0];
+      expect(last?.unowned).toBe("true");
+      expect(last?.owner).toBeUndefined();
+    });
+  });
+
+  // The API returns 400 when both are sent. Asking for one has to withdraw the
+  // other, so the pair can never leave the page together.
+  it("never sends an owner and the no-owner question together", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+    await user.click(await screen.findByRole("checkbox", { name: /No owner/i }));
+
+    await waitFor(() => {
+      const last = vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0];
+      expect(last?.unowned).toBe("true");
+      expect(last?.owner).toBeUndefined();
+    });
+
+    // Every request, not just the last one.
+    for (const [call] of vi.mocked(api.fetchGitRepos).mock.calls) {
+      expect(call?.owner && call?.unowned).toBeFalsy();
+    }
+  });
+
+  // Seen in the running app with seven owners selected: chips hanging off the
+  // control widened it and shoved CookStyle, TK and Clone to the right. They
+  // belong under the bar, where they can wrap without moving anything.
+  it("shows the chosen owner as a chip below the filter bar, not inside it", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+
+    const chip = await screen.findByRole("button", {
+      name: "Remove alice.brown",
+    });
+    expect(screen.getByTestId("filter-bar")).not.toContainElement(chip);
+
+    // And removing one person only removes that person's filter.
+    await user.click(chip);
+    await waitFor(() => {
+      expect(vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0]?.owner).toBe(
+        undefined,
+      );
+    });
+  });
+
+  // A named cohort is how somebody keeps "my repos" — journey 1's own question.
+  // The page built its saved selection without ownership, so it went missing on
+  // save with no error to show for it.
+  it("saves the chosen owner as part of the cohort", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+    await screen.findByRole("button", { name: "Remove alice.brown" });
+
+    await user.click(screen.getByRole("button", { name: /Saved filters/ }));
+    fireEvent.change(screen.getByPlaceholderText(/save current selection as/i), {
+      target: { value: "Alice's repos" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(savedFiltersApi.createSavedFilter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters: expect.objectContaining({ owner: ["alice.brown"] }),
+        }),
+      );
+    });
+  });
+
+  it("asks for that person's repos when the cohort is opened", async () => {
+    vi.mocked(savedFiltersApi.listSavedFilters).mockResolvedValue([
+        {
+          id: "sf-1",
+          name: "Alice's repos",
+          view_name: "git-repos",
+          filters: { owner: ["alice.brown"] },
+          owner_username: "someone",
+          shared: true,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+    ]);
+
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /Saved filters/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Apply Alice's repos" }),
+    );
+
+    await waitFor(() => {
+      expect(api.fetchGitRepos).toHaveBeenLastCalledWith(
+        expect.objectContaining({ owner: "alice.brown" }),
+      );
+    });
+  });
+
+  it("drops the ownership filter from the request when cleared", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /No owner/i }));
+    await waitFor(() => {
+      expect(vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0]?.unowned).toBe(
+        "true",
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: /Clear \(/i }));
+
+    await waitFor(() => {
+      const last = vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0];
+      expect(last?.unowned).toBeUndefined();
+      expect(last?.owner).toBeUndefined();
     });
   });
 });

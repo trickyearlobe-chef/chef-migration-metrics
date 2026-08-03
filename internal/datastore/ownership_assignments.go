@@ -380,7 +380,9 @@ func (db *DB) lookupOwnership(ctx context.Context, q queryable, entityType, enti
 }
 
 func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, cookbookName, organisationName string) ([]OwnershipLookupResult, error) {
-	// Find the git repo URL from the git_repos table.
+	// Confirm the cookbook is git-sourced. The repo is found by name, and that
+	// name is what a git_repo assignment is keyed by — matching on the URL this
+	// returns inherited nothing, because no assignment is written that way.
 	var gitRepoURL sql.NullString
 	err := q.QueryRowContext(ctx, `
 		SELECT git_repo_url FROM git_repos
@@ -406,7 +408,7 @@ func (db *DB) lookupGitRepoInheritedOwnership(ctx context.Context, q queryable, 
 				WHEN 'auto_rule' THEN 3
 			END
 	`
-	rows, err := q.QueryContext(ctx, query, gitRepoURL.String, nullStringPtr(organisationName))
+	rows, err := q.QueryContext(ctx, query, cookbookName, nullStringPtr(organisationName))
 	if err != nil {
 		return nil, fmt.Errorf("datastore: looking up git_repo inherited ownership: %w", err)
 	}

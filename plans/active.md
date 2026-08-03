@@ -5,7 +5,7 @@ Single source of truth for what is in flight. **Read this first at session start
 Only work that is in flight or next lives here. Everything else is in a `todo-*.md`
 backlog — do not re-summarise it here; the duplication is what makes this file stale.
 
-## Branch map (2026-08-02)
+## Branch map (2026-08-03)
 
 `main` — **v2.18.13** tagged and pushed. Collection is hourly. A few commits sit unpushed on
 top of the tag: the git repo owner filter, and the snagging fixes made after it was cut.
@@ -14,10 +14,24 @@ top of the tag: the git repo owner filter, and the snagging fixes made after it 
 deliberately by the product owner**, ahead of the MVP being complete, to get a build deployable
 at customer scale and take the measurements below. Later chunks branch fresh from `main`.
 
+`feature/ownership-list-filters` — **merged into `main` 2026-08-03** after sign-off. The
+ownership filter on the git repo and cookbook lists (savable as a named cohort, enforced on the
+export path), the snagging fixes and migration 0063 found while using it, and the switch that
+stops Test Kitchen feeding blocking. 0063 is applied to the dev DB.
+
+**Turn `tk_blocks_readiness` off at the customer site** while vSphere access is gone. It ships
+on, so nothing changes until somebody does.
+
 **If a rollback is ever needed:** there is **no down-migration runner** — only `MigrateUp` — so a
-schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Only
-migration 0059 leaves a residue the old binary reads (`owner_aliases` back-filled from
-`owners.contact_email`); its down script removes exactly those rows.
+schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Two
+migrations leave a residue the old binary reads:
+
+- **0059** — `owner_aliases` back-filled from `owners.contact_email`; its down script removes
+  exactly those rows.
+- **0063** — git repo assignments re-keyed from the git URL to the repo name. An older binary
+  reads three of those paths by URL, so it would show those repos as unowned again. The down
+  script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
+  from one the import always held by name, and the redundant duplicates it removed are gone.
 
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
@@ -44,12 +58,17 @@ numbers and the reasoning are in `plans/todo-ownership.md`; do not start either 
 revisiting them.
 
 **But the blocking signal itself is the real problem, and it is worse than "untrustworthy".**
-`git_kitchen_results.go:228` counts a Test Kitchen failure as `passed = false OR timed_out`,
-with nothing distinguishing a cookbook that fails to converge from a lab that could not
-authenticate or hand out an IP. That rolls up to `tk_status = failed`, and readiness treats any
-TK failure as incompatible — **overriding a CookStyle pass**. On this estate, where most TK runs
-fail on auth or DHCP, lab failures are blocking real nodes. CookStyle offences are separately
-reported as badly curated for this work.
+Nothing distinguishes a cookbook that fails to converge from a lab that could not authenticate
+or hand out an IP. A Test Kitchen failure rolls up to `tk_status = failed`, and readiness treats
+any TK failure as incompatible — **overriding a CookStyle pass**. On this estate, where most TK
+runs fail on auth or DHCP, lab failures are blocking real nodes. CookStyle offences are
+separately reported as badly curated for this work.
+
+**Measured on the estate 2026-08-03: 89% of the Test Kitchen failure signal was never about a
+cookbook.** The fix is a config switch that stops Test Kitchen feeding blocking while vSphere
+access at the customer site is gone, not a smarter signal. A classifier was built and reverted
+the same day as more machinery than the situation needs; it is in git history if Test Kitchen
+comes back. Detail: `plans/todo-bulk-kitchen-scanning.md`.
 
 So the 126 **bounds** the unowned work rather than describing it, and the top open question is
 no longer ownership — it is whether the blocking list is true at all. Detail and the shape of a
@@ -59,12 +78,14 @@ signal is.
 
 ## NEXT — ownership filtering in the list views
 
-The work in flight, and where a new thread starts. Scope and findings:
-`plans/todo-ownership.md` § Ownership filtering in the list views.
+Scope and the decisions that bind: `plans/todo-ownership.md` § Ownership filtering in the list
+views.
 
-Backend is done for git repos, cookbooks and nodes. **Every one of them is missing the UI
-control**, which is the entire remaining gap. Order: git repos, then cookbooks (UI only), then
-nodes (UI only, deferred — no node ownership data exists yet).
+The git repo and cookbook lists carry the control, and it was driven in the running app on
+2026-08-03: both questions answer correctly. Ownership is savable as a named cohort, and the
+export path enforces the same rule as the list views. **The only thing left is the node list,
+which stays deferred** — there is no node ownership data to test it against, and `OwnerFilter`
+drops straight in when there is.
 
 ## Snagging (`plans/todo-snagging.md`)
 
@@ -72,14 +93,12 @@ Defects found by the product owner using the shipped app. Faults in what is buil
 before new work. Seven found and fixed on 2026-08-02, six of them while importing real data —
 none would have come from a code review. Reproduce, write the failing test, then fix.
 
-**Next free migration number: 0063.**
+**Next free migration number: 0064.**
 
 ## QUEUED behind the ownership MVP
 
-- **CC19 target-version failing-nodes preset** (`plans/todo-event-ingest.md`) — wiring
-  `useTargetChefVersion` into `RunEventsPage`; copy an existing call site, not new behaviour.
-- **General audit log** (`plans/todo-audit.md`, spec `specifications/audit-log.md`) — who
-  changed config, who triggered a rescan. Proposed, not started.
+CC19 target-version preset (`plans/todo-event-ingest.md`) and the general audit log
+(`plans/todo-audit.md`). Scope lives there; do not restate it here.
 
 ## Dependabot — settled 2026-08-02, do not re-triage
 

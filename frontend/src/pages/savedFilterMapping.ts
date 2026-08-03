@@ -26,6 +26,11 @@ export interface FilterParamMap<S> {
   lists: ReadonlyArray<readonly [keyof S, string]>;
   /** Single-value filters, stored as a one-element list. */
   scalars: ReadonlyArray<readonly [keyof S, string]>;
+  /**
+   * On/off filters, stored as ["true"] when set and omitted when not — an
+   * absent param and a false one mean the same thing to the request parser.
+   */
+  booleans?: ReadonlyArray<readonly [keyof S, string]>;
 }
 
 /** The current filter-bar selection as a storable param map. Empties omitted. */
@@ -43,6 +48,10 @@ export function stateToParams<S extends object>(
   for (const [key, param] of map.scalars) {
     const value = state[key] as string;
     if (value) params[param] = [value];
+  }
+
+  for (const [key, param] of map.booleans ?? []) {
+    if (state[key] as boolean) params[param] = ["true"];
   }
 
   return params;
@@ -71,6 +80,10 @@ export function paramsToState<S extends object>(
   for (const [key, param] of map.scalars) {
     const values = params[param];
     if (values && values.length > 0) (state[key] as string) = values[0];
+  }
+
+  for (const [key, param] of map.booleans ?? []) {
+    (state[key] as boolean) = params[param]?.[0] === "true";
   }
 
   return state;

@@ -801,8 +801,8 @@ func (db *DB) getOwnerCookbookSummary(ctx context.Context, q queryable, ownerNam
 }
 
 // GetOwnerGitRepoSummary computes compatibility data for git repos assigned
-// to the given owner. For each git repo, it looks up cookbooks by
-// git_repo_url and checks their complexity records.
+// to the given owner. Assignments are keyed by repo name, so each is resolved
+// against git_repos.name and checked for a complexity record.
 func (db *DB) GetOwnerGitRepoSummary(ctx context.Context, ownerName, targetChefVersion string) (OwnerGitRepoSummary, error) {
 	return db.getOwnerGitRepoSummary(ctx, db.q(), ownerName, targetChefVersion)
 }
@@ -822,38 +822,55 @@ func (db *DB) getOwnerGitRepoSummary(ctx context.Context, q queryable, ownerName
 	}
 	defer rows.Close()
 
-	var repoURLs []string
+	var repoNames []string
 	for rows.Next() {
-		var url string
-		if err := rows.Scan(&url); err != nil {
-			return summary, fmt.Errorf("datastore: scanning owned git repo URL: %w", err)
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return summary, fmt.Errorf("datastore: scanning owned git repo name: %w", err)
 		}
-		repoURLs = append(repoURLs, url)
+		repoNames = append(repoNames, name)
 	}
 	if err := rows.Err(); err != nil {
-		return summary, fmt.Errorf("datastore: iterating owned git repo URLs: %w", err)
+		return summary, fmt.Errorf("datastore: iterating owned git repo names: %w", err)
 	}
 
-	summary.Total = len(repoURLs)
+	summary.Total = len(repoNames)
 	if summary.Total == 0 {
 		return summary, nil
 	}
 
 	// Step 2: For each git repo, check git_repo_complexity
 	// whether any has a failing complexity record.
-	for _, repoURL := range repoURLs {
+	//
+	// Matched on the repo name, which is what a git_repo assignment is keyed
+	// by. Matching on git_repo_url found no repo at all, and a repo with no
+	// complexity record is counted as incompatible below — so every repo an
+	// owner owns was reported as a problem, in the same shape as a real answer.
+	for _, repoName := range repoNames {
+		// git_repo_complexity is keyed by (git_repo_name, git_repo_url) — there
+		// are no surrogate ids on either table. This joined grc.git_repo_id to
+		// gr.id, neither of which exists, so the query errored on every call and
+		// the error was counted as "incompatible" below: every repo an owner
+		// owns was reported as a problem, and it read exactly like an answer.
 		const compatQuery = `
 			SELECT COALESCE(MIN(grc.error_count), -1)
 			FROM git_repos gr
 			LEFT JOIN git_repo_complexity grc
-			       ON grc.git_repo_id = gr.id AND grc.target_chef_version = $2
-			WHERE gr.git_repo_url = $1
+			       ON grc.git_repo_name = gr.name
+			      AND grc.git_repo_url = gr.git_repo_url
+			      AND grc.target_chef_version = $2
+			WHERE gr.name = $1
 		`
 		var minErrors int
-		err := q.QueryRowContext(ctx, compatQuery, repoURL, targetChefVersion).Scan(&minErrors)
-		if err != nil || minErrors < 0 {
-			// No cookbooks or no complexity records — treat as incompatible
-			// since we can't confirm compatibility.
+		err := q.QueryRowContext(ctx, compatQuery, repoName, targetChefVersion).Scan(&minErrors)
+		if err != nil {
+			// A broken query is not a verdict. Reporting it as incompatible is
+			// what let the above survive.
+			return summary, fmt.Errorf("datastore: checking complexity for git repo %q: %w", repoName, err)
+		}
+		if minErrors < 0 {
+			// No complexity record — treat as incompatible, since compatibility
+			// cannot be confirmed.
 			summary.Incompatible++
 			continue
 		}

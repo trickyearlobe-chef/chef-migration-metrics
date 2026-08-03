@@ -13,6 +13,7 @@ export function AdminReadinessPage() {
     install_size_mb_windows: 6144,
     min_remaining_free_percent: 20,
     review_blocks_readiness: false,
+    tk_blocks_readiness: true,
   });
   const [saved, setSaved] = useState<ReadinessConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -236,6 +237,30 @@ export function AdminReadinessPage() {
               disabled (default), Review-level cookbooks count as compatible and
               readiness is gated only by Blockers and disk space. Applies at the
               next readiness evaluation.
+            </span>
+          </span>
+        </label>
+
+        <label className="mt-4 flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={config.tk_blocks_readiness}
+            onChange={(e) => handleChange("tk_blocks_readiness", e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+            disabled={saving}
+          />
+          <span>
+            <span className="block text-sm font-medium text-gray-700">
+              Test Kitchen results block readiness
+            </span>
+            <span className="mt-1 block text-xs text-gray-500">
+              When enabled (default), a failed Test Kitchen run marks the
+              cookbook incompatible and blocks every node running it, even if
+              CookStyle passed. Turn this off when the test environment is not
+              working — wrong credentials, no DHCP addresses, missing capacity —
+              because then every run fails for reasons that have nothing to do
+              with the cookbook. Results are still collected and still shown;
+              they just stop counting. Applies at the next readiness evaluation.
             </span>
           </span>
         </label>

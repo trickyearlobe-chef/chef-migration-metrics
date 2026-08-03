@@ -1159,6 +1159,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			InstallSizeMBWindows:    app.cfg.Readiness.InstallSizeMBWindows,
 			MinRemainingFreePercent: app.cfg.Readiness.MinRemainingFreePercent,
 			ReviewBlocksReadiness:   app.cfg.Readiness.ReviewBlocksReadiness,
+			TKBlocksReadiness:       app.cfg.Readiness.TKBlocksReadinessValue(),
 		},
 		analysis.WithConfigFunc(func() analysis.ReadinessEvalConfig {
 			cfg := app.configHolder.Get()
@@ -1169,6 +1170,7 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 				InstallSizeMBWindows:    cfg.Readiness.InstallSizeMBWindows,
 				MinRemainingFreePercent: cfg.Readiness.MinRemainingFreePercent,
 				ReviewBlocksReadiness:   cfg.Readiness.ReviewBlocksReadiness,
+				TKBlocksReadiness:       cfg.Readiness.TKBlocksReadinessValue(),
 			}
 		}),
 		analysis.WithReadinessConcurrencyFunc(func() int {

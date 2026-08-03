@@ -524,6 +524,29 @@ type ReadinessConfig struct {
 	// only issue is Review-level cookbooks is "Needs review" (not ready, not
 	// blocked). Dynamic — read live by the readiness evaluator.
 	ReviewBlocksReadiness bool `yaml:"review_blocks_readiness"`
+
+	// TKBlocksReadiness controls whether Test Kitchen results feed node
+	// readiness at all. On (the default): a Test Kitchen failure marks the
+	// cookbook incompatible, outranking a CookStyle pass. Off: Test Kitchen
+	// results are still collected and shown, but count towards nothing.
+	//
+	// It exists because Test Kitchen is only as good as the lab it targets.
+	// When that lab is not set up correctly — changed credentials, an empty
+	// DHCP pool, hardware that has gone — every run fails for reasons that
+	// have nothing to do with a cookbook, and each failure blocks every node
+	// running it. Measured on the customer estate on 2026-08-03, 89% of Test
+	// Kitchen failures were of that kind.
+	//
+	// A pointer so "not set" is distinguishable from "set to false", which is
+	// what lets the default be on. Read it through TKBlocksReadinessValue.
+	// Dynamic — read live by the readiness evaluator.
+	TKBlocksReadiness *bool `yaml:"tk_blocks_readiness" json:"tk_blocks_readiness"`
+}
+
+// TKBlocksReadinessValue reports whether Test Kitchen results should feed
+// readiness, defaulting to true when nothing has been set.
+func (rc ReadinessConfig) TKBlocksReadinessValue() bool {
+	return rc.TKBlocksReadiness == nil || *rc.TKBlocksReadiness
 }
 
 // SystemHealthConfig controls host-level resource monitoring and the
@@ -1040,6 +1063,10 @@ func (c *Config) setDefaults() {
 	}
 	if c.Readiness.MinRemainingFreePercent == 0 {
 		c.Readiness.MinRemainingFreePercent = 20
+	}
+	if c.Readiness.TKBlocksReadiness == nil {
+		t := true
+		c.Readiness.TKBlocksReadiness = &t
 	}
 	// Backward compat: if old min_free_disk_mb is set but new fields are
 	// at defaults, honour it for both platforms.

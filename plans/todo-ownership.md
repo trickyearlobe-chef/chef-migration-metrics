@@ -143,27 +143,44 @@ human verdict inside the readiness rollup are built.
 - [ ] **Nothing surfaces the register on the repo or node it affects.** A node blocked by a
   human verdict carries the reason in `blocking_cookbooks`, and no view reads it yet.
 
-## Ownership filtering in the list views — IN PROGRESS, next thread starts here
+## Ownership filtering in the list views
 
 Journey 1 ("what's mine") and the unowned question both need the list views to filter on
-ownership. Findings from wiring it up 2026-08-02:
+ownership. The git repo and cookbook lists now carry the control; three decisions bind
+anything that extends it:
 
-- **Cookbooks and nodes already had the backend** — `parseOwnerFilter` → `resolveOwnershipFilter`
-  → `filterByOwnershipKey`, with in-memory paging while the filter is active.
-- **Git repos did not, and now does** (`handle_git_repos.go`), same pattern, with tests.
-- **No list view has any UI for it.** That is the whole remaining gap, and it is why
-  "no screen answers 'show me every repo with no owner'" was true.
+- **Both questions live in one control** (`OwnerFilter`). The API rejects `owner` and
+  `unowned` together with a 400, so ticking either withdraws the other and the pair cannot
+  leave the page. Split across two controls that rule could only be enforced by catching the
+  error after somebody had already asked for it.
+- **Owners are searched on the server**, not filtered in the browser. The estate carries
+  thousands, so a page of them held locally would answer "no such person" for anybody who did
+  not make the first page. The control calls `GET /owners?search=`, which runs the owners
+  list's readiness enrichment on every search — measure it against the real estate before
+  assuming it is cheap enough.
+- **The export carries the ownership filter too.** Adding the control made an export taken
+  from a filtered list reachable, and the git-repo export was returning the whole estate with
+  nothing in the file to say so.
 
-- [ ] **Git repo list — the filter control.** Backend done. Needs the UI: a filter on owner
-  (multi-select, per journey 1's "several people at once") and an unowned toggle. Model it on
-  the `FilterMultiCheckbox` controls already on that page, and mind that the page is busy —
-  the same objection that kept the team-verdict marker out of its own column.
-- [ ] **Cookbook list — UI only.** The backend already works.
+- **The chips sit in a row of their own, not in the bar** (`OwnerFilterChips`). The control is
+  a fixed-width button carrying the count; the selection wraps full-width beneath the bar, so
+  no number of owners can displace the other filters. The count alone was rejected: it cannot
+  say who is selected or take one person off.
 - [ ] **Node list — UI only**, and deferred: there is no node ownership dataset yet, so it
-  cannot be tested against anything real.
-
-**Beware the `owner` and `unowned` parameters are mutually exclusive** — the API returns 400 if
-both are sent, so the control has to make that unreachable rather than rely on the error.
+  cannot be tested against anything real. `OwnerFilter` drops straight in.
+- **Ownership and the team verdict are part of a saved filter.** A saved owner selection
+  names people, so it is the fixed cohort "alice.brown's repos" — which is what a *shared*
+  one means to everyone who opens it. "What's mine" is that cohort saved unshared; there is
+  deliberately no marker that resolves against whoever is looking. `owner` and `unowned` ask
+  opposite questions, so the pair is rejected at save time as well as on the list request —
+  otherwise a cohort could hold a contradiction that only failed when somebody opened it.
+  `human_verdict` is savable on git repos, and not on cookbooks, whose parser ignores it.
+- **The export path enforces the same ownership rule as the list views.** Checked once in
+  `handleExports`, before any source runs, rather than in each export source: a source can
+  only fail as a 500, so the caller would have been told the export broke rather than that
+  they asked two contradictory questions. It therefore covers every export type, including
+  roles, which ignores ownership entirely — a contradictory request is nonsense whether or
+  not the endpoint would have acted on it.
 
 ## Identity and alias management — what is left
 

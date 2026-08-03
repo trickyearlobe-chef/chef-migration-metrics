@@ -16,6 +16,7 @@ const mockReadiness = {
   install_size_mb_windows: 6144,
   min_remaining_free_percent: 20,
   review_blocks_readiness: false,
+  tk_blocks_readiness: true,
 };
 
 describe("AdminReadinessPage", () => {
@@ -78,6 +79,36 @@ describe("AdminReadinessPage", () => {
     await waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(1));
     expect(saveSpy).toHaveBeenCalledWith(
       expect.objectContaining({ review_blocks_readiness: true }),
+    );
+  });
+
+  // The switch that stops a broken test environment blocking nodes. It ships
+  // on, so nothing changes for anyone until somebody turns it off.
+  it("shows the Test Kitchen toggle on by default", async () => {
+    render(<AdminReadinessPage />);
+    await waitFor(() => screen.getByText("Readiness Policy"));
+    expect(
+      screen.getByRole("checkbox", { name: /Test Kitchen results block readiness/ }),
+    ).toBeChecked();
+  });
+
+  it("persists tk_blocks_readiness when turned off", async () => {
+    const saveSpy = vi
+      .mocked(api.saveReadinessConfig)
+      .mockResolvedValue({ value: { ...mockReadiness, tk_blocks_readiness: false } } as never);
+
+    render(<AdminReadinessPage />);
+    await waitFor(() => screen.getByText("Readiness Policy"));
+
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: /Test Kitchen results block readiness/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ tk_blocks_readiness: false }),
+      ),
     );
   });
 });

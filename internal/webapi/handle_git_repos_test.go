@@ -644,3 +644,54 @@ func TestGitRepos_OwnershipFilterCorrectsTheTotal(t *testing.T) {
 		t.Errorf("total_items = %d, want 1 — the total must describe the filtered set", resp.Pagination.TotalItems)
 	}
 }
+
+// The Export button sends the list view's own filter selection, so an export
+// taken from a list filtered by owner must contain that list and not the whole
+// estate. Nothing tells the person who downloads it which they got.
+func TestGitReposExport_FilterByOwner(t *testing.T) {
+	store := gitRepoOwnershipStore([]datastore.OwnershipAssignment{
+		{OwnerName: "alice.brown", EntityType: "git_repo", EntityKey: "acme-apache"},
+	})
+	r := newTestRouterWithMockAndConfig(store, exportTestConfig())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost,
+		"/api/v1/exports?export_type=git_repos&format=csv&owner=alice.brown", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "acme-apache") {
+		t.Errorf("the owned repo is missing from the export:\n%s", body)
+	}
+	for _, notWanted := range []string{"acme-nginx", "acme-mysql"} {
+		if strings.Contains(body, notWanted) {
+			t.Errorf("%s belongs to somebody else and must not be in the export:\n%s", notWanted, body)
+		}
+	}
+}
+
+// The unowned export is the one somebody carries away to work through, so it
+// has to be the unowned set rather than everything.
+func TestGitReposExport_FilterUnowned(t *testing.T) {
+	store := gitRepoOwnershipStore([]datastore.OwnershipAssignment{
+		{OwnerName: "alice.brown", EntityType: "git_repo", EntityKey: "acme-apache"},
+	})
+	r := newTestRouterWithMockAndConfig(store, exportTestConfig())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost,
+		"/api/v1/exports?export_type=git_repos&format=csv&unowned=true", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "acme-apache") {
+		t.Errorf("an owned repo appeared in the unowned export:\n%s", body)
+	}
+	for _, want := range []string{"acme-nginx", "acme-mysql"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s has no owner and is missing from the export:\n%s", want, body)
+		}
+	}
+}

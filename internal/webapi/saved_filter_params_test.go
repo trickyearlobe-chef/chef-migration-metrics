@@ -142,3 +142,64 @@ func TestSavedFilterViews_MatchTheListViews(t *testing.T) {
 		t.Errorf("vocabulary covers %d views, want %d", len(savedFilterVocabulary), len(want))
 	}
 }
+
+// "What's mine" is the question the ownership work exists to answer, and it is
+// the one thing a saved cohort could not hold: ownership was left out of the
+// vocabulary, so the page dropped it silently on save. A saved owner filter is
+// a fixed cohort — "alice.brown's repos" — which is what a shared one means to
+// everybody who opens it.
+func TestValidateSavedFilterSelection_AcceptsOwnership(t *testing.T) {
+	for _, view := range []string{"git-repos", "cookbooks"} {
+		t.Run(view+"/owner", func(t *testing.T) {
+			if err := validateSavedFilterSelection(view, map[string][]string{
+				"owner": {"alice.brown", "bob.jones"},
+			}); err != nil {
+				t.Errorf("an owner cohort should be savable on %s: %v", view, err)
+			}
+		})
+		t.Run(view+"/unowned", func(t *testing.T) {
+			if err := validateSavedFilterSelection(view, map[string][]string{
+				"unowned": {"true"},
+			}); err != nil {
+				t.Errorf("the nobody-owns-it cohort should be savable on %s: %v", view, err)
+			}
+		})
+	}
+}
+
+// The list endpoint answers 400 to owner and unowned together. A saved cohort
+// must not be able to hold the contradiction the live view refuses, or it
+// fails only later, when somebody opens it.
+func TestValidateSavedFilterSelection_RejectsOwnerAndUnownedTogether(t *testing.T) {
+	for _, view := range []string{"git-repos", "cookbooks"} {
+		t.Run(view, func(t *testing.T) {
+			err := validateSavedFilterSelection(view, map[string][]string{
+				"owner":   {"alice.brown"},
+				"unowned": {"true"},
+			})
+			if err == nil {
+				t.Fatal("expected a saved filter asking both ownership questions to be rejected")
+			}
+			if !strings.Contains(err.Error(), "owner") || !strings.Contains(err.Error(), "unowned") {
+				t.Errorf("error should name both params, got: %v", err)
+			}
+		})
+	}
+}
+
+// A person's verdict is a control in the git-repo filter bar, left out of the
+// vocabulary on the same footing as ownership.
+func TestValidateSavedFilterSelection_AcceptsHumanVerdict(t *testing.T) {
+	if err := validateSavedFilterSelection("git-repos", map[string][]string{
+		"human_verdict": {"broken"},
+	}); err != nil {
+		t.Errorf("the team verdict should be savable: %v", err)
+	}
+	// Cookbooks has no such control and its parser ignores the param, so
+	// accepting it there would store a filter that does nothing.
+	if err := validateSavedFilterSelection("cookbooks", map[string][]string{
+		"human_verdict": {"broken"},
+	}); err == nil {
+		t.Error("cookbooks has no team-verdict filter; saving one should be rejected")
+	}
+}
