@@ -244,7 +244,9 @@ export function GitReposPage() {
   };
 
   // The current selection in the vocabulary a saved filter stores. Sort, page and
-  // the global lens are deliberately not in here.
+  // the global lens are deliberately not in here. Ownership is: a saved owner
+  // selection is the fixed cohort "alice.brown's repos", which is what a shared
+  // one means to everyone who opens it.
   const currentFilterParams = useMemo<SavedFilterParams>(
     () =>
       gitRepoStateToParams({
@@ -253,8 +255,20 @@ export function GitReposPage() {
         tkStatus,
         cloneStatus,
         kitchenFilter,
+        humanVerdict,
+        ownerNames,
+        unowned,
       }),
-    [nameFilter, cookstyleStatus, tkStatus, cloneStatus, kitchenFilter],
+    [
+      nameFilter,
+      cookstyleStatus,
+      tkStatus,
+      cloneStatus,
+      kitchenFilter,
+      humanVerdict,
+      ownerNames,
+      unowned,
+    ],
   );
 
   /**
@@ -269,6 +283,9 @@ export function GitReposPage() {
     setTkStatus(next.tkStatus);
     setCloneStatus(next.cloneStatus);
     setKitchenFilter(next.kitchenFilter);
+    setHumanVerdict(next.humanVerdict);
+    setOwnerNames(next.ownerNames);
+    setUnowned(next.unowned);
     setPage(1);
   }, []);
 

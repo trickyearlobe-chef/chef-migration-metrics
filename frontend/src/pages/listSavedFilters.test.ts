@@ -52,6 +52,7 @@ describe("cookbooks saved filters", () => {
   it("maps the view's selection to its params", () => {
     expect(
       cookbookStateToParams({
+        ...EMPTY_COOKBOOK_FILTER_STATE,
         nameFilter: "apache",
         active: ["true"],
         cookstyleStatus: ["ready"],
@@ -83,6 +84,7 @@ describe("git repos saved filters", () => {
   it("maps the view's selection to its params", () => {
     expect(
       gitRepoStateToParams({
+        ...EMPTY_GIT_REPO_FILTER_STATE,
         nameFilter: "cookbook-repo",
         cookstyleStatus: ["ready"],
         tkStatus: ["failed"],
@@ -107,6 +109,37 @@ describe("git repos saved filters", () => {
       ...EMPTY_GIT_REPO_FILTER_STATE,
       cloneStatus: ["failed"],
     });
+  });
+
+  // "What's mine" is the question the ownership work exists to answer, and it
+  // was the one thing a named cohort could not hold: the page built its saved
+  // selection without ownership, so it went missing without an error.
+  it("carries the chosen owners and the team verdict", () => {
+    const params = gitRepoStateToParams({
+      ...EMPTY_GIT_REPO_FILTER_STATE,
+      ownerNames: ["alice.brown", "bob.jones"],
+      humanVerdict: ["broken"],
+    });
+    expect(params.owner).toEqual(["alice.brown", "bob.jones"]);
+    expect(params.human_verdict).toEqual(["broken"]);
+    expect(paramsToGitRepoState(params)).toEqual({
+      ...EMPTY_GIT_REPO_FILTER_STATE,
+      ownerNames: ["alice.brown", "bob.jones"],
+      humanVerdict: ["broken"],
+    });
+  });
+
+  it("carries the nobody-owns-it question, and drops it when it is off", () => {
+    const on = gitRepoStateToParams({
+      ...EMPTY_GIT_REPO_FILTER_STATE,
+      unowned: true,
+    });
+    expect(on.unowned).toEqual(["true"]);
+    expect(paramsToGitRepoState(on).unowned).toBe(true);
+
+    const off = gitRepoStateToParams(EMPTY_GIT_REPO_FILTER_STATE);
+    expect(off.unowned).toBeUndefined();
+    expect(paramsToGitRepoState(off).unowned).toBe(false);
   });
 });
 
@@ -140,7 +173,9 @@ describe("the mapped params are in the backend's allowlist", () => {
 
   it.each(views)("%s", (view, map) => {
     const allowed = allowlistFor(view);
-    const mapped = [...map.lists, ...map.scalars].map(([, param]) => param);
+    const mapped = [...map.lists, ...map.scalars, ...(map.booleans ?? [])].map(
+      ([, param]) => param,
+    );
 
     expect(mapped.length).toBeGreaterThan(0);
     for (const param of mapped) {
@@ -157,7 +192,9 @@ describe("the mapped params are in the backend's allowlist", () => {
   // what the filter bar can actually select.
   it("does not map params the filter bar has no control for", () => {
     const mapped = views.flatMap(([, map]) =>
-      [...map.lists, ...map.scalars].map(([, param]) => param),
+      [...map.lists, ...map.scalars, ...(map.booleans ?? [])].map(
+        ([, param]) => param,
+      ),
     );
     expect(mapped).not.toContain("organisation");
     expect(mapped).not.toContain("ready_to_activate");

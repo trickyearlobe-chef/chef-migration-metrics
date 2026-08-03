@@ -168,10 +168,13 @@ anything that extends it:
   say who is selected or take one person off.
 - [ ] **Node list — UI only**, and deferred: there is no node ownership dataset yet, so it
   cannot be tested against anything real. `OwnerFilter` drops straight in.
-- [ ] **Ownership is not part of a saved filter.** `savedFilterVocabulary` does not accept
-  `owner`/`unowned`, so "my repos" cannot be saved as a named cohort — which is journey 1's
-  own question. `human_verdict` is excluded on the same footing. Decide whether either
-  belongs in a saved cohort, rather than leaving both out by accident.
+- **Ownership and the team verdict are part of a saved filter.** A saved owner selection
+  names people, so it is the fixed cohort "alice.brown's repos" — which is what a *shared*
+  one means to everyone who opens it. "What's mine" is that cohort saved unshared; there is
+  deliberately no marker that resolves against whoever is looking. `owner` and `unowned` ask
+  opposite questions, so the pair is rejected at save time as well as on the list request —
+  otherwise a cohort could hold a contradiction that only failed when somebody opened it.
+  `human_verdict` is savable on git repos, and not on cookbooks, whose parser ignores it.
 - [ ] **The export path accepts the contradiction the list view rejects.**
   `/api/v1/exports?...&owner=x&unowned=true` answers the unowned question silently;
   the list endpoint 400s on the same pair. `newCookbookExportSource` and

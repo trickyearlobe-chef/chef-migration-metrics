@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "../api";
@@ -16,6 +16,15 @@ vi.mock("../api", async () => {
     fetchOwners: vi.fn(),
   };
 });
+
+// SavedFilterBar imports these directly, not through the api barrel.
+vi.mock("../api/savedFilters", () => ({
+  listSavedFilters: vi.fn(),
+  createSavedFilter: vi.fn(),
+  updateSavedFilter: vi.fn(),
+  deleteSavedFilter: vi.fn(),
+}));
+import * as savedFiltersApi from "../api/savedFilters";
 
 vi.mock("../context/OrgContext", () => ({
   useOrg: vi.fn().mockReturnValue({
@@ -144,6 +153,35 @@ describe("CookbooksPage — the ownership filter", () => {
       name: "Remove alice.brown",
     });
     expect(screen.getByTestId("filter-bar")).not.toContainElement(chip);
+  });
+
+  // The same cohort question on the cookbook list.
+  it("saves the chosen owner as part of the cohort", async () => {
+    vi.mocked(savedFiltersApi.listSavedFilters).mockResolvedValue([]);
+    const user = userEvent.setup();
+    render(<CookbooksPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchCookbooks).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+    await screen.findByRole("button", { name: "Remove alice.brown" });
+
+    await user.click(screen.getByRole("button", { name: /Saved filters/ }));
+    fireEvent.change(screen.getByPlaceholderText(/save current selection as/i), {
+      target: { value: "Alice's cookbooks" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(savedFiltersApi.createSavedFilter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters: expect.objectContaining({ owner: ["alice.brown"] }),
+        }),
+      );
+    });
   });
 
   it("drops the ownership filter from the request when cleared", async () => {

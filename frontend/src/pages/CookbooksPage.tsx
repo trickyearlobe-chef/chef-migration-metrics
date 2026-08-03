@@ -227,8 +227,18 @@ export function CookbooksPage() {
         cookstyleStatus,
         downloadStatus,
         tkStatus,
+        ownerNames,
+        unowned,
       }),
-    [nameFilter, active, cookstyleStatus, downloadStatus, tkStatus],
+    [
+      nameFilter,
+      active,
+      cookstyleStatus,
+      downloadStatus,
+      tkStatus,
+      ownerNames,
+      unowned,
+    ],
   );
 
   /**
@@ -243,6 +253,8 @@ export function CookbooksPage() {
     setCookstyleStatus(next.cookstyleStatus);
     setDownloadStatus(next.downloadStatus);
     setTkStatus(next.tkStatus);
+    setOwnerNames(next.ownerNames);
+    setUnowned(next.unowned);
     setPage(1);
   }, []);
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import * as api from "../api";
@@ -16,6 +16,14 @@ vi.mock("../api", async () => {
     fetchOwners: vi.fn(),
   };
 });
+
+vi.mock("../api/savedFilters", () => ({
+  listSavedFilters: vi.fn(),
+  createSavedFilter: vi.fn(),
+  updateSavedFilter: vi.fn(),
+  deleteSavedFilter: vi.fn(),
+}));
+import * as savedFiltersApi from "../api/savedFilters";
 
 const mockUseAuth = vi.fn();
 vi.mock("../context/AuthContext", () => ({ useAuth: () => mockUseAuth() }));
@@ -66,6 +74,7 @@ describe("GitReposPage — the team verdict filter", () => {
     if (vi.isMockFunction(api.fetchSavedFilters)) {
       vi.mocked(api.fetchSavedFilters).mockResolvedValue({ data: [] });
     }
+    vi.mocked(savedFiltersApi.listSavedFilters).mockResolvedValue([]);
     vi.mocked(api.fetchOwners).mockResolvedValue({
       data: [
         {
@@ -183,6 +192,7 @@ describe("GitReposPage — the ownership filter", () => {
     if (vi.isMockFunction(api.fetchSavedFilters)) {
       vi.mocked(api.fetchSavedFilters).mockResolvedValue({ data: [] });
     }
+    vi.mocked(savedFiltersApi.listSavedFilters).mockResolvedValue([]);
     vi.mocked(api.fetchOwners).mockResolvedValue({
       data: [
         {
@@ -283,6 +293,67 @@ describe("GitReposPage — the ownership filter", () => {
     await waitFor(() => {
       expect(vi.mocked(api.fetchGitRepos).mock.calls.at(-1)?.[0]?.owner).toBe(
         undefined,
+      );
+    });
+  });
+
+  // A named cohort is how somebody keeps "my repos" — journey 1's own question.
+  // The page built its saved selection without ownership, so it went missing on
+  // save with no error to show for it.
+  it("saves the chosen owner as part of the cohort", async () => {
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /^Owner/ }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: /Alice Brown/ }),
+    );
+    await screen.findByRole("button", { name: "Remove alice.brown" });
+
+    await user.click(screen.getByRole("button", { name: /Saved filters/ }));
+    fireEvent.change(screen.getByPlaceholderText(/save current selection as/i), {
+      target: { value: "Alice's repos" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(savedFiltersApi.createSavedFilter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filters: expect.objectContaining({ owner: ["alice.brown"] }),
+        }),
+      );
+    });
+  });
+
+  it("asks for that person's repos when the cohort is opened", async () => {
+    vi.mocked(savedFiltersApi.listSavedFilters).mockResolvedValue([
+        {
+          id: "sf-1",
+          name: "Alice's repos",
+          view_name: "git-repos",
+          filters: { owner: ["alice.brown"] },
+          owner_username: "someone",
+          shared: true,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+    ]);
+
+    const user = userEvent.setup();
+    render(<GitReposPage />, { wrapper: Wrapper });
+
+    await waitFor(() => expect(api.fetchGitRepos).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: /Saved filters/ }));
+    await user.click(
+      await screen.findByRole("button", { name: "Apply Alice's repos" }),
+    );
+
+    await waitFor(() => {
+      expect(api.fetchGitRepos).toHaveBeenLastCalledWith(
+        expect.objectContaining({ owner: "alice.brown" }),
       );
     });
   });

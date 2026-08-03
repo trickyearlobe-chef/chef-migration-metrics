@@ -124,8 +124,12 @@ item here got past a green suite, so a fix with no new test is a fix that will b
   caused the team-verdict filter to show every repo while displaying a filter chip. When a
   filter looks wrong, check the parameter reaches the query before suspecting the data.
 
-- **A saved filter does not carry the owner.** Found by use, 2026-08-03: "my repos" is
-  journey 1's own question and cannot be saved as a named cohort. Already open, with the
-  decision it needs, in `plans/todo-ownership.md` § Ownership filtering in the list views —
-  `savedFilterVocabulary` accepts neither `owner`/`unowned` nor `human_verdict`. Recorded
-  here only because it was found in the running app; fix it there.
+- **A saved filter did not carry the owner.** Found by use, 2026-08-03. It failed silently
+  in both directions: the page built its saved selection without ownership, so nothing was
+  sent, and the server's allowlist would have rejected it anyway. Fixed for `owner`,
+  `unowned` and `human_verdict`; the decision it records is in `plans/todo-ownership.md`.
+
+  **The general lesson, and it is the second time on this branch:** a filter that is dropped
+  on the way to the request fails *open* and reads as data. The subject picker did the same
+  with `search` vs `name`. A control that cannot be saved, or that returns the whole
+  catalogue, is worth suspecting before the data is.
