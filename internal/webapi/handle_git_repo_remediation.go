@@ -388,14 +388,12 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 	if tkErr == nil {
 		var passed, failed int
 		for _, res := range tkResults {
-			if res.TargetChefVersion != targetVersion {
+			if res.Passed == nil || res.TargetChefVersion != targetVersion {
 				continue
 			}
-			// Remediation weight must not be driven by a lab failure.
-			switch {
-			case res.Passed != nil && *res.Passed:
+			if *res.Passed {
 				passed++
-			case tkstatus.CountsAsCookbookFailure(res.Passed, res.FailureKind):
+			} else {
 				failed++
 			}
 		}

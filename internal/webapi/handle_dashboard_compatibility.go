@@ -549,11 +549,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 		r.logf("WARN", "listing git kitchen results for TK dashboard: %v", tkErr)
 	} else {
 		for _, res := range allResults {
-			// A lab failure is not a verdict about the cookbook — see the
-			// rule on datastore.ListGitKitchenCountsByTargetVersions.
-			isPass := res.Passed != nil && *res.Passed
-			isFail := tkstatus.CountsAsCookbookFailure(res.Passed, res.FailureKind)
-			if !isPass && !isFail {
+			if res.Passed == nil {
 				continue
 			}
 			s := tkByRepo[res.GitRepoName]
@@ -562,7 +558,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 				tkByRepo[res.GitRepoName] = s
 			}
 			s.total++
-			if isPass {
+			if *res.Passed {
 				s.passed++
 			} else {
 				s.failed++

@@ -15,11 +15,9 @@ deliberately by the product owner**, ahead of the MVP being complete, to get a b
 at customer scale and take the measurements below. Later chunks branch fresh from `main`.
 
 `feature/ownership-list-filters` — **unmerged, awaiting sign-off**, tree clean and every gate
-green. It now carries more than its name: the ownership filter on the git repo and cookbook
-lists (savable as a named cohort, enforced on the export path), the snagging fixes and
-migration 0063 found while using it, **and the Test Kitchen blocking-signal fix — migrations
-0064-0067, which re-verdict every repo's `tk_*` columns on the way up**. 0063 is applied to the
-dev DB; 0064-0067 are not.
+green. The ownership filter on the git repo and cookbook lists (savable as a named cohort,
+enforced on the export path), plus the snagging fixes and migration 0063 found while using it.
+0063 is applied to the dev DB.
 
 **If a rollback is ever needed:** there is **no down-migration runner** — only `MigrateUp` — so a
 schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Two
@@ -27,11 +25,6 @@ migrations leave a residue the old binary reads:
 
 - **0059** — `owner_aliases` back-filled from `owners.contact_email`; its down script removes
   exactly those rows.
-- **0064 / 0067** — `git_repos.tk_*` re-materialised under the new rule, where a lab failure is
-  not a cookbook failure. An older binary reads those columns and would show fewer repos as TK
-  failed until something rewrites them; each down script restores the old counting. **0065-0067
-  must be rolled back in reverse order** — 0066's down restores the view that names the column
-  0065's down drops.
 - **0063** — git repo assignments re-keyed from the git URL to the repo name. An older binary
   reads three of those paths by URL, so it would show those repos as unowned again. The down
   script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
@@ -68,12 +61,11 @@ any TK failure as incompatible — **overriding a CookStyle pass**. On this esta
 runs fail on auth or DHCP, lab failures are blocking real nodes. CookStyle offences are
 separately reported as badly curated for this work.
 
-A failed run now records **why** it failed, and only a converge or verify failure counts
-against the cookbook (migrations 0064-0067). What is left is that nothing shows a reader how
-much of the Test Kitchen signal was the lab: a repo whose runs all failed environmentally now
-reads `untested`, which is honest about the cookbook and silent about the broken lab. That
-open item, and the measurement to take once this is deployed where the estate lives, are in
-`plans/todo-bulk-kitchen-scanning.md`.
+**Measured on the estate 2026-08-03: 89% of the Test Kitchen failure signal was never about a
+cookbook.** The fix is a config switch that stops Test Kitchen feeding blocking while vSphere
+access at the customer site is gone, not a smarter signal. A classifier was built and reverted
+the same day as more machinery than the situation needs; it is in git history if Test Kitchen
+comes back. Detail: `plans/todo-bulk-kitchen-scanning.md`.
 
 So the 126 **bounds** the unowned work rather than describing it, and the top open question is
 no longer ownership — it is whether the blocking list is true at all. Detail and the shape of a
@@ -98,7 +90,7 @@ Defects found by the product owner using the shipped app. Faults in what is buil
 before new work. Seven found and fixed on 2026-08-02, six of them while importing real data —
 none would have come from a code review. Reproduce, write the failing test, then fix.
 
-**Next free migration number: 0068.**
+**Next free migration number: 0064.**
 
 ## QUEUED behind the ownership MVP
 

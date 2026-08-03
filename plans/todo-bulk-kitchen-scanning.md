@@ -28,80 +28,37 @@ in the same direction — over-blocking — so that 126 bounds the work rather t
 **Do not fix this by weakening the rollup blindly.** A cookbook that genuinely fails to
 converge must still block. What is missing is the distinction, not the severity.
 
-Shape to aim for, cheapest first:
+**DECIDED 2026-08-03: a config switch, not a smarter signal.** Test Kitchen works on vSphere
+when it is set up correctly. It is not set up right now — DHCP went, then the credentials
+changed, then the hardware was repurposed — so the answer is to stop Test Kitchen feeding
+blocking while that is true, and turn it back on when it is not.
 
-- **Timeouts no longer count as cookbook failures.** A run with `passed IS NULL` is neither a
-  pass nor a failure and is not in `tk_total`; the rule is documented on
-  `ListGitKitchenCountsByTargetVersions` and applied by every rollup. Migration 0064
-  re-materialises `git_repos.tk_*`, because those queries otherwise only run when a kitchen
-  result is written.
-- **A failed run records why it failed** (`git_kitchen_results.failure_kind`). Test Kitchen
-  names the phase in the output it already stores, and the phases map onto the distinction
-  that matters: converge and verify exercise the cookbook; create and destroy are the lab
-  building and tearing down a machine. Only the first pair counts against a cookbook. A
-  failure nobody can classify still counts, so nothing is unblocked by accident.
+- [ ] **`tk_blocks_readiness` toggle**, beside `review_blocks_readiness` on Admin → Readiness.
+  Same shape: config store (not YAML), snapshotted into the readiness cache per run, and a
+  change triggers a readiness recompute. It gates the `anyTKFail` branch in
+  `checkCookbookCompatibility`.
 
-  The rule lives in `tkstatus` (`ClassifyFailure`, `CountsAsCookbookFailure`) and every
-  rollup mirrors it — the four SQL ones and the Go summaries behind the repo detail, the
-  compatibility dashboard and remediation weighting. Migrations 0065-0067 add the column,
-  refresh `git_kitchen_results_active` (a view fixes its column list when created, so it
-  never saw the new column), and classify the rows captured before it. A functional test
-  pins the SQL classifier to the Go one, since a drift between them would re-verdict repos
-  on deploy by a rule nobody tested.
+**A finer fix was built and reverted on 2026-08-03** — classifying each failure by the phase
+Test Kitchen names in its output, so only converge and verify failures counted against a
+cookbook. It worked and was fully tested, but it was more machinery than the situation needs:
+with the switch off it does nothing at all. Reverted along with migrations 0064-0067, none of
+which ever reached the customer. It is in git history if Test Kitchen comes back and the
+finer distinction is wanted then.
 
-  **Why the timeout fix alone was not enough:** of 15 failed instances in the lab DB, only 3
-  are converge failures. Three failed to *create* the VM (a 300s clone timeout on the
-  hypervisor) and 8 died on a tooling error before any instance existed — all recorded
-  identically to a real failure: `passed = false`, `timed_out = false`, no error message.
-  Lab data, not the estate, but the same failure shape.
+**What the estate's kitchen results actually say — measured 2026-08-03, read-only.** About 230
+instance results exist, across 116 repos out of 2,210. Roughly: 19% passed, 4.2% were a real
+converge failure, 31% failed to build the VM, 41% died before Chef started, 4.2% could not be
+classified.
 
-- **MEASURED against the customer estate, 2026-08-03, read-only and before any of this is
-  deployed there.** The classification was run inline as a `SELECT`, so the figures are the
-  clean "before". Roughly 230 instance results exist, across **116 repos out of 2,210**:
+**So 89% of the Test Kitchen failure signal was never about a cookbook**, and every one of
+those failures was marking its cookbook incompatible over a CookStyle pass. That is the number
+that justifies the switch. Coverage is low because the batches were deliberately small while
+the feature was being proven, and then the target went away — not because it does not work.
 
-  | | share |
-  |---|---|
-  | passed | 19% |
-  | converge_failed | 4.2% |
-  | create_failed | 31% |
-  | no_converge | 41% |
-  | unknown | 4.2% |
-
-  **89% of the Test Kitchen failure signal was never about a cookbook.** Of the failures,
-  only the converge_failed slice — about ten rows in the whole estate — is a cookbook that
-  was converged and did not come up. Every one of the rest used to mark its cookbook
-  incompatible over a CookStyle pass, and block every node running it.
-
-  **`unknown` at 4.2% is what says the classification can be trusted here.** The phase
-  markers were taken from Proxmox output and the estate runs vSphere; had they not fitted,
-  that share would be large.
-
-  **Why those verdicts were permanent, not merely wrong.** vSphere access at the customer
-  site is gone — DHCP first, then changed credentials, then the hardware repurposed — so
-  nothing can re-run and supersede them. Until access is restored, the failure register is
-  the only way to correct one. The ~44 passes are in the same position: equally undated, and
-  still standing as current evidence.
-
-  Coverage is low for the same reason and not because the feature does not work: the batches
-  were deliberately small while it was being proven, and then the target went away.
-
-  **The classification can still be proven end to end.** The Proxmox driver is configured in
-  the local CMM, so a real batch exercises executor → queue → stored `failure_kind` → rollup
-  against a live hypervisor. Only the vSphere-specific behaviour is unverifiable while access
-  is gone; the rule itself is not.
-- [ ] **Report the environmental share** so a reader can see how much of the Test Kitchen
-  signal is about the lab. A repo whose runs all failed environmentally reads `untested`,
-  which is honest about the cookbook but says nothing about the lab being broken — and
-  nothing yet displays `failure_kind`, which is recorded per instance and reaches the API
-  already. The dashboard has a `timed_out_repos` field that is never incremented, so it
-  reports 0 whatever happens; either wire it to the recorded kinds or drop it.
-
-  **This matters most at the moment vSphere access returns:** it is what turns "runs are
-  failing again" into something visible on the day rather than a query somebody thinks to run
-  months later.
-- [ ] **Test Kitchen evidence carries no age or provenance.** A pass and a failure from the
-  lost vSphere environment both stand as current verdicts, indefinitely. Decide whether a
-  kitchen verdict should expire, or show when and where it was taken.
+The query that produced this is a plain `CASE` over `git_kitchen_results.output`, needing no
+schema change, so it can be re-run on any database at any version. Rebuild it from the phase
+markers Test Kitchen prints: `#create action`, `#converge action`, `#verify action`,
+`#destroy action`.
 
 **Interim, and available today:** a human verdict in the failure register outranks Test
 Kitchen, so a cookbook wrongly blocked by a lab failure can be recorded `not_broken` and

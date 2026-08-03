@@ -74,7 +74,6 @@ func (e *GitKitchenExecutor) Execute(ctx context.Context, item *datastore.Kitche
 		CommitSHA:         item.HeadCommitSHA,
 		Passed:            result.Passed,
 		TimedOut:          result.TimedOut,
-		FailureKind:       result.FailureKind,
 		Output:            result.Output,
 		DurationSeconds:   result.DurationSeconds,
 		ErrorMessage:      result.ErrorMessage,

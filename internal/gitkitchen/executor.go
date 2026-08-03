@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/analysis"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/config"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/tkstatus"
 )
 
 // KitchenExecutor runs kitchen CLI commands.
@@ -49,13 +49,9 @@ type RunInstanceParams struct {
 
 // RunInstanceResult holds the output of a single instance run.
 type RunInstanceResult struct {
-	Passed         *bool
-	TimedOut       bool
-	NetworkTimeout bool
-	// FailureKind says why the run failed, so a lab that could not build a
-	// machine is not read as a cookbook that will not converge. Set by
-	// finish() from the record that gets stored.
-	FailureKind     string
+	Passed          *bool
+	TimedOut        bool
+	NetworkTimeout  bool
 	Output          string // combined stdout+stderr
 	DurationSeconds *int
 	ErrorMessage    string
@@ -74,7 +70,6 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 		return RunInstanceResult{
 			ErrorMessage: fmt.Sprintf("gitkitchen: creating workspace: %v", err),
 			DriverUsed:   tkConfig.Driver,
-			FailureKind:  tkstatus.FailureNoConverge,
 		}
 	}
 	defer os.RemoveAll(workDir)
@@ -87,7 +82,6 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 			return RunInstanceResult{
 				ErrorMessage: fmt.Sprintf("gitkitchen: backing up existing overlay: %v", renameErr),
 				DriverUsed:   tkConfig.Driver,
-				FailureKind:  tkstatus.FailureNoConverge,
 			}
 		}
 	}
@@ -111,7 +105,6 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 		return RunInstanceResult{
 			ErrorMessage: fmt.Sprintf("gitkitchen: generating overlay: %v", err),
 			DriverUsed:   tkConfig.Driver,
-			FailureKind:  tkstatus.FailureNoConverge,
 		}
 	}
 	if overlay != "" {
@@ -119,7 +112,6 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 			return RunInstanceResult{
 				ErrorMessage: fmt.Sprintf("gitkitchen: writing overlay: %v", writeErr),
 				DriverUsed:   tkConfig.Driver,
-				FailureKind:  tkstatus.FailureNoConverge,
 			}
 		}
 	}
@@ -130,7 +122,6 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 		return RunInstanceResult{
 			ErrorMessage: fmt.Sprintf("gitkitchen: resolving credentials: %v", err),
 			DriverUsed:   tkConfig.Driver,
-			FailureKind:  tkstatus.FailureNoConverge,
 		}
 	}
 	if cleanup != nil {
@@ -155,8 +146,6 @@ func RunInstance(ctx context.Context, params RunInstanceParams, tkConfig config.
 	finish := func() RunInstanceResult {
 		result.Output = output.String()
 		result.DurationSeconds = intPtr(int(time.Since(start).Seconds()))
-		result.FailureKind = tkstatus.ClassifyFailure(
-			result.Output, result.Passed, result.TimedOut, result.NetworkTimeout)
 		return result
 	}
 
@@ -357,10 +346,17 @@ func combineOutput(stdout, stderr string) string {
 func boolPtr(v bool) *bool { return &v }
 func intPtr(v int) *int    { return &v }
 
+// convergePatterns matches lines that indicate Chef converge activity started.
+var convergePatterns = regexp.MustCompile(
+	`(?i)(Converging \d+ resource|` +
+		`\* \S+\[.*\] action |` +
+		`Recipe: |` +
+		`Starting Chef (Infra )?Client|` +
+		`resolving cookbooks)`)
+
 // hasConvergeActivity returns true if the combined output contains evidence
 // that Chef actually began converging. Used to distinguish network/DHCP
-// timeouts (VM never booted) from real test failures. The rule lives with the
-// failure classification it feeds, in tkstatus.
+// timeouts (VM never booted) from real test failures.
 func hasConvergeActivity(output string) bool {
-	return tkstatus.HasConvergeActivity(output)
+	return convergePatterns.MatchString(output)
 }

@@ -109,10 +109,6 @@ func (db *DB) RecomputeAllGitRepoCookstyleStatus(ctx context.Context, targetChef
 // columns for a single git repo from its active (non-excluded) kitchen results.
 //
 // Call this after upserting/deleting kitchen results or changing exclusions.
-//
-// A timed-out run counts as neither a pass nor a failure, and is not part of
-// tk_total either — it is not evidence about the cookbook. The rule and why it
-// matters are documented on ListGitKitchenCountsByTargetVersions.
 func (db *DB) RecomputeGitRepoTKStatus(ctx context.Context, gitRepoName, gitRepoURL string) error {
 	const query = `
 		UPDATE git_repos
@@ -128,8 +124,8 @@ func (db *DB) RecomputeGitRepoTKStatus(ctx context.Context, gitRepoName, gitRepo
 		FROM (
 			SELECT
 				COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-				COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) AS failed_count,
-				COUNT(*) FILTER (WHERE passed = true OR (passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge'))) AS total_count
+				COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count,
+				COUNT(*) FILTER (WHERE passed IS NOT NULL OR timed_out = true) AS total_count
 			FROM git_kitchen_results_active
 			WHERE git_repo_name = $1
 			  AND git_repo_url = $2
@@ -160,8 +156,8 @@ func (db *DB) RecomputeGitRepoTKStatusByName(ctx context.Context, gitRepoName st
 		FROM (
 			SELECT git_repo_name, git_repo_url,
 				COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-				COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) AS failed_count,
-				COUNT(*) FILTER (WHERE passed = true OR (passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge'))) AS total_count
+				COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count,
+				COUNT(*) FILTER (WHERE passed IS NOT NULL OR timed_out = true) AS total_count
 			FROM git_kitchen_results_active
 			WHERE git_repo_name = $1
 			GROUP BY git_repo_name, git_repo_url

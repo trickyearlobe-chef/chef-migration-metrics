@@ -29,8 +29,6 @@ type GitKitchenResult struct {
 	DriverUsed        string     `json:"driver_used,omitempty"`
 	Passed            *bool      `json:"passed"`
 	TimedOut          bool       `json:"timed_out"`
-	// FailureKind says why a failed run failed — see gitkitchen.ClassifyFailure.
-	FailureKind       string     `json:"failure_kind,omitempty"`
 	Output            string     `json:"output,omitempty"`
 	DurationSeconds   *int       `json:"duration_seconds,omitempty"`
 	ErrorMessage      string     `json:"error_message,omitempty"`
@@ -53,7 +51,6 @@ type UpsertGitKitchenResultParams struct {
 	DriverUsed        string
 	Passed            *bool
 	TimedOut          bool
-	FailureKind       string
 	Output            string
 	DurationSeconds   *int
 	ErrorMessage      string
@@ -67,7 +64,7 @@ type UpsertGitKitchenResultParams struct {
 
 const gkrColumns = `id, git_repo_name, git_repo_url, target_chef_version,
 	commit_sha, platform_name, suite_name, instance_name, driver_used,
-	passed, timed_out, failure_kind, output,
+	passed, timed_out, output,
 	duration_seconds, error_message, started_at, completed_at, created_at`
 
 // ---------------------------------------------------------------------------
@@ -110,10 +107,10 @@ func (db *DB) upsertGitKitchenResult(ctx context.Context, q queryable, p UpsertG
 		INSERT INTO git_kitchen_results (
 			git_repo_name, git_repo_url, target_chef_version,
 			commit_sha, platform_name, suite_name, instance_name, driver_used,
-			passed, timed_out, failure_kind, output,
+			passed, timed_out, output,
 			duration_seconds, error_message, started_at, completed_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		)
 		ON CONFLICT (git_repo_name, git_repo_url, target_chef_version, platform_name, suite_name)
 		DO UPDATE SET
@@ -122,7 +119,6 @@ func (db *DB) upsertGitKitchenResult(ctx context.Context, q queryable, p UpsertG
 			driver_used      = EXCLUDED.driver_used,
 			passed           = EXCLUDED.passed,
 			timed_out        = EXCLUDED.timed_out,
-			failure_kind     = EXCLUDED.failure_kind,
 			output           = EXCLUDED.output,
 			duration_seconds = EXCLUDED.duration_seconds,
 			error_message    = EXCLUDED.error_message,
@@ -141,7 +137,6 @@ func (db *DB) upsertGitKitchenResult(ctx context.Context, q queryable, p UpsertG
 		nullString(p.DriverUsed),
 		nullBoolPtr(p.Passed),
 		p.TimedOut,
-		p.FailureKind,
 		nullString(p.Output),
 		nullIntPtr(p.DurationSeconds),
 		nullString(p.ErrorMessage),
@@ -215,27 +210,6 @@ func (db *DB) ListActiveGitKitchenResults(ctx context.Context) ([]GitKitchenResu
 // (git_repo_name, target_chef_version) combination. The map is keyed by
 // "repoName|targetVersion". Callers use tkstatus.ComputeTKStatus to derive
 // the status string.
-//
-// What counts as a failure — the rule every TK rollup follows:
-//
-//	passed = true                     → a pass
-//	passed = false, cookbook failure  → a failure
-//	passed = false, lab failure       → no evidence about the cookbook
-//	passed IS NULL                    → no verdict at all
-//
-// Readiness treats any Test Kitchen failure as incompatible, overriding a
-// CookStyle pass, so anything counted here blocks every node running the
-// cookbook. A run that never reached the cookbook must not do that: a timeout
-// waiting on a DHCP lease, a VM the lab could not build, a teardown that
-// failed. Those leave the repo untested rather than failed. A cookbook that
-// was converged and did not come up still fails, and so does a failure nobody
-// could classify — see tkstatus.CountsAsCookbookFailure, which this mirrors
-// and which the migration's gkr_failure_kind() is pinned to by test.
-//
-// The same rule is applied in RecomputeGitRepoTKStatus[ByName],
-// getGitKitchenStatusMap and the batch-summary rollup in webapi; the Go-side
-// summaries (buildTKSummaryMap, the compatibility dashboard) already skipped
-// NULL, so this is also what makes the list and the detail view agree.
 func (db *DB) ListGitKitchenCountsByTargetVersions(ctx context.Context, targetChefVersions []string) (map[string]tkstatus.Counts, error) {
 	result := make(map[string]tkstatus.Counts)
 	if len(targetChefVersions) == 0 {
@@ -249,15 +223,14 @@ func (db *DB) ListGitKitchenCountsByTargetVersions(ctx context.Context, targetCh
 		args[i] = v
 	}
 
-	// Mirrors tkstatus.CountsAsCookbookFailure — see the rule documented above.
 	query := `SELECT git_repo_name, target_chef_version,
 	       COUNT(*) FILTER (WHERE passed = true) AS passed_count,
-	       COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) AS failed_count
+	       COUNT(*) FILTER (WHERE passed = false OR timed_out = true) AS failed_count
 	FROM git_kitchen_results_active
 	WHERE target_chef_version IN (` + joinStrings(placeholders, ", ") + `)
 	GROUP BY git_repo_name, target_chef_version
 	HAVING COUNT(*) FILTER (WHERE passed = true) > 0
-	    OR COUNT(*) FILTER (WHERE passed = false AND failure_kind NOT IN ('create_failed', 'destroy_failed', 'network_timeout', 'timeout', 'no_converge')) > 0`
+	    OR COUNT(*) FILTER (WHERE passed = false OR timed_out = true) > 0`
 
 	rows, err := db.q().QueryContext(ctx, query, args...)
 	if err != nil {
@@ -311,7 +284,6 @@ func scanGitKitchenResult(row *sql.Row) (GitKitchenResult, error) {
 		&driverUsed,
 		&passed,
 		&r.TimedOut,
-		&r.FailureKind,
 		&output,
 		&durationSeconds,
 		&errorMessage,
@@ -365,7 +337,6 @@ func scanGitKitchenResults(rows *sql.Rows, err error) ([]GitKitchenResult, error
 			&driverUsed,
 			&passed,
 			&r.TimedOut,
-			&r.FailureKind,
 			&output,
 			&durationSeconds,
 			&errorMessage,
