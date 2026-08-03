@@ -27,6 +27,7 @@ var savedFilterVocabulary = map[string]map[string]bool{
 		"policy_group", "role", "tags", "organisation", "readiness_filter",
 		"cookstyle_status", "kitchen_status", "migration_state",
 		"target_converge_status", "target_version", "ready_to_activate",
+		"owner", "unowned",
 	),
 	"roles": setOf(
 		"name", "organisation", "compatibility_status", "tk_status",

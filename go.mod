@@ -13,6 +13,7 @@ require (
 	github.com/crewjam/saml v0.5.1
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.1
+	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/russellhaering/goxmldsig v1.6.0
 	github.com/vmware/govmomi v0.54.1
 	golang.org/x/crypto v0.53.0
@@ -33,6 +34,10 @@ require (
 	github.com/aws/smithy-go v1.27.1 // indirect
 	github.com/beevik/etree v1.6.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 )

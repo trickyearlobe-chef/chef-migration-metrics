@@ -33,13 +33,90 @@ migrations leave a residue the old binary reads:
   script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
   from one the import always held by name, and the redundant duplicates it removed are gone.
 
+## WHERE THIS WAS LEFT — end of 2026-08-03
+
+`feature/ownership-sql-ingest`, 16 commits, unmerged, tree clean, every gate green. The app on
+:443 runs this build; SQL Server and PostgreSQL containers are up and seeded.
+
+**Working and demonstrable:** ownership filtering on nodes, git repos and cookbooks; savable as
+a named cohort; enforced on the export path. Import from a file or from a database — browse the
+tables a connection can see, pick one or write a query, map the columns, preview, import. The
+connection lives in a stored credential, so no password is typed on the import screen.
+
+**Timeline:** screenshots for the change control form on Monday 2026-08-03; the customer wires
+it up in **production on Tuesday 2026-08-04**. So Monday is available to close the two below,
+and they are worth closing before Tuesday rather than after.
+
+**Not done, and the two that get met in production rather than in a demo:**
+
+1. **Entity type comes from a dropdown, not from a column.** A source table holding several
+   kinds of asset must be imported once per kind, using the row filter. Nothing on screen says
+   so, and getting it wrong writes assignments of the wrong type — as happened here on
+   2026-08-03.
+2. **Nobody has watched a commit from a database source write into a real database.** Profile
+   and preview are proven end to end against SQL Server through the HTTP layer. Commit uses the
+   same seam and the same writer as a file import, and has never been observed.
+
+**Not done, cosmetic or deferrable:** "my stuff" (needs the SAML alias work first — see
+`plans/todo-ownership.md`), and the placeholder-ownership question, which is the one that
+decides whether unknown ownership matters at all.
+
+## DEADLINE — the ownership MVP was due Monday 2026-08-03
+
+Set by the product owner. **Scope is ownership only.** Deploy access is bureaucratic to
+arrange, so the work is batched into one release rather than shipped piecemeal.
+
+Two things are named as not done:
+
+- **Database ingest (SQL Server *and* PostgreSQL) — half done, and the next session picks it
+  up from here. Both are first-class sources an administrator chooses between; PostgreSQL is
+  not merely the one used for testing.**
+
+  **Done:** `internal/ownershipsql` reads ownership rows from a database as an
+  `ownershipimport.RowSource`, so everything above the source abstraction — the row cap, the
+  value filter, the distinct-value cap, report truncation — applies to a query result with no
+  change. It supports `sqlserver` and `postgres` equally, registers both drivers itself, verifies
+  the connection before running the query (an unreadable source must not read as an empty
+  one), and renders NULL as empty. The functional tests run against PostgreSQL because it is
+  already to hand; the SQL Server path differs only in driver name and connection string, and
+  step 4 below covers testing it for real.
+
+  **The dependency is settled — do not re-litigate it.** `github.com/microsoft/go-mssqldb`
+  v1.10.0, pinned. It adds **4 modules** to `go.mod` (the driver plus `golang-sql/civil`,
+  `golang-sql/sqlexp`, `shopspring/decimal`) and **compiles no Azure or Kerberos code** —
+  `go list -deps` shows none. `go.sum` does gain 12 Azure/Kerberos checksum lines, so expect
+  scanner advisories about code that never runs; that is the same false-positive pattern as
+  the settled Dependabot entries. `govulncheck` is clean. The archived `denisenkom` driver is
+  lighter but unmaintained, so it was rejected.
+
+  **Credentials, the endpoints, the UI and table browsing are all built.** The connection
+  string is read from a stored credential by name and never accepted from a request, so there
+  is no password field on the import screen and it never reaches a browser. Profile, preview
+  and commit all take a database because the two sources meet at one function.
+
+  **Table browsing exists because whoever sets this up usually cannot inspect the database.**
+  `INFORMATION_SCHEMA` is the same in both, so it is one query; system schemas are excluded,
+  views are offered, and choosing one writes a quoted `SELECT` that is then editable — owners
+  normally need a join.
+
+  **What is left:**
+  1. **Watch a commit write, from a database source, into a real CMM database.** Profile and
+     preview are proven end to end against SQL Server through the HTTP layer; commit shares
+     the same seam and the same writer a file import uses, but has not been watched.
+  2. **Screenshots for the change control form** — not takeable from here.
+- **Node ownership — DONE.** The list carries the ownership control, the API already resolved
+  it, and the import always accepted `node`. Local data seeded in the dev DB: 8 nodes across 3
+  owners, 5 unowned, so both questions show something.
+
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
 Work order and journeys live in that plan; per-chunk scope lives in
 `plans/todo-ownership.md`. Do not re-plan either.
 
-**Chunks 1–3 are built and shipped** (owner ingest, identity and alias management, the failure
-register). Behaviour lives in `specifications/ownership-intake.md`, `ownership-identity.md` and
+**Chunks 1–3 are partly built.** Identity and alias management and the failure register are
+shipped. **Owner ingest is not: it reads a file, and the SQL source has never been built.**
+Recording it as shipped is what hid the gap — the open item was in `todo-ownership.md` all
+along. Behaviour lives in `specifications/ownership-intake.md`, `ownership-identity.md` and
 `failure-register.md`. Three decisions from those chunks still bind:
 
 - Ingest **creates** unresolved people rather than rejecting the row, and a fuzzy candidate does
@@ -51,8 +128,19 @@ register). Behaviour lives in `specifications/ownership-intake.md`, `ownership-i
   existing per-source verdicts on `node_readiness.blocking_cookbooks` rather than sitting beside
   them.
 
-**Node and git repo matching are probably dead.** The measurement they were waiting on has been
-taken against the real estate: **92% of repos carry an owner, and 126 are blocking and unowned**.
+**Node and git repo matching are probably dead — but "matching" means two different things, and
+only one of them is dead.** What the measurement retired is *entity* matching: guessing which
+repo or node belongs to whom when nobody recorded it. What it says nothing about is *identity*
+matching — resolving the several identifiers one person has (SAML email, username, display
+name, git email) onto one owner record. That is what aliasing exists for, it is what "my stuff"
+needs, and it is open: `plans/todo-ownership.md` § Matching app users to owners. Do not let the
+92% figure be read as retiring it.
+
+The measurement itself: **92% of repos carry an owner, and 126 are blocking and unowned** —
+but **that 92% is inflated**: the product owner reports about half the repos are assigned to one
+person in the Chef team as a stand-in for unknown ownership. Genuine coverage is nearer 45% and
+the 126 undercounts, because a repo with a placeholder owner is not unowned. See
+`plans/todo-ownership.md`; do not plan against the 92% until it is re-measured.
 Both chunks were scoped assuming ownership was largely absent. 126 is a hand-workable list. Full
 numbers and the reasoning are in `plans/todo-ownership.md`; do not start either chunk without
 revisiting them.
@@ -81,11 +169,9 @@ signal is.
 Scope and the decisions that bind: `plans/todo-ownership.md` § Ownership filtering in the list
 views.
 
-The git repo and cookbook lists carry the control, and it was driven in the running app on
-2026-08-03: both questions answer correctly. Ownership is savable as a named cohort, and the
-export path enforces the same rule as the list views. **The only thing left is the node list,
-which stays deferred** — there is no node ownership data to test it against, and `OwnerFilter`
-drops straight in when there is.
+The git repo and cookbook lists carry the control. Ownership is savable as a named cohort, and
+the export path enforces the same rule as the list views. **The node list is in scope for
+today** — see the deadline section.
 
 ## Snagging (`plans/todo-snagging.md`)
 

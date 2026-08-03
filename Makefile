@@ -246,6 +246,53 @@ functional-test: _resolve-chef-creds ## Run functional tests against a real Chef
 	CHEF_ORG="$${CHEF_ORG:-}" \
 	go test -race -v -count=1 -tags $(FUNCTIONAL_TEST_TAGS) -run 'TestFunctional' ./...
 
+# =============================================================================
+# SQL Server for the database ownership ingest
+#
+# No arm64 image exists, so it runs under emulation on Apple Silicon: slower to
+# start, but it works. A permanent Linux VM in the Proxmox lab is the better
+# long-term home (MVP2).
+#
+#   make mssql-up      # start it and wait until it answers
+#   make seed-mssql    # create the cmdb database and its sample data
+#   make test-mssql    # run the SQL Server functional tests against it
+#   make mssql-down    # stop it
+# =============================================================================
+
+MSSQL_SA_PASSWORD ?= Cmm_Dev_Password_2026!
+MSSQL_DSN         ?= sqlserver://sa:$(MSSQL_SA_PASSWORD)@localhost:1433?database=cmdb
+COMPOSE_FILE      := deploy/docker-compose/docker-compose.yml
+
+.PHONY: mssql-up
+mssql-up: ## Start the SQL Server container for the ownership ingest
+	@echo "$(GREEN)Starting SQL Server (emulated on Apple Silicon, give it a moment)...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) --profile mssql up -d mssql
+	@printf "Waiting for it to answer"
+	@for i in $$(seq 1 60); do \
+		if docker compose -f $(COMPOSE_FILE) exec -T mssql /opt/mssql-tools18/bin/sqlcmd \
+			-S localhost -U sa -P "$(MSSQL_SA_PASSWORD)" -C -Q "SELECT 1" >/dev/null 2>&1; then \
+			echo " ready."; exit 0; fi; \
+		printf "."; sleep 2; \
+	done; \
+	echo " gave up after 2 minutes."; exit 1
+
+.PHONY: seed-mssql
+seed-mssql: ## Create the sample ownership database in SQL Server
+	@echo "$(GREEN)Seeding the sample ownership database...$(RESET)"
+	docker compose -f $(COMPOSE_FILE) exec -T mssql /opt/mssql-tools18/bin/sqlcmd \
+		-S localhost -U sa -P "$(MSSQL_SA_PASSWORD)" -C \
+		< deploy/docker-compose/seed-mssql.sql
+	@echo "$(GREEN)Seeded. DSN: $(MSSQL_DSN)$(RESET)"
+
+.PHONY: test-mssql
+test-mssql: ## Run the SQL Server ownership-ingest functional tests
+	CMM_TEST_MSSQL_DSN="$(MSSQL_DSN)" \
+	go test -count=1 -tags $(FUNCTIONAL_TEST_TAGS) -run 'TestFunctional_MSSQL' -v ./internal/ownershipsql/
+
+.PHONY: mssql-down
+mssql-down: ## Stop the SQL Server container
+	docker compose -f $(COMPOSE_FILE) --profile mssql down
+
 .PHONY: functional-test-list-profiles
 functional-test-list-profiles: ## List available Chef credential profiles
 	@echo "$(BOLD)Chef credential profiles$(RESET)"

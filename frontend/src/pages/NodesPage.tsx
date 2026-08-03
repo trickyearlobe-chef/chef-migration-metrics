@@ -25,6 +25,7 @@ import type {
   SavedFilterParams,
 } from "../types";
 import { SavedFilterBar } from "../components/SavedFilterBar";
+import { OwnerFilter, OwnerFilterChips } from "../components/OwnerFilter";
 import {
   nodeStateToParams,
   paramsToNodeState,
@@ -164,6 +165,9 @@ export function NodesPage() {
   const [targetVersionFilter, setTargetVersionFilter] = useState<string[]>(
     searchParams.get("target_version")?.split(",").filter(Boolean) ?? [],
   );
+  // Ownership. Both questions move together — see OwnerFilter.
+  const [ownerNames, setOwnerNames] = useState<string[]>([]);
+  const [unowned, setUnowned] = useState(false);
   const [page, setPage] = useState(1);
   const perPage = DEFAULT_PAGE_SIZE;
 
@@ -278,6 +282,8 @@ export function NodesPage() {
       q.target_converge_status = convergeStatusFilter.join(",");
     if (targetVersionFilter.length > 0)
       q.target_version = targetVersionFilter.join(",");
+    if (ownerNames.length > 0) q.owner = ownerNames.join(",");
+    if (unowned) q.unowned = "true";
     return q;
   }, [
     selectedOrg,
@@ -292,6 +298,8 @@ export function NodesPage() {
     staleTiers,
     sortField,
     sortOrder,
+    ownerNames,
+    unowned,
     selectedTargetVersion,
     readinessFilter,
     cookstyleFilter,
@@ -340,6 +348,8 @@ export function NodesPage() {
     selectedTargetVersion,
     sortField,
     sortOrder,
+    ownerNames,
+    unowned,
   ]);
 
   // Count active filters for the clear button.
@@ -357,7 +367,9 @@ export function NodesPage() {
     (kitchenFilter.length > 0 ? 1 : 0) +
     (deploymentStateFilter.length > 0 ? 1 : 0) +
     (convergeStatusFilter.length > 0 ? 1 : 0) +
-    (targetVersionFilter.length > 0 ? 1 : 0);
+    (targetVersionFilter.length > 0 ? 1 : 0) +
+    (ownerNames.length > 0 ? 1 : 0) +
+    (unowned ? 1 : 0);
 
   const clearFilters = () => {
     setNodeName("");
@@ -374,6 +386,8 @@ export function NodesPage() {
     setDeploymentStateFilter([]);
     setConvergeStatusFilter([]);
     setTargetVersionFilter([]);
+    setOwnerNames([]);
+    setUnowned(false);
     setStaleWarning(null);
   };
 
@@ -396,6 +410,8 @@ export function NodesPage() {
         deploymentStateFilter,
         convergeStatusFilter,
         targetVersionFilter,
+        ownerNames,
+        unowned,
       }),
     [
       nodeName,
@@ -412,6 +428,8 @@ export function NodesPage() {
       deploymentStateFilter,
       convergeStatusFilter,
       targetVersionFilter,
+      ownerNames,
+      unowned,
     ],
   );
 
@@ -442,6 +460,8 @@ export function NodesPage() {
       setDeploymentStateFilter(next.deploymentStateFilter);
       setConvergeStatusFilter(next.convergeStatusFilter);
       setTargetVersionFilter(next.targetVersionFilter);
+      setOwnerNames(next.ownerNames);
+      setUnowned(next.unowned);
       setPage(1);
       setStaleWarning(staleRoleWarning(next.roles, roleOptions));
     },
@@ -483,7 +503,15 @@ export function NodesPage() {
       )}
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div data-testid="filter-bar" className="flex flex-wrap items-end gap-3">
+        <OwnerFilter
+          owners={ownerNames}
+          unowned={unowned}
+          onChange={(next) => {
+            setOwnerNames(next.owners);
+            setUnowned(next.unowned);
+          }}
+        />
         <FilterInput
           label="Node Name"
           value={nodeName}
@@ -643,6 +671,17 @@ export function NodesPage() {
           onApply={applySavedFilter}
         />
       </div>
+
+      {/* The ownership selection, in a row of its own so the bar cannot grow
+          with it. */}
+      <OwnerFilterChips
+        owners={ownerNames}
+        unowned={unowned}
+        onChange={(next) => {
+          setOwnerNames(next.owners);
+          setUnowned(next.unowned);
+        }}
+      />
 
       {/* Table */}
       {loading && <LoadingSpinner message="Loading nodes…" />}

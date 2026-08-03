@@ -10,6 +10,9 @@ vi.mock("../api", async () => {
   return {
     ...actual,
     profileImportSource: vi.fn(),
+    profileImportDatabase: vi.fn(),
+    listImportDatabaseTables: vi.fn(),
+    fetchCredentials: vi.fn(),
     previewOwnershipImport: vi.fn(),
     commitOwnershipImport: vi.fn(),
     createImportMapping: vi.fn(),
@@ -280,7 +283,9 @@ describe("OwnershipImportPage tabs", () => {
 
     await user.click(screen.getByRole("button", { name: "Map columns" }));
 
-    expect(screen.getByText("1. Choose a file")).toBeInTheDocument();
+    expect(
+      screen.getByText("1. Choose where the owners come from"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Import Format")).toBeNull();
   });
 
@@ -290,5 +295,171 @@ describe("OwnershipImportPage tabs", () => {
 
     expect(screen.getByText(/Access denied/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Map columns" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Importing from a database
+//
+// The customer's owner list lives in a system of record, not always in an
+// export somebody remembered to take. The mapping flow after the source is
+// unchanged — only where the rows come from differs.
+// ---------------------------------------------------------------------------
+
+describe("importing owners from a database", () => {
+  beforeEach(() => {
+    mockUseAuth.mockReturnValue({
+      isOperator: true,
+      isAdmin: true,
+      user: { role: "admin", username: "test" },
+    });
+    vi.mocked(api.fetchCredentials).mockResolvedValue({
+      data: [
+        { name: "cmdb-connection", credential_type: "generic" },
+        { name: "chef-key", credential_type: "chef_client_key" },
+      ],
+    } as never);
+    vi.mocked(api.profileImportDatabase).mockResolvedValue(profile);
+  });
+
+  async function chooseDatabase(user: ReturnType<typeof userEvent.setup>) {
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+    await user.click(screen.getByRole("radio", { name: /A database/ }));
+  }
+
+  it("offers the saved credentials rather than asking for a password", async () => {
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    expect(
+      await screen.findByRole("option", { name: "cmdb-connection" }),
+    ).toBeInTheDocument();
+    // No password field anywhere: the connection string never comes through
+    // the browser.
+    expect(
+      document.querySelector('input[type="password"]'),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reads the query's columns into the mapping step", async () => {
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: /Connection/ }),
+      "cmdb-connection",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: /Query/ }),
+      "SELECT owner_email FROM asset_owner",
+    );
+    await user.click(screen.getByRole("button", { name: /Read the query/ }));
+
+    await waitFor(() => {
+      expect(api.profileImportDatabase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          driver: "sqlserver",
+          credential: "cmdb-connection",
+          query: "SELECT owner_email FROM asset_owner",
+        }),
+      );
+    });
+    // The query's columns are what the mapping step then offers.
+    expect((await screen.findAllByText("Owner Email")).length).toBeGreaterThan(0);
+  });
+
+  it("cannot read a query before a connection is chosen", async () => {
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    await user.type(
+      screen.getByRole("textbox", { name: /Query/ }),
+      "SELECT 1",
+    );
+    expect(screen.getByRole("button", { name: /Read the query/ })).toBeDisabled();
+  });
+
+  // An unreadable credential list must not render as an empty one: they read
+  // the same on screen and mean opposite things.
+  it("says so when the saved credentials cannot be loaded", async () => {
+    vi.mocked(api.fetchCredentials).mockRejectedValue(new Error("nope"));
+    const user = userEvent.setup();
+    await chooseDatabase(user);
+
+    expect(
+      await screen.findByText(/Could not load the saved credentials/),
+    ).toBeInTheDocument();
+  });
+});
+
+// Whoever sets the import up often cannot inspect the customer's database, so
+// writing SQL blind is the thing to avoid: the first anyone would learn of a
+// wrong query is when the import runs.
+describe("browsing the database", () => {
+  beforeEach(() => {
+    mockUseAuth.mockReturnValue({
+      isOperator: true,
+      isAdmin: true,
+      user: { role: "admin", username: "test" },
+    });
+    vi.mocked(api.fetchCredentials).mockResolvedValue({
+      data: [{ name: "cmdb-connection", credential_type: "generic" }],
+    } as never);
+    vi.mocked(api.listImportDatabaseTables).mockResolvedValue({
+      data: [
+        { schema: "dbo", name: "staff", kind: "table", qualified_name: "[dbo].[staff]" },
+        { schema: "dbo", name: "asset_owner", kind: "table", qualified_name: "[dbo].[asset_owner]" },
+        { schema: "dbo", name: "v_owners", kind: "view", qualified_name: "[dbo].[v_owners]" },
+      ],
+    } as never);
+  });
+
+  async function browse(user: ReturnType<typeof userEvent.setup>) {
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+    await user.click(screen.getByRole("radio", { name: /A database/ }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: /Connection/ }),
+      "cmdb-connection",
+    );
+    await user.click(screen.getByRole("button", { name: /Browse tables/ }));
+  }
+
+  it("lists the tables and views the connection can see", async () => {
+    const user = userEvent.setup();
+    await browse(user);
+
+    expect(await screen.findByText("dbo.staff")).toBeInTheDocument();
+    expect(screen.getByText("dbo.asset_owner")).toBeInTheDocument();
+    // Views are offered too: an operations team has often already built one.
+    expect(screen.getByText("dbo.v_owners")).toBeInTheDocument();
+  });
+
+  it("writes a query when a table is chosen, quoted for its database", async () => {
+    const user = userEvent.setup();
+    await browse(user);
+
+    await user.click(await screen.findByText("dbo.staff"));
+
+    expect(screen.getByRole("textbox", { name: /Query/ })).toHaveValue(
+      "SELECT * FROM [dbo].[staff]",
+    );
+  });
+
+  it("cannot browse before a connection is chosen", async () => {
+    const user = userEvent.setup();
+    render(<OwnershipMappedImport />, { wrapper: Wrapper });
+    await user.click(screen.getByRole("radio", { name: /A database/ }));
+
+    expect(screen.getByRole("button", { name: /Browse tables/ })).toBeDisabled();
+  });
+
+  it("says so when the tables cannot be listed", async () => {
+    vi.mocked(api.listImportDatabaseTables).mockRejectedValue(
+      new Error("login failed"),
+    );
+    const user = userEvent.setup();
+    await browse(user);
+
+    expect(await screen.findByText(/login failed/)).toBeInTheDocument();
   });
 });

@@ -153,3 +153,28 @@ describe("staleRoleWarning", () => {
     );
   });
 });
+
+// Node ownership: the same cohort question as the git repo and cookbook lists.
+describe("node ownership in a saved cohort", () => {
+  it("carries the chosen owners", () => {
+    const params = nodeStateToParams({
+      ...EMPTY_NODE_FILTER_STATE,
+      ownerNames: ["alice.brown", "bob.jones"],
+    });
+    expect(params.owner).toEqual(["alice.brown", "bob.jones"]);
+    expect(paramsToNodeState(params).ownerNames).toEqual([
+      "alice.brown",
+      "bob.jones",
+    ]);
+  });
+
+  it("carries the nobody-owns-it question, and drops it when off", () => {
+    const on = nodeStateToParams({ ...EMPTY_NODE_FILTER_STATE, unowned: true });
+    expect(on.unowned).toEqual(["true"]);
+    expect(paramsToNodeState(on).unowned).toBe(true);
+
+    const off = nodeStateToParams(EMPTY_NODE_FILTER_STATE);
+    expect(off.unowned).toBeUndefined();
+    expect(paramsToNodeState(off).unowned).toBe(false);
+  });
+});

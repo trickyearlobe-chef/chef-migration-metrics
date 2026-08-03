@@ -52,10 +52,13 @@ export function OwnerFilter({
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Owner[]>([]);
+  // How many owners match in total, so a capped list can say it is capped.
+  const [totalMatches, setTotalMatches] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -70,6 +73,13 @@ export function OwnerFilter({
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
+
+  // An estate with thousands of owners is not a list anybody scrolls, so the
+  // cursor starts in the search box: typing is the way to use this control,
+  // and it was not obvious that the box was there.
+  useEffect(() => {
+    if (isOpen && !unowned) searchRef.current?.focus();
+  }, [isOpen, unowned]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -86,7 +96,10 @@ export function OwnerFilter({
       setLoading(true);
       setLoadFailed(false);
       fetchOwners({ search: term, per_page: limit, sort: "name", order: "asc" })
-        .then((res) => setResults(res.data ?? []))
+        .then((res) => {
+          setResults(res.data ?? []);
+          setTotalMatches(res.pagination?.total_items ?? (res.data ?? []).length);
+        })
         .catch(() => {
           // An unreadable catalogue must not render as an empty one: the two
           // read the same on screen and mean opposite things.
@@ -159,6 +172,7 @@ export function OwnerFilter({
 
           <div className="px-2 py-2">
             <input
+              ref={searchRef}
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -167,6 +181,12 @@ export function OwnerFilter({
               className="block w-full rounded-md border border-gray-300 px-2 py-1 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
             />
           </div>
+
+          {!loading && !loadFailed && totalMatches > results.length && (
+            <p className="px-3 pb-1 text-xs text-gray-500">
+              Showing {results.length} of {totalMatches} — type to narrow.
+            </p>
+          )}
 
           <div className="max-h-52 overflow-auto">
             {loading && (

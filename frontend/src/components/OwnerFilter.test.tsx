@@ -201,3 +201,47 @@ describe("OwnerFilterChips", () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+// Found by using it: the search box is there, but nothing draws the eye to it,
+// and an estate with thousands of owners cannot be scrolled.
+describe("OwnerFilter — finding somebody among thousands", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockedFetchOwners.mockReset();
+    mockedFetchOwners.mockResolvedValue({
+      data: [owner("alice.brown", "Alice Brown"), owner("bob.jones")],
+      pagination: { page: 1, per_page: 50, total_items: 1862, total_pages: 38 },
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("puts the cursor in the search box when it opens", async () => {
+    renderControl();
+    await open();
+
+    expect(screen.getByPlaceholderText(/search owners/i)).toHaveFocus();
+  });
+
+  // A list silently cut at fifty reads as "these are all the owners", which is
+  // a different and wrong answer.
+  it("says when it is showing only part of the estate", async () => {
+    renderControl();
+    await open();
+
+    expect(screen.getByText(/Showing 2 of 1862/)).toBeInTheDocument();
+  });
+
+  it("says nothing about counts when everybody matching is on screen", async () => {
+    mockedFetchOwners.mockResolvedValue({
+      data: [owner("alice.brown", "Alice Brown")],
+      pagination: { page: 1, per_page: 50, total_items: 1, total_pages: 1 },
+    });
+    renderControl();
+    await open();
+
+    expect(screen.queryByText(/Showing/)).not.toBeInTheDocument();
+  });
+});

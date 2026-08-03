@@ -33,11 +33,20 @@ and not `saml_subject`.
 The discovery-driven CSV intake is in (`specifications/ownership-intake.md`).
 Remaining:
 
-- [ ] **SQL source.** Journey 5 asks for a database as well as a file: choose a table
-  and pick fields, or supply a query and pick fields from what it returns, with a
-  preview. `RowSource` was designed for a streaming cursor, so this is a new source
-  plus connection and credential handling. PostgreSQL needs no new dependency; MSSQL
-  needs a driver and a supply-chain check before any code.
+- [ ] **SQL source — the reading half is built** (`internal/ownershipsql`), for SQL Server and
+  PostgreSQL equally. What remains is credentials in the encrypted config store, the
+  profile/preview/run endpoints taking a database as an alternative source, and the UI. See
+  `plans/active.md` for the ordered list.
+
+  **Testing it needs no customer database.** `make mssql-up`, `make seed-mssql`,
+  `make test-mssql` stand up SQL Server 2022 in a container, seed a sample system of record
+  and run the functional tests against it. The seed is deliberately awkward — a join across
+  two tables, a person who has left, an asset with no owner, an owner with no email, and date,
+  NVARCHAR and BIT columns — because those are what a PostgreSQL test cannot tell you about.
+
+  **MVP2: a permanent Linux VM running SQL Server in the Proxmox lab.** No arm64 image exists,
+  so the container runs under emulation on Apple Silicon; it works and is fine for
+  development, but a real VM is the better home for demos and anything long-lived.
 
   **The file-import protections carry over free**, because they all sit above the
   source abstraction: the row cap and the value filter in `handleIntakeRun`, the
@@ -71,6 +80,25 @@ Remaining:
 - [ ] **`policy` entity existence is never confirmed.** CMM collects no policy objects,
   so a policy key always reports as not collected. Harmless — an uncollected entity
   never rejects a row — but the UI should say why rather than implying a miss.
+- [ ] **Scheduled imports, run one at a time. MVP2.** Raised by the product owner 2026-08-03:
+  several imports on a schedule, executed **serially** so a large source cannot be read
+  alongside another and blow the memory budget.
+
+  **Most of the parts already exist.** A saved mapping says how to read a source; a stored
+  credential holds the connection; the database source is a streaming cursor that reads a
+  query. A scheduled import is those three plus a trigger. `kitchenqueue.Manager` is the
+  precedent for serial execution with a DB-backed queue that survives a restart, rather than
+  goroutines and a timer.
+
+  **What has to be decided, not assumed:** what happens when a run is still going and the next
+  is due (skip, queue, or overlap — skip is the memory-safe answer); whether a failed run
+  retries or waits for the next slot; and how a run reports what it did, given a person is not
+  watching it. A scheduled import that quietly imports nothing is worse than one that fails.
+
+  **It makes the item below load-bearing rather than theoretical.** A nightly import against a
+  source that has changed will accrete ownership unless reconciliation is settled first: do
+  not schedule anything until it is.
+
 - [ ] **Ingest is additive — reconciling a refreshed source. MVP2.** A row dropped from
   the source never removes the assignment it created, so revoked ownership persists. With
   a refresh job on the source database this stops being theoretical: repeated imports make
@@ -166,8 +194,11 @@ anything that extends it:
   a fixed-width button carrying the count; the selection wraps full-width beneath the bar, so
   no number of owners can displace the other filters. The count alone was rejected: it cannot
   say who is selected or take one person off.
-- [ ] **Node list — UI only**, and deferred: there is no node ownership dataset yet, so it
-  cannot be tested against anything real. `OwnerFilter` drops straight in.
+- **Node list carries the ownership control**, the same as git repos and cookbooks: both
+  questions, chips in their own row, savable as a named cohort. The deferral was wrong — it
+  said there was no node ownership dataset, but the import has always accepted `node` as an
+  entity type and verifies node keys against `node_snapshots`. Nothing was missing but data,
+  and data can be made locally.
 - **Ownership and the team verdict are part of a saved filter.** A saved owner selection
   names people, so it is the fixed cohort "alice.brown's repos" — which is what a *shared*
   one means to everyone who opens it. "What's mine" is that cohort saved unshared; there is
@@ -181,6 +212,37 @@ anything that extends it:
   they asked two contradictory questions. It therefore covers every export type, including
   roles, which ignores ownership entirely — a contradictory request is nonsense whether or
   not the endpoint would have acted on it.
+
+## "My stuff" — the logged-in person's own estate
+
+Journey 1's actual question. **Not built.** What exists is "find yourself in the owner list and
+tick your own name", and save that as a private cohort. There is no control that says "mine",
+because nothing connects a session to an owner record.
+
+**How they link, confirmed by the product owner 2026-08-03:** the SAML email, or the user id,
+or the username / display name. All are already on a session — `/api/v1/auth/me` returns
+username, display name, email and provider — and `owner_aliases` already stores `email` and
+`custom` aliases.
+
+**This is the point of § Matching app users to owners at the top of this file** — the alias
+auto-creation on SAML login is what makes the resolution below possible, and neither is
+retired by the 92%-owned measurement, which was about entity matching. Build that section
+first; this one is its user-visible half.
+
+- [ ] **Resolve a session to an owner**, trying the identifiers above against `owner_aliases`
+  and the owner name. **The dangerous case is not "no match", it is "two matches":**
+  `alias_type` conflates the shape of an identifier with where it came from, and uniqueness
+  includes the provenance, so one address can legitimately belong to two owners (recorded in
+  `specifications/ownership-identity.md` § Proposed). Showing somebody else's estate under the
+  heading "mine" is worse than showing nothing, so an ambiguous match must refuse and say why.
+- [ ] **A "My stuff" control** on the node, git repo and cookbook lists, applying that owner.
+- [ ] **An honest answer for the majority who own nothing.** Most users will not resolve to an
+  owner. It must say so, not quietly show the whole estate — this branch has produced that
+  failure three times already (an owner catalogue that failed to load, a search parameter the
+  server ignored, a list silently cut at fifty).
+- [ ] **Display-name matching is the one to be careful with.** Two people share a name far more
+  often than they share an email. Prefer email, then username; treat a display-name match as a
+  suggestion rather than an answer.
 
 ## Identity and alias management — what is left
 
@@ -204,7 +266,59 @@ small enough to work through by hand. **Measure that list before building any of
   | repos with an owner | 1,963 (**92%**) |
   | blocking **and** unowned | **126** |
 
-  **The conclusion: node and repo matching are probably not worth building.** Both chunks were
+  **2026-08-03: THIS NUMBER IS INFLATED AND THE CONCLUSION BELOW NO LONGER STANDS.** The
+  product owner reports that **roughly half of the repos are assigned to one person in the
+  Chef team, because the real owner is unknown**. That is a placeholder, not an owner. So
+  "92% carry an owner" is nearer 45% genuinely owned, and the 126 blocking-and-unowned is a
+  serious undercount — a repo assigned to the stand-in *has* an owner, so the unowned filter
+  cannot see it, and neither could the measurement.
+
+  **What follows:**
+
+  - Entity matching was retired on the strength of this number. It should be reopened, or at
+    least not treated as settled, until the real figure is known.
+  - "My stuff" for that one person would return around a thousand repos, which is useless to
+    them and is itself the tell.
+  - **The primitive already exists and has never been used.**
+    `ownership_assignments.confidence` takes `definitive` or `inferred`, and every write path
+    in the codebase hardcodes `definitive` — four call sites, all literals. Nothing sets it,
+    filters on it or displays it. A placeholder assignment is exactly "not definitive".
+  - Marking the *owner* as a stand-in is probably simpler than marking every assignment:
+    `owners.owner_type` already has a `custom` value, and one record is doing this job.
+    Whichever it is, **the unowned question has to be able to mean "nobody real"**, or it goes
+    on undercounting.
+
+  **The decision rule, and it has not changed:** ownership only has to be right where somebody
+  has to act. Twenty or thirty repos needing an owner is an afternoon of asking around; a
+  thousand is a project. So the number to get is not "how many repos are unowned" but **"how
+  many *blocking* repos have no owner once the stand-in is discounted"** — and two corrections
+  pull it in opposite directions. Placeholder ownership pushes it up; CookStyle and Test
+  Kitchen over-blocking push it down. Neither has been applied, which is why 126 means little.
+
+  ```sql
+  WITH standin AS (SELECT 'THE-STANDIN-OWNER-NAME'::text AS name),
+  real_owner AS (
+      SELECT DISTINCT oa.entity_key
+      FROM ownership_assignments oa, standin s
+      WHERE oa.entity_type = 'git_repo' AND oa.owner_name <> s.name
+  )
+  SELECT gr.cookstyle_status, gr.tk_status,
+         CASE WHEN ro.entity_key IS NULL THEN 'needs an owner' ELSE 'genuinely owned' END,
+         count(*)
+  FROM git_repos gr
+  LEFT JOIN real_owner ro ON ro.entity_key = gr.name
+  WHERE gr.cookstyle_status = 'blocked'
+  GROUP BY 1, 2, 3 ORDER BY 4 DESC;
+  ```
+
+  Joins verified against the dev database. Drop the `WHERE` to sanity-check it returns rows
+  before trusting a zero — a query that finds nothing and a query that is wrong look identical.
+
+  **The other measurement, and it is one query:** assignments grouped by owner, descending.
+  The stand-in will be at the top by a wide margin, and the size of that first row is how
+  wrong the 92% is.
+
+  **The original conclusion, now in doubt:** Both chunks were
   scoped on the assumption that ownership was largely absent. It is 92% present, and 126 repos is
   a list somebody works through by hand in a couple of days — cheaper than an engine that would
   still need a human to confirm every uncertain match. Re-scope or drop them; do not start either

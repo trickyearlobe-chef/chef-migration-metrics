@@ -241,8 +241,20 @@ export function assignCookbookCommitters(
 // its own file and delimiter. Nothing is remembered between them on the server.
 // ---------------------------------------------------------------------------
 
+/** Where the rows come from. A file that was uploaded, or a query against a
+ * database. The connection string is never sent — the server reads it from a
+ * stored credential, so a password never travels through the browser. */
+export interface IntakeDatabaseSource {
+  driver: string;
+  /** Name of a stored credential holding the connection string. */
+  credential: string;
+  query: string;
+}
+
 export interface IntakeRunOptions {
-  file: File;
+  /** Required unless `database` is given. */
+  file?: File;
+  database?: IntakeDatabaseSource;
   delimiter?: string;
   fieldMap?: IntakeFieldMap;
   mappingId?: number;
@@ -256,7 +268,11 @@ export interface IntakeRunOptions {
 
 function intakeFormData(opts: IntakeRunOptions): FormData {
   const formData = new FormData();
-  formData.append("file", opts.file);
+  if (opts.database) {
+    appendDatabaseSource(formData, opts.database);
+  } else if (opts.file) {
+    formData.append("file", opts.file);
+  }
   if (opts.delimiter) formData.append("delimiter", opts.delimiter);
   if (opts.fieldMap) formData.append("field_map", JSON.stringify(opts.fieldMap));
   if (opts.mappingId !== undefined) formData.append("mapping_id", String(opts.mappingId));
@@ -269,6 +285,14 @@ function intakeFormData(opts: IntakeRunOptions): FormData {
   return formData;
 }
 
+/** The database half of the multipart body the server expects. */
+function appendDatabaseSource(formData: FormData, db: IntakeDatabaseSource) {
+  formData.append("source_type", "database");
+  formData.append("db_driver", db.driver);
+  formData.append("db_credential", db.credential);
+  formData.append("db_query", db.query);
+}
+
 export function profileImportSource(
   file: File,
   delimiter?: string,
@@ -276,6 +300,42 @@ export function profileImportSource(
   const formData = new FormData();
   formData.append("file", file);
   if (delimiter) formData.append("delimiter", delimiter);
+  return apiFetch<IntakeSourceProfile>(buildUrl("/ownership/import/profile"), {
+    method: "POST",
+    body: formData,
+  });
+}
+
+/** One table or view a connection can see. */
+export interface IntakeDatabaseTable {
+  schema: string;
+  name: string;
+  kind: "table" | "view";
+  /** The name quoted for its database, ready to drop into a query. */
+  qualified_name: string;
+}
+
+/** List what a connection can see, so a table can be chosen rather than typed.
+ * Whoever sets the import up often cannot inspect the database themselves. */
+export function listImportDatabaseTables(
+  driver: string,
+  credential: string,
+): Promise<{ data: IntakeDatabaseTable[] }> {
+  const formData = new FormData();
+  formData.append("db_driver", driver);
+  formData.append("db_credential", credential);
+  return apiFetch<{ data: IntakeDatabaseTable[] }>(
+    buildUrl("/ownership/import/tables"),
+    { method: "POST", body: formData },
+  );
+}
+
+/** Profile what a query returns, so the mapping screen can offer its columns. */
+export function profileImportDatabase(
+  db: IntakeDatabaseSource,
+): Promise<IntakeSourceProfile> {
+  const formData = new FormData();
+  appendDatabaseSource(formData, db);
   return apiFetch<IntakeSourceProfile>(buildUrl("/ownership/import/profile"), {
     method: "POST",
     body: formData,

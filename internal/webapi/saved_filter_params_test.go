@@ -149,7 +149,7 @@ func TestSavedFilterViews_MatchTheListViews(t *testing.T) {
 // a fixed cohort — "alice.brown's repos" — which is what a shared one means to
 // everybody who opens it.
 func TestValidateSavedFilterSelection_AcceptsOwnership(t *testing.T) {
-	for _, view := range []string{"git-repos", "cookbooks"} {
+	for _, view := range []string{"git-repos", "cookbooks", "nodes"} {
 		t.Run(view+"/owner", func(t *testing.T) {
 			if err := validateSavedFilterSelection(view, map[string][]string{
 				"owner": {"alice.brown", "bob.jones"},
@@ -171,7 +171,7 @@ func TestValidateSavedFilterSelection_AcceptsOwnership(t *testing.T) {
 // must not be able to hold the contradiction the live view refuses, or it
 // fails only later, when somebody opens it.
 func TestValidateSavedFilterSelection_RejectsOwnerAndUnownedTogether(t *testing.T) {
-	for _, view := range []string{"git-repos", "cookbooks"} {
+	for _, view := range []string{"git-repos", "cookbooks", "nodes"} {
 		t.Run(view, func(t *testing.T) {
 			err := validateSavedFilterSelection(view, map[string][]string{
 				"owner":   {"alice.brown"},
