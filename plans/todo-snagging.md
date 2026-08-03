@@ -143,3 +143,9 @@ item here got past a green suite, so a fix with no new test is a fix that will b
   1,862 — type to narrow". **The general shape, for the third time on this branch:** a view
   that shows part of a set without saying so reads as the whole set. The unloadable owner
   catalogue and the ignored `search` parameter were the same fault wearing different clothes.
+
+- **The import entry points still said "file".** Found by use, 2026-08-03: the button on the
+  Owners page read "Import CSV / JSON", the page said "from a file", and the tab was called
+  "Map columns" — so nothing anywhere told anybody the database option existed. A feature
+  nobody can find is not shipped. Now "Import owners", "from a file, or from a database", and
+  a tab called "File or database".

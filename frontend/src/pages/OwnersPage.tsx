@@ -220,7 +220,7 @@ export function OwnersPage() {
             to="/ownership/import"
             className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >
-            Import CSV / JSON
+            Import owners
           </Link>
           <Link
             to="/ownership/audit-log"
