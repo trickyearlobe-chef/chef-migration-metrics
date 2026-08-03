@@ -166,8 +166,11 @@ anything that extends it:
   a fixed-width button carrying the count; the selection wraps full-width beneath the bar, so
   no number of owners can displace the other filters. The count alone was rejected: it cannot
   say who is selected or take one person off.
-- [ ] **Node list — UI only**, and deferred: there is no node ownership dataset yet, so it
-  cannot be tested against anything real. `OwnerFilter` drops straight in.
+- **Node list carries the ownership control**, the same as git repos and cookbooks: both
+  questions, chips in their own row, savable as a named cohort. The deferral was wrong — it
+  said there was no node ownership dataset, but the import has always accepted `node` as an
+  entity type and verifies node keys against `node_snapshots`. Nothing was missing but data,
+  and data can be made locally.
 - **Ownership and the team verdict are part of a saved filter.** A saved owner selection
   names people, so it is the fixed cohort "alice.brown's repos" — which is what a *shared*
   one means to everyone who opens it. "What's mine" is that cohort saved unshared; there is

@@ -43,9 +43,9 @@ Two things are named as not done:
 - **MSSQL ingest.** Owners must be readable from a SQL Server database, not only a file.
   See `plans/todo-ownership.md` § Owner ingest — SQL source. Needs a driver and a
   supply-chain check before any code is written.
-- **Node ownership.** `node` is already a valid entity type in assignments; what is missing is
-  the data path and the node list filter. It was deferred for want of a dataset to test
-  against — a deferral nobody re-examined, and the reason it is not done.
+- **Node ownership — DONE.** The list carries the ownership control, the API already resolved
+  it, and the import always accepted `node`. Local data seeded in the dev DB: 8 nodes across 3
+  owners, 5 unowned, so both questions show something.
 
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 

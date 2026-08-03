@@ -36,6 +36,8 @@ export interface NodeFilterState {
   deploymentStateFilter: string[];
   convergeStatusFilter: string[];
   targetVersionFilter: string[];
+  ownerNames: string[];
+  unowned: boolean;
 }
 
 export const EMPTY_NODE_FILTER_STATE: NodeFilterState = {
@@ -53,6 +55,8 @@ export const EMPTY_NODE_FILTER_STATE: NodeFilterState = {
   deploymentStateFilter: [],
   convergeStatusFilter: [],
   targetVersionFilter: [],
+  ownerNames: [],
+  unowned: false,
 };
 
 export const NODE_FILTER_MAP: FilterParamMap<NodeFilterState> = {
@@ -71,11 +75,13 @@ export const NODE_FILTER_MAP: FilterParamMap<NodeFilterState> = {
     ["deploymentStateFilter", "migration_state"],
     ["convergeStatusFilter", "target_converge_status"],
     ["targetVersionFilter", "target_version"],
+    ["ownerNames", "owner"],
   ],
   scalars: [
     ["nodeName", "node_name"],
     ["chefVersion", "chef_version"],
   ],
+  booleans: [["unowned", "unowned"]],
 };
 
 export function nodeStateToParams(state: NodeFilterState): SavedFilterParams {

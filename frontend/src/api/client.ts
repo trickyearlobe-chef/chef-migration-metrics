@@ -90,6 +90,10 @@ export interface PaginationQuery {
 
 export interface NodeFilterQuery extends PaginationQuery {
   organisation?: string;
+  /** Comma-separated owner names. Rejected with a 400 alongside `unowned`. */
+  owner?: string;
+  /** "true" for the nodes nobody owns. Rejected with a 400 alongside `owner`. */
+  unowned?: string;
   node_name?: string;
   environment?: string;
   platform?: string;
