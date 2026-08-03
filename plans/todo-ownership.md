@@ -175,11 +175,12 @@ anything that extends it:
   opposite questions, so the pair is rejected at save time as well as on the list request —
   otherwise a cohort could hold a contradiction that only failed when somebody opened it.
   `human_verdict` is savable on git repos, and not on cookbooks, whose parser ignores it.
-- [ ] **The export path accepts the contradiction the list view rejects.**
-  `/api/v1/exports?...&owner=x&unowned=true` answers the unowned question silently;
-  the list endpoint 400s on the same pair. `newCookbookExportSource` and
-  `newGitRepoExportSource` call `parseOwnerFilter` without `validateOwnerFilter`, and an
-  export source can only fail as a 500. Unreachable from the UI, reachable from a script.
+- **The export path enforces the same ownership rule as the list views.** Checked once in
+  `handleExports`, before any source runs, rather than in each export source: a source can
+  only fail as a 500, so the caller would have been told the export broke rather than that
+  they asked two contradictory questions. It therefore covers every export type, including
+  roles, which ignores ownership entirely — a contradictory request is nonsense whether or
+  not the endpoint would have acted on it.
 
 ## Identity and alias management — what is left
 

@@ -15,8 +15,11 @@ deliberately by the product owner**, ahead of the MVP being complete, to get a b
 at customer scale and take the measurements below. Later chunks branch fresh from `main`.
 
 `feature/ownership-list-filters` — **unmerged, awaiting sign-off**, tree clean and every gate
-green. The ownership filter on the git repo and cookbook lists, plus the two snagging fixes and
-migration 0063 found while using it. 0063 is already applied to the dev DB.
+green. It now carries more than its name: the ownership filter on the git repo and cookbook
+lists (savable as a named cohort, enforced on the export path), the snagging fixes and
+migration 0063 found while using it, **and the Test Kitchen blocking-signal fix — migrations
+0064-0067, which re-verdict every repo's `tk_*` columns on the way up**. 0063 is applied to the
+dev DB; 0064-0067 are not.
 
 **If a rollback is ever needed:** there is **no down-migration runner** — only `MigrateUp` — so a
 schema rollback is `psql` by hand or a restore. Take a `pg_dump` before any deploy. Two
@@ -84,10 +87,10 @@ Scope and the decisions that bind: `plans/todo-ownership.md` § Ownership filter
 views.
 
 The git repo and cookbook lists carry the control, and it was driven in the running app on
-2026-08-03: both questions answer correctly. The node list stays deferred; there is no node
-ownership data to test it against. What is left on this chunk is listed in that todo — the
-saved-filter vocabulary and the export path's acceptance of the contradiction the list view
-rejects; neither has been started.
+2026-08-03: both questions answer correctly. Ownership is savable as a named cohort, and the
+export path enforces the same rule as the list views. **The only thing left is the node list,
+which stays deferred** — there is no node ownership data to test it against, and `OwnerFilter`
+drops straight in when there is.
 
 ## Snagging (`plans/todo-snagging.md`)
 

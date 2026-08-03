@@ -958,3 +958,55 @@ func assertBodyContains(t *testing.T, w *httptest.ResponseRecorder, substr strin
 		t.Errorf("response body %q does not contain %q", w.Body.String(), substr)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/exports — the ownership rule the list views enforce
+//
+// owner and unowned ask opposite questions, and every list endpoint answers 400
+// to the pair. The export path parsed the ownership filter without checking it,
+// so the same request silently answered the unowned question — and an export
+// source can only fail as a 500, so there was no way to say why. Unreachable
+// from the UI, reachable from a script.
+// ---------------------------------------------------------------------------
+
+func TestHandleExports_RejectsOwnerAndUnownedTogether(t *testing.T) {
+	for _, exportType := range []string{"git_repos", "cookbooks", "nodes"} {
+		t.Run(exportType, func(t *testing.T) {
+			// An empty store: the guard must fire before anything is queried,
+			// so a store that would panic on use proves it never got there.
+			r := newTestRouterWithMockAndConfig(&mockStore{}, exportTestConfig())
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost,
+				"/api/v1/exports?export_type="+exportType+
+					"&format=csv&owner=alice.brown&unowned=true", nil)
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
+			}
+			assertBodyContains(t, w, "mutually exclusive")
+		})
+	}
+}
+
+// Either question on its own is a legitimate export, and must still stream.
+func TestHandleExports_AcceptsEitherOwnershipQuestionAlone(t *testing.T) {
+	store := &mockStore{
+		ListGitReposFilteredFn: func(ctx context.Context, f datastore.GitRepoFilter) ([]datastore.GitRepo, int, error) {
+			return []datastore.GitRepo{{Name: "cookbook-apt"}}, 1, nil
+		},
+	}
+	for _, query := range []string{"owner=alice.brown", "unowned=true"} {
+		t.Run(query, func(t *testing.T) {
+			r := newTestRouterWithMockAndConfig(store, exportTestConfig())
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost,
+				"/api/v1/exports?export_type=git_repos&format=csv&"+query, nil)
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}

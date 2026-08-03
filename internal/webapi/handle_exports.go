@@ -66,6 +66,13 @@ func (r *Router) handleExports(w http.ResponseWriter, req *http.Request) {
 		WriteBadRequest(w, "chef_search_query format is only supported for the nodes export.")
 		return
 	}
+	// The same ownership rule every list endpoint enforces: owner and unowned
+	// ask opposite questions. Checked here rather than in each export source
+	// because a source can only fail as a 500 — the caller would be told the
+	// export broke, not that they asked for two contradictory things.
+	if !validateOwnerFilter(w, parseOwnerFilter(req)) {
+		return
+	}
 
 	// Always stream the export directly to the response as a download. The
 	// encoder holds only one page in memory, so this works at any size. There is
