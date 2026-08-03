@@ -33,6 +33,20 @@ migrations leave a residue the old binary reads:
   script rewrites them back, but it is **not a true inverse**: it cannot tell a row it rewrote
   from one the import always held by name, and the redundant duplicates it removed are gone.
 
+## DEADLINE — the ownership MVP must be complete by Monday 2026-08-10
+
+Set by the product owner on 2026-08-03. **Scope is ownership only.** Deploy access is
+bureaucratic to arrange, so the work is batched into one release rather than shipped piecemeal.
+
+Two things are named as not done:
+
+- **MSSQL ingest.** Owners must be readable from a SQL Server database, not only a file.
+  See `plans/todo-ownership.md` § Owner ingest — SQL source. Needs a driver and a
+  supply-chain check before any code is written.
+- **Node ownership.** `node` is already a valid entity type in assignments; what is missing
+  is the data path and the node list filter, which was deferred for want of a dataset to test
+  against.
+
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
 Work order and journeys live in that plan; per-chunk scope lives in
