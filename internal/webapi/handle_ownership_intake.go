@@ -17,6 +17,8 @@ import (
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
 // ---------------------------------------------------------------------------
@@ -876,13 +878,23 @@ func formatMappingErrors(errs []ownershipimport.ValidationError) string {
 // Request plumbing
 // ---------------------------------------------------------------------------
 
-// openIntakeSource opens a RowSource over the uploaded file. Every endpoint
-// opens its own: a source is single-pass and not re-readable, because a future
-// SQL source is a streaming cursor.
+// openIntakeSource opens a RowSource over whichever source the request names:
+// an uploaded file, or a query against a database. Every endpoint opens its
+// own, because a source is single-pass and not re-readable — a database source
+// is a streaming cursor.
+//
+// The two sources meet here and nowhere else. Everything above this point — the
+// row cap, the value filter, the distinct-value cap, the report and its
+// truncation — is written against RowSource and treats a query result exactly
+// as it treats a file.
 func (r *Router) openIntakeSource(w http.ResponseWriter, req *http.Request) (ownershipimport.RowSource, func(), bool) {
 	if err := req.ParseMultipartForm(intakeMaxUploadBytes); err != nil {
 		WriteBadRequest(w, "Invalid multipart/form-data request.")
 		return nil, nil, false
+	}
+
+	if req.FormValue("source_type") == intakeSourceDatabase {
+		return r.openIntakeDatabaseSource(w, req)
 	}
 
 	file, _, err := req.FormFile("file")
@@ -1034,4 +1046,70 @@ func trimReportRows(rows []ownershipimport.ReportRow, truncated *bool) []ownersh
 
 	*truncated = true
 	return kept
+}
+
+// ---------------------------------------------------------------------------
+// The database source
+// ---------------------------------------------------------------------------
+
+// intakeSourceDatabase is the source_type that selects a database rather than
+// an uploaded file.
+const intakeSourceDatabase = "database"
+
+// openIntakeDatabaseSource opens a RowSource over a query against a database.
+//
+// The connection string is never accepted from the request. It is read from a
+// stored credential by name, so a password is typed once into the credential
+// screen, encrypted at rest, and never travels back to a browser or into a log.
+// The query is the administrator's own, and runs under whatever that
+// connection's permissions allow.
+func (r *Router) openIntakeDatabaseSource(w http.ResponseWriter, req *http.Request) (ownershipimport.RowSource, func(), bool) {
+	driver := req.FormValue("db_driver")
+	if !ownershipsql.IsSupportedDriver(driver) {
+		WriteBadRequest(w, fmt.Sprintf(
+			"db_driver must be one of: %s.", strings.Join(ownershipsql.SupportedDrivers, ", ")))
+		return nil, nil, false
+	}
+
+	query := strings.TrimSpace(req.FormValue("db_query"))
+	if query == "" {
+		WriteBadRequest(w, "db_query is required when reading from a database.")
+		return nil, nil, false
+	}
+
+	credName := req.FormValue("db_credential")
+	if credName == "" {
+		WriteBadRequest(w, "db_credential is required: the connection string is read from a stored credential, never from the request.")
+		return nil, nil, false
+	}
+	if r.credentialStore == nil {
+		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
+			"Credential storage is not configured. Set CMM_CREDENTIAL_ENCRYPTION_KEY to enable.")
+		return nil, nil, false
+	}
+
+	cred, err := r.credentialStore.Get(req.Context(), credName)
+	if err != nil {
+		// The name is the operator's own input, so saying it is not found is
+		// helpful rather than leaky; the value never appears either way.
+		WriteBadRequest(w, fmt.Sprintf("Could not read the credential %q: %v", credName, err))
+		return nil, nil, false
+	}
+	dsn := string(cred.Plaintext)
+	defer secrets.ZeroBytes(cred.Plaintext)
+
+	src, err := ownershipsql.Open(req.Context(), ownershipsql.Config{
+		Driver: driver,
+		DSN:    dsn,
+		Query:  query,
+	})
+	if err != nil {
+		// Report the failure rather than an empty result: an unreadable source
+		// and an empty one read the same on screen and mean opposite things.
+		r.logf("WARN", "ownership/import: opening %s source: %v", driver, err)
+		WriteBadRequest(w, "Could not read from the database: "+err.Error())
+		return nil, nil, false
+	}
+
+	return src, func() { _ = src.Close() }, true
 }
