@@ -371,7 +371,12 @@ for file in "${STAGED_FILES[@]}"; do
     ref_path="${target%%#*}"
     ref_sym="${target#*#}"
     [[ "$ref_sym" == "$target" ]] && ref_sym=""
-    if [[ ! -e "$ref_path" ]]; then
+    # A link to a sibling journey is relative to this file's directory; a link
+    # to code is written from the repo root. Accept either, block only if
+    # neither resolves.
+    if [[ -e "$(dirname "$file")/$ref_path" ]]; then
+      ref_path="$(dirname "$file")/$ref_path"
+    elif [[ ! -e "$ref_path" ]]; then
       block "$file" "spec references '${ref_path}', which does not exist — fix the reference in the change that moved it"
       continue
     fi

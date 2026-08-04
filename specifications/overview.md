@@ -1,0 +1,66 @@
+# What this is for
+
+An organisation runs tens of thousands of servers managed by Chef. They are on an old
+version and need to be on a new one. Nobody can say what is stopping that, how far along
+they are, or who has to do the work — so the upgrade stalls, and the reason it stalls is not
+technical. It is that the estate is unreadable.
+
+This makes the estate readable. It collects what is actually deployed, works out what will
+break on the target version, ranks it by what it costs against what it unblocks, attributes
+it to the people who own it, and tracks it as it gets fixed.
+
+Everything here serves one question: **what is stopping us moving to the target version, and
+what should we do first?**
+
+There is exactly one target version at a time. Not a matrix, not a per-user selector — one,
+set centrally.
+
+## Who this is for
+
+- **The migration lead** — answers to a programme board and needs to know where the estate
+  stands and whether it is moving.
+- **The engineer doing the work** — needs a short, correct list of things to fix. Their time
+  is the scarce resource, so a list padded with false alarms is worse than no list.
+- **The cookbook owner** — needs to know which of this is theirs, and nothing else.
+- **The administrator** — connects this to the Chef servers, the git repositories and the
+  identity provider, and keeps it running somewhere they usually cannot reach directly.
+
+## The journeys
+
+| Journey | The question it answers |
+|---|---|
+| [Knowing where the estate stands](estate-progress.md) | How far through are we, and is it moving? |
+| [Which machines can move](node-readiness.md) | What is blocking this server, and is it even still there? |
+| [The one fix that unblocks thousands](role-impact.md) | Where does one change buy the most? |
+| [Whether a cookbook survives](cookbook-compatibility.md) | Will this break, and can I believe the answer? |
+| [Deciding what to fix first](remediation-priority.md) | Of everything broken, what do I start on? |
+| [Naming a slice of the estate](named-cohorts.md) | Can I get back the selection I built yesterday? |
+
+Journeys for the compatibility signals, ownership, and running the service are still being
+written. **Until this table is complete, a missing journey means nobody has written it yet —
+it does not mean the capability is missing.**
+
+## How to read a specification here
+
+Every file is a journey: who the person is, what they are trying to get done, what has to be
+true for them to succeed, and how they would know it worked — in their words.
+
+Two things a journey also carries, because leaving them out is what let earlier documents
+rot:
+
+- **The decisions that bind.** Stated as decisions, so they are not silently re-litigated by
+  the next person who finds them inconvenient.
+- **Its own load-bearing assumption, flagged for checking.** Where a journey leans on
+  something structural, it says so and tells the reader to verify before designing against
+  it. A document that names the claim that will hurt you if it is wrong is worth more than
+  one that reads as uniformly confident.
+
+None of it describes how the software works. The code is the only source of truth for that,
+and a contract lives in a test that fails when it stops being true. A journey may point at
+such a test by link, and the link is checked when it is committed.
+
+**No status claims.** Nothing here says built, shipped, planned or proposed. Status written
+in prose is the thing that rots fastest, and the best document we had was wrong on exactly
+that line.
+
+Conventions for writing code are in `docs/project-conventions.md`.

@@ -1,0 +1,44 @@
+# Knowing whether a cookbook survives the new version
+
+**As the engineer running the upgrade, I need one honest verdict per cookbook — will this
+break on the target version — so that the list of things to fix is a list I can trust.**
+
+The estate's cookbooks come from two places and I care about both the same way. Some are on
+the Chef servers, uploaded and in use. Some are in git repositories, which is where they are
+actually written and where a fix has to land. Asking "is this safe" should not depend on
+which side I happen to be looking from, and a cookbook that looks fine on one side and
+broken on the other is a question I need answered, not a discrepancy I have to notice.
+
+## What I need to see
+
+Per cookbook, whether it is safe, needs looking at, or is blocked — and what that verdict
+was based on, because I will be asked to justify it and because I do not trust a verdict I
+cannot see the reasoning for.
+
+Two independent signals feed it. Static analysis reads the code and tells me about things
+that were removed or deprecated. Actually converging the cookbook on a real machine tells me
+whether it works. They disagree sometimes, and when they do I want to see both rather than
+have one quietly overrule the other.
+
+Which version, because the same cookbook at two versions is two different answers.
+
+## What has to be true
+
+**An untested cookbook is not a passing cookbook.** "We have no result" and "we have a
+result and it is fine" must never render the same way. Most of the damage this tool can do
+is telling me something is safe when nobody has actually looked.
+
+**A verdict must not be poisoned by our own infrastructure.** When a converge test fails
+because the lab could not build a machine, or could not get it an address, or could not log
+in, that is our problem and not the cookbook's. Counting it against the cookbook produces a
+blocked list full of things that are not broken, and a list I stop believing is worse than
+no list — I will work around it, and then I will miss the real one.
+
+**A person can overrule the machine.** If I have watched a cookbook converge successfully,
+my verdict wins, and it is recorded as mine. The reverse too: if it passed here and broke in
+production, I say so and that sticks.
+
+## How I know it worked
+
+The blocked list is short enough to work through, and when I pick something off it and go
+look, it really is broken.

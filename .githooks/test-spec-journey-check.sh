@@ -60,6 +60,11 @@ assert pass "a reference that resolves" <<'EOF'
 Pinned by [the contract](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_StaleIsUnknown).
 EOF
 
+assert pass "a link to a sibling journey, which is relative to this file" <<'EOF'
+# A journey
+See also [another journey](overview.md).
+EOF
+
 assert block "a reference to a symbol that no longer exists" <<'EOF'
 # A journey
 Pinned by [the contract](internal/analysis/semantic_contracts_test.go#TestContract_LongSinceRenamed).
