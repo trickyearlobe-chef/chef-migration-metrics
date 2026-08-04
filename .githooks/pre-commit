@@ -295,37 +295,56 @@ for file in "${STAGED_FILES[@]}"; do
       ;;
   esac
 done
+# ---------------------------------------------------------------------------
+# 4. Specifications are user journeys, not technical documents
+# ---------------------------------------------------------------------------
+# A spec answers four questions in the words the person would use: who they
+# are and what they are trying to get done, what must be true for them to
+# succeed, what they see or do, and how they would know it worked.
+#
+# Everything else is owned by the code. A contract belongs in a test that fails
+# when it stops being true; a table, column, endpoint or symbol belongs in the
+# code that defines it. A technical claim written in prose is a copy that
+# nothing re-validates — it rots, and is then believed.
+#
+# A spec MAY point at the code or test that owns a contract, but only as a
+# markdown link, because a link can be checked:
+#
+#     the verdict is pinned by [the derivation contract](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_StaleIsUnknown)
+#
+# The target must exist, and the optional #fragment must appear in it. A
+# reference that goes stale therefore fails the commit that made it stale,
+# which is the whole point: it gets fixed by the work that broke it rather than
+# by an audit nobody runs. Bare paths and symbols in prose stay blocked — they
+# are unresolvable, so nothing can tell you when they stop being true.
+#
+# This is enforced rather than advised because advising it did not work: the
+# warning sat at the top of the spec index and twice in CLAUDE.md, and the
+# specs drifted anyway. See archive/specifications/README.md.
+SPEC_LINE_LIMIT=200
 
-# ---------------------------------------------------------------------------
-# 4. Specification size limit — keep specs splittable for LLM retrieval
-# ---------------------------------------------------------------------------
-# Specs are consumed by AI agents; oversized files defeat targeted retrieval.
-# Split a spec over the limit into a thin index + <spec>-<section>.md parts.
-SPEC_LINE_LIMIT=500
+# Report the first few offending lines for a pattern, and block the commit.
+spec_block() {
+  local file="$1" pattern="$2" reason="$3" content="$4" hits
+  hits=$(printf '%s\n' "$content" | grep -nE "$pattern" | head -3) || true
+  if [[ -n "$hits" ]]; then
+    block "$file" "$reason"
+    printf '%s\n' "$hits" | sed 's/^/    line /' >&2
+  fi
+}
+
+spec_warn() {
+  local file="$1" pattern="$2" reason="$3" content="$4" hits
+  hits=$(printf '%s\n' "$content" | grep -nE "$pattern" | head -3) || true
+  if [[ -n "$hits" ]]; then
+    warn "$file" "$reason"
+    printf '%s\n' "$hits" | sed 's/^/    line /' >&2
+  fi
+}
 
 for file in "${STAGED_FILES[@]}"; do
   case "$file" in
-    specifications/*.md)
-      lines=$(git show ":$file" 2>/dev/null | wc -l | tr -d ' ') || continue
-      if [[ $lines -gt $SPEC_LINE_LIMIT ]]; then
-        block "$file" "spec is ${lines} lines (limit ${SPEC_LINE_LIMIT}) — split into an index + <spec>-<section>.md parts"
-      fi
-      ;;
-  esac
-done
-
-# ---------------------------------------------------------------------------
-# 5. Specs are intent, not implementation
-# ---------------------------------------------------------------------------
-# Specs define WHAT, not HOW (CLAUDE.md). Contracts and reference data are
-# fine — JSON/YAML examples, struct/interface/type/const definitions, bare
-# method signatures, request/response shapes. What is NOT fine is function
-# bodies / algorithm implementations copied into a spec; that duplicates code
-# and drifts. We detect executing statements (:=, return <expr>, control flow)
-# inside an implementation-language fence (go/ruby/rust/python). A long run of
-# constant-style assignments (a code table copied into prose) is warned on.
-for file in "${STAGED_FILES[@]}"; do
-  case "$file" in
+    specifications/README.md) continue ;;   # states the rule; exempt from it
     specifications/*.md) ;;
     *) continue ;;
   esac
@@ -333,41 +352,66 @@ for file in "${STAGED_FILES[@]}"; do
   spec_content=$(git show ":$file" 2>/dev/null) || continue
   [[ -z "$spec_content" ]] && continue
 
-  impl_hits=$(printf '%s\n' "$spec_content" | awk '
-    /^```(go|ruby|rust|python)[[:space:]]*$/ { infence = 1; next }
-    /^```/                                   { infence = 0; next }
-    infence && ( /:=/ \
-              || /^[[:space:]]*return[[:space:]]+[^[:space:]]/ \
-              || /^[[:space:]]*(if|for|switch|range)[[:space:](]/ \
-              || /^[[:space:]]*\} else/ ) { print "    line " NR ": " $0 }
-  ')
-  if [[ -n "$impl_hits" ]]; then
-    block "$file" "implementation code in a spec (function body/algorithm) — specs define what, not how; move it to TDD"
-    printf '%s\n' "$impl_hits" >&2
+  lines=$(printf '%s\n' "$spec_content" | wc -l | tr -d ' ')
+  if [[ $lines -gt $SPEC_LINE_LIMIT ]]; then
+    block "$file" "spec is ${lines} lines (limit ${SPEC_LINE_LIMIT}) — a journey is short; if it needs more, the detail belongs in tests or is a second journey"
   fi
 
-  const_run=$(printf '%s\n' "$spec_content" | awk '
-    /^```/ { infence = !infence; run = 0; next }
-    !infence && /^[[:space:]]*[A-Z][A-Z0-9_]{2,}[[:space:]]*[:=][[:space:]]*[^[:space:]]/ {
-      run++; if (run >= 8) { print NR; exit }; next
-    }
-    { run = 0 }
-  ')
-  if [[ -n "$const_run" ]]; then
-    warn "$file" "long constant-list run ending ~line ${const_run} — specs are intent; avoid copying constant tables from code"
-  fi
+  # ---- checked references -------------------------------------------------
+  # Resolve every markdown link that points into the repo. Line numbers are
+  # preserved for the prose checks below because only the link text is blanked.
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    case "$target" in
+      http://*|https://*|mailto:*|'#'*) continue ;;
+      archive/*)
+        block "$file" "spec links into archive/ — that material is historical and not authoritative; link the code or test that owns this instead"
+        continue ;;
+    esac
+    ref_path="${target%%#*}"
+    ref_sym="${target#*#}"
+    [[ "$ref_sym" == "$target" ]] && ref_sym=""
+    if [[ ! -e "$ref_path" ]]; then
+      block "$file" "spec references '${ref_path}', which does not exist — fix the reference in the change that moved it"
+      continue
+    fi
+    if [[ -n "$ref_sym" ]] && ! grep -qF -- "$ref_sym" "$ref_path" 2>/dev/null; then
+      block "$file" "spec references '${ref_sym}' in ${ref_path}, which no longer contains it — fix the reference in the change that renamed it"
+    fi
+  done < <(printf '%s\n' "$spec_content" | grep -oE '\]\([^)]+\)' | sed -E 's/^\]\(//; s/\)$//')
 
-  # Copied contract: a struct/interface block inside a code fence is almost
-  # always a paste of a code-owned type that will drift. Reference the
-  # authoritative type + state invariants instead (CLAUDE.md). Warn, not block.
-  contract_copy=$(printf '%s\n' "$spec_content" | awk '
-    /^```(go|typescript|ts|tsx)[[:space:]]*$/ { infence = 1; next }
-    /^```/                                    { infence = 0; next }
-    infence && /(struct|interface)[^{]*\{/ { print NR; exit }
-  ')
-  if [[ -n "$contract_copy" ]]; then
-    warn "$file" "struct/interface block (~line ${contract_copy}) looks like a copied contract — reference the authoritative type (Go type, or vcenter.go/proxmox.go for external shapes) and state invariants instead of pasting it"
-  fi
+  # ---- prose checks -------------------------------------------------------
+  # Link constructs are removed first: a checked reference is allowed to name a
+  # path or a symbol, unchecked prose is not.
+  spec_prose=$(printf '%s\n' "$spec_content" | sed -E 's/\[[^]]*\]\([^)]*\)//g')
+
+  spec_block "$file" '^```' \
+    "code fence in a spec — a contract belongs in a test, and code is the source of truth for everything else" \
+    "$spec_prose"
+
+  spec_block "$file" '(^|[^A-Za-z0-9_/.])(internal|cmd|frontend|migrations|scripts)/|[A-Za-z0-9_-]+\.(go|ts|tsx|jsx|sql|rb)([^A-Za-z0-9]|$)' \
+    "unchecked source path in a spec — make it a markdown link so a rename fails the commit, or describe what the person does instead" \
+    "$spec_prose"
+
+  spec_block "$file" '(SELECT[[:space:]]+.*[[:space:]]FROM|CREATE[[:space:]]+TABLE|ALTER[[:space:]]+TABLE|INSERT[[:space:]]+INTO|(LEFT|INNER|OUTER)[[:space:]]+JOIN)' \
+    "SQL in a spec — the schema is owned by the migrations and the code" \
+    "$spec_prose"
+
+  spec_block "$file" '(GET|POST|PUT|PATCH|DELETE)[[:space:]]+/[a-z]' \
+    "HTTP endpoint in a spec — the API is owned by the handlers" \
+    "$spec_prose"
+
+  spec_block "$file" '[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\(|[a-zA-Z_][a-zA-Z0-9_]*\(\)' \
+    "unchecked function reference in a spec — link the test that pins it, or write it as a test that fails when it stops being true" \
+    "$spec_prose"
+
+  spec_block "$file" '`[A-Za-z0-9]+(_[A-Za-z0-9]+)+`|`[a-z0-9]+(\.[a-z0-9_]+)+`' \
+    "code identifier in a spec (table, column or config key) — say what the person sees, not what it is called in code" \
+    "$spec_prose"
+
+  spec_warn "$file" '`[A-Za-z0-9]*[a-z0-9]([A-Z][A-Za-z0-9]*)+`' \
+    "backticked CamelCase — fine if it is a product name the person would say, a symbol if it is not" \
+    "$spec_prose"
 done
 
 # ---------------------------------------------------------------------------
