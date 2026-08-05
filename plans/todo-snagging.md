@@ -11,7 +11,35 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
-*(nothing outstanding)*
+- **"Browse tables" on the database import returns "Method not allowed."** Reported by the
+  product owner 2026-08-05 from the shipped app: Ownership → Import → File or database, a
+  SQL Server connection chosen, and the button answers with a red error banner. The screen
+  offers table browsing precisely because whoever sets an import up usually cannot inspect
+  the database, so the fallback is writing a query blind against a schema you cannot see.
+
+  **One missing line, as far as this was traced — verify each of these rather than trusting
+  it.** The query exists (`ownershipsql.ListTables`,
+  `internal/ownershipsql/source.go:243`), the handler exists (`handleIntakeListTables`,
+  `internal/webapi/handle_ownership_intake.go:1127`), and `handleOwnershipIntake` already
+  dispatches `/api/v1/ownership/import/tables` to it at `:83-84`. The frontend posts a
+  multipart form to that path (`frontend/src/api/ownership.ts:328`).
+
+  What is missing is the mux registration. `internal/webapi/router.go:861-865` registers
+  `import/profile`, `import/preview`, `import/commit`, `import/mappings` and
+  `import/mappings/` — every case in that dispatch switch **except** `tables`. So the
+  request never reaches the handler written for it.
+
+  **Not established, and it matters more than this endpoint: why the response is 405 rather
+  than 404.** An unregistered path should match no pattern, so something else is answering —
+  a catch-all, or the single-page-app fallback. Find out before fixing. It means other
+  unrouted paths are reporting a method error instead of a missing one, which is what made
+  this look like a permissions problem.
+
+  Reproduce first, then the failing test, then fix. Worth having: a test that the path
+  answers a POST, and one that an unregistered path under `import/` returns 404 — the second
+  is the general fault and outlives this endpoint. A registration list kept in step with a
+  dispatch switch by hand will drift again, so consider a test asserting every case in that
+  switch has a route.
 
 ---
 
