@@ -11,7 +11,25 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
-_Nothing open._
+- **An owner's cookbook summary reports every cookbook untested, silently.** Found while
+  mining the abandoned ownership plan on 2026-08-04, not by anybody using the app.
+  `internal/datastore/owners.go:710-711` and `:776-777` query `cookbook_complexity` and
+  join `cookbooks` — neither table has ever existed. The tree has `server_cookbooks` and
+  `server_cookbook_complexity`; the names in the query are the real ones with the
+  qualifier dropped.
+
+  The error is discarded at `:717` (`if err == nil && complexityLabel.Valid`), so the query
+  fails on every call and the value simply stays empty. No error, no log line. Blocking
+  cookbooks show a blank complexity label, and per the comment above
+  `GetOwnerCookbookSummary` the compatible/incompatible/untested verdict is derived from
+  that same absent table.
+
+  `28fc997` fixed the sibling git repo summary. These two were diagnosed correctly on
+  2026-08-01 in a plan that was then abandoned, and the diagnosis went with it.
+
+  Impact on the screens in production has not been traced. A test asserting an *error*
+  will never go red here — the functions return wrong values rather than failing — so
+  establish each one's actual behaviour from the code before writing its test.
 
 ---
 
