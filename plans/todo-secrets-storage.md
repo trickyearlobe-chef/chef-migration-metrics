@@ -19,6 +19,21 @@ env/`config.yaml`; client keys live in the DB via the UI (see
   resolution is unaffected. Fix: populate `ClientKeyCredentialName` in the sync params,
   or have the status handler consult live config with the resolver's precedence.
 
+## Enhancements
+
+- [ ] **Database connection strings have no credential type of their own.** A DSN is saved
+  as "Generic", so the credentials page can neither say what format it wants nor check the
+  one it was given — the same problem `chef_client_key` solved for PEM files by being its
+  own type. Distinct `postgres_url` and `mssql_url` types would let the page carry the
+  format and validate on save, which is where somebody typing a connection string is
+  actually standing.
+
+  **Deliberately not done yet.** The format example now sits on the ownership import's
+  connection step instead (`OwnershipMappedImport.tsx`), because that is the page the
+  person setting up an import is looking at, and they are importing owners rather than
+  administering credentials. Typed secrets are the better answer when the credentials page
+  is next worked on; until then the example is where it gets read.
+
 ## Tests (implementation exists; coverage is the gap)
 
 - [ ] Functional PostgreSQL tests (`//go:build functional`) for the credential store —

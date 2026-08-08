@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // OwnershipAuditEntry represents a row in the ownership_audit_log table.
@@ -37,7 +39,12 @@ type InsertAuditEntryParams struct {
 
 // AuditLogFilter holds query parameters for listing audit log entries.
 type AuditLogFilter struct {
-	Action     string
+	Action string
+	// Actions matches any of several actions, for callers that want a
+	// category rather than one verb — the corrections export asks for every
+	// action that represents a human correcting the source data. Combined
+	// with Action by AND, so setting both narrows rather than widens.
+	Actions    []string
 	Actor      string
 	OwnerName  string
 	EntityType string
@@ -100,6 +107,11 @@ func (db *DB) listAuditLog(ctx context.Context, q queryable, f AuditLogFilter) (
 	if f.Action != "" {
 		where += fmt.Sprintf(" AND action = $%d", argN)
 		args = append(args, f.Action)
+		argN++
+	}
+	if len(f.Actions) > 0 {
+		where += fmt.Sprintf(" AND action = ANY($%d)", argN)
+		args = append(args, pq.Array(f.Actions))
 		argN++
 	}
 	if f.Actor != "" {

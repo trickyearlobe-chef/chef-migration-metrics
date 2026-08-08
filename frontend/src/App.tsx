@@ -234,21 +234,32 @@ export function App() {
                 element={<OwnerAliasesPage />}
               />
               <Route
-                path="/ownership/duplicates"
-                element={<OwnerDuplicatesPage />}
-              />
-              <Route
                 path="/ownership/audit-log"
                 element={<OwnershipAuditLogPage />}
               />
-              <Route
-                path="/ownership/import"
-                element={<OwnershipImportPage />}
-              />
+              {/* Import and duplicate resolution live under /admin — they are
+                  administrator functions, and the path says so. See the
+                  admin-only routes below for the guards. */}
               <Route path="/ownership/:name" element={<OwnerDetailPage />} />
               <Route path="/logs" element={<LogsPage />} />
 
               {/* Admin-only routes */}
+              <Route
+                path="/admin/ownership/import"
+                element={
+                  <RequireAdmin>
+                    <OwnershipImportPage />
+                  </RequireAdmin>
+                }
+              />
+              <Route
+                path="/admin/ownership/duplicates"
+                element={
+                  <RequireAdmin>
+                    <OwnerDuplicatesPage />
+                  </RequireAdmin>
+                }
+              />
               <Route
                 path="/admin/users"
                 element={

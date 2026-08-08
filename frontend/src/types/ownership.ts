@@ -275,4 +275,24 @@ export interface IntakeMapping {
   created_by: string;
   created_at: string;
   updated_at: string;
+
+  // Where a database import reads from. db_credential names a stored
+  // credential — the connection string itself never reaches the browser.
+  db_driver?: string;
+  db_credential?: string;
+  db_query?: string;
+
+  filter_column?: string;
+  filter_value?: string;
+  create_owners?: boolean;
+
+  // Standard 5-field cron. Empty means unscheduled.
+  schedule?: string;
+  schedule_enabled?: boolean;
+
+  // What the last unattended run did, so a silently failing import shows up
+  // without anybody reading the audit log.
+  last_run_at?: string;
+  last_run_status?: string;
+  last_run_detail?: string;
 }

@@ -647,3 +647,63 @@ func (db *DB) ListOwnedEntityKeys(ctx context.Context, entityType string) (map[s
 	}
 	return keys, rows.Err()
 }
+
+// AllAssignmentRow is one ownership assignment for the full-state export,
+// carrying the owner's display name and contact so the file is readable by
+// somebody who does not know CMM's owner handles.
+type AllAssignmentRow struct {
+	OwnerName        string
+	DisplayName      string
+	ContactEmail     string
+	EntityType       string
+	EntityKey        string
+	OrganisationName string
+	AssignmentSource string
+	Confidence       string
+	Notes            string
+	UpdatedAt        time.Time
+}
+
+// ListAllAssignments returns every ownership assignment, a page at a time.
+//
+// Every assignment whatever its origin: the export it feeds is the shape the
+// source data should be corrected to match, and an export that showed only the
+// imported half would tell the source's owner to delete the corrections.
+//
+// Ordered by entity then owner so two exports of unchanged data are identical
+// and can be diffed.
+func (db *DB) ListAllAssignments(ctx context.Context, limit, offset int) ([]AllAssignmentRow, error) {
+	const query = `
+		SELECT a.owner_name,
+		       COALESCE(o.display_name, ''),
+		       COALESCE(o.contact_email, ''),
+		       a.entity_type,
+		       a.entity_key,
+		       COALESCE(a.organisation_name, ''),
+		       a.assignment_source,
+		       a.confidence,
+		       COALESCE(a.notes, ''),
+		       a.updated_at
+		FROM ownership_assignments a
+		LEFT JOIN owners o ON o.name = a.owner_name
+		ORDER BY a.entity_type, a.entity_key, a.owner_name
+		LIMIT $1 OFFSET $2`
+
+	rows, err := db.pool.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("datastore: listing all assignments: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []AllAssignmentRow
+	for rows.Next() {
+		var a AllAssignmentRow
+		if err := rows.Scan(&a.OwnerName, &a.DisplayName, &a.ContactEmail, &a.EntityType,
+			&a.EntityKey, &a.OrganisationName, &a.AssignmentSource, &a.Confidence,
+			&a.Notes, &a.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("datastore: scanning an assignment: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}

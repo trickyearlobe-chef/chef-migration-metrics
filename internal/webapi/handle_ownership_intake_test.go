@@ -641,9 +641,15 @@ func TestIntakePreview_UsesASavedMapping(t *testing.T) {
 	}
 }
 
-func TestIntakePreview_DoesNotRequireOperatorRole(t *testing.T) {
-	// Preview writes nothing, so it needs only standard protected auth. Making
-	// it operator-only would stop the people who own the data from checking it.
+func TestIntakePreview_RequiresAdmin(t *testing.T) {
+	// This reverses an earlier decision, on the product owner's instruction
+	// (2026-08-06): preview used to be open to any authenticated user on the
+	// grounds that it writes nothing, so the people who own the data could
+	// check an import before an administrator committed it.
+	//
+	// Importing owners is now an administrator function outright. Writing
+	// nothing is not the same as showing nothing: a preview renders the
+	// contents of a system of record the caller may have no other way to read.
 	r := ownershipRouter(&mockStore{})
 	w := httptest.NewRecorder()
 	req := intakeRequest(t, "/api/v1/ownership/import/preview", twoRowCSV, map[string]string{
@@ -651,8 +657,8 @@ func TestIntakePreview_DoesNotRequireOperatorRole(t *testing.T) {
 	})
 	r.ServeHTTP(w, withViewerSession(req))
 
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 for a viewer: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 for a viewer: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -1067,7 +1073,7 @@ func TestIntakeMappings_GetUpdateDelete(t *testing.T) {
 	}
 }
 
-func TestIntakeMappings_WritesRequireOperatorOrAdmin(t *testing.T) {
+func TestIntakeMappings_WritesRequireAdmin(t *testing.T) {
 	r := ownershipRouter(&mockStore{})
 	for _, tc := range []struct {
 		method, path, body string
@@ -1351,5 +1357,66 @@ func TestIntakePreview_TruncationKeepsEveryRejectedRow(t *testing.T) {
 	}
 	if len(resp.Rows) > intakeMaxReportRows {
 		t.Errorf("returned %d rows, which exceeds the cap of %d", len(resp.Rows), intakeMaxReportRows)
+	}
+}
+
+// An interactive commit keeps its unusable rows too. A CSV somebody uploads
+// while judging a source is exactly the case the rejection report exists for,
+// and it has no saved import behind it to hang the findings on.
+func TestIntakeCommit_KeepsTheRowsItCouldNotUse(t *testing.T) {
+	var label string
+	var stored []datastore.ImportRejection
+	store := &mockStore{
+		ReplaceImportRejectionsFn: func(_ context.Context, l string, _ *int64, rs []datastore.ImportRejection) (int, error) {
+			label, stored = l, rs
+			return len(rs), nil
+		},
+	}
+	r := ownershipRouter(store)
+
+	// The second row has no owner, so it cannot be used.
+	const csv = "Owner,Repo\nAlice Smith,web-app\n,db-tools\n"
+	req := intakeRequest(t, "/api/v1/ownership/import/commit", csv, map[string]string{
+		"field_map": repoFieldMap(t),
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if len(stored) != 1 {
+		t.Fatalf("stored %d rejections, want the one unusable row: %+v", len(stored), stored)
+	}
+	if stored[0].SourceRow != 2 {
+		t.Errorf("source_row = %d, want 2", stored[0].SourceRow)
+	}
+	// Labelled with the file it came from, so the report names a source rather
+	// than an anonymous run.
+	if !strings.Contains(label, "ownership.csv") {
+		t.Errorf("label = %q, want it to name the uploaded file", label)
+	}
+}
+
+// A preview writes nothing, so it must not overwrite the findings from the
+// last real import — a dry run that wiped the work list would be a trap.
+func TestIntakePreview_DoesNotTouchTheStoredFindings(t *testing.T) {
+	called := false
+	store := &mockStore{
+		ReplaceImportRejectionsFn: func(context.Context, string, *int64, []datastore.ImportRejection) (int, error) {
+			called = true
+			return 0, nil
+		},
+	}
+	r := ownershipRouter(store)
+
+	req := intakeRequest(t, "/api/v1/ownership/import/preview", twoRowCSV, map[string]string{
+		"field_map": repoFieldMap(t),
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if called {
+		t.Error("a preview replaced the stored findings, so a dry run wipes the work list")
 	}
 }

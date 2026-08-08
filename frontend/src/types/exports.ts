@@ -5,7 +5,11 @@ export type ExportType =
   | "cookbooks"
   | "roles"
   | "git_repos"
-  | "run_events";
+  | "run_events"
+  // Ownership two ways: the current state, and the fix-list for whoever
+  // maintains the system of record the ownership was imported from.
+  | "ownership"
+  | "ownership_corrections";
 export type ExportFormat = "csv" | "json" | "chef_search_query";
 export type ExportJobStatus =
   | "pending"

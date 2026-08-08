@@ -22,6 +22,28 @@ no grouping, inconsistent GET/PUT shapes (some return the section directly, some
 
 ---
 
+## Ownership import execution lives in the web layer
+
+Recorded 2026-08-06 (`fix/ownership-import-browse-tables`), while adding scheduled
+database imports.
+
+Running an import — open the source, map, classify, commit — is a method on
+`*webapi.Router` (`internal/webapi/ownership_import_run.go`), because that is where the
+classify-and-commit seam the interactive path uses already lives. The scheduler
+(`internal/ownershipschedule`) therefore cannot call it directly without an import cycle,
+and takes a `RunFunc` that `main` wires up instead.
+
+**Why it was done this way:** the alternative was extracting an ownership-import service
+out of the web layer in the same change. Duplicating the logic was never an option — two
+import behaviours to keep in step is the worse debt.
+
+**Proper fix:** move the import execution into its own package (`internal/ownershipimport`
+or a new `ownershipintake` service) that both the HTTP handlers and the scheduler call.
+The seam is already narrow — `classifyIntakeRows` and `commitIntakeRows`, plus the audit
+writer taking an actor rather than a request — so this is a move, not a redesign.
+
+---
+
 ## CookStyle — Poly-method cop classification residuals (cop-name-keyed)
 
 Recorded 2026-07-15 with `fix/cookstyle-polymethod-cop` (per-message remediation +

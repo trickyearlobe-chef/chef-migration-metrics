@@ -46,5 +46,9 @@ func (r *Router) exportRegistry() map[string]exportSpec {
 		"roles":      r.rolesExportSpec(),
 		"git_repos":  r.gitReposExportSpec(),
 		"run_events": r.runEventsExportSpec(),
+		// Ownership exports two ways: the current state, and the fix-list for
+		// whoever maintains the system of record the ownership came from.
+		"ownership":             r.ownershipExportSpec(),
+		"ownership_corrections": r.ownershipCorrectionsExportSpec(),
 	}
 }

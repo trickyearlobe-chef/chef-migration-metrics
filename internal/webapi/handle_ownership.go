@@ -1026,9 +1026,15 @@ func (r *Router) handleOwnershipEndpoints(w http.ResponseWriter, req *http.Reque
 // ---------------------------------------------------------------------------
 
 func (r *Router) auditOwnership(req *http.Request, action, ownerName, entityType, entityKey, organisation string, details json.RawMessage) {
-	actor := adminUsername(req)
+	r.auditOwnershipAs(req.Context(), adminUsername(req), action, ownerName, entityType, entityKey, organisation, details)
+}
 
-	if err := r.db.InsertAuditEntry(req.Context(), datastore.InsertAuditEntryParams{
+// auditOwnershipAs names the actor explicitly, for work with no request behind
+// it. A scheduled import writes the same entries an interactive one does — the
+// audit log has to be able to answer "who changed this" when the answer is
+// "a schedule somebody set up", rather than falling back to "unknown".
+func (r *Router) auditOwnershipAs(ctx context.Context, actor, action, ownerName, entityType, entityKey, organisation string, details json.RawMessage) {
+	if err := r.db.InsertAuditEntry(ctx, datastore.InsertAuditEntryParams{
 		Action:       action,
 		Actor:        actor,
 		OwnerName:    ownerName,

@@ -108,6 +108,67 @@ Two things are named as not done:
   it, and the import always accepted `node`. Local data seeded in the dev DB: 8 nodes across 3
   owners, 5 unowned, so both questions show something.
 
+## AWAITING REVIEW — ownership admin move + scheduled database import
+
+Branch `fix/ownership-import-browse-tables`, uncommitted. Asked for by the product owner
+2026-08-06, on top of the browse-tables fix already on the branch. Built; the owner has not
+seen it yet.
+
+**Decisions taken that outlive this plan, and the reasons, because nothing else records them:**
+
+- **Import and duplicates are admin-only, which reverses two earlier decisions on the owner's
+  instruction.** Preview was open to viewers so "the people who own the data can check it"; a
+  preview shows the contents of a system of record, and writing nothing is not the same as
+  showing nothing. Dismissing a duplicate was operator rather than admin because it removes a
+  suggestion, not a person. Both are now admin, in the nav, the routes and the API.
+- **A schedule belongs to a saved import, not to a global setting.** Taken as an assumption
+  rather than asked. A saved mapping held only the field map, so an unattended run had no
+  connection to run against; widening it into a saved *import* (driver, credential name, query,
+  row filter, create-owners, cron) is what makes scheduling possible at all, and lets the
+  several systems of record this estate has each carry their own cadence.
+- **A scheduled run commits.** It writes the same assignments a manual import would and audits
+  them under "scheduled import: <name>". Staging for review was not built: a schedule that
+  needs somebody to approve it is a reminder, not a schedule.
+- **No global on/off switch for the scheduler.** It polls and does nothing when no import is
+  scheduled. A schedule the screen shows and a flag silently suppresses is the failure this
+  feature exists to avoid.
+
+**No history beyond the last run per import** (the per-row detail is in the ownership audit log).
+
+### Asked for 2026-08-06, while exploring source data quality
+
+Three things, all in service of the same loop: try a source, judge what came back, throw it
+away, try again — and hand the source's owner a list of what is wrong with their data.
+
+1. **Run now.** A saved database import can be run on demand. Synchronous, returning the same
+   summary a scheduled run records, because the point of it is watching what happens.
+2. **Clear out what an import brought in.** Removes assignments whose source is an import, and
+   owners those imports created that nothing references any more. **Chosen by the owner over
+   the wider and narrower options:** hand-made owners, hand-made assignments, aliases,
+   dismissals and the failure register all survive — those cost real effort and are not what a
+   trial import dirtied. Owner provenance comes from the audit log (`owner_created` with
+   `source: import`), because `owners` carries no source column.
+3. **Two exports, for two different readers.** `ownership_corrections` is a fix-list for
+   whoever maintains the source system — duplicate people we merged, owners we reassigned,
+   details we corrected. `ownership` is the full current state: the shape the source should be
+   corrected to match.
+
+**Known gap in the corrections export:** rejected import rows are not in it, because they are
+not persisted anywhere — the per-run report is built and discarded. They are the most direct
+statement of source data quality there is, so this is worth revisiting.
+
+**The audit log's detail keys are inconsistent between writers, and the corrections export
+depends on them.** A merge records `into_owner`; a reassignment records `to_owner`; a dismissal
+records `owner_a`/`owner_b`; a deleted assignment records neither and names the owner on the
+entry itself. The first version of the export assumed `to_owner` throughout and produced an
+empty "should be" column on every real merge — a report telling somebody to fix their data with
+the fix missing. A test now asserts the keys against `datastore.MergeOwnersResult` itself rather
+than a literal, so a rename in the writer fails a test instead of silently emptying a column.
+
+**Live verification still owed:** no scheduled import has been watched firing against a real
+database. The path is covered by tests at every layer and the app runs with the scheduler
+started, but nobody has seen one fire.
+
 ## NOW — the ownership MVP (`plans/ownership-work-attribution.md`)
 
 Work order and journeys live in that plan; per-chunk scope lives in
@@ -179,7 +240,7 @@ Defects found by the product owner using the shipped app. Faults in what is buil
 before new work. Seven found and fixed on 2026-08-02, six of them while importing real data —
 none would have come from a code review. Reproduce, write the failing test, then fix.
 
-**Next free migration number: 0064.**
+**Next free migration number: 0065.**
 
 ## QUEUED behind the ownership MVP
 

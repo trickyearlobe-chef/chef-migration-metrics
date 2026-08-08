@@ -11,11 +11,45 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
-*(nothing outstanding)*
+_Nothing open._
 
 ---
 
 ## Fixed
+
+- **"Browse tables" on the database import returned "Method not allowed."** Reported by the
+  product owner 2026-08-05: Ownership → Import → File or database, a SQL Server connection
+  chosen, and the button answered with a red error banner. The screen offers table browsing
+  precisely because whoever sets an import up usually cannot inspect the database, so the
+  fallback was writing a query blind against a schema you cannot see.
+
+  **Two faults, and the second is the one worth carrying.** The endpoint was never
+  registered on the mux — every case in the import dispatch switch had a route except
+  `tables` — so the request never reached the handler written for it, and the query
+  underneath had never been run by anything.
+
+  The reason it said "method not allowed" rather than "no such endpoint" is separate. The
+  single-page-app fallback catches everything unmatched, and it checked the **method before
+  it checked whether the path was an API path at all**. So every unrouted non-GET API
+  request reported a verb error: an endpoint that exists and refuses POST, rather than one
+  that was never wired up. That is what made a wiring fault read as a permissions problem,
+  and it applied estate-wide, not just here. The two checks are now the other way round,
+  with the order commented as load-bearing. Page routes still answer 405 to a POST, because
+  there the method really is the complaint.
+
+  It had already produced a visible inconsistency nobody had connected: with performance
+  monitoring disabled, the same unregistered endpoint answered 404 to a GET and 405 to a
+  DELETE. Those two tests asserted the old behaviour and now assert 404 like their GET
+  counterparts.
+
+  **Guarding the drift, since a registration list kept in step with a dispatch switch by
+  hand is what failed.** A test reads the paths the dispatch switch compares against
+  straight out of its own source and asserts the mux carries each one, so the next
+  divergence fails a test rather than waiting for somebody to press the button. A sweep of
+  every API path literal in the package found no other unrouted case.
+
+  A functional test now drives the button end to end against the seeded SQL Server, since
+  the endpoint being unreachable meant its query had never executed against a real database.
 
 - **A repo you had given an owner still read as unowned.** Reported by the product owner
   2026-08-02: "none of my repos are owned according to the UI", with a repo showing two

@@ -10,6 +10,7 @@ import {
   fetchCredentials,
   ApiError,
 } from "../api";
+import { CronDescription } from "../components/CronDescription";
 import type { IntakeDatabaseSource, IntakeDatabaseTable } from "../api";
 import type {
   IntakeFieldMap,
@@ -77,6 +78,29 @@ const TARGET_FIELDS: {
     hint: "Optional. Defaults to the owner value before it is turned into a handle.",
   },
 ];
+
+// What a connection string has to look like, per database.
+//
+// The string itself is saved as a credential on another page, but this is the
+// page somebody is looking at when they need to know the format — and they are
+// importing owners, not administering databases. Both forms below are the ones
+// the drivers actually accept (lib/pq and go-mssqldb); the note covers the one
+// thing that reliably catches people out, which is transport security
+// differing between the two.
+// The placeholder is `pass`, not `password`, and deliberately so: the
+// pre-commit secret scanner blocks `scheme://user:<8+ chars>@host` because that
+// is what a real DSN looks like. Keep any edit here under that length rather
+// than reaching for --no-verify — the rule is doing its job.
+const CONNECTION_EXAMPLES: Record<string, { example: string; note: string }> = {
+  sqlserver: {
+    example: "sqlserver://user:pass@host:1433?database=cmdb",
+    note: "Name the database in the query string. A named instance goes in the path: host/INSTANCE.",
+  },
+  postgres: {
+    example: "postgres://user:pass@host:5432/database",
+    note: "TLS is required unless you add ?sslmode=disable, so a server without it refuses to connect.",
+  },
+};
 
 const ENTITY_TYPES = ["git_repo", "node", "cookbook", "role", "policy"];
 
@@ -160,6 +184,23 @@ export function OwnershipMappedImport() {
 
     setChoices(next);
     if (m.delimiter) setDelimiter(m.delimiter);
+
+    // A saved database import carries its source and its schedule, so loading
+    // one brings back everything it needs to run. Without this the connection
+    // and query would come back empty and re-saving would quietly strip the
+    // schedule off an import that was working.
+    if (m.source_kind === "database") {
+      setSourceKind("database");
+      if (m.db_driver) setDbDriver(m.db_driver);
+      setDbCredential(m.db_credential ?? "");
+      setDbQuery(m.db_query ?? "");
+      setFilterColumn(m.filter_column ?? "");
+      setFilterValue(m.filter_value ?? "");
+      if (m.create_owners !== undefined) setCreateOwners(m.create_owners);
+      setScheduleEnabled(Boolean(m.schedule_enabled));
+      if (m.schedule) setSchedule(m.schedule);
+    }
+
     setReport(null);
     setSaved(null);
     // A mapping naming columns this file does not have would otherwise look
@@ -179,6 +220,11 @@ export function OwnershipMappedImport() {
   const [dbQuery, setDbQuery] = useState("");
   const [credentialNames, setCredentialNames] = useState<string[]>([]);
   const [credentialError, setCredentialError] = useState<string | null>(null);
+
+  // A saved database import can run unattended. Only a database one: a file
+  // import has no stored source, because somebody has to bring the file.
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [schedule, setSchedule] = useState("0 2 * * *");
 
   // The connection string lives in a stored credential, so the picker offers
   // the names of the ones already saved rather than asking for a password here.
@@ -342,8 +388,33 @@ export function OwnershipMappedImport() {
         name: saveName.trim(),
         delimiter: delimiter || ",",
         field_map: fieldMap(),
+        // A database import saves what it reads as well as how it maps it, so
+        // it can be re-run — and, with a schedule, re-run unattended.
+        ...(sourceKind === "database"
+          ? {
+              source_kind: "database",
+              db_driver: dbDriver,
+              db_credential: dbCredential,
+              db_query: dbQuery,
+              // The row filter is part of the import, not a convenience of
+              // this screen: an unattended run that dropped it would import
+              // every kind of row under the entity type chosen above.
+              filter_column: filterColumn,
+              filter_value: filterValue,
+              // Saved because it changes what an unattended run does to the
+              // owner catalogue. Left to a default, a run could do the
+              // opposite of what was previewed.
+              create_owners: createOwners,
+              schedule: scheduleEnabled ? schedule.trim() : "",
+              schedule_enabled: scheduleEnabled,
+            }
+          : {}),
       });
-      setSaved(`Saved as "${mapping.name}". A repeat import can reuse it.`);
+      setSaved(
+        scheduleEnabled
+          ? `Saved as "${mapping.name}". It will run on its schedule from now on.`
+          : `Saved as "${mapping.name}". A repeat import can reuse it.`,
+      );
       setSaveName("");
       fetchImportMappings()
         .then((r) => setMappings(r.data ?? []))
@@ -431,11 +502,25 @@ export function OwnershipMappedImport() {
             {credentialError ? (
               <p className="text-xs text-red-600">{credentialError}</p>
             ) : (
-              <p className="text-xs text-gray-500">
-                The connection string is held as a credential and never typed in
-                here, so the password is not sent to your browser. Add one under
-                Admin → Credentials.
-              </p>
+              <div className="space-y-1.5">
+                <p className="text-xs text-gray-500">
+                  The connection string is held as a credential and never typed
+                  in here, so the password is not sent to your browser. Add one
+                  under Admin → Credentials, as type Generic.
+                </p>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+                  <p className="text-xs text-gray-500">
+                    A {dbDriver === "postgres" ? "PostgreSQL" : "SQL Server"}{" "}
+                    connection string looks like this:
+                  </p>
+                  <code className="mt-1 block select-all break-all font-mono text-xs text-gray-800">
+                    {CONNECTION_EXAMPLES[dbDriver]?.example}
+                  </code>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {CONNECTION_EXAMPLES[dbDriver]?.note}
+                  </p>
+                </div>
+              </div>
             )}
 
             <label className="block text-sm text-gray-700">
@@ -749,7 +834,7 @@ export function OwnershipMappedImport() {
                 type="text"
                 value={saveName}
                 onChange={(e) => setSaveName(e.target.value)}
-                placeholder="Name this mapping"
+                placeholder="Name this import"
                 className="rounded-md border border-gray-300 px-2 py-1 text-sm"
               />
               <button
@@ -758,13 +843,62 @@ export function OwnershipMappedImport() {
                 disabled={!mappingComplete || !saveName.trim()}
                 className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Save mapping
+                Save import
               </button>
               {saved && <span className="text-sm text-green-700">{saved}</span>}
               {loadedMapping && (
                 <span className="text-sm text-blue-700">{loadedMapping}</span>
               )}
             </div>
+
+            {/* Only a database import can be scheduled. A file import has no
+                stored source to read, so offering the control here would be
+                offering something that cannot work. */}
+            {sourceKind === "database" && (
+              <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={scheduleEnabled}
+                    onChange={(e) => setScheduleEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  Run this import on a schedule
+                </label>
+                <p className="mt-1 text-xs text-gray-500">
+                  Saved with the import, so it re-reads the database on its own
+                  and nobody has to remember to. It writes the same assignments
+                  a manual import would, and each run is recorded.
+                </p>
+
+                {scheduleEnabled && (
+                  <div className="mt-3">
+                    <label
+                      htmlFor="import-schedule"
+                      className="block text-sm font-medium text-gray-700"
+                    >
+                      Schedule
+                    </label>
+                    <input
+                      id="import-schedule"
+                      type="text"
+                      value={schedule}
+                      onChange={(e) => setSchedule(e.target.value)}
+                      placeholder="0 2 * * *"
+                      className="mt-1 w-56 rounded-md border border-gray-300 px-2 py-1 font-mono text-sm"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Cron expression with 5 space-separated fields (e.g. 0 2 *
+                      * *)
+                    </p>
+                    {/* Says the expression back in English. An expression
+                        somebody cannot read is one they cannot check, and this
+                        one runs with nobody watching. */}
+                    <CronDescription expression={schedule} />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}

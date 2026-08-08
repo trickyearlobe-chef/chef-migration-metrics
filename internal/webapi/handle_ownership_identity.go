@@ -91,7 +91,7 @@ func (r *Router) handleOwnershipDuplicatesRescan(w http.ResponseWriter, req *htt
 	if !requireMethod(w, req, http.MethodPost) {
 		return
 	}
-	if !requireOperatorOrAdmin(w, req) {
+	if !requireAdminRole(w, req) {
 		return
 	}
 
@@ -137,7 +137,7 @@ func (r *Router) handleOwnershipDuplicatesDismiss(w http.ResponseWriter, req *ht
 	if !requireMethod(w, req, http.MethodPost) {
 		return
 	}
-	if !requireOperatorOrAdmin(w, req) {
+	if !requireAdminRole(w, req) {
 		return
 	}
 
@@ -182,6 +182,12 @@ func (r *Router) handleOwnershipDuplicatesDismissed(w http.ResponseWriter, req *
 	if !requireGET(w, req) {
 		return
 	}
+	// Reading the candidate list is admin too. It names people the product
+	// believes may be the same person — a judgement about colleagues that
+	// nobody outside the administrators asked to have made about them.
+	if !requireAdminRole(w, req) {
+		return
+	}
 	dismissals, err := r.db.ListOwnerDuplicateDismissals(req.Context())
 	if err != nil {
 		r.logf("ERROR", "ownership/duplicates: listing dismissals: %v", err)
@@ -198,7 +204,7 @@ func (r *Router) handleOwnershipDuplicatesRestore(w http.ResponseWriter, req *ht
 	if !requireMethod(w, req, http.MethodPost) {
 		return
 	}
-	if !requireOperatorOrAdmin(w, req) {
+	if !requireAdminRole(w, req) {
 		return
 	}
 
@@ -229,6 +235,12 @@ func (r *Router) handleOwnershipDuplicatesRestore(w http.ResponseWriter, req *ht
 
 func (r *Router) handleOwnershipDuplicates(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
+		return
+	}
+	// Reading the candidate list is admin too. It names people the product
+	// believes may be the same person — a judgement about colleagues that
+	// nobody outside the administrators asked to have made about them.
+	if !requireAdminRole(w, req) {
 		return
 	}
 
