@@ -20,7 +20,12 @@ SHELL := /bin/bash
 # ---------------------------------------------------------------------------
 # Version — derived from the most recent git tag (vX.Y.Z format)
 # ---------------------------------------------------------------------------
-GIT_TAG       := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+# --match 'v[0-9]*' is load-bearing. Without it any tag reachable from HEAD can
+# shadow the real version — a docs tag named `specifications-retired-2026-08-04`
+# did exactly that on 2026-08-08, and `make bump-minor-push` cheerfully derived
+# and PUSHED a tag called `vspecifications-retired-2026-08-04.1.0`. The version
+# tags were fine; nothing was reading them.
+GIT_TAG       := $(shell git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "v0.0.0")
 GIT_COMMIT    := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 GIT_COMMIT_SHORT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GIT_DIRTY     := $(shell git diff --quiet 2>/dev/null && echo "" || echo "-dirty")
