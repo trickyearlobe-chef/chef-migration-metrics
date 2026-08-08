@@ -165,6 +165,7 @@ jobs:
           scan-type: fs
           scan-ref: frontend/package-lock.json
           scanners: vuln
+          trivyignores: .trivyignore.yaml
           severity: HIGH,CRITICAL
           ignore-unfixed: false
           exit-code: '1'
@@ -178,6 +179,7 @@ jobs:
           scan-type: fs
           scan-ref: frontend/package-lock.json
           scanners: vuln
+          trivyignores: .trivyignore.yaml
           severity: MEDIUM
           ignore-unfixed: false
           exit-code: '1'

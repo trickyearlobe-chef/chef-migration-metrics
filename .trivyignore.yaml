@@ -1,0 +1,41 @@
+# Trivy ignore list.
+#
+# Every entry here is a decision to ship a known vulnerability, so every entry
+# carries why it is acceptable and a date by which somebody has to look again.
+# An ignore without an expiry is how a temporary exception becomes permanent.
+#
+# Wired in explicitly via the `trivyignores` input on each Trivy step in
+# .github/workflows/{ci,release}.yml and via --ignorefile in the Makefile's
+# trivy-npm target, so a local scan and CI agree about what is being waived.
+
+vulnerabilities:
+  - id: CVE-2026-67213
+    paths:
+      - "frontend/package-lock.json"
+    # 2026-08-08. Reviewed by tracing the call, not by triaging the severity.
+    statement: >-
+      nanoid infinite loop in customAlphabet (HIGH), fixed in 3.3.17.
+
+      NOT REACHABLE HERE, and not upgradeable.
+
+      Not reachable: postcss is the only thing that pulls nanoid, and it imports
+      the `nanoid/non-secure` entry point (postcss/lib/input.js:3) to call
+      `nanoid(6)` once, labelling an input that has no filename
+      (postcss/lib/input.js:80). The vulnerable customAlphabet lives in the main
+      entry point and routes through customRandom; postcss never imports it. The
+      non-secure customAlphabet is a bounded `while (i--)` loop that cannot spin.
+      Nothing else in the dependency tree calls customAlphabet.
+
+      Not upgradeable: the org's Harness npm proxy answers 403 for nanoid 3.3.17
+      and 3.3.18 — it quarantines recently published versions — so the fixed
+      versions cannot be installed. 3.3.16 is the newest the proxy will serve.
+      Confirmed by direct request on 2026-08-08: 3.3.16 -> 302, 3.3.17 -> 403,
+      3.3.18 -> 403. Unquarantining is not available to this team.
+
+      Blast radius: nanoid is a build-time-only transitive dependency (postcss is
+      a devDependency, and Vite requires it regardless). It is never served to a
+      browser and never runs in the product.
+
+      To clear this: retry `npm install` once the proxy serves 3.3.17, drop the
+      `nanoid` override in frontend/package.json, and delete this entry.
+    expired_at: 2026-11-08

@@ -436,7 +436,8 @@ vuln-go: ## Scan Go module + reachable code for known vulnerabilities (govulnche
 trivy-npm: ## Trivy scan of npm production deps (MEDIUM/HIGH/CRITICAL, blocking — mirrors CI)
 	@if command -v trivy >/dev/null 2>&1; then \
 		echo "$(GREEN)Running Trivy on frontend/package-lock.json...$(RESET)"; \
-		trivy fs --scanners vuln --severity MEDIUM,HIGH,CRITICAL --exit-code 1 frontend/package-lock.json; \
+		trivy fs --scanners vuln --severity MEDIUM,HIGH,CRITICAL --exit-code 1 \
+			--ignorefile .trivyignore.yaml frontend/package-lock.json; \
 	else \
 		echo "$(YELLOW)trivy not found — install with:$(RESET)"; \
 		echo "  brew install trivy   # or see https://trivy.dev/latest/getting-started/installation/"; \
