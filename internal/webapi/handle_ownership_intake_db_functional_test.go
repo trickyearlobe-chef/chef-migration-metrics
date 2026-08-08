@@ -104,6 +104,71 @@ func TestFunctional_IntakeProfile_ReadsFromSQLServer(t *testing.T) {
 	}
 }
 
+// The "Browse tables" button, end to end against a real SQL Server. It exists
+// because whoever sets an import up usually cannot inspect the database, so
+// the alternative is writing a query blind against a schema they cannot see.
+// Nothing had ever run this query: the endpoint was unreachable, so the button
+// answered an error and the SQL underneath it was never executed.
+func TestFunctional_IntakeListTables_ReadsFromSQLServer(t *testing.T) {
+	dsn := mssqlDSNForAPI(t)
+
+	credStore := newMockCredentialStore(testCredentialEncryptor(t))
+	mustCreateCredential(t, credStore, "cmdb-connection", "generic", dsn)
+	r := newTestRouterWithCredentials(credStore)
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	for k, v := range map[string]string{
+		"db_driver":     "sqlserver",
+		"db_credential": "cmdb-connection",
+	} {
+		if err := mw.WriteField(k, v); err != nil {
+			t.Fatalf("writing field %s: %v", k, err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing the form: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import/tables", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var out struct {
+		Data []struct {
+			Schema        string `json:"schema"`
+			Name          string `json:"name"`
+			QualifiedName string `json:"qualified_name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decoding the table list: %v; body: %s", err, w.Body.String())
+	}
+
+	// The seeded ownership tables have to be offered, or the button lists
+	// something other than what the reader came to find.
+	byName := map[string]string{}
+	for _, tbl := range out.Data {
+		byName[tbl.Name] = tbl.QualifiedName
+	}
+	for _, want := range []string{"staff", "asset_owner"} {
+		if _, ok := byName[want]; !ok {
+			t.Errorf("table %q missing from the list: %v", want, byName)
+		}
+	}
+	// The name is quoted here rather than in the browser, because how an
+	// identifier is quoted is a property of the database. It has to arrive
+	// ready to drop into a query.
+	if got := byName["asset_owner"]; got != "[dbo].[asset_owner]" {
+		t.Errorf("qualified name = %q, want %q", got, "[dbo].[asset_owner]")
+	}
+}
+
 // The connection string is never taken from the request. Without a stored
 // credential the request must be refused, so a password cannot be pasted into
 // a URL, a log or a browser's history.

@@ -229,10 +229,11 @@ func TestHandlePerformance_DELETE_Disabled(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	// When disabled the route is not registered; DELETE falls through to the
-	// frontend fallback which rejects non-GET/HEAD with 405.
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	// When disabled the route is not registered, so the endpoint is missing —
+	// the same answer the GET case gives. Reporting a method error instead
+	// would describe an endpoint that exists and refuses DELETE.
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 
@@ -569,10 +570,11 @@ func TestHandlePerformanceDB_DELETE_Disabled(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	// When disabled the route is not registered; DELETE falls through to the
-	// frontend fallback which rejects non-GET/HEAD with 405.
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	// When disabled the route is not registered, so the endpoint is missing —
+	// the same answer the GET case gives. Reporting a method error instead
+	// would describe an endpoint that exists and refuses DELETE.
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
 

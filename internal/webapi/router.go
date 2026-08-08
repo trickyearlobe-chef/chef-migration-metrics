@@ -858,11 +858,15 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints)
 	// Discovery-driven intake. Registered as exact patterns beside the
 	// fixed-header route above, which stays in service unchanged.
+	// Every case in handleOwnershipIntake's dispatch switch needs an entry
+	// here; TestOwnershipIntakeDispatchCasesAreRouted holds the two in step.
+	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/mappings", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/mappings/", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/clear", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases)
 	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases)
 	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport)
@@ -1091,16 +1095,23 @@ func (r *Router) handleNotImplemented(w http.ResponseWriter, req *http.Request) 
 // -----------------------------------------------------------------
 
 func (r *Router) handleFrontendFallback(w http.ResponseWriter, req *http.Request) {
-	// Reject non-GET/HEAD for the frontend fallback.
-	if req.Method != http.MethodGet && req.Method != http.MethodHead {
-		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "Method not allowed.")
+	// If the path starts with /api/ but didn't match any registered route,
+	// say the endpoint is missing rather than falling through to the SPA.
+	//
+	// This is checked before the method, and the order is the whole point: an
+	// unrouted POST answered with "method not allowed" describes an endpoint
+	// that exists and refuses the verb, which sends the reader hunting for a
+	// permissions or verb problem instead of a missing registration. That is
+	// exactly how an unregistered import path read as a permissions failure.
+	if len(req.URL.Path) >= 5 && req.URL.Path[:5] == "/api/" {
+		WriteNotFound(w, fmt.Sprintf("API endpoint %s not found.", req.URL.Path))
 		return
 	}
 
-	// If the path starts with /api/ but didn't match any registered
-	// route, return a proper 404 rather than falling through to the SPA.
-	if len(req.URL.Path) >= 5 && req.URL.Path[:5] == "/api/" {
-		WriteNotFound(w, fmt.Sprintf("API endpoint %s not found.", req.URL.Path))
+	// Everything else is the single-page app, which only serves documents —
+	// so here a non-GET/HEAD really is a method error.
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "Method not allowed.")
 		return
 	}
 
