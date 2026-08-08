@@ -31,16 +31,28 @@ vulnerabilities:
       non-secure customAlphabet is a bounded `while (i--)` loop that cannot spin.
       Nothing else in the dependency tree calls customAlphabet.
 
-      Not upgradeable: the org's Harness npm proxy answers 403 for nanoid 3.3.17
-      and 3.3.18 — it quarantines recently published versions — so the fixed
-      versions cannot be installed. 3.3.16 is the newest the proxy will serve.
-      Confirmed by direct request on 2026-08-08: 3.3.16 -> 302, 3.3.17 -> 403,
-      3.3.18 -> 403. Unquarantining is not available to this team.
+      Not upgradeable *yet*: the org's Harness npm proxy quarantines newly
+      published versions for 14 days, and 3.3.17 was published 2026-08-03. The
+      rule predicts every observation made on 2026-08-08:
+
+        3.3.16  published 2026-07-12  (27 days)  -> 302, served
+        3.3.17  published 2026-08-03  ( 5 days)  -> 403, quarantined
+        3.3.18  published 2026-08-07  ( 1 day )  -> 403, quarantined
+
+      So 3.3.16 is the newest the proxy will serve today, and 3.3.17 becomes
+      available around 2026-08-17. Unquarantining early is not available to this
+      team — waiting is the mechanism.
 
       Blast radius: nanoid is a build-time-only transitive dependency (postcss is
       a devDependency, and Vite requires it regardless). It is never served to a
       browser and never runs in the product.
 
-      To clear this: retry `npm install` once the proxy serves 3.3.17, drop the
-      `nanoid` override in frontend/package.json, and delete this entry.
-    expired_at: 2026-11-08
+      To clear this: from 2026-08-17, drop the `nanoid` override in
+      frontend/package.json, `npm install`, and delete this entry. postcss's
+      ^3.3.16 range will then pick up a fixed version on its own.
+    # A week after the quarantine lapses, not a quarter. The expiry exists to
+    # force the revisit, so it belongs just past the date the fix becomes
+    # installable — long enough to leave a working week to act in, short enough
+    # that nobody forgets. When it passes, this waiver stops applying and the
+    # build goes red on purpose.
+    expired_at: 2026-08-24
