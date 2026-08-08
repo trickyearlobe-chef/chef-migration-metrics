@@ -3,6 +3,7 @@
 
 import { Link } from "react-router-dom";
 import type { EntityOwnership } from "../types";
+import { useIsAdmin } from "../context/AuthContext";
 
 // ---------------------------------------------------------------------------
 // Who owns this thing, on a detail page.
@@ -28,6 +29,11 @@ export function OwnershipCard({
   derivedFrom = "git repo",
   className,
 }: OwnershipCardProps) {
+  // Importing is an admin function, so only an admin is offered the shortcut.
+  // Everybody else still gets told the thing is unowned — that is the part
+  // worth saying, and it is not an admin's news to hear alone.
+  const isAdmin = useIsAdmin();
+
   // Absent is not the same as empty: the API could not tell us, so saying
   // "nobody owns this" would be an assertion nobody has earned.
   if (!ownership) return null;
@@ -39,14 +45,19 @@ export function OwnershipCard({
       <h3 className="card-header">Ownership</h3>
       {owners.length === 0 ? (
         <p className="text-sm text-amber-700">
-          Nobody owns this yet.{" "}
-          <Link
-            to="/ownership/import"
-            className="text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            Import ownership
-          </Link>{" "}
-          or assign somebody on the owner’s page.
+          Nobody owns this yet. Assign somebody on the owner’s page
+          {isAdmin && (
+            <>
+              , or{" "}
+              <Link
+                to="/admin/ownership/import"
+                className="text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                import ownership
+              </Link>
+            </>
+          )}
+          .
         </p>
       ) : (
         <>

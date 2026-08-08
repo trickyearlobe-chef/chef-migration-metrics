@@ -85,7 +85,7 @@ type SortDir = "asc" | "desc";
 // ---------------------------------------------------------------------------
 
 export function OwnersPage() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const canCreate = user?.role === "operator" || user?.role === "admin";
 
   const [owners, setOwners] = useState<Owner[]>([]);
@@ -204,24 +204,31 @@ export function OwnersPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-xl font-bold text-gray-800">Owners</h2>
         <div className="flex items-center gap-2">
-          <Link
-            to="/ownership/duplicates"
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            Possible Duplicates
-          </Link>
+          {/* Importing owners and reconciling duplicate people are admin
+              functions, so they are offered only to an admin — a button that
+              bounces you to the dashboard reads as a fault, not a permission. */}
+          {isAdmin && (
+            <Link
+              to="/admin/ownership/duplicates"
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Possible Duplicates
+            </Link>
+          )}
           <Link
             to="/ownership/aliases"
             className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >
             Aliases
           </Link>
-          <Link
-            to="/ownership/import"
-            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-          >
-            Import owners
-          </Link>
+          {isAdmin && (
+            <Link
+              to="/admin/ownership/import"
+              className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              Import owners
+            </Link>
+          )}
           <Link
             to="/ownership/audit-log"
             className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
@@ -402,13 +409,15 @@ export function OwnersPage() {
                 <h3 className="mb-1 text-sm font-semibold text-gray-700">No owners configured</h3>
                 <p className="mb-4 text-sm text-gray-500">
                   Owners track who is responsible for each cookbook and node.
-                  Add owners manually, import them from a CSV, or configure
-                  auto-derivation rules in the organisation settings.
+                  Add owners manually, or ask an administrator to import them
+                  from a file or a database.
                 </p>
                 <div className="flex flex-wrap justify-center gap-3">
-                  <Link to="/ownership/import" className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
-                    Import owners
-                  </Link>
+                  {isAdmin && (
+                    <Link to="/admin/ownership/import" className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
+                      Import owners
+                    </Link>
+                  )}
                   {canCreate && (
                     <Link to="/admin/config/organisations" className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
                       Organisation settings

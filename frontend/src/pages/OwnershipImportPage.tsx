@@ -5,6 +5,7 @@ import type { ImportResponse } from "../types";
 import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { useAuth } from "../context/AuthContext";
 import { OwnershipMappedImport } from "./OwnershipMappedImport";
+import { ScheduledImports } from "../components/ScheduledImports";
 
 // ---------------------------------------------------------------------------
 // Ownership Import page — bulk import ownership assignments. Requires operator
@@ -17,11 +18,16 @@ import { OwnershipMappedImport } from "./OwnershipMappedImport";
 //     its columns, preview, then commit.
 // ---------------------------------------------------------------------------
 
-type ImportTab = "fixed" | "mapped";
+type ImportTab = "fixed" | "mapped" | "scheduled";
 
 const TABS: { key: ImportTab; label: string }[] = [
   { key: "fixed", label: "Fixed format" },
   { key: "mapped", label: "File or database" },
+  // Saved database imports: run one now, see what the schedules are doing,
+  // throw away what an import brought in, and take the reports for whoever
+  // maintains the source. Its own tab because a schedule nobody can see the
+  // state of is a schedule nobody can trust.
+  { key: "scheduled", label: "Saved imports" },
 ];
 
 export function OwnershipImportPage() {
@@ -29,7 +35,8 @@ export function OwnershipImportPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawTab = searchParams.get("tab");
-  const activeTab: ImportTab = rawTab === "mapped" ? "mapped" : "fixed";
+  const activeTab: ImportTab =
+    rawTab === "mapped" || rawTab === "scheduled" ? rawTab : "fixed";
 
   function switchTab(tab: ImportTab) {
     setSearchParams((prev) => {
@@ -43,8 +50,10 @@ export function OwnershipImportPage() {
     });
   }
 
-  // Role gate — only operator or admin may import
-  const allowed = user?.role === "admin" || user?.role === "operator";
+  // Role gate — importing owners is an administrator function. It used to
+  // admit operators; that was narrowed on 2026-08-06 at the product owner's
+  // instruction, and the route guard and the API were narrowed with it.
+  const allowed = user?.role === "admin";
 
   if (!allowed) {
     return (
@@ -54,7 +63,7 @@ export function OwnershipImportPage() {
           <span className="mx-1">/</span>
           <span className="text-gray-800">Import</span>
         </nav>
-        <ErrorAlert message="Access denied. Operator or admin role is required to import ownership data." />
+        <ErrorAlert message="Access denied. The admin role is required to import ownership data." />
       </div>
     );
   }
@@ -97,7 +106,9 @@ export function OwnershipImportPage() {
         </nav>
       </div>
 
-      {activeTab === "fixed" ? <FixedFormatImport /> : <OwnershipMappedImport />}
+      {activeTab === "fixed" && <FixedFormatImport />}
+      {activeTab === "mapped" && <OwnershipMappedImport />}
+      {activeTab === "scheduled" && <ScheduledImports />}
     </div>
   );
 }

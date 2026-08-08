@@ -702,6 +702,17 @@ type DataStore interface {
 	// datastore.ErrAlreadyExists when the name is taken.
 	InsertImportMapping(ctx context.Context, p datastore.InsertImportMappingParams) (datastore.ImportMapping, error)
 
+	// ListAllAssignments returns every ownership assignment, a page at a
+	// time, for the full-state export.
+	ListAllAssignments(ctx context.Context, limit, offset int) ([]datastore.AllAssignmentRow, error)
+
+	// ReplaceImportRejections swaps the stored rejections for one import,
+	// returning how many were kept (the store caps them).
+	ReplaceImportRejections(ctx context.Context, label string, mappingID *int64, rejections []datastore.ImportRejection) (int, error)
+
+	// ListImportRejections returns stored rejections a page at a time.
+	ListImportRejections(ctx context.Context, limit, offset int) ([]datastore.ImportRejection, error)
+
 	// ListImportMappings returns saved mappings without their field maps,
 	// with the total count for pagination.
 	ListImportMappings(ctx context.Context, limit, offset int) ([]datastore.ImportMapping, int, error)
@@ -709,6 +720,21 @@ type DataStore interface {
 	// GetImportMapping returns one saved mapping including its field map.
 	// Returns datastore.ErrNotFound when no mapping has that id.
 	GetImportMapping(ctx context.Context, id int64) (datastore.ImportMapping, error)
+
+	// ListScheduledImports returns every saved import with its schedule on,
+	// including field maps — the scheduler runs the whole definition.
+	ListScheduledImports(ctx context.Context) ([]datastore.ImportMapping, error)
+
+	// RecordImportRun stores the outcome of a run against the saved import.
+	RecordImportRun(ctx context.Context, id int64, status, detail string) error
+
+	// CountImportedOwnership reports what a clear-down would remove, without
+	// removing it.
+	CountImportedOwnership(ctx context.Context) (datastore.ClearedOwnership, error)
+
+	// ClearImportedOwnership removes assignments an import created, and the
+	// owners those imports created that nothing references any more.
+	ClearImportedOwnership(ctx context.Context) (datastore.ClearedOwnership, error)
 
 	// UpdateImportMapping replaces a saved mapping's name, delimiter and
 	// field map.

@@ -40,12 +40,13 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/embedded"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/export"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ingest"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/frontend"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ingest"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/kitchenqueue"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/logging"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/nodekitchen"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipschedule"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
@@ -159,6 +160,7 @@ type serverApp struct {
 	// it from separate request goroutines.
 	backupMu                sync.Mutex
 	backupSched             *backup.Scheduler
+	ownershipSched          *ownershipschedule.Scheduler
 	schemaVersion           int
 	stopKitchenQueueCleanup func()
 	stopOrphanSweep         func()
@@ -1827,6 +1829,16 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 							app.backupSched = nil
 						}
 						app.backupMu.Unlock()
+						// A scheduled import writing owners into a database that
+						// is being replaced underneath it would land its rows in
+						// the copy about to be discarded. The closure reads the
+						// field at call time, so it sees the scheduler started
+						// after this hook was registered.
+						if app.ownershipSched != nil {
+							app.startup.Info("restore: stopping scheduled ownership imports")
+							app.ownershipSched.Stop()
+							app.ownershipSched = nil
+						}
 						if app.stopExportCleanup != nil {
 							app.startup.Info("restore: stopping export cleanup")
 							app.stopExportCleanup()
@@ -1931,6 +1943,35 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 
 	apiRouter := webapi.NewRouter(app.db, app.cfg, app.hub, routerOpts...)
 	app.startup.Info("webapi router initialised with all API routes")
+
+	// Scheduled ownership imports. Started unconditionally: the schedules live
+	// in the database, one per saved import, so with none set up this polls and
+	// does nothing. There is deliberately no config switch — a schedule the
+	// screen shows and a global flag silently suppresses is exactly the kind of
+	// "it says it is set up and nothing happens" this feature exists to avoid.
+	ownershipLogger := logger.WithScope(logging.ScopeOwnership)
+	app.ownershipSched = ownershipschedule.New(
+		app.db,
+		func(ctx context.Context, m datastore.ImportMapping) (string, error) {
+			summary, err := apiRouter.RunSavedImport(ctx, m)
+			if err != nil {
+				return "", err
+			}
+			return summary.String(), nil
+		},
+		func(level, msg string) {
+			switch level {
+			case "error":
+				ownershipLogger.Error(msg)
+			case "warn":
+				ownershipLogger.Warn(msg)
+			default:
+				ownershipLogger.Info(msg)
+			}
+		},
+	)
+	app.ownershipSched.Start(context.Background())
+	app.startup.Info("scheduled ownership imports started (schedules are read from the database each minute)")
 
 	shutdownTimeout := time.Duration(app.cfg.Server.GracefulShutdownSeconds) * time.Second
 	if shutdownTimeout <= 0 {

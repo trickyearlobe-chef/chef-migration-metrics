@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
@@ -79,6 +80,15 @@ var aliasResolutionOrder = []string{"custom", "email", "username", "git_name", "
 func (r *Router) handleOwnershipIntake(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
+	// Importing owners is an administrator function. The whole surface is
+	// gated here rather than per case, so the role is decided before anything
+	// touches a credential or a source — an operator must not learn whether a
+	// connection works, or what tables and columns a system of record holds,
+	// from an endpoint they may not use.
+	if !requireAdminRole(w, req) {
+		return
+	}
+
 	switch {
 	case path == "/api/v1/ownership/import/tables":
 		r.handleIntakeListTables(w, req)
@@ -88,6 +98,8 @@ func (r *Router) handleOwnershipIntake(w http.ResponseWriter, req *http.Request)
 		r.handleIntakeRun(w, req, false)
 	case path == "/api/v1/ownership/import/commit":
 		r.handleIntakeRun(w, req, true)
+	case path == "/api/v1/ownership/import/clear":
+		r.handleClearImportedOwnership(w, req)
 	case path == "/api/v1/ownership/import/mappings":
 		r.handleIntakeMappingCollection(w, req)
 	case strings.HasPrefix(path, "/api/v1/ownership/import/mappings/"):
@@ -127,12 +139,6 @@ func (r *Router) handleIntakeProfile(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) handleIntakeRun(w http.ResponseWriter, req *http.Request, commit bool) {
 	if !requireMethod(w, req, http.MethodPost) {
-		return
-	}
-	// Preview writes nothing, so it needs only standard protected auth.
-	// Requiring the operator role to look would stop the people who own the
-	// data from checking it before an administrator commits it.
-	if commit && !requireOperatorOrAdmin(w, req) {
 		return
 	}
 
@@ -218,7 +224,13 @@ func (r *Router) handleIntakeRun(w http.ResponseWriter, req *http.Request, commi
 
 	if commit {
 		// Commits from the full report, before any truncation for display.
-		r.commitIntakeRows(req, &report)
+		r.commitIntakeRows(req.Context(), adminUsername(req), &report)
+
+		// Keep the rows the source could not give us. Only on commit: a
+		// preview writes nothing, and letting a dry run replace the stored
+		// findings would make it a trap rather than a rehearsal.
+		label, mappingID := r.intakeRunLabel(req)
+		r.storeImportRejections(req.Context(), label, mappingID, report)
 	}
 
 	// Truncate the per-row detail for the response only. The copy is
@@ -551,8 +563,7 @@ func topUnmatchedOwners(counts map[string]int) []ownershipimport.UnmatchedOwner 
 
 // commitIntakeRows writes the assignments the report says would be created.
 // Rejected rows are never written.
-func (r *Router) commitIntakeRows(req *http.Request, report *ownershipimport.Report) {
-	ctx := req.Context()
+func (r *Router) commitIntakeRows(ctx context.Context, actor string, report *ownershipimport.Report) {
 	report.Committed = true
 	createdOwners := map[string]bool{}
 
@@ -563,7 +574,7 @@ func (r *Router) commitIntakeRows(req *http.Request, report *ownershipimport.Rep
 		}
 
 		if row.CreatesOwner && !createdOwners[row.Owner] {
-			if !r.createIntakeOwner(req, row) {
+			if !r.createIntakeOwner(ctx, actor, row) {
 				continue
 			}
 			createdOwners[row.Owner] = true
@@ -596,7 +607,7 @@ func (r *Router) commitIntakeRows(req *http.Request, report *ownershipimport.Rep
 			"confidence":        "definitive",
 			"source_row":        row.SourceRow,
 		})
-		r.auditOwnership(req, "assignment_created", row.Owner, row.EntityType, row.EntityKey, row.Organisation, details)
+		r.auditOwnershipAs(ctx, actor, "assignment_created", row.Owner, row.EntityType, row.EntityKey, row.Organisation, details)
 		report.Created++
 	}
 
@@ -610,9 +621,7 @@ func (r *Router) commitIntakeRows(req *http.Request, report *ownershipimport.Rep
 
 // createIntakeOwner creates the owner a row names, and seeds the raw string as
 // a custom alias so the original is what future imports compare against.
-func (r *Router) createIntakeOwner(req *http.Request, row *ownershipimport.ReportRow) bool {
-	ctx := req.Context()
-
+func (r *Router) createIntakeOwner(ctx context.Context, actor string, row *ownershipimport.ReportRow) bool {
 	owner, err := r.db.InsertOwner(ctx, datastore.InsertOwnerParams{
 		Name:        row.Owner,
 		DisplayName: row.DisplayName,
@@ -629,7 +638,7 @@ func (r *Router) createIntakeOwner(req *http.Request, row *ownershipimport.Repor
 		return false
 	} else {
 		details, _ := json.Marshal(map[string]any{"display_name": row.DisplayName, "source": "import"})
-		r.auditOwnership(req, "owner_created", owner.Name, "", "", "", details)
+		r.auditOwnershipAs(ctx, actor, "owner_created", owner.Name, "", "", "", details)
 	}
 
 	if row.AliasConflict {
@@ -662,6 +671,8 @@ type mappingRequestBody struct {
 	Delimiter  string                   `json:"delimiter"`
 	FieldMap   ownershipimport.FieldMap `json:"field_map"`
 	rawMap     json.RawMessage          `json:"-"`
+
+	source datastore.ImportMappingSource
 }
 
 func (r *Router) handleIntakeMappingCollection(w http.ResponseWriter, req *http.Request) {
@@ -676,9 +687,23 @@ func (r *Router) handleIntakeMappingCollection(w http.ResponseWriter, req *http.
 }
 
 func (r *Router) handleIntakeMappingItem(w http.ResponseWriter, req *http.Request, idPart string) {
-	id, err := strconv.ParseInt(strings.Trim(idPart, "/"), 10, 64)
+	// "<id>" or "<id>/run". Split before parsing so a trailing verb does not
+	// read as part of the id and come back as "no mapping with id 1/run".
+	trimmed := strings.Trim(idPart, "/")
+	idText, verb, _ := strings.Cut(trimmed, "/")
+
+	id, err := strconv.ParseInt(idText, 10, 64)
 	if err != nil {
-		WriteNotFound(w, fmt.Sprintf("No import mapping with id %q.", idPart))
+		WriteNotFound(w, fmt.Sprintf("No import mapping with id %q.", idText))
+		return
+	}
+
+	if verb != "" {
+		if verb != "run" {
+			WriteNotFound(w, fmt.Sprintf("Unknown action %q on an import mapping.", verb))
+			return
+		}
+		r.runSavedImportNow(w, req, id)
 		return
 	}
 
@@ -710,9 +735,6 @@ func (r *Router) listIntakeMappings(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) createIntakeMapping(w http.ResponseWriter, req *http.Request) {
-	if !requireOperatorOrAdmin(w, req) {
-		return
-	}
 
 	body, ok := decodeMappingBody(w, req)
 	if !ok {
@@ -725,6 +747,8 @@ func (r *Router) createIntakeMapping(w http.ResponseWriter, req *http.Request) {
 		Delimiter:  body.Delimiter,
 		FieldMap:   body.rawMap,
 		CreatedBy:  adminUsername(req),
+
+		ImportMappingSource: body.source,
 	})
 	if errors.Is(err, datastore.ErrAlreadyExists) {
 		WriteError(w, http.StatusConflict, ErrCodeValidationError,
@@ -755,9 +779,6 @@ func (r *Router) getIntakeMapping(w http.ResponseWriter, req *http.Request, id i
 }
 
 func (r *Router) updateIntakeMapping(w http.ResponseWriter, req *http.Request, id int64) {
-	if !requireOperatorOrAdmin(w, req) {
-		return
-	}
 
 	body, ok := decodeMappingBody(w, req)
 	if !ok {
@@ -770,6 +791,8 @@ func (r *Router) updateIntakeMapping(w http.ResponseWriter, req *http.Request, i
 		Name:      body.Name,
 		Delimiter: body.Delimiter,
 		FieldMap:  body.rawMap,
+
+		ImportMappingSource: body.source,
 	})
 	if errors.Is(err, datastore.ErrNotFound) {
 		WriteNotFound(w, fmt.Sprintf("No import mapping with id %d.", id))
@@ -790,9 +813,6 @@ func (r *Router) updateIntakeMapping(w http.ResponseWriter, req *http.Request, i
 }
 
 func (r *Router) deleteIntakeMapping(w http.ResponseWriter, req *http.Request, id int64) {
-	if !requireOperatorOrAdmin(w, req) {
-		return
-	}
 
 	err := r.db.DeleteImportMapping(req.Context(), id)
 	if errors.Is(err, datastore.ErrNotFound) {
@@ -813,6 +833,21 @@ func decodeMappingBody(w http.ResponseWriter, req *http.Request) (mappingRequest
 		SourceKind string          `json:"source_kind"`
 		Delimiter  string          `json:"delimiter"`
 		FieldMap   json.RawMessage `json:"field_map"`
+
+		DBDriver     string `json:"db_driver"`
+		DBCredential string `json:"db_credential"`
+		DBQuery      string `json:"db_query"`
+
+		FilterColumn string `json:"filter_column"`
+		FilterValue  string `json:"filter_value"`
+
+		// Pointer so "not supplied" is distinguishable from "off". The default
+		// is on, matching the interactive import: a first import against an
+		// empty catalogue is impossible if unknown people are rejected.
+		CreateOwners *bool `json:"create_owners"`
+
+		Schedule        string `json:"schedule"`
+		ScheduleEnabled bool   `json:"schedule_enabled"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&raw); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
@@ -843,13 +878,73 @@ func decodeMappingBody(w http.ResponseWriter, req *http.Request) (mappingRequest
 		return mappingRequestBody{}, false
 	}
 
+	source := datastore.ImportMappingSource{
+		DBDriver:        strings.TrimSpace(raw.DBDriver),
+		DBCredential:    strings.TrimSpace(raw.DBCredential),
+		DBQuery:         strings.TrimSpace(raw.DBQuery),
+		FilterColumn:    strings.TrimSpace(raw.FilterColumn),
+		FilterValue:     strings.TrimSpace(raw.FilterValue),
+		CreateOwners:    raw.CreateOwners == nil || *raw.CreateOwners,
+		Schedule:        strings.TrimSpace(raw.Schedule),
+		ScheduleEnabled: raw.ScheduleEnabled,
+	}
+	if !validateImportSchedule(w, strings.TrimSpace(raw.Name), raw.SourceKind, source) {
+		return mappingRequestBody{}, false
+	}
+
 	return mappingRequestBody{
 		Name:       strings.TrimSpace(raw.Name),
 		SourceKind: raw.SourceKind,
 		Delimiter:  raw.Delimiter,
 		FieldMap:   fieldMap,
 		rawMap:     raw.FieldMap,
+		source:     source,
 	}, true
+}
+
+// validateImportSchedule refuses a schedule that cannot run.
+//
+// Checked here, where the person is looking at the field they got wrong, and
+// again by a database constraint (migration 0064) so a route that bypasses this
+// cannot store one either. An accepted schedule that never fires is the worst
+// outcome available: the screen says it is set up, and the only evidence to the
+// contrary is ownership data quietly going stale.
+func validateImportSchedule(w http.ResponseWriter, name, sourceKind string, src datastore.ImportMappingSource) bool {
+	if src.Schedule != "" {
+		// Parsed with the scheduler's own parser rather than a second opinion
+		// about what valid cron is. Two notions of validity is how an accepted
+		// expression ends up never firing.
+		if _, err := collector.ParseSchedule(src.Schedule); err != nil {
+			WriteBadRequest(w, fmt.Sprintf(
+				"%q is not a valid schedule. Use five space-separated cron fields, "+
+					"for example \"0 2 * * *\" for 02:00 every day.", src.Schedule))
+			return false
+		}
+	}
+
+	if !src.ScheduleEnabled {
+		return true
+	}
+
+	if sourceKind != intakeSourceDatabase {
+		WriteBadRequest(w, fmt.Sprintf(
+			"%q reads a file, so it cannot be scheduled. Only an import that reads from a "+
+				"database can run unattended — a file has to be brought by somebody.", name))
+		return false
+	}
+	if src.DBCredential == "" {
+		WriteBadRequest(w, "A scheduled import needs db_credential: the connection is read from a stored credential.")
+		return false
+	}
+	if src.DBQuery == "" {
+		WriteBadRequest(w, "A scheduled import needs db_query: there is nothing to read without it.")
+		return false
+	}
+	if src.Schedule == "" {
+		WriteBadRequest(w, "A scheduled import needs a schedule. Give a cron expression, or switch the schedule off.")
+		return false
+	}
+	return true
 }
 
 // validateMappingWithoutColumns validates everything that does not depend on a
@@ -1179,4 +1274,35 @@ func (r *Router) handleIntakeListTables(w http.ResponseWriter, req *http.Request
 		out[i] = tableOut{Table: t, QualifiedName: t.QualifiedName(driver)}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
+// intakeRunLabel names the run for the rejection report, and points at the
+// saved import behind it when there is one.
+//
+// A saved import's name if the run used one, otherwise the uploaded file. The
+// file matters: an ad-hoc CSV somebody is judging is exactly the case the
+// rejection report exists for, and "manual import" as a label would collapse
+// several different files into one set of findings that overwrite each other.
+func (r *Router) intakeRunLabel(req *http.Request) (string, *int64) {
+	if raw := req.FormValue("mapping_id"); raw != "" {
+		if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			if mapping, err := r.db.GetImportMapping(req.Context(), id); err == nil {
+				return mapping.Name, &mapping.ID
+			}
+		}
+	}
+
+	if req.MultipartForm != nil {
+		if files := req.MultipartForm.File["file"]; len(files) > 0 && files[0].Filename != "" {
+			return files[0].Filename, nil
+		}
+	}
+
+	// A database source with no saved import: name the connection, which is
+	// the only thing that identifies where the rows came from.
+	if cred := req.FormValue("db_credential"); cred != "" {
+		return cred, nil
+	}
+
+	return "manual import", nil
 }

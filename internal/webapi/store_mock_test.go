@@ -148,6 +148,13 @@ type mockStore struct {
 	InsertOwnerAliasFn                                     func(ctx context.Context, p datastore.InsertOwnerAliasParams) (datastore.OwnerAlias, error)
 	InsertImportMappingFn                                  func(ctx context.Context, p datastore.InsertImportMappingParams) (datastore.ImportMapping, error)
 	ListImportMappingsFn                                   func(ctx context.Context, limit, offset int) ([]datastore.ImportMapping, int, error)
+	ListScheduledImportsFn                                 func(ctx context.Context) ([]datastore.ImportMapping, error)
+	ListAllAssignmentsFn                                   func(ctx context.Context, limit, offset int) ([]datastore.AllAssignmentRow, error)
+	ReplaceImportRejectionsFn                              func(ctx context.Context, label string, mappingID *int64, rejections []datastore.ImportRejection) (int, error)
+	ListImportRejectionsFn                                 func(ctx context.Context, limit, offset int) ([]datastore.ImportRejection, error)
+	RecordImportRunFn                                      func(ctx context.Context, id int64, status, detail string) error
+	CountImportedOwnershipFn                               func(ctx context.Context) (datastore.ClearedOwnership, error)
+	ClearImportedOwnershipFn                               func(ctx context.Context) (datastore.ClearedOwnership, error)
 	GetImportMappingFn                                     func(ctx context.Context, id int64) (datastore.ImportMapping, error)
 	UpdateImportMappingFn                                  func(ctx context.Context, id int64, p datastore.UpdateImportMappingParams) (datastore.ImportMapping, error)
 	DeleteImportMappingFn                                  func(ctx context.Context, id int64) error
@@ -1891,6 +1898,55 @@ func (m *mockStore) ListImportMappings(ctx context.Context, limit, offset int) (
 		return m.ListImportMappingsFn(ctx, limit, offset)
 	}
 	return nil, 0, nil
+}
+
+func (m *mockStore) ListAllAssignments(ctx context.Context, limit, offset int) ([]datastore.AllAssignmentRow, error) {
+	if m.ListAllAssignmentsFn != nil {
+		return m.ListAllAssignmentsFn(ctx, limit, offset)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ReplaceImportRejections(ctx context.Context, label string, mappingID *int64, rejections []datastore.ImportRejection) (int, error) {
+	if m.ReplaceImportRejectionsFn != nil {
+		return m.ReplaceImportRejectionsFn(ctx, label, mappingID, rejections)
+	}
+	return len(rejections), nil
+}
+
+func (m *mockStore) ListImportRejections(ctx context.Context, limit, offset int) ([]datastore.ImportRejection, error) {
+	if m.ListImportRejectionsFn != nil {
+		return m.ListImportRejectionsFn(ctx, limit, offset)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) ListScheduledImports(ctx context.Context) ([]datastore.ImportMapping, error) {
+	if m.ListScheduledImportsFn != nil {
+		return m.ListScheduledImportsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) RecordImportRun(ctx context.Context, id int64, status, detail string) error {
+	if m.RecordImportRunFn != nil {
+		return m.RecordImportRunFn(ctx, id, status, detail)
+	}
+	return nil
+}
+
+func (m *mockStore) CountImportedOwnership(ctx context.Context) (datastore.ClearedOwnership, error) {
+	if m.CountImportedOwnershipFn != nil {
+		return m.CountImportedOwnershipFn(ctx)
+	}
+	return datastore.ClearedOwnership{}, nil
+}
+
+func (m *mockStore) ClearImportedOwnership(ctx context.Context) (datastore.ClearedOwnership, error) {
+	if m.ClearImportedOwnershipFn != nil {
+		return m.ClearImportedOwnershipFn(ctx)
+	}
+	return datastore.ClearedOwnership{}, nil
 }
 
 func (m *mockStore) GetImportMapping(ctx context.Context, id int64) (datastore.ImportMapping, error) {

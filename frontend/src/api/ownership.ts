@@ -371,11 +371,56 @@ export function createImportMapping(body: {
   name: string;
   delimiter: string;
   field_map: IntakeFieldMap;
+  // A database import saves its source too, so it can be re-run — and, with a
+  // schedule, re-run with nobody present. A file import has none of this:
+  // somebody has to bring the file.
+  source_kind?: string;
+  db_driver?: string;
+  db_credential?: string;
+  db_query?: string;
+  filter_column?: string;
+  filter_value?: string;
+  create_owners?: boolean;
+  schedule?: string;
+  schedule_enabled?: boolean;
 }): Promise<IntakeMapping> {
   return apiFetch<IntakeMapping>(buildUrl("/ownership/import/mappings"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, source_kind: "csv" }),
+    body: JSON.stringify({ source_kind: "csv", ...body }),
+  });
+}
+
+// Run a saved database import now. Synchronous: it answers with what the run
+// did, because it exists for judging a source rather than for automation.
+export function runImportNow(
+  id: number,
+): Promise<{ summary: ImportRunSummary; detail: string }> {
+  return apiFetch(buildUrl(`/ownership/import/mappings/${id}/run`), {
+    method: "POST",
+  });
+}
+
+export interface ImportRunSummary {
+  row_count: number;
+  filtered_out: number;
+  counts: Record<string, number>;
+}
+
+export interface ClearedOwnership {
+  assignments: number;
+  owners: number;
+}
+
+// What a clear-down would remove. Read before asking somebody to confirm it,
+// so the confirmation can name a number.
+export function previewClearImportedOwnership(): Promise<ClearedOwnership> {
+  return apiFetch<ClearedOwnership>(buildUrl("/ownership/import/clear"));
+}
+
+export function clearImportedOwnership(): Promise<ClearedOwnership> {
+  return apiFetch<ClearedOwnership>(buildUrl("/ownership/import/clear"), {
+    method: "POST",
   });
 }
 

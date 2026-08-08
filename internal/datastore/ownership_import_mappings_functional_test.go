@@ -406,3 +406,143 @@ func TestFunctional_EntityKeysExist_FindsACollectedRepo(t *testing.T) {
 		t.Error("EntityKeysExist claims an uncollected key exists")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Scheduled database imports (migration 0064)
+//
+// The SQL below is hand-written and carries thirteen placeholders, so these
+// exercise it against a real database rather than a mock: a mis-ordered
+// parameter would store the query in the credential column and nothing in Go
+// would notice.
+// ---------------------------------------------------------------------------
+
+func insertScheduledImport(t *testing.T, db *DB, name, cron string) ImportMapping {
+	t.Helper()
+	m, err := db.InsertImportMapping(context.Background(), InsertImportMappingParams{
+		Name:       name,
+		SourceKind: "database",
+		FieldMap:   json.RawMessage(sampleFieldMap),
+		CreatedBy:  "tester",
+		ImportMappingSource: ImportMappingSource{
+			DBDriver:        "postgres",
+			DBCredential:    "cmdb-connection",
+			DBQuery:         "SELECT owner, repo FROM asset_owner",
+			FilterColumn:    "asset_kind",
+			FilterValue:     "git_repo",
+			CreateOwners:    true,
+			Schedule:        cron,
+			ScheduleEnabled: cron != "",
+		},
+	})
+	if err != nil {
+		t.Fatalf("InsertImportMapping(%q): %v", name, err)
+	}
+	t.Cleanup(func() { _ = db.DeleteImportMapping(context.Background(), m.ID) })
+	return m
+}
+
+func TestFunctional_ScheduledImport_RoundTripsItsSource(t *testing.T) {
+	db := testDB(t)
+
+	created := insertScheduledImport(t, db, "cmdb-nightly", "0 2 * * *")
+
+	// Read back rather than trusting the RETURNING clause alone: the columns
+	// have to line up in the scanner as well as in the insert.
+	got, err := db.GetImportMapping(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetImportMapping: %v", err)
+	}
+	for _, c := range []struct{ field, got, want string }{
+		{"db_driver", got.DBDriver, "postgres"},
+		{"db_credential", got.DBCredential, "cmdb-connection"},
+		{"db_query", got.DBQuery, "SELECT owner, repo FROM asset_owner"},
+		{"filter_column", got.FilterColumn, "asset_kind"},
+		{"filter_value", got.FilterValue, "git_repo"},
+		{"schedule", got.Schedule, "0 2 * * *"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.field, c.got, c.want)
+		}
+	}
+	if !got.CreateOwners || !got.ScheduleEnabled {
+		t.Errorf("create_owners = %v, schedule_enabled = %v, want both true", got.CreateOwners, got.ScheduleEnabled)
+	}
+	if got.LastRunAt != nil {
+		t.Errorf("last_run_at = %v on a fresh import, want nil so 'never run' is distinguishable", got.LastRunAt)
+	}
+}
+
+func TestFunctional_ListScheduledImports_ReturnsOnlyTheEnabledOnes(t *testing.T) {
+	db := testDB(t)
+
+	scheduled := insertScheduledImport(t, db, "cmdb-nightly", "0 2 * * *")
+	unscheduled := insertScheduledImport(t, db, "cmdb-on-demand", "")
+
+	list, err := db.ListScheduledImports(context.Background())
+	if err != nil {
+		t.Fatalf("ListScheduledImports: %v", err)
+	}
+
+	byID := map[int64]ImportMapping{}
+	for _, m := range list {
+		byID[m.ID] = m
+	}
+	if _, ok := byID[scheduled.ID]; !ok {
+		t.Error("the scheduled import is missing, so the scheduler would never run it")
+	}
+	if _, ok := byID[unscheduled.ID]; ok {
+		t.Error("an import with its schedule off was returned, so it would run unasked")
+	}
+	// The scheduler runs the definition it is handed, so the field map has to
+	// come with it — the summary columns would leave nothing to map with.
+	if len(byID[scheduled.ID].FieldMap) == 0 {
+		t.Error("the scheduled import came back without its field map")
+	}
+}
+
+func TestFunctional_RecordImportRun_StoresTheOutcome(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	m := insertScheduledImport(t, db, "cmdb-nightly", "0 2 * * *")
+
+	if err := db.RecordImportRun(ctx, m.ID, "failed", "could not read the credential"); err != nil {
+		t.Fatalf("RecordImportRun: %v", err)
+	}
+
+	got, err := db.GetImportMapping(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("GetImportMapping: %v", err)
+	}
+	if got.LastRunStatus != "failed" {
+		t.Errorf("last_run_status = %q, want %q", got.LastRunStatus, "failed")
+	}
+	if !strings.Contains(got.LastRunDetail, "credential") {
+		t.Errorf("last_run_detail = %q, want the reason", got.LastRunDetail)
+	}
+	if got.LastRunAt == nil {
+		t.Error("last_run_at is still unset, so a run that happened reads as never run")
+	}
+}
+
+// The constraint that stops an unrunnable schedule being stored. Enforced in
+// the database as well as the API because an enabled schedule with nothing to
+// connect to is indistinguishable from a broken scheduler when somebody comes
+// to ask why nothing happened.
+func TestFunctional_ScheduledImport_CannotBeEnabledWithNothingToRun(t *testing.T) {
+	db := testDB(t)
+
+	_, err := db.InsertImportMapping(context.Background(), InsertImportMappingParams{
+		Name:       "unrunnable",
+		SourceKind: "database",
+		FieldMap:   json.RawMessage(sampleFieldMap),
+		ImportMappingSource: ImportMappingSource{
+			Schedule:        "0 2 * * *",
+			ScheduleEnabled: true,
+			// No credential and no query.
+		},
+	})
+	if err == nil {
+		t.Fatal("an enabled schedule with no connection was stored; it would never run and nothing would say why")
+	}
+}
