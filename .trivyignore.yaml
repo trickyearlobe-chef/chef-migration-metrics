@@ -10,8 +10,13 @@
 
 vulnerabilities:
   - id: CVE-2026-67213
-    paths:
-      - "frontend/package-lock.json"
+    # Deliberately no `paths:` filter. Trivy matches it against the target as
+    # *it* names the file, which is "package-lock.json" — not the
+    # "frontend/package-lock.json" that was passed in. A path that looks right
+    # and silently matches nothing gives a waiver that does not waive, which is
+    # the worst of both: the scan still fails and the entry says it should not.
+    # Verified by running the scan both ways.
+    #
     # 2026-08-08. Reviewed by tracing the call, not by triaging the severity.
     statement: >-
       nanoid infinite loop in customAlphabet (HIGH), fixed in 3.3.17.
