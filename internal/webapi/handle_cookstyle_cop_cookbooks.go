@@ -16,13 +16,21 @@ import (
 
 // copCookbookItem is one row in the cop drill-down response.
 type copCookbookItem struct {
-	Source           string `json:"source"`
-	Name             string `json:"name"`
-	Version          string `json:"version"`
-	Organisation     string `json:"organisation,omitempty"`
-	OffenceCount     int    `json:"offence_count"`
-	AutoCorrectable  int    `json:"auto_correctable"`
-	WouldPassWithout bool   `json:"would_pass_without"`
+	Source       string `json:"source"`
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	Organisation string `json:"organisation,omitempty"`
+
+	// OffenceCount counts occurrences in code that runs on a converging node;
+	// ExcludedCount counts the rest — the same cop in a helper task, a pipeline
+	// or a test suite in this same repository. A cookbook appears here only when
+	// OffenceCount is non-zero, so this list totals exactly the cop row's
+	// cookbooks_affected. Cookbooks carrying the cop ONLY out of scope are
+	// counted on that row as cookbooks_excluded_only.
+	OffenceCount     int  `json:"offence_count"`
+	ExcludedCount    int  `json:"excluded_count"`
+	AutoCorrectable  int  `json:"auto_correctable"`
+	WouldPassWithout bool `json:"would_pass_without"`
 }
 
 // copCookbookResponse wraps the flat cop drill-down (git repos, or the legacy
@@ -209,27 +217,41 @@ func groupCopCookbooksByName(items []copCookbookItem) []copCookbookGroup {
 // buildCopCookbookItem creates a drill-down item if the given cookbook has
 // offenses for the specified cop. Returns nil if the cop is not present.
 func buildCopCookbookItem(copName, source, name, version, org string, offenses []fullOffense, resolver *analysis.CopClassificationResolver) *copCookbookItem {
-	var count, correctable int
+	scope := analysis.DefaultScanScope()
+
+	var count, excluded, correctable int
 	for _, o := range offenses {
-		if o.CopName == copName {
-			count++
-			if o.Correctable {
-				correctable++
-			}
+		if o.CopName != copName {
+			continue
+		}
+		if scope.ExcludesPath(o.Location.File) {
+			excluded++
+			continue
+		}
+		count++
+		if o.Correctable {
+			correctable++
 		}
 	}
+	// A cookbook that carries this cop only in files the converge never executes
+	// is not affected by it — see the field comments. Its prevalence is reported
+	// on the cop row instead.
 	if count == 0 {
 		return nil
 	}
 
-	// "Would pass without": remove offenses for this cop, re-evaluate.
+	// "Would pass without": remove offenses for this cop, re-evaluate. The path
+	// travels with each remaining offence, or the re-evaluation would count a
+	// leftover Rakefile finding as a reason this cookbook still fails.
 	var remaining []analysis.CookstyleOffense
 	for _, o := range offenses {
 		if o.CopName != copName {
-			remaining = append(remaining, analysis.CookstyleOffense{
+			off := analysis.CookstyleOffense{
 				Severity: o.Severity,
 				CopName:  o.CopName,
-			})
+			}
+			off.Location.File = o.Location.File
+			remaining = append(remaining, off)
 		}
 	}
 	wouldPass := analysis.EvaluatePassFailWithClassification(remaining, resolver)
@@ -240,6 +262,7 @@ func buildCopCookbookItem(copName, source, name, version, org string, offenses [
 		Version:          version,
 		Organisation:     org,
 		OffenceCount:     count,
+		ExcludedCount:    excluded,
 		AutoCorrectable:  correctable,
 		WouldPassWithout: wouldPass,
 	}

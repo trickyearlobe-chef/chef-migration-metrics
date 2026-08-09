@@ -23,6 +23,19 @@ type CopClassifier interface {
 	ClassifyOffense(copName, message string) string
 }
 
+// ScanScoper reports whether a repo-relative file path is outside the code Chef
+// executes during a converge — a helper task, a pipeline definition, a test
+// suite. It is implemented by analysis.ScanScope; the interface is declared here
+// for the same reason CopClassifier is, to keep scope-aware scoring free of an
+// import cycle on the analysis package.
+//
+// A nil ScanScoper excludes nothing, which is the pre-scope behaviour and the
+// safe direction to fail in: over-counting somebody's afternoon beats hiding a
+// blocker.
+type ScanScoper interface {
+	ExcludesPath(filePath string) bool
+}
+
 // Classification level values — mirror the constants in
 // internal/analysis/cop_classification.go. Duplicated here only to avoid the
 // import cycle; the analysis package remains authoritative.
@@ -74,10 +87,19 @@ type ClassifiedOffense struct {
 	CopName        string
 	Severity       string
 	Classification string
+
+	// OutOfScope marks an offense in a file the converge never executes. It
+	// contributes nothing to this cookbook's complexity, because the effort is
+	// real but belongs to whoever owns the pipeline or the test suite. It is
+	// carried rather than dropped so the offense stays countable elsewhere.
+	OutOfScope bool
 }
 
 // weight returns this offense's single complexity contribution.
 func (o ClassifiedOffense) weight() int {
+	if o.OutOfScope {
+		return 0
+	}
 	switch o.Classification {
 	case classBlocker:
 		return WeightBlocker
@@ -127,7 +149,7 @@ func tkWeight(status string) int {
 // each offense's classification via the supplied classifier, producing the
 // per-offense input for ComputeCookstyleComplexity. Offenses that fail to parse
 // yield an empty slice (the caller falls back to the legacy aggregate path).
-func classifyOffensesForComplexity(offencesJSON []byte, classifier CopClassifier) []ClassifiedOffense {
+func classifyOffensesForComplexity(offencesJSON []byte, classifier CopClassifier, scope ScanScoper) []ClassifiedOffense {
 	if len(offencesJSON) == 0 || classifier == nil {
 		return nil
 	}
@@ -143,6 +165,7 @@ func classifyOffensesForComplexity(offencesJSON []byte, classifier CopClassifier
 			// Message-aware: a poly-method cop's deprecation-only variant scores as
 			// Review, not Blocker (see Poly-method cops in the spec).
 			Classification: classifier.ClassifyOffense(off.CopName, off.Message),
+			OutOfScope:     scope != nil && scope.ExcludesPath(off.Location.File),
 		})
 	}
 	return out

@@ -21,6 +21,14 @@ type fullOffense struct {
 	CopName     string `json:"cop_name"`
 	Severity    string `json:"severity"`
 	Correctable bool   `json:"correctable"`
+
+	// Location carries the repo-relative path, which decides whether this
+	// offense is about the cookbook or about a helper task that never runs on a
+	// converging node. Dropping it here is what let one copied Rakefile make
+	// nearly every cookbook read as broken.
+	Location struct {
+		File string `json:"file"`
+	} `json:"location"`
 }
 
 // parseFullOffenses parses the offences JSONB into a flat list that includes
@@ -46,7 +54,11 @@ func parseFullOffenses(data []byte) []fullOffense {
 		var result []fullOffense
 		for _, fe := range fileEntries {
 			for _, o := range fe.Offenses {
-				result = append(result, fullOffense(o))
+				// In this legacy shape the path lives on the group; scope is
+				// decided per offense, so carry it down.
+				item := fullOffense{CopName: o.CopName, Severity: o.Severity, Correctable: o.Correctable}
+				item.Location.File = fe.Path
+				result = append(result, item)
 			}
 		}
 		return result

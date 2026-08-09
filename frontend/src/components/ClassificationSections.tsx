@@ -13,17 +13,34 @@ const SECTIONS: {
   label: string;
   defaultOpen: boolean;
   accent: string;
+  note?: string;
 }[] = [
   { key: "blocker", label: "Blockers", defaultOpen: true, accent: "text-red-700" },
   { key: "review", label: "Review", defaultOpen: true, accent: "text-amber-700" },
   { key: "noise", label: "Noise", defaultOpen: false, accent: "text-gray-500" },
+  {
+    key: "out_of_scope",
+    label: "Outside the cookbook",
+    defaultOpen: false,
+    accent: "text-slate-500",
+    note: "These will break on the new Ruby exactly as predicted, but they live in files a converge never executes — a helper task, a pipeline, a test suite. Real work for whoever owns them; it does not block this cookbook.",
+  },
 ];
 
+// A group sitting entirely in files the converge never executes is shown apart
+// from its classification, so the counts here agree with the cookbook's verdict
+// without the work disappearing. Anything with even one occurrence in cookbook
+// code stays under its classification, because that occurrence is what decides
+// the verdict.
+//
 // Review is the honest default: any group with no/unknown classification is
 // folded into the Review worklist rather than a separate bucket.
-function sectionKey(classification: string): string {
-  return classification === "blocker" || classification === "noise"
-    ? classification
+function sectionKey(group: OffenseGroup): string {
+  if (group.count > 0 && group.out_of_scope_count >= group.count) {
+    return "out_of_scope";
+  }
+  return group.classification === "blocker" || group.classification === "noise"
+    ? group.classification
     : "review";
 }
 
@@ -66,7 +83,7 @@ export function ClassificationSections({
   )
     .map((s) => ({
       ...s,
-      groups: groups.filter((g) => sectionKey(g.classification) === s.key),
+      groups: groups.filter((g) => sectionKey(g) === s.key),
     }))
     .filter((s) => s.groups.length > 0);
 
@@ -121,6 +138,11 @@ export function ClassificationSections({
             </button>
             {isOpen && (
               <div className="space-y-3 p-3">
+                {section.note && (
+                  <p className="rounded bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    {section.note}
+                  </p>
+                )}
                 {section.groups.map((group) => renderGroup(group))}
               </div>
             )}

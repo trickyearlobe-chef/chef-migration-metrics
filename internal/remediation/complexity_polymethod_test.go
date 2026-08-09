@@ -28,7 +28,7 @@ func TestClassifyOffensesForComplexity_MessageAware(t *testing.T) {
 		{"cop_name":"Lint/DeprecatedClassMethods","severity":"warning","message":"Socket.gethostbyname is deprecated in favor of Addrinfo.getaddrinfo"},
 		{"cop_name":"Lint/DeprecatedClassMethods","severity":"warning","message":"File.exists? is deprecated in favor of File.exist?"}
 	]`)
-	got := classifyOffensesForComplexity(offencesJSON, polyFake{})
+	got := classifyOffensesForComplexity(offencesJSON, polyFake{}, nil)
 	if len(got) != 2 {
 		t.Fatalf("got %d classified offences, want 2", len(got))
 	}

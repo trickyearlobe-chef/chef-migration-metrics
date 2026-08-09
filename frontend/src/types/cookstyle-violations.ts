@@ -24,8 +24,18 @@ export interface CopAggregateItem {
   removed_in?: string;
   introduced_in?: string;
   migration_url?: string;
+  /** Cookbooks carrying this cop in code that runs on a converging node. */
   cookbooks_affected: number;
+  /**
+   * Cookbooks carrying it ONLY in files the converge never executes — a helper
+   * task, a pipeline, a test suite. Real work, but not what blocks a cookbook.
+   * Shown alongside rather than folded in: one fix repeated across four hundred
+   * repositories is a different conversation from four hundred problems.
+   */
+  cookbooks_excluded_only: number;
   total_offences: number;
+  /** How many of total_offences sat outside cookbook code. */
+  excluded_offences: number;
   auto_correctable_pct: number;
   unblocks: number;
   is_custom: boolean;

@@ -151,6 +151,14 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		Message     string          `json:"message"`
 		Correctable bool            `json:"correctable"`
 		Location    offenseLocation `json:"location"`
+
+		// OutOfScope marks a finding in a file the converge never executes — a
+		// helper task, a pipeline definition, a test suite. It is still shown,
+		// because it is real work that will break on the new Ruby exactly as
+		// predicted; it is simply not this cookbook's verdict. ScopeReason is the
+		// recorded justification for that assertion, so it can be argued with.
+		OutOfScope  bool   `json:"out_of_scope,omitempty"`
+		ScopeReason string `json:"scope_reason,omitempty"`
 	}
 
 	type copRemediation struct {
@@ -176,8 +184,17 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		RemovedIn            string          `json:"removed_in,omitempty"`
 		Count                int             `json:"count"`
 		CorrectableCount     int             `json:"correctable_count"`
-		Remediation          *copRemediation `json:"remediation,omitempty"`
-		Offenses             []offense       `json:"offenses"`
+
+		// OutOfScopeCount is how many of Count sit in files the converge never
+		// executes. BlocksCookbook is false when the group is entirely out of
+		// scope, or when its classification never blocked in the first place —
+		// it is what the page reads to mark the group as non-blocking work
+		// rather than hiding it.
+		OutOfScopeCount int  `json:"out_of_scope_count"`
+		BlocksCookbook  bool `json:"blocks_cookbook"`
+
+		Remediation *copRemediation `json:"remediation,omitempty"`
+		Offenses    []offense       `json:"offenses"`
 	}
 
 	// Parse offenses from the JSONB column. The stored format is the
@@ -213,6 +230,16 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 
 	var flatOffenses []offense
 
+	// The repository is not the cookbook: findings outside cookbook code are
+	// listed but do not decide the verdict. See journeys/scan-trust.md.
+	scanScope := analysis.DefaultScanScope()
+	markScope := func(o *offense) {
+		if ex, excluded := scanScope.Excluded(o.Location.File); excluded {
+			o.OutOfScope = true
+			o.ScopeReason = ex.Reason
+		}
+	}
+
 	if len(cookstyleOffences) > 0 {
 		// Try the file-based (RuboCop) format first.
 		type fileOffense struct {
@@ -236,7 +263,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		if err := json.Unmarshal(cookstyleOffences, &fileEntries); err == nil && len(fileEntries) > 0 && fileEntries[0].Path != "" {
 			for _, fe := range fileEntries {
 				for _, o := range fe.Offenses {
-					flatOffenses = append(flatOffenses, offense{
+					item := offense{
 						CopName:     o.CopName,
 						Severity:    o.Severity,
 						Message:     o.Message,
@@ -248,7 +275,9 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 							LastLine:    o.Location.LastLine,
 							LastColumn:  o.Location.LastColumn,
 						},
-					})
+					}
+					markScope(&item)
+					flatOffenses = append(flatOffenses, item)
 				}
 			}
 		} else {
@@ -268,7 +297,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 			}
 			if err := json.Unmarshal(cookstyleOffences, &flatParsed); err == nil {
 				for _, o := range flatParsed {
-					flatOffenses = append(flatOffenses, offense{
+					item := offense{
 						CopName:     o.CopName,
 						Severity:    o.Severity,
 						Message:     o.Message,
@@ -280,7 +309,9 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 							LastLine:    o.Location.LastLine,
 							LastColumn:  o.Location.LastColumn,
 						},
-					})
+					}
+					markScope(&item)
+					flatOffenses = append(flatOffenses, item)
 				}
 			} else {
 				r.logf("WARN", "failed to parse offenses JSON for cookbook %s@%s: %v", cookbookName, cookbookVersion, err)
@@ -343,16 +374,30 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		if o.Correctable {
 			g.CorrectableCount++
 		}
+		if o.OutOfScope {
+			g.OutOfScopeCount++
+		}
 		g.Offenses = append(g.Offenses, o)
 	}
 
 	// Build the sorted groups slice (preserve insertion order which is
 	// effectively the order offenses appear in the cookstyle output).
+	//
+	// A group entirely outside cookbook code is counted separately rather than
+	// under its classification, so these headline numbers agree with the
+	// cookbook's verdict. It keeps its place in the list — the work is real, it
+	// is just not this cookbook's — and the page reads blocks_cookbook to say so.
 	groups := make([]offenseGroup, 0, len(groupOrder))
-	var blockerCount, reviewCount, noiseCount, unclassifiedCount int
+	var blockerCount, reviewCount, noiseCount, unclassifiedCount, outOfScopeCount int
 	for _, groupKey := range groupOrder {
 		g := *groupMap[groupKey]
+		whollyOutOfScope := g.OutOfScopeCount >= g.Count
+		g.BlocksCookbook = !whollyOutOfScope && g.Classification == analysis.ClassificationBlocker
 		groups = append(groups, g)
+		if whollyOutOfScope {
+			outOfScopeCount++
+			continue
+		}
 		switch g.Classification {
 		case analysis.ClassificationBlocker:
 			blockerCount++
@@ -370,6 +415,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		"review":       reviewCount,
 		"noise":        noiseCount,
 		"unclassified": unclassifiedCount,
+		"out_of_scope": outOfScopeCount,
 	}
 
 	// Compute statistics.

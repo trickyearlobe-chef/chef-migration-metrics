@@ -57,6 +57,15 @@ export interface RemediationOffense {
   message: string;
   correctable: boolean;
   location: RemediationOffenseLocation;
+  /**
+   * True when this finding sits in a file a converge never executes — a helper
+   * task, a pipeline definition, a test suite. It is still shown, because it is
+   * real work that will break on the new Ruby; it just is not this cookbook's
+   * verdict. scope_reason is the recorded justification, so it can be argued
+   * with rather than taken on trust.
+   */
+  out_of_scope?: boolean;
+  scope_reason?: string;
 }
 
 export interface CopRemediation {
@@ -81,6 +90,14 @@ export interface OffenseGroup {
   removed_in?: string;
   count: number;
   correctable_count: number;
+  /** How many of `count` sit outside cookbook code. */
+  out_of_scope_count: number;
+  /**
+   * False when the group is entirely outside cookbook code, or when its
+   * classification never blocked. It is how the page marks work as non-blocking
+   * instead of hiding it.
+   */
+  blocks_cookbook: boolean;
   remediation?: CopRemediation | null;
   offenses: RemediationOffense[];
 }
@@ -129,6 +146,9 @@ export interface ClassificationSummary {
   // Retained for backwards compatibility with the API payload; under the
   // "trustworthy reds" model there is no unclassified level, so this is always 0.
   unclassified: number;
+  // Cops appearing only in files a converge never executes. Counted apart from
+  // the three classifications so these numbers agree with the verdict.
+  out_of_scope: number;
 }
 
 export interface CookbookRemediationResponse {

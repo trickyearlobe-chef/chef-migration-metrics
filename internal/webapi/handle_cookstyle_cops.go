@@ -28,11 +28,23 @@ type copAggregateItem struct {
 	RemovedIn            string  `json:"removed_in,omitempty"`
 	IntroducedIn         string  `json:"introduced_in,omitempty"`
 	MigrationURL         string  `json:"migration_url,omitempty"`
-	CookbooksAffected    int     `json:"cookbooks_affected"`
-	TotalOffences        int     `json:"total_offences"`
-	AutoCorrectablePct   float64 `json:"auto_correctable_pct"`
-	Unblocks             int     `json:"unblocks"`
-	IsCustom             bool    `json:"is_custom"`
+	// CookbooksAffected counts cookbooks carrying this cop in code that runs on
+	// a converging node — the cookbooks it can actually block.
+	//
+	// CookbooksExcludedOnly counts cookbooks that carry it ONLY in files the
+	// converge never executes: a helper task, a pipeline, a test suite. That
+	// work is real and will break on the new Ruby exactly as predicted, but it
+	// belongs to whoever owns the pipeline. It is reported alongside rather than
+	// folded in or dropped, because how widespread it is the most useful thing
+	// about it: one fix repeated across four hundred repositories is a different
+	// conversation from four hundred separate problems.
+	CookbooksAffected     int     `json:"cookbooks_affected"`
+	CookbooksExcludedOnly int     `json:"cookbooks_excluded_only"`
+	TotalOffences         int     `json:"total_offences"`
+	ExcludedOffences      int     `json:"excluded_offences"`
+	AutoCorrectablePct    float64 `json:"auto_correctable_pct"`
+	Unblocks              int     `json:"unblocks"`
+	IsCustom              bool    `json:"is_custom"`
 }
 
 // copAggregationSummary holds the headline counts returned with the cop list.
@@ -59,11 +71,20 @@ type cookbookKey struct {
 }
 
 // copAccum accumulates per-cop offense data during aggregation.
+//
+// The two cookbook sets are the whole point of the scan-scope correction:
+// `cookbooks` holds those where this cop sits in code Chef executes, and
+// `excludedCookbooks` those where it appears in a file Chef never executes.
+// A cookbook can be in both — the same finding in a recipe and in a Rakefile —
+// and is then reported only as affected, because the recipe copy is what
+// decides its verdict.
 type copAccum struct {
-	severity    string
-	offences    int
-	correctable int
-	cookbooks   map[cookbookKey]bool
+	severity          string
+	offences          int
+	excludedOffences  int
+	correctable       int
+	cookbooks         map[cookbookKey]bool
+	excludedCookbooks map[cookbookKey]bool
 }
 
 // handleCookstyleCopSubroute dispatches /api/v1/cookstyle/cops/<cop_name>/...
@@ -101,7 +122,7 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 	classFilter := queryString(req, "classification", "")
 	triggeredOnly := queryString(req, "triggered_only", "") == "true"
 	pg := ParsePagination(req)
-	sp := ParseSort(req, "cookbooks_affected", []string{"cookbooks_affected", "total_offences", "cop_name", "unblocks"})
+	sp := ParseSort(req, "cookbooks_affected", []string{"cookbooks_affected", "cookbooks_excluded_only", "total_offences", "cop_name", "unblocks"})
 
 	// Load operator overrides for the target version and build the resolver.
 	resolver, err := r.copResolver(ctx, targetVersion)
@@ -120,6 +141,11 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 		cops map[string]bool
 	}
 	var allCookbooks []cbCops
+
+	// The repository is not the cookbook: an offence in a file the converge never
+	// executes is counted, but separately, and it never contributes to a
+	// cookbook being blocked. See journeys/scan-trust.md.
+	scanScope := analysis.DefaultScanScope()
 
 	addResults := func(offencesJSON []byte, src, name string) {
 		if len(offencesJSON) == 0 {
@@ -140,14 +166,24 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 			a, ok := accum[o.CopName]
 			if !ok {
 				a = &copAccum{
-					severity:  o.Severity,
-					cookbooks: make(map[cookbookKey]bool),
+					severity:          o.Severity,
+					cookbooks:         make(map[cookbookKey]bool),
+					excludedCookbooks: make(map[cookbookKey]bool),
 				}
 				accum[o.CopName] = a
 			}
 			a.offences++
 			if o.Correctable {
 				a.correctable++
+			}
+			if scanScope.ExcludesPath(o.Location.File) {
+				a.excludedOffences++
+				a.excludedCookbooks[cbKey] = true
+				// Deliberately NOT added to cbCopSet: this occurrence cannot
+				// block the cookbook, so it must not count towards "unblocks"
+				// either, or fixing it would be credited with a release it does
+				// not deliver.
+				continue
 			}
 			a.cookbooks[cbKey] = true
 			cbCopSet[o.CopName] = true
@@ -249,13 +285,22 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 	for copName := range known {
 		resolved := resolver.Resolve(copName)
 
-		var offences, correctable, cbAffected int
+		var offences, excludedOffences, correctable, cbAffected, cbExcludedOnly int
 		var severity string
 		if a := accum[copName]; a != nil {
 			offences = a.offences
+			excludedOffences = a.excludedOffences
 			correctable = a.correctable
 			cbAffected = len(a.cookbooks)
 			severity = a.severity
+			// "Excluded only" — a cookbook carrying this cop in both a recipe
+			// and a Rakefile is already counted as affected, and counting it
+			// twice would make the two columns stop summing to anything.
+			for cb := range a.excludedCookbooks {
+				if !a.cookbooks[cb] {
+					cbExcludedOnly++
+				}
+			}
 		}
 
 		var autoPct float64
@@ -264,16 +309,18 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 		}
 
 		item := copAggregateItem{
-			CopName:              copName,
-			Category:             copNamespace(copName),
-			Severity:             severity,
-			Classification:       resolved.Classification,
-			ClassificationSource: resolved.Source,
-			CookbooksAffected:    cbAffected,
-			TotalOffences:        offences,
-			AutoCorrectablePct:   autoPct,
-			Unblocks:             unblocksCounts[copName],
-			IsCustom:             strings.HasPrefix(copName, "Custom/"),
+			CopName:               copName,
+			Category:              copNamespace(copName),
+			Severity:              severity,
+			Classification:        resolved.Classification,
+			ClassificationSource:  resolved.Source,
+			CookbooksAffected:     cbAffected,
+			CookbooksExcludedOnly: cbExcludedOnly,
+			TotalOffences:         offences,
+			ExcludedOffences:      excludedOffences,
+			AutoCorrectablePct:    autoPct,
+			Unblocks:              unblocksCounts[copName],
+			IsCustom:              strings.HasPrefix(copName, "Custom/"),
 		}
 
 		// Enrich from cop mapping.
@@ -388,6 +435,8 @@ func sortCopItems(items []copAggregateItem, sp SortParams) {
 			less = items[i].CopName < items[j].CopName
 		case "unblocks":
 			less = items[i].Unblocks < items[j].Unblocks
+		case "cookbooks_excluded_only":
+			less = items[i].CookbooksExcludedOnly < items[j].CookbooksExcludedOnly
 		default: // "cookbooks_affected"
 			less = items[i].CookbooksAffected < items[j].CookbooksAffected
 		}

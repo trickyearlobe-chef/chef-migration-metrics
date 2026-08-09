@@ -257,6 +257,9 @@ func refOffenses(offencesJSON []byte) []analysis.CookstyleOffense {
 	offenses := make([]analysis.CookstyleOffense, len(full))
 	for i, o := range full {
 		offenses[i] = analysis.CookstyleOffense{CopName: o.CopName, Severity: o.Severity}
+		// The path travels with the offence: re-deriving a status without it
+		// would re-block every cookbook whose only blocker sits in a helper task.
+		offenses[i].Location.File = o.Location.File
 	}
 	return offenses
 }

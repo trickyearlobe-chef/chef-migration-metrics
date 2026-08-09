@@ -76,12 +76,30 @@ type CookstyleOffense struct {
 	File string `json:"file,omitempty"`
 }
 
+// Path returns the repo-relative source path of this offense, whichever field
+// carries it. A freshly scanned offense has it in File (set from the parent
+// CookstyleFile.Path); one read back from the offences JSONB has it in
+// Location.File. Callers deciding scope should use this rather than either
+// field, because both shapes are in circulation.
+func (o CookstyleOffense) Path() string {
+	if o.File != "" {
+		return o.File
+	}
+	return o.Location.File
+}
+
 // CookstyleOffenseLocation describes the source location of an offense.
 type CookstyleOffenseLocation struct {
-	StartLine   int `json:"start_line"`
-	StartColumn int `json:"start_column"`
-	LastLine    int `json:"last_line"`
-	LastColumn  int `json:"last_column"`
+	// File is the repo-relative source path. RuboCop does not report it here —
+	// it reports it once per file — but the persisted offence does
+	// (remediation.OffenseLocation), so reading a stored offence back into this
+	// struct recovers the path. Without it every read path lost the path and
+	// nothing downstream could tell cookbook code from a helper task.
+	File        string `json:"file,omitempty"`
+	StartLine   int    `json:"start_line"`
+	StartColumn int    `json:"start_column"`
+	LastLine    int    `json:"last_line"`
+	LastColumn  int    `json:"last_column"`
 }
 
 // CookstyleSummary contains aggregate counts from the CookStyle run.

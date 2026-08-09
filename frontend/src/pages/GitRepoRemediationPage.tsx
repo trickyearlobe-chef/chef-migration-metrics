@@ -627,11 +627,24 @@ function OffenseRow({ offense }: { offense: RemediationOffense }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded px-2 py-1.5 text-sm hover:bg-gray-50">
       {/* File:line */}
-      <span className="font-mono text-xs text-blue-700">
+      <span
+        className={`font-mono text-xs ${offense.out_of_scope ? "text-slate-500" : "text-blue-700"}`}
+      >
         {offense.location.file || "unknown"}:{offense.location.start_line}
         {offense.location.last_line !== offense.location.start_line &&
           `–${offense.location.last_line}`}
       </span>
+
+      {/* Outside cookbook code: shown, not hidden, with the reason attached so
+          the exclusion can be argued with rather than taken on trust. */}
+      {offense.out_of_scope && (
+        <span
+          className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-400/30"
+          title={offense.scope_reason}
+        >
+          does not block — not cookbook code
+        </span>
+      )}
 
       {/* Message */}
       <span className="text-gray-600">{offense.message}</span>
@@ -655,6 +668,11 @@ function ClassificationSummaryBar({ summary }: { summary: ClassificationSummary 
     { label: "Blockers", count: summary.blocker, color: "text-red-700" },
     { label: "Review", count: summary.review, color: "text-amber-700" },
     { label: "Noise", count: summary.noise, color: "text-gray-500" },
+    {
+      label: "Outside cookbook",
+      count: summary.out_of_scope ?? 0,
+      color: "text-slate-500",
+    },
   ];
 
   return (

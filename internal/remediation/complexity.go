@@ -230,6 +230,10 @@ type ComplexityScorer struct {
 	// or override change takes effect on the next run without a restart), then
 	// memoised for that batch.
 	classifierFor func(ctx context.Context, targetChefVersion string) CopClassifier
+
+	// scanScope decides which offenses are about the cookbook at all. Nil means
+	// nothing is excluded (pre-scope behaviour).
+	scanScope ScanScoper
 }
 
 // NewComplexityScorer creates a new scorer.
@@ -245,6 +249,13 @@ func NewComplexityScorer(db *datastore.DB, logger *logging.Logger) *ComplexitySc
 // unset, scoring falls back to the legacy severity-based aggregate weights.
 func (s *ComplexityScorer) SetClassifierProvider(fn func(ctx context.Context, targetChefVersion string) CopClassifier) {
 	s.classifierFor = fn
+}
+
+// SetScanScope wires the scan scope so an offense in a file the converge never
+// executes adds nothing to a cookbook's complexity. Without it every finding
+// counts, which is what made a copied Rakefile look like cookbook work.
+func (s *ComplexityScorer) SetScanScope(scope ScanScoper) {
+	s.scanScope = scope
 }
 
 // classifierCache resolves one classifier per target version up front, so the
@@ -266,7 +277,7 @@ func (s *ComplexityScorer) classifierCache(ctx context.Context, targets []string
 // offense once); otherwise it returns the legacy severity-based score.
 func (s *ComplexityScorer) cookstyleScore(classifier CopClassifier, offencesJSON []byte, input ComplexityInput) int {
 	if classifier != nil {
-		classified := classifyOffensesForComplexity(offencesJSON, classifier)
+		classified := classifyOffensesForComplexity(offencesJSON, classifier, s.scanScope)
 		return ComputeCookstyleComplexity(classified) + tkWeight(input.TestKitchen.Status)
 	}
 	return ComputeComplexityScore(input)
@@ -622,6 +633,9 @@ type storedOffense struct {
 	// Message discriminates poly-method cops during message-aware classification
 	// (see journeys/scan-trust.md).
 	Message string `json:"message"`
+	// Location carries the repo-relative file path, which decides whether the
+	// offense is about the cookbook at all (see ScanScoper).
+	Location OffenseLocation `json:"location"`
 }
 
 // classifyOffenses parses the JSONB offenses byte slice and counts offenses

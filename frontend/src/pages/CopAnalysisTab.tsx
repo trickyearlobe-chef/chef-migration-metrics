@@ -268,8 +268,16 @@ export function CopAnalysisTab({ source }: { source: "server" | "git" }) {
                   <th
                     className="px-3 py-2 text-right font-medium text-gray-600 cursor-pointer select-none"
                     onClick={() => toggleSort("cookbooks_affected")}
+                    title="Cookbooks where this appears in code that runs during a converge — the ones it can block."
                   >
                     Cookbooks{sortIndicator("cookbooks_affected")}
+                  </th>
+                  <th
+                    className="px-3 py-2 text-right font-medium text-gray-600 cursor-pointer select-none"
+                    onClick={() => toggleSort("cookbooks_excluded_only")}
+                    title="Cookbooks where this appears only in files a converge never executes — a helper task, a pipeline, a test suite. Real work, but it does not block the cookbook."
+                  >
+                    Outside cookbook{sortIndicator("cookbooks_excluded_only")}
                   </th>
                   <th
                     className="px-3 py-2 text-right font-medium text-gray-600 cursor-pointer select-none"
@@ -457,6 +465,13 @@ function CopRow({
           )}
         </td>
         <td className="px-3 py-2 text-right tabular-nums">{cop.cookbooks_affected}</td>
+        <td className="px-3 py-2 text-right tabular-nums">
+          {cop.cookbooks_excluded_only > 0 ? (
+            <span className="text-gray-600">{cop.cookbooks_excluded_only}</span>
+          ) : (
+            <span className="text-gray-300">—</span>
+          )}
+        </td>
         <td className="px-3 py-2 text-right tabular-nums">{cop.total_offences}</td>
         <td className="px-3 py-2 text-right tabular-nums">
           {cop.auto_correctable_pct > 0 ? (
