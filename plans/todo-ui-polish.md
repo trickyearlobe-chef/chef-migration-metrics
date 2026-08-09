@@ -64,3 +64,27 @@ decisions per CLAUDE.md ("never silently diverge").
   `/admin/test-kitchen?tab=settings` (`App.tsx:276-317`, added 2026-06-02). Stale
   bookmarks land in the right hub. They have no nav link by design (the hub is the
   nav entry); the redirects are the intended cleanup, so nothing further to do.
+
+## Admin section layout — its own branch, after the cookstyle scope work merges
+
+Raised by the product owner 2026-08-09 while testing the CookStyle tab split.
+Deliberately NOT done on `feature/cookstyle-scan-scope`: it touches admin areas
+that branch has no other reason to move, and mixing it in would make the scope
+work harder to review and to revert.
+
+**The division does not hold up.** Most side-tabs contain settings, and yet
+there is also a separate Settings heading alongside them. So "is this a setting?"
+does not tell you where to look, which is the only question the split is there
+to answer.
+
+**Some things belong together, separated by a top tab rather than a side tab.**
+Importing owners and finding duplicate owners are two views of one job and should
+sit in one side tab with tabs across the top — the shape the CookStyle hub and
+the Test Kitchen hub already use.
+
+**"Duplicate owners" is probably the wrong name.** "Deduplication" says what the
+screen is for; the current name says what it lists.
+
+Worth settling the rule before moving anything: what earns a side tab, what earns
+a top tab, and where settings live. Otherwise this is rearranging rather than
+fixing, and the next person moves it back.
