@@ -18,7 +18,7 @@ import (
 // A poly-method cop (Lint/DeprecatedClassMethods) with a removed variant
 // (File.exists?) and a deprecation-only variant (Socket.gethostbyname) must
 // split into two groups: one Blocker + File.exist? guidance, one Review +
-// Addrinfo guidance. See specifications/cop-classification.md (Poly-method cops).
+// Addrinfo guidance. See specifications/scan-trust.md.
 func TestHandleCookbookRemediation_PolyMethodCop_SplitsByVariant(t *testing.T) {
 	offensesJSON := `[
 		{

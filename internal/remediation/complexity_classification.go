@@ -17,7 +17,7 @@ type CopClassifier interface {
 	Classify(copName string) string
 	// ClassifyOffense returns the resolved classification level for a specific
 	// offence, discriminating poly-method cops by their message (see
-	// specifications/cop-classification.md, Poly-method cops). Live derivations —
+	// specifications/scan-trust.md). Live derivations —
 	// which have the offence message — use this. ClassifyOffense(cop, "") ==
 	// Classify(cop).
 	ClassifyOffense(copName, message string) string

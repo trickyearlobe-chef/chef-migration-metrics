@@ -40,7 +40,7 @@ func TestBind(listenAddr string, port int) error {
 // layers blocked the bind: a privileged port (<1024) without
 // CAP_NET_BIND_SERVICE, or an SELinux port label that does not permit it. The
 // message names both layers and the affected port so the operator can act
-// without guessing which one fired. See specifications/tls.md § 1.4.
+// without guessing which one fired. See specifications/service-access.md.
 func BindPermissionRemediation(listenAddr string, port int, err error) string {
 	if err == nil || !errors.Is(err, syscall.EACCES) {
 		return ""

@@ -14,7 +14,7 @@
 -- a user-supplied string. cookstyle_audit_log, added later against the same
 -- pattern, never constrained its own action column.
 --
--- Full intent: specifications/audit-log.md.
+-- Full intent: specifications/ownership-identity.md.
 
 ALTER TABLE ownership_audit_log DROP CONSTRAINT ownership_audit_log_action_check;
 

@@ -306,7 +306,7 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 	// token for poly-method cops (one cop_name flagging several deprecations of
 	// differing impact). This keeps each group single-classification, so a Blocker
 	// variant and a Review variant of the same cop section separately. Resolution
-	// and remediation are message-aware (see specifications/cop-classification.md).
+	// and remediation are message-aware (see specifications/scan-trust.md).
 	groupOrder := make([]string, 0)
 	groupMap := make(map[string]*offenseGroup)
 	for _, o := range flatOffenses {

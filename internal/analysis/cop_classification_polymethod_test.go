@@ -6,7 +6,7 @@ package analysis
 import "testing"
 
 // Message-aware classification for poly-method cops. See
-// specifications/cop-classification.md (Poly-method cops).
+// specifications/scan-trust.md.
 
 func TestResolveOffense_PolyCop_RemovedVariantIsBlocker(t *testing.T) {
 	r := &CopClassificationResolver{OperatorOverrides: map[string]string{}, TargetChefVersion: "19.0"}

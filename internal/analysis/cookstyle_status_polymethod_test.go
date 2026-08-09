@@ -7,7 +7,7 @@ import "testing"
 
 // DeriveCookstyleStatus must resolve each offence with its MESSAGE so a
 // poly-method cop's deprecation-only variant does not falsely block. See
-// specifications/cop-classification.md (Poly-method cops, live derivations).
+// specifications/scan-trust.md.
 
 func polyResolver() *CopClassificationResolver {
 	return &CopClassificationResolver{OperatorOverrides: map[string]string{}, TargetChefVersion: "19.0"}

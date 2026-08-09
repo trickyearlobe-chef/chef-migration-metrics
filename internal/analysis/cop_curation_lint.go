@@ -13,7 +13,7 @@ import (
 // Curation-issue kinds. The curation linter is the durability mechanism for the
 // curated verified-removal set: it cross-checks each curated RemovedIn against
 // the shipped cookstyle binary and flags rot at the source instead of moving
-// the data into an editable DB. See specifications/cop-classification.md
+// the data into an editable DB. See specifications/scan-trust.md
 // (Curation linter) — it flags for manual resolution, it does NOT auto-demote.
 const (
 	// CurationStale — a curated entry (any, not only verified-removals) whose cop

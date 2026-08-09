@@ -30,42 +30,46 @@ mechanism has to be structural.
   re-litigated, and **flags its own load-bearing assumption** for checking rather than
   reading as uniformly confident.
 
-Enforced by `.githooks/pre-commit`, which has 13 tests of its own (`make test-hooks`).
+Enforced by `.githooks/pre-commit`, which has 21 tests of its own (`make test-hooks`).
 
 ## Where the old corpus went
 
-Tag **`specifications-retired-2026-08-04`** on `a0abd66` holds all 128 files and 20,422
-lines, verified retrievable. The working copy is at `archive/specifications/` and is
-**due to be deleted** — it is browsable, and a future session will read it and believe it.
-The tag is the only recovery path that requires deliberate effort.
+Deleted. Tag **`specifications-retired-2026-08-04`** holds all 128 files and 20,338 lines, and
+retrievability was re-verified against the tag immediately before deleting the working copy.
+That tag is now the only route back, deliberately: a browsable copy gets read and believed.
 
 Conventions moved to `docs/project-conventions.md` — they describe how we write code rather
 than claiming what exists.
 
 ## Method, for whoever writes the next one
 
-Check the capability exists in the tree, read the archived spec only for the *why*, write the
-journey, then find the test — and **read the assertion, not the test's name.** Four claims
+Check the capability exists in the tree, write the journey, then find the test — and **read the assertion, not the test's name.** Four claims
 drafted from plausible-sounding test names turned out to be wrong when the bodies were read,
 one of them exactly backwards. Finding the test is where a journey gets checked against
 reality, which is the main reason the rule earns its keep.
 
 Two more things the writing taught:
 
-- **The archive lies about status as well as behaviour.** The retired failure-register spec
-  carried "specified, not built" while the feature had shipped — page, handler, tests,
-  migrations. Trusting a status line in the archive would have deleted a journey for a real
-  capability.
+- **The archive lied about status as well as behaviour**, which is why reading it for the *why*
+  is no longer part of the method and the tree is the only starting point. The retired
+  failure-register spec carried "specified, not built" while the feature had shipped — page,
+  handler, tests, migrations. Recover it from the tag only when its subject resurfaces, and
+  check every claim in it against code.
 - **Route counts mislead.** Chunk B's "8 routes" were 5: three were redirects to tabs.
 
 ## Next
 
-**Delete `archive/specifications/`**, and repair the 58 code comments citing spec paths that
-the deletion breaks (20 cite `cop-classification.md`, 7 `event-ingest.md`, 6
-`web-api-exports.md`, 5 each `failure-register.md` and `enriched-metric-snapshots.md`).
+**Plan files still cite retired specs — 22 paths that no longer resolve.** Every reference
+outside `plans/` was repaired when the archive was deleted; the backlog was left, because
+those files are being pruned anyway and fixing a reference in a plan that is about to be
+deleted is wasted work. Repair them as each plan is next touched.
 
-Needs the owner's agreement first: it removes a browsable copy, and the tag is then the only
-route back.
+The count in this plan was wrong, which is worth knowing for the next estimate: it said 58
+code comments, and 58 was the number in Go and TypeScript. The real figure was 58 plus the
+front door — the README carried a ten-row index of retired specs, `CLAUDE.md` pointed at a
+file this branch had already moved, and there were citations in migrations, packaging
+scripts, the systemd unit, `nfpm.yaml`, `.gitignore` and the pre-commit hook's own comments.
+A grep scoped to source files reported the tidy number.
 
 ## Then, worth considering
 

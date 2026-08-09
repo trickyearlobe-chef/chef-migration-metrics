@@ -160,7 +160,7 @@ Three complementary layers — pick the cheapest that answers the question, esca
 
 ## Project Conventions
 
-- Project-specific conventions (Go, DB, frontend, naming, error handling) are in `specifications/project-conventions.md`.
+- Project-specific conventions (Go, DB, frontend, naming, error handling) are in `docs/project-conventions.md`.
 
 ## Configuration
 

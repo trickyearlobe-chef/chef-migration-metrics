@@ -67,7 +67,7 @@ for file in "${STAGED_FILES[@]}"; do
   fi
 
   # acme/ runtime storage dir (root-anchored). ACME state is DB-backed
-  # (tls-acme.md § 3.5), so only a stray root-level acme/ dir would hold key
+  # (ACME state is stored in the database), so only a stray root-level acme/ dir would hold key
   # material; the internal/acme/ source package must NOT be blocked.
   if [[ "$file" == acme/* ]]; then
     block "$file" "file path matches a known secrets directory (acme/)"
@@ -320,7 +320,8 @@ done
 #
 # This is enforced rather than advised because advising it did not work: the
 # warning sat at the top of the spec index and twice in CLAUDE.md, and the
-# specs drifted anyway. See archive/specifications/README.md.
+# specs drifted anyway. The retired corpus is in the tag
+# specifications-retired-2026-08-04 if the history is ever needed.
 SPEC_LINE_LIMIT=200
 
 # Report the first few offending lines for a pattern, and block the commit.

@@ -7,7 +7,7 @@
 # RPM: $1 = 0 means final removal, $1 = 1 means upgrade
 # DEB: $1 = "remove" or "purge" means removal, $1 = "upgrade" means upgrade
 #
-# See: specifications/packaging.md § 2.6
+# Installation has no journey behind it; this script is the definition.
 # =============================================================================
 
 set -e

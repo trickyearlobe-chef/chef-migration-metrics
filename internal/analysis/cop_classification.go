@@ -38,7 +38,7 @@ func NewResolverFromStore(ctx context.Context, store ClassificationOverrideListe
 
 // Classification levels represent the migration impact of a cop. There is no
 // "unclassified" level: an unresolved cop *is* a Review item (the honest
-// default). See specifications/cop-classification.md (Classification Levels).
+// default). See specifications/scan-trust.md.
 const (
 	ClassificationBlocker = "blocker"
 	ClassificationReview  = "review"
@@ -89,7 +89,7 @@ func (r *CopClassificationResolver) Resolve(copName string) ResolvedClassificati
 
 // ResolveOffense is the message-aware form of Resolve. It is identical except
 // that the verified-removal step consults the message-discriminated variant of a
-// poly-method cop (see specifications/cop-classification.md, Poly-method cops):
+// poly-method cop (see specifications/scan-trust.md):
 // e.g. a Lint/DeprecatedClassMethods offence for Socket.gethostbyname (no
 // RemovedIn) resolves to Review, while one for File.exists? (RemovedIn 18.0)
 // resolves to Blocker. An empty message falls back to the cop-name mapping, so

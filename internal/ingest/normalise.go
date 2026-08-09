@@ -5,7 +5,7 @@
 // (node-direct run_converge, Chef Server proxy relay, Chef Automate Data Feed)
 // into a single ConvergeRun. It is the source of truth for that mapping, pinned
 // by a contract test against the golden fixtures in testdata/event-ingest/. See
-// specifications/event-ingest.md.
+// specifications/run-history.md.
 package ingest
 
 import (

@@ -24,7 +24,7 @@ import (
 // directly on the mux, not behind r.protect. It always answers in Automate's
 // accepted set (200) on receipt: Automate drops a Data Feed destination that
 // answers outside 200-204, so a malformed/oversize/failed body is dropped with
-// a 200, never bounced back to the producer. See specifications/event-ingest.md.
+// a 200, never bounced back to the producer. See specifications/run-history.md.
 func (r *Router) handleIngest(w http.ResponseWriter, req *http.Request) {
 	if !requirePOST(w, req) {
 		return

@@ -5,7 +5,7 @@
 // (nodes, cookbooks, roles, git repos) to CSV, JSON, or — for nodes — a Chef
 // search query string. Rows are produced by a RowSource one page at a time and
 // written straight to an io.Writer, so a full 120k-node export never holds the
-// whole result set in memory. See specifications/web-api-exports.md.
+// whole result set in memory.
 package export
 
 import (

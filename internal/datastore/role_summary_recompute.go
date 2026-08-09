@@ -14,7 +14,7 @@ import (
 // CTE over all roles on every request. These functions are the single source
 // of truth for the derivation; they run in bulk (set-based, not per-request)
 // at the same trigger points git_repos materialised columns recompute — see
-// git_repo_status_recompute.go and specifications/roles.md.
+// git_repo_status_recompute.go and specifications/role-impact.md.
 //
 // The column groups recompute independently so each trigger touches only what
 // it invalidates:

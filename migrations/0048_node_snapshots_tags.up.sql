@@ -8,7 +8,7 @@
 --
 -- TEXT[] (not JSONB like roles) is deliberate: the tags filter uses OR /
 -- array-overlap semantics, which map directly to the Postgres && operator on
--- a GIN-indexed text array. See: specifications/node-tags.md
+-- a GIN-indexed text array. See specifications/named-cohorts.md.
 -- =============================================================================
 
 -- Native text array. NULL is possible for pre-migration rows; the ingestion

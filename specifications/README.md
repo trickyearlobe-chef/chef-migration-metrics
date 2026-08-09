@@ -64,5 +64,10 @@ Two rules explain the rest:
   that starts rotting immediately, and a rotten copy is worse than no copy because it reads
   as authoritative.
 
-The previous specifications are in `archive/specifications/` — historical, not
-authoritative. Go/DB/frontend conventions are in `docs/project-conventions.md`.
+The 128 specifications these replaced were deleted deliberately. They are recoverable from
+the tag `specifications-retired-2026-08-04`, and that is the only way to reach them — a
+browsable copy gets read and believed, which is what the tag is protecting against. They
+asserted tables, endpoints and config flags that did not exist, and one of them still carried
+"specified, not built" for a feature that had shipped.
+
+Go, database and frontend conventions are in `docs/project-conventions.md`.
