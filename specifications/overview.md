@@ -35,10 +35,14 @@ set centrally.
 | [Whether a cookbook survives](cookbook-compatibility.md) | Will this break, and can I believe the answer? |
 | [Deciding what to fix first](remediation-priority.md) | Of everything broken, what do I start on? |
 | [Naming a slice of the estate](named-cohorts.md) | Can I get back the selection I built yesterday? |
+| [Trusting what the scan says](scan-trust.md) | Does this red mean anything, or is it tidying? |
+| [Proving a cookbook really runs](converge-testing.md) | Does it work on a real machine, or just read clean? |
+| [Saying so when the machine is wrong](human-verdict.md) | I have seen this run — where do I say so? |
+| [What actually happened out there](run-history.md) | Which machines are failing, and on what? |
 
-Journeys for the compatibility signals, ownership, and running the service are still being
-written. **Until this table is complete, a missing journey means nobody has written it yet —
-it does not mean the capability is missing.**
+Journeys for ownership and for running the service are still being written. **Until this table
+is complete, a missing journey means nobody has written it yet — it does not mean the
+capability is missing.**
 
 ## How to read a specification here
 
