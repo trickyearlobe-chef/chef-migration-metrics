@@ -668,7 +668,11 @@ bump-major-push: bump-major _push-tag ## Bump major version, tag, and push to tr
 
 .PHONY: _push-tag
 _push-tag:
-	$(eval LATEST_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null))
+	# --match 'v[0-9]*' for the same reason it is load-bearing above: a non-version
+	# tag (the retired-specifications marker, for one) can sit closer to HEAD than
+	# the release tag, and this would then push the wrong ref — and the release
+	# workflow only fires on 'v*', so the release would simply never start.
+	$(eval LATEST_TAG := $(shell git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null))
 	@echo "$(GREEN)Pushing branch to origin...$(RESET)"
 	git push origin HEAD
 	@echo "$(GREEN)Pushing tag $(LATEST_TAG) to origin...$(RESET)"
