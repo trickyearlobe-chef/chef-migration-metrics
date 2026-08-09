@@ -48,6 +48,42 @@ reds. The alternative is arguing with a machine that cannot hear me.
 **One target version at a time.** Findings are judged per finding, not per version, because
 there is only one version we are moving to. A per-version matrix was tried and removed.
 
+## The repository is not the cookbook
+
+A repository holds more than the cookbook. It holds the pipeline definition, the helper tasks
+somebody wrote to run the tests, the test suites themselves. Those files never run on a machine
+during a converge — and when the same helper task appears in nearly every repository, one
+finding inside it makes nearly every cookbook look broken. That is not a small inaccuracy. At
+that scale it is the difference between a list I work through and a list I stop believing, and I
+have been shown a number near 95% that was almost entirely this.
+
+**So a cookbook's verdict is about the code that ships and runs.** A finding in a file the
+converge never executes does not block the cookbook.
+
+**But the work does not disappear, because it is real work.** Those helper tasks and pipelines
+will break on the new Ruby exactly as predicted; they are simply somebody else's problem and a
+different piece of work. So a finding outside the cookbook stays visible on the cookbook, marked
+as not blocking, and it is counted across the estate — because the thing I most need to know
+about it is how widespread it is. One fix repeated across four hundred repositories is a
+different conversation from four hundred separate problems, and I cannot have that conversation
+if the number is buried or missing.
+
+**Which files are excluded is a decision somebody makes and can see, not a rule inferred.** Two
+tempting shortcuts are both wrong. Judging by what the packaging tool uploads does not work —
+it uploads very nearly everything, including directories nobody would call cookbook code.
+Inferring the set of files the converge *could* reach does not work either, because code can
+load code: any allowlist quietly discards whatever nobody thought of, and that is the direction
+that hides a real blocker. An explicit list of files we assert do not run is a small, specific,
+checkable claim, and it can be argued with.
+
+**A file we ignore because a repository told us to is a file we ignore for the wrong reason.** A
+repository's own declaration of what is not cookbook content is frequently wrong in a way nobody
+notices, so reading it would import somebody else's mistake and present it as our verdict.
+
+**And every exclusion needs a reason recorded against it**, for the same reason a finding called
+harmless does. Without that, this becomes the mechanism by which the blocked list is made to
+look good, which is the failure the rest of this journey exists to prevent.
+
 ## What proves it
 
 The asymmetry is the load-bearing one, and it is pinned: anything unproven — a finding the
@@ -71,6 +107,16 @@ there would be no reason to write one otherwise.
 That a finding judged breaking actually blocks the cookbook rather than being recorded and
 ignored is pinned by [the derivation
 contract](internal/analysis/cookstyle_fullruleset_test.go#TestDeriveStatus_BlockerOutsideDepartments_Blocked).
+
+**Nothing proves any of "the repository is not the cookbook".** Not one assertion exists for it.
+The test that has to be written is a repository carrying the same breaking finding twice, once in
+cookbook code and once in a helper task: the verdict must follow only the cookbook copy, **and**
+the helper task's finding must still be readable afterwards. The second half is what stops this
+being implemented as deletion, which would satisfy the first half and lose the work.
+
+Until that exists, the counts on the estate-wide view of findings are wrong in both directions
+and a reader cannot tell: the git side counts files that never run, and the Chef server side
+misses code that does run but sits outside the directories we read.
 
 **Nothing proves the knowledge itself is right.** The rules above decide what happens once a
 finding is classified; whether the recorded evidence about a given finding is accurate is a
