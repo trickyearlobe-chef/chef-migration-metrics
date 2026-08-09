@@ -52,15 +52,20 @@ type ScanScopeExclusion struct {
 	Reason string
 }
 
-// DefaultScanScopeExclusions is the seed list. Every entry except the Test
-// Kitchen dotfile variant is a path that Chef's own cookbook generator ships or
-// ignores, which is where the provenance comes from: these are files Chef
-// itself treats as developer tooling rather than cookbook content.
+// DefaultScanScopeExclusions is the seed list. Most entries are paths Chef's
+// own cookbook generator ships or ignores, which is where the provenance comes
+// from: these are files Chef itself treats as developer tooling rather than
+// cookbook content. The Test Kitchen dotfile spelling and the pipeline
+// definition are added on top, both being files no converge can reach.
 //
-// It is deliberately short. Notably absent is the pipeline definition that
-// motivated this work in the first place — a Jenkinsfile is not something Chef
-// ships, so asserting it for every customer would be us guessing. That is an
-// entry an operator adds, and the reason it has to be editable.
+// It is deliberately short, and being short is not the same as being enough.
+// What this list CANNOT reach is an ordinary script that only ever runs because
+// a build job invokes it: it can live at any path, under any name, and nothing
+// in the file itself says so. That is the same "code can load code" problem the
+// journey names, arriving from the CI system rather than from Chef, and no
+// curated filename list solves it. Such a file is excluded by an operator who
+// knows what runs it — which is why the list has to be editable, not merely
+// well chosen.
 func DefaultScanScopeExclusions() []ScanScopeExclusion {
 	return []ScanScopeExclusion{
 		{
@@ -94,6 +99,10 @@ func DefaultScanScopeExclusions() []ScanScopeExclusion {
 		{
 			Pattern: ".github/*",
 			Reason:  "CI workflow definitions. They run on the build system, not on a machine Chef converges.",
+		},
+		{
+			Pattern: "Jenkinsfile*",
+			Reason:  "A pipeline definition. It runs on the build agent, not on a machine Chef converges.",
 		},
 	}
 }

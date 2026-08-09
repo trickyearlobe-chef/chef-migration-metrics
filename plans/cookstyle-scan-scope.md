@@ -29,13 +29,15 @@ infrastructure with nothing in it. If another unproven property needs one, build
 
 ## Remaining
 
-- **The exclusion list is curated in code, not yet operator-editable.** It follows the existing
-  cop-classification shape (curated defaults in code, operator overrides in the DB) but only the
-  first half exists. Wiring the overrides through the config store and an admin screen is the
-  follow-on. Until then the seed list cannot be argued with in the product, only in the source —
-  and the pipeline definition that motivated the whole change (`Jenkinsfile`) is deliberately
-  *not* seeded, because Chef does not ship it and asserting it for every customer would be a
-  guess. That is the first thing an operator will want to add.
+- **The exclusion list is curated in code, not yet operator-editable, and that is the gap that
+  matters most.** It follows the existing cop-classification shape (curated defaults in code,
+  operator overrides in the DB) but only the first half exists.
+
+  The seed list reaches files with predictable names. It cannot reach **an ordinary script that
+  only runs because a build job invokes it** — that can sit at any path under any name, and
+  nothing in the file says what runs it. Only somebody who knows the job can exclude it. So the
+  editable half is not a nicety on top of a working feature; for that case it *is* the feature.
+  Wiring overrides through the config store and an admin screen is the next chunk.
 
 - **There is no way to list the cookbooks carrying a cop only outside cookbook code.** The count
   is on the cop row; the drill-down beneath it deliberately lists only cookbooks the cop can
