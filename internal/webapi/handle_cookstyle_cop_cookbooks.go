@@ -110,6 +110,8 @@ func (r *Router) handleCookstyleCopCookbooks(w http.ResponseWriter, req *http.Re
 		TargetChefVersion: targetVersion,
 	}
 
+	scope := r.scanScope(ctx)
+
 	var items []copCookbookItem
 
 	if source == "" || source == "server" {
@@ -121,7 +123,7 @@ func (r *Router) handleCookstyleCopCookbooks(w http.ResponseWriter, req *http.Re
 		}
 		for _, res := range results {
 			offenses := parseFullOffenses(res.Offences)
-			item := buildCopCookbookItem(copName, "server", res.CookbookName, res.CookbookVersion, res.OrganisationName, offenses, resolver)
+			item := buildCopCookbookItem(copName, "server", res.CookbookName, res.CookbookVersion, res.OrganisationName, offenses, resolver, scope)
 			if item != nil {
 				items = append(items, *item)
 			}
@@ -137,7 +139,7 @@ func (r *Router) handleCookstyleCopCookbooks(w http.ResponseWriter, req *http.Re
 		}
 		for _, res := range results {
 			offenses := parseFullOffenses(res.Offences)
-			item := buildCopCookbookItem(copName, "git", res.GitRepoName, res.CommitSHA, "", offenses, resolver)
+			item := buildCopCookbookItem(copName, "git", res.GitRepoName, res.CommitSHA, "", offenses, resolver, scope)
 			if item != nil {
 				items = append(items, *item)
 			}
@@ -216,9 +218,7 @@ func groupCopCookbooksByName(items []copCookbookItem) []copCookbookGroup {
 
 // buildCopCookbookItem creates a drill-down item if the given cookbook has
 // offenses for the specified cop. Returns nil if the cop is not present.
-func buildCopCookbookItem(copName, source, name, version, org string, offenses []fullOffense, resolver *analysis.CopClassificationResolver) *copCookbookItem {
-	scope := analysis.DefaultScanScope()
-
+func buildCopCookbookItem(copName, source, name, version, org string, offenses []fullOffense, resolver *analysis.CopClassificationResolver, scope *analysis.ScanScope) *copCookbookItem {
 	var count, excluded, correctable int
 	for _, o := range offenses {
 		if o.CopName != copName {

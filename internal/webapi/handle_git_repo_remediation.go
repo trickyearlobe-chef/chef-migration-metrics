@@ -201,7 +201,7 @@ func (r *Router) handleGitRepoRemediation(w http.ResponseWriter, req *http.Reque
 
 	// The repository is not the cookbook: findings outside cookbook code are
 	// listed but do not decide the verdict. See journeys/scan-trust.md.
-	scanScope := analysis.DefaultScanScope()
+	scanScope := r.scanScope(ctx)
 	markScope := func(o *offense) {
 		if ex, excluded := scanScope.Excluded(o.Location.File); excluded {
 			o.OutOfScope = true

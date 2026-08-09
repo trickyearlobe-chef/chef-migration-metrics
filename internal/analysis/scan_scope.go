@@ -4,8 +4,11 @@
 package analysis
 
 import (
+	"context"
 	"path"
 	"strings"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
 // Scan scope — the repository is not the cookbook. See journeys/scan-trust.md.
@@ -121,10 +124,80 @@ func NewScanScope(exclusions []ScanScopeExclusion) *ScanScope {
 	return &ScanScope{exclusions: exclusions}
 }
 
-// DefaultScanScope is the curated scope every derivation uses until an operator
-// list is wired in front of it.
+// DefaultScanScope is the curated scope alone, with no operator decisions
+// layered over it. It is the seed and the fallback, not the live scope — use
+// NewScanScopeFromStore anywhere an operator's list should apply.
 func DefaultScanScope() *ScanScope {
 	return NewScanScope(DefaultScanScopeExclusions())
+}
+
+// ScanScopeExclusionLister reads the operator's decisions. Declared here rather
+// than taking *datastore.DB so the merge stays testable without a database.
+type ScanScopeExclusionLister interface {
+	ListScanScopeExclusions(ctx context.Context) ([]datastore.ScanScopeExclusion, error)
+}
+
+// NewScanScopeFromStore is the live scope: the curated seed list with the
+// operator's decisions layered over it, keyed by pattern.
+//
+// An operator row for a seeded pattern replaces it — including its reason, so a
+// reader sees the justification somebody actually stands behind rather than the
+// prose it replaced. A row recorded as not-excluded removes that pattern from
+// the effective list, which is how somebody disagrees with a default: a
+// customer whose test directory really does ship code that runs must be able to
+// say so and be believed.
+//
+// If the decisions cannot be read, the curated list stands. That direction is
+// chosen deliberately: falling back to "nothing is excluded" would flood every
+// verdict with helper-task findings, and falling back to "everything is" would
+// hide real blockers, which is the failure nobody reports.
+func NewScanScopeFromStore(ctx context.Context, store ScanScopeExclusionLister) *ScanScope {
+	curated := DefaultScanScopeExclusions()
+	if store == nil {
+		return NewScanScope(curated)
+	}
+	rows, err := store.ListScanScopeExclusions(ctx)
+	if err != nil {
+		return NewScanScope(curated)
+	}
+	return NewScanScope(mergeScanScopeExclusions(curated, rows))
+}
+
+// mergeScanScopeExclusions layers operator decisions over the curated list.
+// Curated ordering is preserved so the effective list reads the same way twice,
+// with operator-only patterns appended in the order the store returned them.
+func mergeScanScopeExclusions(curated []ScanScopeExclusion, rows []datastore.ScanScopeExclusion) []ScanScopeExclusion {
+	decision := make(map[string]datastore.ScanScopeExclusion, len(rows))
+	for _, row := range rows {
+		decision[row.Pattern] = row
+	}
+
+	merged := make([]ScanScopeExclusion, 0, len(curated)+len(rows))
+	seen := make(map[string]bool, len(curated))
+	for _, ex := range curated {
+		seen[ex.Pattern] = true
+		row, overridden := decision[ex.Pattern]
+		if !overridden {
+			merged = append(merged, ex)
+			continue
+		}
+		if !row.Excluded {
+			// Somebody has established this really is code that runs here.
+			continue
+		}
+		merged = append(merged, ScanScopeExclusion{Pattern: row.Pattern, Reason: row.Reason})
+	}
+
+	for _, row := range rows {
+		if seen[row.Pattern] || !row.Excluded {
+			// A not-excluded row for a pattern we never seeded asserts that
+			// something is cookbook code, which is already the default; there is
+			// nothing to remove.
+			continue
+		}
+		merged = append(merged, ScanScopeExclusion{Pattern: row.Pattern, Reason: row.Reason})
+	}
+	return merged
 }
 
 // Exclusions returns the list this scope is asserting, so a reader can see —

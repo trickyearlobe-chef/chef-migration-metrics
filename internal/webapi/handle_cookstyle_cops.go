@@ -145,7 +145,7 @@ func (r *Router) handleCookstyleCops(w http.ResponseWriter, req *http.Request) {
 	// The repository is not the cookbook: an offence in a file the converge never
 	// executes is counted, but separately, and it never contributes to a
 	// cookbook being blocked. See journeys/scan-trust.md.
-	scanScope := analysis.DefaultScanScope()
+	scanScope := r.scanScope(ctx)
 
 	addResults := func(offencesJSON []byte, src, name string) {
 		if len(offencesJSON) == 0 {

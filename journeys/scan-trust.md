@@ -124,6 +124,19 @@ pinned [where the number is actually
 read](internal/webapi/handle_cookstyle_cops_scope_test.go#TestCopAggregation_SplitsBlockingFromOutsideCookbookCode).
 A repository is counted once, under the copy that decides its verdict.
 
+That I can **disagree** with the list of ignored files is pinned the same way my decision over a
+finding is. I can [name a file the shipped list never
+could](internal/analysis/scan_scope_overrides_test.go#TestOperatorCanExcludeAFileTheSeedListCannotName)
+— the script that only runs because a build job starts it, which sits somewhere different in every
+estate and says nothing about itself — and I can [overturn a shipped
+one](internal/analysis/scan_scope_overrides_test.go#TestOperatorCanDisagreeWithACuratedExclusion)
+where it is simply wrong for us. Nothing takes effect [without a reason recorded against
+it](internal/webapi/handle_cookstyle_scan_scope_test.go#TestScanScopePut_RequiresAReason), and [the
+whole list is
+readable](internal/webapi/handle_cookstyle_scan_scope_test.go#TestScanScopeList_ShowsCuratedAndOperatorEntriesTogether),
+shipped entries beside local ones — being judged by a list I cannot see is the thing this exists to
+prevent.
+
 **Nothing proves the list of files we ignore is the right list.** Every entry [carries a recorded
 reason](internal/analysis/cookstyle_scan_scope_test.go#TestScanScopeExclusionsAllCarryReasons) so
 it can be argued with, but whether a reason is *true* is the same kind of curated claim as calling

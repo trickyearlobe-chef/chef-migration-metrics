@@ -259,6 +259,11 @@ type mockStore struct {
 	UpsertCopClassificationFn         func(ctx context.Context, copName, classification, reason, createdBy string) error
 	DeleteCopClassificationFn         func(ctx context.Context, copName string) error
 
+	// Scan scope exclusions
+	ListScanScopeExclusionsFn  func(ctx context.Context) ([]datastore.ScanScopeExclusion, error)
+	UpsertScanScopeExclusionFn func(ctx context.Context, pattern string, excluded bool, reason, createdBy string) error
+	DeleteScanScopeExclusionFn func(ctx context.Context, pattern string) error
+
 	// Custom cop definitions
 	ListCustomCopDefinitionsFn  func(ctx context.Context) ([]datastore.CustomCopDefinition, error)
 	GetCustomCopDefinitionFn    func(ctx context.Context, copName string) (*datastore.CustomCopDefinition, error)
@@ -2012,6 +2017,27 @@ func (m *mockStore) ListOffenceFingerprintsByTarget(ctx context.Context, targetC
 func (m *mockStore) UpsertCopClassification(ctx context.Context, copName, classification, reason, createdBy string) error {
 	if m.UpsertCopClassificationFn != nil {
 		return m.UpsertCopClassificationFn(ctx, copName, classification, reason, createdBy)
+	}
+	return nil
+}
+
+func (m *mockStore) ListScanScopeExclusions(ctx context.Context) ([]datastore.ScanScopeExclusion, error) {
+	if m.ListScanScopeExclusionsFn != nil {
+		return m.ListScanScopeExclusionsFn(ctx)
+	}
+	return nil, nil
+}
+
+func (m *mockStore) UpsertScanScopeExclusion(ctx context.Context, pattern string, excluded bool, reason, createdBy string) error {
+	if m.UpsertScanScopeExclusionFn != nil {
+		return m.UpsertScanScopeExclusionFn(ctx, pattern, excluded, reason, createdBy)
+	}
+	return nil
+}
+
+func (m *mockStore) DeleteScanScopeExclusion(ctx context.Context, pattern string) error {
+	if m.DeleteScanScopeExclusionFn != nil {
+		return m.DeleteScanScopeExclusionFn(ctx, pattern)
 	}
 	return nil
 }

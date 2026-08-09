@@ -29,15 +29,11 @@ infrastructure with nothing in it. If another unproven property needs one, build
 
 ## Remaining
 
-- **The exclusion list is curated in code, not yet operator-editable, and that is the gap that
-  matters most.** It follows the existing cop-classification shape (curated defaults in code,
-  operator overrides in the DB) but only the first half exists.
-
-  The seed list reaches files with predictable names. It cannot reach **an ordinary script that
-  only runs because a build job invokes it** — that can sit at any path under any name, and
-  nothing in the file says what runs it. Only somebody who knows the job can exclude it. So the
-  editable half is not a nicety on top of a working feature; for that case it *is* the feature.
-  Wiring overrides through the config store and an admin screen is the next chunk.
+- **Nobody has recomputed the estate after editing the list.** Adding a pattern changes verdicts
+  and prevalence on the next scan and the next page load, but stored verdicts from earlier scans
+  are only re-derived by the usual rescan/reclassification paths. Whether an operator expects the
+  numbers to move the moment they press save is worth watching in use — it may want the same
+  coalescing recompute a reclassification triggers.
 
 - **There is no way to list the cookbooks carrying a cop only outside cookbook code.** The count
   is on the cop row; the drill-down beneath it deliberately lists only cookbooks the cop can

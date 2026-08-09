@@ -12,6 +12,7 @@ import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedbac
 import { AdminCustomCopsSection } from "./AdminCustomCopsSection";
 import { AdminCopClassificationsSection } from "./AdminCopClassificationsSection";
 import { AdminCopInventorySection } from "./AdminCopInventorySection";
+import { AdminScanScopeSection } from "./AdminScanScopeSection";
 
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
@@ -298,6 +299,17 @@ export function AdminCookstylePage() {
 
       {/* Custom Cops section */}
       <AdminCustomCopsSection />
+
+      {/* Separator */}
+      <hr className="my-6 border-gray-200" />
+
+      {/* Scan scope — which files a converge never executes */}
+      <section>
+        <h3 className="mb-3 text-lg font-semibold text-gray-900">
+          What counts as cookbook code
+        </h3>
+        <AdminScanScopeSection />
+      </section>
     </div>
   );
 }
