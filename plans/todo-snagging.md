@@ -11,6 +11,51 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
+- **When the session expires, screens keep showing the old data instead of asking me to sign in
+  again.** Reported by the product owner 2026-08-09 from the shipped app: screens silently stop
+  updating, and some render what looks like data belonging to a different view. Graphs that
+  cannot draw appear instead of any indication that the session has ended.
+
+  **Three things established in code on 2026-08-09; the third is a guess and needs reproducing.**
+
+  There is no handling of an expired session anywhere in the frontend. `401` appears exactly once
+  in the whole of `frontend/src`, and it is a comment in `AuthContext.tsx:68` about the initial
+  sign-in check. Every other call turns a `401` into an ordinary error thrown at whichever screen
+  made the request.
+
+  Screen state is hand-rolled — there is no query library — so a failed refresh leaves whatever
+  was already rendered in place. That is the silent non-update: nothing clears, nothing says why.
+
+  The "other view's data" part is **not** explained yet. There is no persistent client-side cache
+  of view data (only `AdminExplainPage` and `AdminPerformancePage` touch web storage), so the
+  likely causes are component state surviving navigation or a stale in-flight response arriving
+  after a route change. Reproduce before designing anything around it.
+
+  **The pattern to copy already exists in the same file.** `client.ts:62-68` detects a
+  maintenance response and dispatches an app-wide event on an `EventTarget` that
+  `MaintenanceContext` consumes, lifting the condition out of the calling screen. An expired
+  session is the same shape and wants the same treatment.
+
+  **A trap for whoever implements it.** `client.ts:74` does `if (parsed.code) code = parsed.code`,
+  so `ApiError.status` is overwritten by a `code` field in the response body. Detection keyed on
+  the error's status can therefore be defeated by the body, and the fix would look done while
+  failing for some endpoints. Assert on this directly.
+
+  **Why this was never built, which is the useful part.** The retired auth specification had a
+  "Session Management" section. It specified that expiry is configurable and defaults to 8h, that
+  sessions are server-side rows keyed by a UUID token, the cookie flags, and why `SameSite` is Lax
+  rather than Strict. It never said what the person sees when the 8h elapses. The mechanism was
+  documented thoroughly enough that the section read as complete, so the omission was invisible —
+  and with an 8h default, every user meets this daily. Recoverable from the tag
+  `specifications-retired-2026-08-04` if the detail is wanted.
+
+  Related principle, already stated in two journeys: a selection the server cannot parse must fail
+  loudly ([named cohorts](../journeys/named-cohorts.md)), and a machine we cannot see must not read
+  as fine ([node readiness](../journeys/node-readiness.md)). A session that has ended must not
+  render as data. The user-facing half belongs in [getting in](../journeys/service-access.md); the
+  "no screen shows stale data as current" half binds every journey and currently has no home — see
+  the note in [the journeys plan](specs-as-journeys.md).
+
 - **One role we cannot read loses the whole dependency chain.** Found on 2026-08-08 while
   writing the role-impact journey, not by anybody using the app. Expanding a run list fails
   outright when a referenced role is not found, rather than resolving what it can and naming

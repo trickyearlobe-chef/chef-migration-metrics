@@ -84,6 +84,22 @@ A grep scoped to source files reported the tidy number.
 
 ## Open, not decided
 
+- **Cross-cutting invariants have no home, and this is the format's real gap.** A journey is
+  organised by whose goal it is, so a rule binding every screen belongs to none of them. "No
+  screen may show stale data as current" has now appeared three times in unrelated journeys —
+  a silently-dropped filter returning the unfiltered estate, a machine we cannot see reading as
+  fine, and an expired session leaving its last render in place. Written into one journey nobody
+  working on another finds it; repeated across nineteen it rots nineteen ways.
+
+  Tested against the old form on 2026-08-09 and the comparison favours journeys, but not for the
+  obvious reason. The retired auth specification *did* file session expiry cleanly — a section
+  named for it, the 8h default, cookie flags, the `SameSite` rationale — and never asked what the
+  person sees when it fires. It read as complete, which is why the gap survived. A journey cannot
+  be written without answering that, so the format catches this class while filing it worse.
+
+  Cheap fix, not yet done: a "what must be true on every screen" section in
+  `journeys/overview.md` — it is read first and is not pretending to be a journey — plus a test
+  that actually asserts the invariant, since a contract is a test.
 - **The check catches form, not substance.** It stops copied code and it now forces a
   resolving test link, but it does nothing about a claim written in plain English — including
   the "what nothing can prove" paragraph the convention asks for, which no check can tell
