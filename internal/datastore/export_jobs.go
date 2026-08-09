@@ -41,7 +41,7 @@ const (
 )
 
 // Export type constants — one per list view. Each export streams the current
-// filtered list of that entity (see specifications/web-api-exports.md).
+// filtered list of that entity.
 const (
 	ExportTypeNodes     = "nodes"
 	ExportTypeCookbooks = "cookbooks"

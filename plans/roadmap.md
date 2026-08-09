@@ -83,7 +83,7 @@ only). **Plan:** `data-layer-revamp.md`.
 
 ## Phase 4 — Data Exports re-spec + Elasticsearch
 
-**Spec rewrite first** — `specifications/data-export.md` incoherently mixes webhook
+**Spec rewrite first** — `journeys/data-export.md` incoherently mixes webhook
 push / Elasticsearch NDJSON / Logstash. **Todo:** `todo-data-layer.md` (Re-specify
 Data Exports), `todo-configuration.md` (Elasticsearch). Today only CSV/JSON/
 chef_search_query downloads exist; `ElasticsearchConfig` is a config stub

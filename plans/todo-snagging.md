@@ -11,7 +11,40 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
-_Nothing open._
+- **One role we cannot read loses the whole dependency chain.** Found on 2026-08-08 while
+  writing the role-impact journey, not by anybody using the app. Expanding a run list fails
+  outright when a referenced role is not found, rather than resolving what it can and naming
+  the part it could not. `internal/nodekitchen/runlist_test.go:260` asserts the error, so
+  this is deliberate, not an oversight — the question is whether it is still the right call.
+
+  It matters because the whole value of the role view is seeing the inherited chain, and an
+  estate with one stale role reference gets no answer instead of a partial one. Cycles and
+  nesting are both handled properly, so this is the only gap of its kind.
+
+  Not reproduced against real data, and the impact on the screens has not been traced —
+  establish how often a missing role actually occurs before changing behaviour. If it is
+  changed, the partial answer has to say which role was unreadable, or it becomes a silent
+  undercount, which is worse than the error.
+
+- **An owner's cookbook summary reports every cookbook untested, silently.** Found while
+  mining the abandoned ownership plan on 2026-08-04, not by anybody using the app.
+  `internal/datastore/owners.go:710-711` and `:776-777` query `cookbook_complexity` and
+  join `cookbooks` — neither table has ever existed. The tree has `server_cookbooks` and
+  `server_cookbook_complexity`; the names in the query are the real ones with the
+  qualifier dropped.
+
+  The error is discarded at `:717` (`if err == nil && complexityLabel.Valid`), so the query
+  fails on every call and the value simply stays empty. No error, no log line. Blocking
+  cookbooks show a blank complexity label, and per the comment above
+  `GetOwnerCookbookSummary` the compatible/incompatible/untested verdict is derived from
+  that same absent table.
+
+  `28fc997` fixed the sibling git repo summary. These two were diagnosed correctly on
+  2026-08-01 in a plan that was then abandoned, and the diagnosis went with it.
+
+  Impact on the screens in production has not been traced. A test asserting an *error*
+  will never go red here — the functions return wrong values rather than failing — so
+  establish each one's actual behaviour from the code before writing its test.
 
 ---
 

@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Tests for the "specs are journeys" pre-commit check.
+# =============================================================================
+# Run: .githooks/test-journey-check.sh
+#
+# The check is the only thing keeping technical claims out of journeys/,
+# and a claim that gets in is one nothing re-validates. So it gets a test.
+#
+# Each case writes a spec, stages it, runs the hook, and asserts on the exit
+# status. The staged fixture is always removed again, including on failure.
+# =============================================================================
+
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+FIXTURE=journeys/_journey_check_fixture.md
+PASSED=0
+FAILED=0
+
+cleanup() {
+  git rm -q --cached --ignore-unmatch "$FIXTURE" >/dev/null 2>&1 || true
+  rm -f "$FIXTURE"
+}
+trap cleanup EXIT
+
+# assert <"block"|"pass"> <description> [expected substring] <<< spec body on stdin
+# The optional third argument must appear in the hook's output. Use it when the
+# exit status alone would pass for the wrong reason — a report pointing at the
+# wrong line is still a block.
+assert() {
+  local want="$1" desc="$2" expect="${3:-}"
+  cat > "$FIXTURE"
+  git add -f "$FIXTURE" >/dev/null 2>&1
+  local out status
+  out=$(.githooks/pre-commit 2>&1); status=$?
+  git rm -q --cached --ignore-unmatch "$FIXTURE" >/dev/null 2>&1
+
+  local got="pass"; [[ $status -ne 0 ]] && got="block"
+  if [[ "$got" != "$want" ]]; then
+    printf '  FAIL  %s (wanted %s, got %s)\n' "$desc" "$want" "$got"; FAILED=$((FAILED + 1))
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  if [[ -n "$expect" ]] && ! printf '%s\n' "$out" | grep -qF -- "$expect"; then
+    printf '  FAIL  %s (blocked as expected, but output lacks "%s")\n' "$desc" "$expect"
+    FAILED=$((FAILED + 1))
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  printf '  ok    %s\n' "$desc"; PASSED=$((PASSED + 1))
+}
+
+echo "spec journey check:"
+
+assert pass "a journey in the person's own words" <<'EOF'
+# Knowing which cookbooks block the upgrade
+
+An engineer wants one answer: will this break when we move to the new Chef
+version, and if so what do I fix first. They see a verdict — safe, needs
+review, or blocked — with the reasons underneath, worst first.
+
+They know it worked when the list is short enough to work through and nothing
+on it turns out to be a lab failure rather than a real one.
+
+Proven by [the verdict contract](internal/analysis/semantic_contracts_test.go).
+Nothing can prove the list is short enough to work through.
+EOF
+
+assert pass "a reference that resolves" <<'EOF'
+# A journey
+Pinned by [the contract](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_StaleIsUnknown).
+EOF
+
+assert pass "a link to a sibling journey, which is relative to this file" <<'EOF'
+# A journey
+See also [another journey](overview.md).
+Proven by [the contract](internal/analysis/semantic_contracts_test.go).
+EOF
+
+# ---- a journey must name a test ------------------------------------------
+# Agreed 2026-08-05. Status is the thing that rots, so it is not written down:
+# a journey names the test that proves it, and a red test says "not proven"
+# without anybody maintaining a sentence that says so. One resolving link
+# satisfies the rule — the parts nothing can prove are stated in prose,
+# because no check can tell an honest admission from a missing one.
+
+assert block "a journey that names no test" <<'EOF'
+# A journey
+
+An engineer wants to know which servers are ready to move, and what is stopping
+the ones that are not, without opening each machine.
+EOF
+
+# The link here resolves. The commit must still be blocked, and blocked for
+# naming no test rather than for a broken reference — so this file must exist.
+assert block "a journey whose only reference is to code, not to a test" <<'EOF'
+# A journey
+The verdict is decided in [the analyser](internal/analysis/cookstyle_recompute.go).
+EOF
+
+assert pass "a journey naming a frontend test" <<'EOF'
+# A journey
+The version ordering is proven by [the comparison test](frontend/src/semver.test.ts).
+EOF
+
+assert pass "a journey naming a test with a fragment" <<'EOF'
+# A journey
+Proven by [the stale contract](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_StaleIsUnknown).
+EOF
+
+assert block "a journey naming a test that does not resolve" <<'EOF'
+# A journey
+Proven by [the contract](internal/analysis/no_such_thing_test.go).
+EOF
+
+# Prose is wrapped at around 100 columns, so a link with a long target routinely
+# breaks between its text and its target. The link is still a link, and the
+# target must not then be read as a bare path in prose.
+assert pass "a link wrapped across two lines" <<'EOF'
+# A journey
+An untested cookbook is not a passing cookbook, pinned by [the verdict
+contract](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_NoVerdictsIsUnknown).
+EOF
+
+assert block "a wrapped link whose target does not resolve" <<'EOF'
+# A journey
+Pinned by [the verdict
+contract](internal/analysis/no_such_thing_test.go).
+EOF
+
+# Line numbers in the report must survive link removal, or the first wrapped
+# link in a journey makes every later complaint point at the wrong line.
+assert block "a fault reported on the right line after a wrapped link" "line 4" <<'EOF'
+# A journey
+Pinned by [the verdict
+contract](internal/analysis/semantic_contracts_test.go).
+The runs are kept in `converge_runs` for ninety days.
+EOF
+
+assert block "a reference to a symbol that no longer exists" <<'EOF'
+# A journey
+Pinned by [the contract](internal/analysis/semantic_contracts_test.go#TestContract_LongSinceRenamed).
+EOF
+
+assert block "a reference to a file that no longer exists" <<'EOF'
+# A journey
+See [the handler](internal/webapi/handle_no_such_thing.go).
+EOF
+
+assert block "a link into the archive" <<'EOF'
+# A journey
+As designed in [the old spec](archive/specifications/ownership.md).
+EOF
+
+assert block "a code fence" <<'EOF'
+# A journey
+```go
+x := 1
+```
+EOF
+
+assert block "an unchecked source path" <<'EOF'
+# A journey
+The tier is worked out in internal/staleness/tier.go before the list renders.
+EOF
+
+assert block "SQL" <<'EOF'
+# A journey
+SELECT name FROM node_snapshots WHERE organisation_name = 'org-a'
+EOF
+
+assert block "an HTTP endpoint" <<'EOF'
+# A journey
+The list is served by GET /api/v1/nodes and paged.
+EOF
+
+assert block "an unchecked function reference" <<'EOF'
+# A journey
+The tier comes from staleness.ComputeTier() at read time.
+EOF
+
+assert block "a table or column name" <<'EOF'
+# A journey
+The runs are kept in `converge_runs` for ninety days.
+EOF
+
+assert block "a config key" <<'EOF'
+# A journey
+Turned on with `ingest.show_run_events`.
+EOF
+
+echo
+if [[ $FAILED -gt 0 ]]; then
+  printf '%d passed, %d FAILED\n' "$PASSED" "$FAILED"
+  exit 1
+fi
+printf '%d passed\n' "$PASSED"

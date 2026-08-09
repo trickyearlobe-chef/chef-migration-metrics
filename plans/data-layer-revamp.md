@@ -52,7 +52,7 @@ Define exactly what each metric means and how it's derived. Audit every calculat
 - [x] For each: document inputs, formula, where it's calculated, where it's consumed
 - [x] Identify discrepancies between calculation sites
 - [x] Validate cross-org counting logic (roles/cookbooks with org arrays)
-- [x] Output: specification per metric with canonical definition → `specifications/semantic-contracts.md`
+- [x] Output: specification per metric with canonical definition → `journeys/semantic-contracts.md`
 - [x] Write conformance tests validating webapi re-derivation matches analysis write-time values
 - [x] Add tests proving TK status contract (all callers use canonical function)
 - [x] Fix inlined TK status derivation in handle_kitchen_batches.go
@@ -73,7 +73,7 @@ Push derived calculations into the DB at collection time. API surfaces read pre-
 
 ### Phase 3: Server-Side Pagination ✓ DONE
 
-Eliminate in-memory fetch-all-then-paginate patterns. Spec: `specifications/server-side-pagination.md`.
+Eliminate in-memory fetch-all-then-paginate patterns. Spec: `journeys/server-side-pagination.md`.
 
 - [x] 3a. Add materialised status columns to `git_repos` + backfill migration + recomputation function
 - [x] 3b. Create `GitRepoFilter` SQL builder; migrate `handleGitRepos` to SQL pagination
@@ -93,7 +93,7 @@ Fix backend and frontend filter logic for node queries.
 
 ### Phase 5: Staleness & Freshness Filters (Bugs 2, 9)
 
-Staleness-aware filtering across all views. Spec: `specifications/staleness-tiers.md`.
+Staleness-aware filtering across all views. Spec: `journeys/staleness-tiers.md`.
 
 These are feature work, not quick fixes:
 

@@ -1,6 +1,6 @@
 # Audit Log — ToDo
 
-Behaviour and intent: `specifications/audit-log.md`. Do not restate it here.
+Behaviour and intent: `journeys/audit-log.md`. Do not restate it here.
 
 Not started. Parked behind the ownership MVP — raised 2026-08-02 while adding the
 `owner_merged` action, which needed a migration before it could be written at all.

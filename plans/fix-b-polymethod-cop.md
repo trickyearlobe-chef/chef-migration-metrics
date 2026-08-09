@@ -80,7 +80,7 @@ curation item, out of scope; record in tech-debt).
 
 ## Spec delta (needs approval before applying)
 
-`specifications/cop-classification.md`:
+`journeys/cop-classification.md`:
 - Classification Resolution step 3: note verified-removal keys on the offence
   **message** for the curated poly-method cop set, cop-name otherwise.
 - New short subsection "Poly-method cops" under Blocker & Noise Reference Data:

@@ -22,7 +22,7 @@ const (
 // the minimal projection of the offences JSONB needed to re-derive rollup status
 // and weighted complexity under the current classification. It deliberately omits
 // offence messages and source locations (re-derivation does not consume them).
-// See specifications/enriched-metric-snapshots.md → Fingerprint Shape.
+// See journeys/estate-progress.md.
 type FingerprintCopEntry struct {
 	CopName     string `json:"cop_name"`
 	Count       int    `json:"count"`

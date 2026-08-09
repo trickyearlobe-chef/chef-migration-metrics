@@ -43,7 +43,7 @@ capability through an already-audited download path with no permanent debug surf
 ## Chunk 1 — profile capture in the diagnostic bundle
 
 Scope: `internal/webapi/handle_admin_diagnostic.go`, new admin download routes,
-`specifications/diagnostic-bundle.md` (needs owner approval before editing).
+`journeys/diagnostic-bundle.md` (needs owner approval before editing).
 
 - `goroutine.txt` — full stack traces for every goroutine. **Highest value item.**
   Answers "is it hung, and where" definitively; tonight that question stayed open for

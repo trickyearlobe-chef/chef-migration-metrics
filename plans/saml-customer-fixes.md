@@ -83,7 +83,7 @@ Root cause: two layers.
   (`internal/auth/jit/provisioner.go`) sets `Role` from the assertion on **every**
   login (insert AND update), so a manual role change is always overwritten.
 
-Decision needed (check `specifications/auth.md`): is SAML group→role mapping the
+Decision needed (check `journeys/auth.md`): is SAML group→role mapping the
 sole source of truth (then manual edits aren't expected to persist — fix via Entra
 groups + role_mapping), or should a manual override persist (then JIT must not
 downgrade an existing user's role)? Fix accordingly; spec edit needs owner sign-off.
@@ -99,4 +99,4 @@ downgrade an existing user's role)? Fix accordingly; spec edit needs owner sign-
 `internal/auth/samlsp/provider.go` (extractUserInfo/flattenAttributes/resolveRole),
 `internal/auth/jit/provisioner.go`, `internal/webapi/handle_saml*.go`,
 `cmd/chef-migration-metrics/main.go` (buildSAMLProvider, reconciler),
-`specifications/auth.md`.
+`journeys/auth.md`.

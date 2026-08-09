@@ -1,4 +1,4 @@
--- Event ingest: per-node converge run telemetry (see specifications/event-ingest.md).
+-- Event ingest: per-node converge run telemetry (see journeys/run-history.md).
 --
 -- Append-only, time-partitioned, short-retention. Populated by the passive
 -- POST /api/v1/ingest sink from three producer shapes (node-direct run_converge,

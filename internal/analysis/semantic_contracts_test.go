@@ -11,8 +11,8 @@ import (
 // Semantic Contract Conformance Tests
 //
 // These tests verify that the analysis write-time derivation functions produce
-// results consistent with the semantic contracts defined in
-// specifications/semantic-contracts.md
+// results consistent with the semantic contracts. Those contracts live in this
+// file rather than in a document: a contract that cannot fail is not one.
 //
 // The key contract: for the SAME set of blocking cookbooks and stale/compatible
 // flags, deriveCookstyleStatusFromBlocking and deriveKitchenStatusFromBlocking

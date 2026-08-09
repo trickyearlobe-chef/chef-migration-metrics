@@ -73,7 +73,7 @@ mounts exist); CSR default key algo `ecdsa-p256`.
 
 Original scope (for reference):
 
-- `specifications/tls.md` §2: add `cert_source`, DB-stored cert/key model,
+- `journeys/tls.md` §2: add `cert_source`, DB-stored cert/key model,
   encrypted-at-rest, key never exposed, reload-on-config-change.
 - New section: **CSR generation** — keypair algo choice, subject/SAN inputs,
   pending-key lifecycle, signed-cert match-and-promote.
@@ -85,7 +85,7 @@ Original scope (for reference):
   Chunk 3a.
 - tls.md is 401 lines; additions will breach the 500-line cap. **Split** into a
   thin index + `tls-static.md` / `tls-acme.md` / `tls-csr.md` (per CLAUDE.md spec
-  split rule). Update `specifications/overview.md`.
+  split rule). Update `journeys/overview.md`.
 - **Acceptance:** specs approved; pre-commit line-length hook passes.
 
 ## Chunk 1 — Config schema + validation (DONE)
@@ -542,7 +542,7 @@ Original scope (for reference):
 
 Opt-in (`register_hostname`, default off) self-publishing of an A record per
 `acme.domains` entry so the server's FQDN resolves to the host, reusing the
-Chunk 9 Route53 client/UPSERT/`GetChange`. Spec: [tls-acme.md § 3.13](../specifications/tls-acme.md).
+Chunk 9 Route53 client/UPSERT/`GetChange`. Spec: [tls-acme.md § 3.13](../journeys/tls-acme.md).
 
 - Scope: `internal/acme/route53.go` (or a sibling `hostname.go`), a small IP
   resolver helper (new, stdlib `net` only), `internal/config` (ACMEConfig:

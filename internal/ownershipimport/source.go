@@ -10,7 +10,7 @@
 // matcher that resolves owners and entities lives in internal/webapi and takes
 // this package's output as its input.
 //
-// See specifications/ownership-intake.md.
+// See journeys/ownership-intake.md.
 package ownershipimport
 
 import (

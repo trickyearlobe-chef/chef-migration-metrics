@@ -18,7 +18,8 @@ LimitNOFILE=65536
 # Privileged-port binding (80/443) as a non-root service.
 # Granted by systemd and retained after dropping to the service user, so it is
 # compatible with NoNewPrivileges=true (file-based setcap is silently ignored
-# under NoNewPrivileges). See specifications/tls.md § 1.4.
+# under NoNewPrivileges). Why lockout is designed out:
+# journeys/service-access.md.
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 

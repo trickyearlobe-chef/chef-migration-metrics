@@ -558,7 +558,7 @@ func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHo
 
 // nodeSnapshotFilterFromValues builds the node list filter from raw query values.
 // Both the list handler and the export path call this, so an export reproduces the
-// list view's filtering exactly (see specifications/web-api-exports.md).
+// list view's filtering exactly (see journeys/named-cohorts.md).
 func nodeSnapshotFilterFromValues(q url.Values, orgIDs []string, warningHours, criticalDays int) datastore.NodeSnapshotFilter {
 	f := datastore.NodeSnapshotFilter{
 		OrganisationNames: orgIDs,

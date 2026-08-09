@@ -6,7 +6,7 @@
 -- every row. These indexes allow Postgres to efficiently evaluate the
 -- filter predicates directly.
 --
--- See: specifications/server-side-pagination.md
+-- Paging behaviour is defined by the list queries and their tests.
 -- =============================================================================
 
 -- GIN index on the roles JSONB column to support the EXISTS subquery

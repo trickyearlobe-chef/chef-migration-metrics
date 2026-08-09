@@ -5,7 +5,7 @@
 # Creates the service account and group if they do not already exist.
 # Runs before package files are laid down on disk.
 #
-# See: specifications/packaging.md § 2.6
+# Installation has no journey behind it; this script is the definition.
 # =============================================================================
 
 set -e

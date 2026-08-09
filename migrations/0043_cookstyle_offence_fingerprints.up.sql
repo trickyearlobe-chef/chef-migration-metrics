@@ -3,7 +3,7 @@
 -- re-derive a cookstyle result's rollup status and weighted complexity under the
 -- CURRENT classification — making trends recomputable for data captured AFTER this
 -- ships (retroactive-forward). Past points stay frozen (raw inputs never existed).
--- See specifications/enriched-metric-snapshots.md → Offence Fingerprint History.
+-- See journeys/estate-progress.md for why trends must be recomputable.
 --
 -- One row = one result's fingerprint, valid from scanned_at until the next row for
 -- the same result. A new row is appended only when the fingerprint differs from

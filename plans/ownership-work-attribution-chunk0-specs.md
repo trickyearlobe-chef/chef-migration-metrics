@@ -1,6 +1,6 @@
 ## Chunk 0 — Specifications (blocks A, C, D and E)
 
-Run `wc -l specifications/ownership*.md specifications/web-api-ownership.md` yourself before deciding
+Run `wc -l journeys/ownership*.md journeys/web-api-ownership.md` yourself before deciding
 what to touch; note that the `ownership*.md` glob both includes `ownership.md` (rewritten, not removed)
 and misses `web-api-ownership.md`.
 
@@ -66,7 +66,7 @@ listing each file, its destination and a one-line reason.
   breaks the thin-index-plus-parts convention and forces an edit outside the ownership set for no gain.
   Rewritten as the endpoint index, aliases included.
 
-**Write new (2):** `ownership-intake.md`, `ownership-reporting.md`. `specifications/failure-register.md`
+**Write new (2):** `ownership-intake.md`, `ownership-reporting.md`. `journeys/failure-register.md`
 already exists — Chunk 0 **extends** it, it does not author it (see the register decisions below).
 
 Find the `git_repo` `entity_key` definition by text search across the ownership specs. That file is in
@@ -82,7 +82,7 @@ startup rather than through a live accessor — record in `plans/todo-tech-debt.
 before writing; the behaviours matter, the section and line numbers will have moved. The two that shape
 this chunk:
 
-- A hard line cap on any staged `specifications/*.md`, enforced as a block.
+- A hard line cap on any staged `journeys/*.md`, enforced as a block.
 - An intent-not-implementation check that **blocks** on `:=`, `^return <expr>`, `^if|for|switch|range`,
   `} else` inside a `go|ruby|rust|python` fence, **warns** on a long run of CONSTANT-style lines outside
   any fence, and **warns** on a `struct`/`interface` block inside a `go|typescript|ts|tsx` fence. **An
@@ -91,7 +91,7 @@ this chunk:
   test vector in code**. Neither alone suffices.
 
 **Decisions Chunk 0 must record — settled; specify, do not re-open.** The normative scrub rule is
-**already written**, as `specifications/failure-register.md`; Chunk 0 extends that file with the rest of
+**already written**, as `journeys/failure-register.md`; Chunk 0 extends that file with the rest of
 the register spec rather than authoring the signature contract. Summary: tokens
 `<path>`/`<host>`/`<user>`, applied to `failure_message`, `failed_resource`, `backtrace`, never to
 `diagnosis`/`remediation_plan`; POSIX and Windows both in scope; idempotent, and that is a test. Order:
@@ -125,7 +125,7 @@ and verify the authorisation model is role-only from the handler middleware befo
 Ownership-Scoped Permissions block and the ownership step in Permission Resolution.
 
 **Cross-reference fix-ups.** Re-run the sweep yourself for each removed filename, `ownership.enabled`,
-`CMM_OWNERSHIP_ENABLED` and every `§ N` link across `specifications/`, `plans/` and `README.md`. Earlier
+`CMM_OWNERSHIP_ENABLED` and every `§ N` link across `journeys/`, `plans/` and `README.md`. Earlier
 drafts of this plan carried a table that was **not** exhaustive (it omitted `ownership-operations.md`'s
 own `ownership.enabled` assertion) and whose line numbers have moved. `overview.md` and `README.md` both
 carry the spec routing table and gain rows for the new specs. Replace every `§ N` reference with a
@@ -142,7 +142,7 @@ files this chunk creates or removes — index maintenance, not a change of meani
 Leaving `ownership.enabled` asserted in any spec is the silent divergence CLAUDE.md forbids, so the
 sweep is not optional.
 
-**Acceptance.** No `specifications/*.md` references a removed filename or `ownership.enabled`. Every
+**Acceptance.** No `journeys/*.md` references a removed filename or `ownership.enabled`. Every
 behaviour under "What must survive" resolves to exactly one spec file. All seven auto-derivation rule
 types and the four alias endpoints are specified. `auth.md`'s `alias_type` matches the CHECK or
 references it. Every spec is under the line cap and passes both pre-commit spec checks.

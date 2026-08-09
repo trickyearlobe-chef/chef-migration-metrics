@@ -151,7 +151,7 @@ nicety. Do not present a clean CookStyle scan as "Ruby-3-safe".
   (regex) for high-value gaps with no upstream cop: `\.taint\b` / `\.tainted\?`,
   `require ['"](net/telnet|xmlrpc|sdbm|dbm|gdbm)['"]` (exclude webrick — the omnibus
   bundles it, so flagging it would be a false positive on this install). See
-  `specifications/cop-classification.md` (Custom Cop Scanning).
+  `journeys/cop-classification.md` (Custom Cop Scanning).
 - [ ] **Don't over-trust static for Ruby.** Keep the converge/Test Kitchen signal as
   the authority for "does this actually run on CC19"; the readiness/verdict copy must
   not imply CookStyle alone proves Ruby-3 compatibility.
@@ -162,7 +162,7 @@ Recorded 2026-06-09 during the CodeQL cleanup sweep (32 alerts: 13 fixed, 19 dis
 
 - [ ] **Deduplicate the path-traversal guard.** `internal/pathsafe.SafeJoin` was added for the nodekitchen fixes, but `internal/collector/fetcher.go` still has its own private copy of the identical logic (`hasParentTraversal`/`splitPathComponents`/`isSubPath`/`downloadAndWriteFile`). **Strategic fix:** refactor `collector/fetcher.go` to use `internal/pathsafe` so there is one vetted implementation.
 - [ ] **Add an explicit guard for backup IDs.** `backup/manifest.go` (`manifestPath`) and `backup/service.go` (dump path) build paths from the backup `id` taken from the URL. CodeQL alerts #34/#35/#36 were dismissed as "won't fix" because `net/http` ServeMux cleans `..`/`//` and the routes are admin-only — but there is no explicit in-code guard. **Fix:** validate `id` (e.g. `pathsafe`/`filepath.Base` reject) at the handler or path-builder for defence in depth.
-- [ ] **Document the hypervisor TLS-verify driver settings.** vCenter now reads the canonical `driver_settings.vcenter_disable_ssl_verify` (the kitchen-vcenter key, shared with the generated overlay), falling back to the legacy CMM-only `vcenter_insecure`; both default to verify. Proxmox still uses `proxmox_insecure`. `specifications/test-kitchen-drivers-vcenter.md` (and the proxmox equivalent) should document these and the secure-by-default behaviour. Spec edits need owner sign-off (CLAUDE.md), so left for confirmation.
+- [ ] **Document the hypervisor TLS-verify driver settings.** vCenter now reads the canonical `driver_settings.vcenter_disable_ssl_verify` (the kitchen-vcenter key, shared with the generated overlay), falling back to the legacy CMM-only `vcenter_insecure`; both default to verify. Proxmox still uses `proxmox_insecure`. `journeys/test-kitchen-drivers-vcenter.md` (and the proxmox equivalent) should document these and the secure-by-default behaviour. Spec edits need owner sign-off (CLAUDE.md), so left for confirmation.
 - [ ] **Deprecate the legacy `vcenter_insecure` fallback.** `newVCenterFromConfig` reads `vcenter_disable_ssl_verify` then falls back to `vcenter_insecure` for back-compat. Once no stored config relies on the old key, drop the fallback and the dual-key logic. (Added 2026-06-13 with the SSL-verify key reconciliation; `fix/vcenter-ssl-verify-key`.)
 - [ ] **Unify proxmox on a single TLS-verify key path.** vCenter was reconciled to the kitchen-vcenter key + typed UI checkbox; proxmox still relies on `proxmox_insecure` as a freeform string row (works now that `settingBool` parses strings, but no typed widget). Give it the same checkbox treatment and confirm the kitchen-proxmox driver key name. (Added 2026-06-13.)
 
@@ -218,13 +218,13 @@ Recorded 2026-06-19 (`feature/orphan-sweep-ticker`).
 ## Architecture — Audit logging is per-subject and best-effort
 
 Recorded 2026-08-02 (`feature/owner-ingest-discovery`), found while adding an `owner_merged`
-action. Design and the way out: `specifications/audit-log.md`; work items:
+action. Design and the way out: `journeys/audit-log.md`; work items:
 `plans/todo-audit.md`.
 
 - [ ] **The pattern is copied, not shared.** `cookstyle_audit_log` was built by mirroring
   `ownership_audit_log` for a different subject; its own comment says so. A third subject
   would be a third table. **Expedient because** each was the smallest change at the time.
-  **Proper fix:** one table keyed on a subject pair, per `specifications/audit-log.md`.
+  **Proper fix:** one table keyed on a subject pair, per `journeys/audit-log.md`.
 - [ ] **The audit write is best-effort** (`handle_ownership.go`, `auditOwnership` logs a
   WARN and continues), so any failure to record leaves an action that looks audited and is
   not. `InsertAuditEntryTx` exists for a transactional write and nothing uses it.
@@ -386,7 +386,7 @@ Tested against live Proxmox VE cluster (2 nodes). Key findings:
 
 ## Specifications — Stub / Incomplete
 
-- [ ] **`specifications/datastore.md` is a stub** — the datastore is referenced by ~10 other specs but has no full prose specification; the authoritative schema currently lives only in `migrations/*.up.sql`. A stub was added (during the spec-split/link-fix work) so cross-spec links resolve and the LLM is oriented. **Fix:** write the full datastore spec — table definitions and relationships, data-access patterns per consuming component (collector, analysis, web API, ownership), and retention/snapshot behaviour — using the migrations as the source of truth.
+- [ ] **`journeys/datastore.md` is a stub** — the datastore is referenced by ~10 other specs but has no full prose specification; the authoritative schema currently lives only in `migrations/*.up.sql`. A stub was added (during the spec-split/link-fix work) so cross-spec links resolve and the LLM is oriented. **Fix:** write the full datastore spec — table definitions and relationships, data-access patterns per consuming component (collector, analysis, web API, ownership), and retention/snapshot behaviour — using the migrations as the source of truth.
 
 ## TLS — Dead `GracefulShutdownTimeout` Listener Field
 
@@ -524,7 +524,7 @@ Recorded 2026-07-09 (roles list perf `role_summary` materialisation, chunk 3 rol
 
 ## Role Dependency Graph Carries No Cookbook Version (the Node Graph Does)
 
-Recorded 2026-07-14 (cookbook detail redesign — `specifications/cookbook-detail.md`).
+Recorded 2026-07-14 (cookbook detail redesign — `journeys/cookbook-detail.md`).
 
 - [ ] **`RoleGraphNode` has no `version`, while `NodeGraphNode` does** (`frontend/src/types/roles.ts` vs `types/nodes.ts`). The node dependency tree therefore links a cookbook straight to its version, and even renders `@{version}` beside it, while the role graph and the ownership blocking-cookbook list can only link to the cookbook *name* — forcing those callers through the version chooser. Same for `BlockingCookbookSummary` (`types/ownership.ts`), which the ownership payload aggregates by name with no version. **Strategic fix:** carry the cookbook version on the role-graph and ownership payloads, as the node graph already does, then link those callers straight to `/cookbooks/:name/:version`. Needs a backend payload change (not frontend-only), which is why it was left out of the cookbook-detail work. Low priority — the chooser handles it correctly today; this would just save a click.
 
@@ -536,7 +536,7 @@ Recorded 2026-07-14 (cookbook detail redesign).
 
 ## Event Ingest Endpoint Is Unauthenticated (MVP)
 
-Recorded 2026-07-16 with `feature/event-ingest-mvp` (`specifications/event-ingest.md`).
+Recorded 2026-07-16 with `feature/event-ingest-mvp` (`journeys/event-ingest.md`).
 
 - [ ] **`POST /api/v1/ingest` accepts any POST and ignores `Authorization`.** Deliberate
   MVP choice: adding auth on customer chef-clients / the Chef Server proxy / Automate's
@@ -550,7 +550,7 @@ Recorded 2026-07-16 with `feature/event-ingest-mvp` (`specifications/event-inges
 
 ## Human Verdict Is Rendered As A CookStyle Qualifier (MVP)
 
-Recorded 2026-08-02 with the failure register (`specifications/failure-register.md`).
+Recorded 2026-08-02 with the failure register (`journeys/failure-register.md`).
 
 - [ ] **The overruled marker on the git repo list sits inside the CookStyle status cell**,
   which reads as a qualifier on that one scan. A human verdict is not CookStyle-specific:

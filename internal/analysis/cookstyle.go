@@ -1034,7 +1034,7 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 	// Append a change-deduped offence fingerprint so this scan's status/complexity
 	// can be recomputed under future classification criteria. Skip errored scans:
 	// they have no offences, and recording an empty fingerprint would falsely read
-	// as "clean". See specifications/enriched-metric-snapshots.md.
+	// as "clean". See journeys/estate-progress.md.
 	if sr.ErrorMessage == "" {
 		entries, hash := BuildOffenceFingerprint(sr.Offenses)
 		if _, fpErr := s.db.AppendCookstyleOffenceFingerprint(ctx, datastore.AppendCookstyleOffenceFingerprintParams{

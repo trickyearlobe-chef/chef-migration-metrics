@@ -56,7 +56,7 @@ const (
 	// SourceHumanVerdict is a person's verdict from the failure register. It
 	// outranks every automated source in both directions: it records a failure
 	// nothing detected, and it overrules a wrong automated verdict.
-	// See specifications/failure-register.md.
+	// See journeys/human-verdict.md.
 	SourceHumanVerdict = "human"
 )
 

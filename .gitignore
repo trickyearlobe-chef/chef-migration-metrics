@@ -162,7 +162,7 @@ deploy/elk/.env
 *.pfx
 
 # ACME certificate storage (account keys, issued certs, metadata).
-# Root-anchored: ACME state is DB-backed (tls-acme.md § 3.5), so this only
+# Root-anchored: ACME state is DB-backed (ACME state is stored in the database), so this only
 # guards a stray runtime dir and must NOT match the internal/acme/ source pkg.
 /acme/
 

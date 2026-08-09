@@ -1,6 +1,6 @@
 # Plan — Cop Classification Durability
 
-Spec: `specifications/cop-classification.md` → "Data Provenance & Durability".
+Spec: `journeys/cop-classification.md` → "Data Provenance & Durability".
 Goal: stop the classification tables silently rotting as cookstyle evolves.
 Branch: continue on `feature/cookstyle-violations-browser` (unshipped, so #3's
 data-model change carries no back-compat cost).

@@ -54,7 +54,8 @@ are still present (Review — a false-positive Blocker via fallback until added)
 The prior work validated only **false positives** (curated Blockers that over-claim).
 This sweep hunts the dangerous direction: cops that flag something genuinely
 removed/broken on CC19 but were **not** curated, so they defaulted to Review — a
-hidden blocker (see `specifications/cop-classification.md`, asymmetric confidence).
+hidden blocker (see `journeys/scan-trust.md`, which is where the asymmetry is
+explained).
 
 Method (scripts, run in order on `cmm.trickyearlobe.com`):
 

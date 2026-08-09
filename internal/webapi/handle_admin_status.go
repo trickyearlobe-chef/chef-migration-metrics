@@ -23,8 +23,8 @@ import (
 // connectivity + pending migrations, credential-storage state, collection
 // scheduling, and per-organisation collection status. Always HTTP 200 — health
 // is reported in the body's `status` field, never via the HTTP status code, so
-// a monitoring client can always parse the payload. Contract:
-// specifications/web-api-admin.md §`GET /api/v1/admin/status`.
+// a monitoring client can always parse the payload. The contract is this handler
+// and its tests; there is no document behind it.
 // ---------------------------------------------------------------------------
 
 type adminStatusResponse struct {

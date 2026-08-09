@@ -785,7 +785,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Run events endpoints (viewer) — ingest telemetry over converge_runs.
 	// Two tabs (nodes rollup / flat runs) + per-node detail. See
-	// specifications/event-ingest.md and handle_run_events.go.
+	// journeys/run-history.md and handle_run_events.go.
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/run-events/nodes", r.handleRunEventNodes)
 	r.protect("/api/v1/run-events/nodes/", r.handleRunEventNodeDetail)

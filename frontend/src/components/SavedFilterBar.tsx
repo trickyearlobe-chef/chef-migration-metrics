@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // ---------------------------------------------------------------------------
-// Saved filters control for a list view (specifications/saved-filters.md).
+// Saved filters control for a list view (journeys/named-cohorts.md).
 //
 // Names a filter selection so an operator stops rebuilding a 20-role cohort by
 // hand every session. Applying is not an API call: the stored params are handed

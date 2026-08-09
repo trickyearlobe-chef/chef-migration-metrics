@@ -17,7 +17,7 @@ import (
 //
 // A person's verdict on whether a cookbook actually works on the target
 // version, recorded with a reason. Behaviour is
-// specifications/failure-register.md.
+// journeys/human-verdict.md.
 // ---------------------------------------------------------------------------
 
 // The two sides of a verdict. One says "this is broken and you missed it", the
@@ -53,8 +53,7 @@ const (
 // owner through an alias; the signed-in CMM user resolves to an owner the same
 // way, which is what makes "what's mine" filtering possible. A second kind for
 // people would be a second identity space for the same thing, which is the
-// conflation specifications/ownership-identity.md records as the alias model's
-// central fault.
+// conflation journeys/ownership-identity.md exists to prevent.
 const (
 	HolderTypeOwner  = "owner"
 	HolderTypeTicket = "ticket"

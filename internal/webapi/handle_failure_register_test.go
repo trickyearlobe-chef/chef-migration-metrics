@@ -17,7 +17,7 @@ import (
 
 // ---------------------------------------------------------------------------
 // The failure register — journeys 4 (record a failure nobody predicted) and
-// 6 (the standup view). Behaviour: specifications/failure-register.md.
+// 6 (the standup view). Behaviour: journeys/human-verdict.md.
 // ---------------------------------------------------------------------------
 
 func registerRequest(method, path, body string) *http.Request {

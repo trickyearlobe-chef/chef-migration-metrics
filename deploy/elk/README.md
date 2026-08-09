@@ -419,7 +419,8 @@ This is the most important document type for detailed code quality analysis. Ins
 - **Full-text search** — The `message` field is mapped as `text`, so you can search for specific deprecation patterns in the Discover view.
 - **Cross-cookbook analysis** — Aggregate offenses across all cookbooks to find the most common deprecation patterns in your fleet.
 
-See the [Data Export Specification](../../specifications/data-export.md) for the complete field reference.
+The exported fields are defined by the export code and its tests; there is no separate
+document for them.
 
 ## Kibana Discover Tips
 

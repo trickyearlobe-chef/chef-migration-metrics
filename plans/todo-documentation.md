@@ -1,6 +1,6 @@
 # Documentation — ToDo
 
-Feature, deployment, and configuration docs are covered by README.md, confluence-docs/, specifications/, and deploy/**/README.md. The only open doc task:
+Feature, deployment, and configuration docs are covered by README.md, confluence-docs/, journeys/, and deploy/**/README.md. The only open doc task:
 
 - [ ] Document contributing guidelines (no CONTRIBUTING file exists)
 
@@ -30,7 +30,7 @@ Raised 2026-08-03: the product owner was asked whether we have an API. We do, an
 currently be described to anybody. This is also the cheapest place to prove the enforcement
 idea above, because the route table is enumerable and the answer is checkable by a test.
 
-**Measured 2026-08-03** (routes from `router.go`, paths from `specifications/*.md`, diffed
+**Measured 2026-08-03** (routes from `router.go`, paths from `journeys/*.md`, diffed
 both ways) — the baseline to improve on:
 
 | | |

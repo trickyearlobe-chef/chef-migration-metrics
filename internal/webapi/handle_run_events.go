@@ -15,7 +15,7 @@ import (
 // ---------------------------------------------------------------------------
 // Run events — a top-level view over converge_runs (ingest telemetry).
 //
-// Two tabs, two grains, one shared filter set (see specifications/event-ingest.md):
+// Two tabs, two grains, one shared filter set (see journeys/run-history.md):
 //   - Nodes tab: GET /api/v1/run-events/nodes   — distinct-node rollup, EXISTS
 //     semantics (a node appears if ANY run matches all filters; row = latest
 //     matching run). The default surface.

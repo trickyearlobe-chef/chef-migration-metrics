@@ -243,7 +243,8 @@ At a minimum, configure:
 - PostgreSQL datastore connection URL
 - Git base URLs for cookbook repositories (if applicable)
 
-See the [Configuration specification](specifications/configuration.md) for:
+See the [journey on changing settings](journeys/service-configuration.md) for why
+configuration works the way it does. For the settings themselves:
 
 - Full YAML schema with all available settings
 - Environment variable override conventions
@@ -260,7 +261,7 @@ For each Chef Infra Server organisation, create a dedicated API client:
 knife client create chef-migration-metrics --orgname myorg -f /path/to/keys/myorg.pem
 ```
 
-Grant the client read access to nodes, cookbooks, roles, and environments. See the [Chef API specification](specifications/chef-api.md) for details.
+Grant the client read access to nodes, cookbooks, roles, and environments. See the [journey on keeping the data flowing](journeys/service-collection.md).
 
 ### Database Setup
 
@@ -326,8 +327,8 @@ Cop authoring notes:
   admin surface; an addon cop set to Blocker blocks readiness like any built-in
   Blocker, and reclassification takes effect without a rescan.
 
-See the [CookStyle full-ruleset specification](specifications/cookstyle-full-ruleset.md)
-for the full behaviour and invariants.
+See the [journey on trusting what the scan says](journeys/scan-trust.md) for why the
+classification works this way.
 
 ### Test Kitchen Driver Configuration
 
@@ -375,7 +376,7 @@ analysis_tools:
 
 Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are managed via the **Admin → Credentials** page in the web UI and resolved at test runtime. Plaintext is zeroed from memory after use.
 
-See the [Test Kitchen Driver specification](specifications/test-kitchen-drivers.md) for full details.
+See the [journey on proving a cookbook really runs](journeys/converge-testing.md).
 
 ### vCenter Platform Map Setup
 
@@ -499,7 +500,7 @@ Per-platform `driver_settings` are merged with the top-level defaults. Platform 
 
 The web UI currently supports **local accounts** with bcrypt password hashing, session-based authentication, and role-based access control with **Admin** and **Viewer** roles.
 
-See the [Authentication specification](specifications/auth.md) for details.
+See the [journey on getting in](journeys/service-access.md).
 
 > **Planned:** SAML 2.0 authentication is defined in the configuration schema but not yet implemented.
 
@@ -529,7 +530,7 @@ The `.gitignore` file excludes common secret file types (`*.pem`, `*.key`, `.env
 
 ### Credential Management
 
-For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [Secrets Storage Specification](specifications/secrets-storage.md).
+For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [journey on credentials](journeys/service-secrets.md).
 
 ## Roadmap
 
@@ -541,22 +542,20 @@ The following features are defined in the specifications but not yet implemented
 | Email notifications (SMTP) | Configuration and validation in place; SMTP sender not yet built |
 | SAML 2.0 authentication | Configuration and validation in place; SP logic not yet built (endpoints return 501) |
 
-## Specifications
+## Journeys
 
-Detailed specifications for every component are maintained under `specifications/`:
+The `journeys/` directory holds **user journeys**, not technical specifications: who the person is, what they are
+trying to get done, what has to be true for them to succeed, and how they would know it worked.
+Contracts live in tests next to the code that owns them, and every journey links at least one.
 
-| Document | Description |
-|----------|-------------|
-| [Data Collection](specifications/data-collection.md) | Node collection, Policyfile support, cookbook fetching, stale detection, role dependency graph, fault tolerance |
-| [Analysis](specifications/analysis.md) | Cookbook usage, compatibility testing, remediation guidance, complexity scoring, node readiness |
-| [Visualisation](specifications/visualisation.md) | Dashboard views, dependency graph, remediation guidance, confidence indicators, exports, notifications, filters, drill-downs, log viewer |
-| [Configuration](specifications/configuration.md) | Full YAML schema, environment variable overrides, notification channels, export settings, stale thresholds |
-| [Authentication](specifications/auth.md) | Local and SAML providers and RBAC |
-| [Logging](specifications/logging.md) | Structured logging, scopes (including notifications and exports), retention |
-| [Chef API](specifications/chef-api.md) | Chef Infra Server API endpoints and signing protocol |
-| [Web API](specifications/web-api.md) | HTTP API endpoints between backend and frontend (including remediation, dependency graph, exports, and notifications) |
-| [Packaging](specifications/packaging.md) | RPM, DEB, distribution archives, and Docker Compose |
-| [Ownership](specifications/ownership.md) | Ownership tracking for nodes, roles, policyfiles, cookbooks, and git repositories — owner model, auto-derivation rules, bulk import, owner-scoped views and exports |
+Start at **[journeys/overview.md](journeys/overview.md)** — the routing index, which
+lists every journey and the question it answers. There is deliberately no second index here,
+because two indexes means one of them is out of date.
+
+The 128 component specifications this replaced were deleted, and the directory renamed from
+`specifications/` so the old habit has no home to return to: they asserted tables, endpoints and
+configuration flags that did not exist. They are recoverable from the tag
+`specifications-retired-2026-08-04` if the history is ever needed.
 
 ## License
 

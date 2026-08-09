@@ -77,7 +77,7 @@ type CookbookFilterRow struct {
 	CookstyleStatus  string `json:"cookstyle_status"` // "ready", "needs_review", "blocked", "untested" (SoT rollup)
 	TKStatus         string `json:"tk_status"`        // "passed", "failed", "partial", "untested", "no_repo"
 
-	// Migration metadata — carried for exports (see specifications/web-api-exports.md).
+	// Migration metadata — carried for exports.
 	// These live on the same server_cookbooks row and are selected unconditionally;
 	// the list response omits them.
 	IsFrozen      bool            `json:"is_frozen"`

@@ -2,7 +2,7 @@
 
 Status: **Fix A implemented** on branch `fix/git-repo-origin-reconciliation`
 (`reconcileOrigin` in `internal/collector/git.go`, wired into `fetchGitCookbooks`,
-spec updated in `specifications/data-collection.md`, tests in `git_test.go`).
+spec updated in `journeys/data-collection.md`, tests in `git_test.go`).
 Reconcile runs on **every** existing clone each cycle, so the already-pinned-to-Stash
 estate self-migrates the moment each repo appears on GitLab — **Fix B (stopgap bulk
 reset) is therefore not needed** and is left below only as historical context.
@@ -87,7 +87,7 @@ pattern-scoped datastore method alongside `ResetGitRepoCloneStatus`.
   migration is logged.
 - Fix B: pattern reset removes local clones + resets status for exactly the matching
   repos; next collection re-clones them from the preferred base.
-- Update `specifications/data-collection.md` (git fetch/clone-or-pull + migration
+- Update `journeys/data-collection.md` (git fetch/clone-or-pull + migration
   behaviour) and record any spec divergence.
 
 ## Files
@@ -95,5 +95,5 @@ pattern-scoped datastore method alongside `ResetGitRepoCloneStatus`.
 `internal/collector/git.go` (fetchGitCookbooks, CloneOrPull, readRemoteURL, candidate
 build), `internal/datastore/git_repos.go` (ResetGitRepoCloneStatus + new pattern reset;
 DeleteStaleGitRepos), `internal/webapi/handle_cookbook_reset_git.go` (+ bulk endpoint),
-`specifications/data-collection.md`. Related commits: `bb3bfe3` (fetch-failure
+`journeys/data-collection.md`. Related commits: `bb3bfe3` (fetch-failure
 self-heal), `93e294b` (no duplicate row on failed fetch), `218067e` (server cache reuse).

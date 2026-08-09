@@ -143,7 +143,7 @@ blocking cookbook, the repo holding the fix and its owner.
 
 Chunk B adds two public endpoints and changes filter behaviour on two views, so it needs its spec written
 by Chunk 0 — `ownership-reporting.md` covers the B/D surface — and it edits
-`specifications/web-api-filters.md` and `specifications/saved-filters.md`. **Chunk 0's authorisation flag
+`journeys/web-api-filters.md` and `journeys/saved-filters.md`. **Chunk 0's authorisation flag
 covers those two edits; confirm before touching them.**
 
 ## Chunk C — The failure register (depends on Chunk 0 and on Chunk A)
@@ -160,7 +160,7 @@ and rebase C; C's emitted-SQL tests are written against A's two-level shape, not
 
 ### Migration `0058` — `observed_failures`
 
-The full column, type and index listing belongs in `specifications/failure-register.md` (extended by
+The full column, type and index listing belongs in `journeys/failure-register.md` (extended by
 Chunk 0), derived from the existing migration conventions. What is decided here and must not drift:
 
 - **`UNIQUE (git_repo_name, signature_hash)`** — the register's grain. `signature_hash` is the projection

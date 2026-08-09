@@ -174,7 +174,7 @@ func (s *nodeExportSource) enrich(ctx context.Context, page []datastore.NodeSnap
 
 // nodeExportColumns is the single source of truth for the node export's CSV
 // header and JSON keys. Column scope: list columns + full 3-state readiness +
-// disk detail (see specifications/web-api-exports.md).
+// disk detail.
 func nodeExportColumns() []export.Column {
 	nr := func(row any) nodeExportRow { return row.(nodeExportRow) }
 	return []export.Column{

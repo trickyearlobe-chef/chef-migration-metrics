@@ -31,7 +31,7 @@ reference + invariants. Warns on 6 specs (the copied-contract backlog):
 remediate opportunistically or via E. Warning, not block — won't break commits.
 
 Two open follow-ups surfaced:
-- **Pre-existing violation:** `specifications/websocket-log-streaming.md` has one real
+- **Pre-existing violation:** `journeys/websocket-log-streaming.md` has one real
   impl block (`json.Unmarshal` / `if err != nil { return nil }`, ~9 lines). Editing a
   spec needs owner sign-off (CLAUDE.md) — convert to intent prose / signatures. The
   hook will block the next commit that touches this file until fixed.
@@ -53,7 +53,7 @@ Both added to CLAUDE.md (Planning / Quality Maintenance). No further work.
 
 ## Chunk E — One-time drift sweep [diagnose] (opt-in: user approved)
 
-Scope: a Workflow that fans out over `specifications/*.md`. Per spec: extract
+Scope: a Workflow that fans out over `journeys/*.md`. Per spec: extract
 acceptance criteria / intent claims, check each against the code (grep + targeted
 test/build evidence), classify matched / diverged / unverifiable, cite file:line.
 Add a **copied-contract** category: spec blocks that paste a code-owned struct/

@@ -10,7 +10,7 @@
 // ones that are not.
 //
 // The active/unused flag itself is defined by the usage analysis
-// (specifications/analysis-cookbook-usage.md) — this is presentation over it.
+// (journeys/cookbook-compatibility.md) — this is presentation over it.
 // ---------------------------------------------------------------------------
 
 import type { ServerCookbookVersionDetail } from "../types";

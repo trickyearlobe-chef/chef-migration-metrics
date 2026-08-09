@@ -10,7 +10,7 @@
 # lay it down on fresh install and never overwrite operator edits on upgrade.
 # No seeding logic is needed here — the package manager handles it.
 #
-# See: specifications/packaging.md § 2.6
+# Installation has no journey behind it; this script is the definition.
 # =============================================================================
 
 set -e

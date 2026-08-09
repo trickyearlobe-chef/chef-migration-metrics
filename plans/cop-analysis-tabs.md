@@ -66,7 +66,7 @@ change is needed — the remaining work is the server drill-down grouping, pagin
   shows the total and pages; server rows expand to version/org detail; the git tab lists repos.
 
 ### Chunk 3 — Spec + nav
-- Update the cop-analysis section (`specifications/cop-classification.md` or the remediation
+- Update the cop-analysis section (`journeys/cop-classification.md` or the remediation
   view spec) to document the two tabs, the per-source grain (server = distinct name with
   version/org detail; git = 1:1 repo), and the invariant: **within a tab, header count =
   drill-down total** (shared record selection).

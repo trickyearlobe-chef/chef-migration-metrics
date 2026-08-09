@@ -67,7 +67,7 @@ for file in "${STAGED_FILES[@]}"; do
   fi
 
   # acme/ runtime storage dir (root-anchored). ACME state is DB-backed
-  # (tls-acme.md § 3.5), so only a stray root-level acme/ dir would hold key
+  # (ACME state is stored in the database), so only a stray root-level acme/ dir would hold key
   # material; the internal/acme/ source package must NOT be blocked.
   if [[ "$file" == acme/* ]]; then
     block "$file" "file path matches a known secrets directory (acme/)"
@@ -295,79 +295,172 @@ for file in "${STAGED_FILES[@]}"; do
       ;;
   esac
 done
+# ---------------------------------------------------------------------------
+# 4. Journeys, not specifications
+# ---------------------------------------------------------------------------
+# A journey answers four questions in the words the person would use: who they
+# are and what they are trying to get done, what must be true for them to
+# succeed, what they see or do, and how they would know it worked.
+#
+# Everything else is owned by the code. A contract belongs in a test that fails
+# when it stops being true; a table, column, endpoint or symbol belongs in the
+# code that defines it. A technical claim written in prose is a copy that
+# nothing re-validates — it rots, and is then believed.
+#
+# A journey MAY point at the code or test that owns a contract, but only as a
+# markdown link, because a link can be checked:
+#
+#     the verdict is pinned by [the derivation contract](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_StaleIsUnknown)
+#
+# The target must exist, and the optional #fragment must appear in it. A
+# reference that goes stale therefore fails the commit that made it stale,
+# which is the whole point: it gets fixed by the work that broke it rather than
+# by an audit nobody runs. Bare paths and symbols in prose stay blocked — they
+# are unresolvable, so nothing can tell you when they stop being true.
+#
+# This is enforced rather than advised because advising it did not work: the
+# warning sat at the top of the journey index and twice in CLAUDE.md, and the
+# the specs drifted anyway. The retired corpus is in the tag
+# specifications-retired-2026-08-04 if the history is ever needed.
+JOURNEY_LINE_LIMIT=200
 
-# ---------------------------------------------------------------------------
-# 4. Specification size limit — keep specs splittable for LLM retrieval
-# ---------------------------------------------------------------------------
-# Specs are consumed by AI agents; oversized files defeat targeted retrieval.
-# Split a spec over the limit into a thin index + <spec>-<section>.md parts.
-SPEC_LINE_LIMIT=500
+# Report the first few offending lines for a pattern, and block the commit.
+journey_block() {
+  local file="$1" pattern="$2" reason="$3" content="$4" hits
+  hits=$(printf '%s\n' "$content" | grep -nE "$pattern" | head -3) || true
+  if [[ -n "$hits" ]]; then
+    block "$file" "$reason"
+    printf '%s\n' "$hits" | sed 's/^/    line /' >&2
+  fi
+}
+
+journey_warn() {
+  local file="$1" pattern="$2" reason="$3" content="$4" hits
+  hits=$(printf '%s\n' "$content" | grep -nE "$pattern" | head -3) || true
+  if [[ -n "$hits" ]]; then
+    warn "$file" "$reason"
+    printf '%s\n' "$hits" | sed 's/^/    line /' >&2
+  fi
+}
 
 for file in "${STAGED_FILES[@]}"; do
   case "$file" in
-    specifications/*.md)
-      lines=$(git show ":$file" 2>/dev/null | wc -l | tr -d ' ') || continue
-      if [[ $lines -gt $SPEC_LINE_LIMIT ]]; then
-        block "$file" "spec is ${lines} lines (limit ${SPEC_LINE_LIMIT}) — split into an index + <spec>-<section>.md parts"
-      fi
-      ;;
-  esac
-done
-
-# ---------------------------------------------------------------------------
-# 5. Specs are intent, not implementation
-# ---------------------------------------------------------------------------
-# Specs define WHAT, not HOW (CLAUDE.md). Contracts and reference data are
-# fine — JSON/YAML examples, struct/interface/type/const definitions, bare
-# method signatures, request/response shapes. What is NOT fine is function
-# bodies / algorithm implementations copied into a spec; that duplicates code
-# and drifts. We detect executing statements (:=, return <expr>, control flow)
-# inside an implementation-language fence (go/ruby/rust/python). A long run of
-# constant-style assignments (a code table copied into prose) is warned on.
-for file in "${STAGED_FILES[@]}"; do
-  case "$file" in
-    specifications/*.md) ;;
+    journeys/README.md) continue ;;   # states the rule; exempt from it
+    journeys/*.md) ;;
     *) continue ;;
   esac
 
-  spec_content=$(git show ":$file" 2>/dev/null) || continue
-  [[ -z "$spec_content" ]] && continue
+  journey_content=$(git show ":$file" 2>/dev/null) || continue
+  [[ -z "$journey_content" ]] && continue
 
-  impl_hits=$(printf '%s\n' "$spec_content" | awk '
-    /^```(go|ruby|rust|python)[[:space:]]*$/ { infence = 1; next }
-    /^```/                                   { infence = 0; next }
-    infence && ( /:=/ \
-              || /^[[:space:]]*return[[:space:]]+[^[:space:]]/ \
-              || /^[[:space:]]*(if|for|switch|range)[[:space:](]/ \
-              || /^[[:space:]]*\} else/ ) { print "    line " NR ": " $0 }
-  ')
-  if [[ -n "$impl_hits" ]]; then
-    block "$file" "implementation code in a spec (function body/algorithm) — specs define what, not how; move it to TDD"
-    printf '%s\n' "$impl_hits" >&2
+  lines=$(printf '%s\n' "$journey_content" | wc -l | tr -d ' ')
+  if [[ $lines -gt $JOURNEY_LINE_LIMIT ]]; then
+    block "$file" "journey is ${lines} lines (limit ${JOURNEY_LINE_LIMIT}) — a journey is short; if it needs more, the detail belongs in tests or is a second journey"
   fi
 
-  const_run=$(printf '%s\n' "$spec_content" | awk '
-    /^```/ { infence = !infence; run = 0; next }
-    !infence && /^[[:space:]]*[A-Z][A-Z0-9_]{2,}[[:space:]]*[:=][[:space:]]*[^[:space:]]/ {
-      run++; if (run >= 8) { print NR; exit }; next
-    }
-    { run = 0 }
-  ')
-  if [[ -n "$const_run" ]]; then
-    warn "$file" "long constant-list run ending ~line ${const_run} — specs are intent; avoid copying constant tables from code"
+  # ---- the journey must name a test ---------------------------------------
+  # Agreed 2026-08-05. Nothing here says built, shipped or proven, because a
+  # status line is the first thing to rot — the stalest line in the best
+  # document we had was its status line. So the journey names the test that
+  # proves it instead, and a red test says "not proven" without anybody
+  # maintaining a sentence that says so.
+  #
+  # One resolving link satisfies the rule. It deliberately does not ask for
+  # coverage: roughly a third of what a journey promises cannot carry an
+  # assertion at all ("the list is short enough to work through"), and a rule
+  # demanding a test per claim would be met with tests that assert nothing,
+  # which is worse than no test because it looks proven. The journey says in
+  # prose which parts nothing can prove; no check can tell an honest admission
+  # from a silent omission, so that part is not enforced.
+  journey_tests=$(printf '%s\n' "$journey_content" | grep -oE '\]\([^)]+\)' \
+    | grep -cE '_test\.go|\.test\.(ts|tsx)|/test-[A-Za-z0-9_-]+\.sh') || true
+  if [[ "$journey_tests" -eq 0 ]]; then
+    block "$file" "journey names no test — link one test that proves part of it, and say in prose which parts nothing can prove; a red test is the point, it means 'not proven yet'"
   fi
 
-  # Copied contract: a struct/interface block inside a code fence is almost
-  # always a paste of a code-owned type that will drift. Reference the
-  # authoritative type + state invariants instead (CLAUDE.md). Warn, not block.
-  contract_copy=$(printf '%s\n' "$spec_content" | awk '
-    /^```(go|typescript|ts|tsx)[[:space:]]*$/ { infence = 1; next }
-    /^```/                                    { infence = 0; next }
-    infence && /(struct|interface)[^{]*\{/ { print NR; exit }
-  ')
-  if [[ -n "$contract_copy" ]]; then
-    warn "$file" "struct/interface block (~line ${contract_copy}) looks like a copied contract — reference the authoritative type (Go type, or vcenter.go/proxmox.go for external shapes) and state invariants instead of pasting it"
-  fi
+  # ---- checked references -------------------------------------------------
+  # Resolve every markdown link that points into the repo. Line numbers are
+  # preserved for the prose checks below because only the link text is blanked.
+  while IFS= read -r target; do
+    [[ -z "$target" ]] && continue
+    case "$target" in
+      http://*|https://*|mailto:*|'#'*) continue ;;
+      archive/*)
+        block "$file" "journey links into archive/ — that material is historical and not authoritative; link the code or test that owns this instead"
+        continue ;;
+    esac
+    ref_path="${target%%#*}"
+    ref_sym="${target#*#}"
+    [[ "$ref_sym" == "$target" ]] && ref_sym=""
+    # A link to a sibling journey is relative to this file's directory; a link
+    # to code is written from the repo root. Accept either, block only if
+    # neither resolves.
+    if [[ -e "$(dirname "$file")/$ref_path" ]]; then
+      ref_path="$(dirname "$file")/$ref_path"
+    elif [[ ! -e "$ref_path" ]]; then
+      block "$file" "journey references '${ref_path}', which does not exist — fix the reference in the change that moved it"
+      continue
+    fi
+    if [[ -n "$ref_sym" ]] && ! grep -qF -- "$ref_sym" "$ref_path" 2>/dev/null; then
+      block "$file" "journey references '${ref_sym}' in ${ref_path}, which no longer contains it — fix the reference in the change that renamed it"
+    fi
+  done < <(printf '%s\n' "$journey_content" | grep -oE '\]\([^)]+\)' | sed -E 's/^\]\(//; s/\)$//')
+
+  # ---- prose checks -------------------------------------------------------
+  # Link constructs are removed first: a checked reference is allowed to name a
+  # path or a symbol, unchecked prose is not.
+  #
+  # This reads the whole file as one record rather than line by line, because
+  # prose is wrapped at around 100 columns and a link with a long target
+  # routinely breaks between its text and its target. Line-by-line removal
+  # leaves the orphaned target behind, and it is then indistinguishable from a
+  # bare path — so writing a correctly linked reference and wrapping it would
+  # block the commit.
+  #
+  # Each removed link leaves behind exactly the newlines it contained, so the
+  # line numbers reported below still match the file the author is looking at.
+  journey_prose=$(printf '%s\n' "$journey_content" | awk '
+    BEGIN { RS = "\1" }                 # no \1 in text, so the record is the file
+    {
+      s = $0; out = ""
+      while (match(s, /\[[^]]*\]\([^)]*\)/)) {
+        link = substr(s, RSTART, RLENGTH)
+        n = gsub(/\n/, "\n", link)      # returns the newline count, link unchanged
+        pad = ""
+        for (i = 0; i < n; i++) pad = pad "\n"
+        out = out substr(s, 1, RSTART - 1) pad
+        s = substr(s, RSTART + RLENGTH)
+      }
+      printf "%s%s", out, s
+    }')
+
+  journey_block "$file" '^```' \
+    "code fence in a journey — a contract belongs in a test, and code is the source of truth for everything else" \
+    "$journey_prose"
+
+  journey_block "$file" '(^|[^A-Za-z0-9_/.])(internal|cmd|frontend|migrations|scripts)/|[A-Za-z0-9_-]+\.(go|ts|tsx|jsx|sql|rb)([^A-Za-z0-9]|$)' \
+    "unchecked source path in a journey — make it a markdown link so a rename fails the commit, or describe what the person does instead" \
+    "$journey_prose"
+
+  journey_block "$file" '(SELECT[[:space:]]+.*[[:space:]]FROM|CREATE[[:space:]]+TABLE|ALTER[[:space:]]+TABLE|INSERT[[:space:]]+INTO|(LEFT|INNER|OUTER)[[:space:]]+JOIN)' \
+    "SQL in a journey — the schema is owned by the migrations and the code" \
+    "$journey_prose"
+
+  journey_block "$file" '(GET|POST|PUT|PATCH|DELETE)[[:space:]]+/[a-z]' \
+    "HTTP endpoint in a journey — the API is owned by the handlers" \
+    "$journey_prose"
+
+  journey_block "$file" '[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\(|[a-zA-Z_][a-zA-Z0-9_]*\(\)' \
+    "unchecked function reference in a journey — link the test that pins it, or write it as a test that fails when it stops being true" \
+    "$journey_prose"
+
+  journey_block "$file" '`[A-Za-z0-9]+(_[A-Za-z0-9]+)+`|`[a-z0-9]+(\.[a-z0-9_]+)+`' \
+    "code identifier in a journey (table, column or config key) — say what the person sees, not what it is called in code" \
+    "$journey_prose"
+
+  journey_warn "$file" '`[A-Za-z0-9]*[a-z0-9]([A-Z][A-Za-z0-9]*)+`' \
+    "backticked CamelCase — fine if it is a product name the person would say, a symbol if it is not" \
+    "$journey_prose"
 done
 
 # ---------------------------------------------------------------------------
@@ -376,7 +469,7 @@ done
 if [[ $BLOCKED -gt 0 ]]; then
   echo "" >&2
   printf "${RED}✗ Commit blocked: %d issue(s) found in staged files.${RESET}\n" "$BLOCKED" >&2
-  echo "  Review the files above (secrets, denied patterns, or oversized specs) before committing." >&2
+  echo "  Review the files above (secrets, denied patterns, or oversized journeys) before committing." >&2
   echo "  If you are certain these are safe, use: git commit --no-verify" >&2
   echo "" >&2
   exit 1
