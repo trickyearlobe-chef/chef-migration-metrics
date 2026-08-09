@@ -28,12 +28,18 @@ var (
 const (
 	CredentialTypeChefClientKey = "chef_client_key"
 	CredentialTypeGeneric       = "generic"
+
+	// CredentialTypeDatabaseURL is a connection string for an ownership import
+	// source. It has a shape, so it is checked when stored rather than when
+	// somebody tries to use it (see database_url.go).
+	CredentialTypeDatabaseURL = "database_url"
 )
 
 // ValidCredentialTypes is the set of all recognised credential types.
 var ValidCredentialTypes = map[string]bool{
 	CredentialTypeChefClientKey: true,
 	CredentialTypeGeneric:       true,
+	CredentialTypeDatabaseURL:   true,
 }
 
 // ValidationResult holds the outcome of a credential value validation,
@@ -78,6 +84,8 @@ func ValidateCredentialValue(credentialType string, value []byte) ValidationResu
 		return validateChefClientKey(value)
 	case CredentialTypeGeneric:
 		return validateNonEmpty(value)
+	case CredentialTypeDatabaseURL:
+		return validateDatabaseURL(value)
 	default:
 		// This should be unreachable because of the ValidCredentialTypes
 		// check above, but handle it defensively.

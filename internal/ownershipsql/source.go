@@ -93,6 +93,9 @@ func Open(ctx context.Context, cfg Config) (ownershipimport.RowSource, error) {
 	if strings.TrimSpace(cfg.Query) == "" {
 		return nil, fmt.Errorf("ownershipsql: a query is required")
 	}
+	if err := validateDSNNamesDatabase(cfg.Driver, cfg.DSN); err != nil {
+		return nil, err
+	}
 
 	db, err := sql.Open(cfg.Driver, cfg.DSN)
 	if err != nil {
@@ -243,6 +246,12 @@ func listTablesQuery(driver string) string {
 func ListTables(ctx context.Context, cfg Config) ([]Table, error) {
 	if !IsSupportedDriver(cfg.Driver) {
 		return nil, fmt.Errorf("ownershipsql: unsupported driver %q", cfg.Driver)
+	}
+	// Checked here as well as in Open: listing tables is the first thing an
+	// administrator does, so it is where the missing database should be
+	// reported — not several screens later when they try to read rows.
+	if err := validateDSNNamesDatabase(cfg.Driver, cfg.DSN); err != nil {
+		return nil, err
 	}
 
 	db, err := sql.Open(cfg.Driver, cfg.DSN)

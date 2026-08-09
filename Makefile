@@ -197,6 +197,25 @@ test-verbose: ## Run all Go unit tests with verbose output
 test-short: ## Run only short/fast Go unit tests
 	go test -short -race ./...
 
+# unproven runs the deliberately-red tests: journey properties that nothing in
+# the code answers yet. They are NOT part of `make ci` and must never be, for
+# the same reason a smoke alarm nobody can silence gets taken off the wall — a
+# red that blocks a release teaches people to delete reds.
+#
+# Red here means "the journey asks for this and nothing provides it". Green
+# means somebody built it: move the test into the ordinary suite and delete the
+# matching "nothing proves" paragraph from the journey.
+#
+# Failure is the expected outcome, so this target reports rather than fails.
+.PHONY: unproven
+unproven: ## Run the deliberately-red tests for journey properties nothing proves yet
+	@echo "$(GREEN)Journey properties with nothing behind them:$(RESET)"
+	@go test -tags unproven -run 'TestUnproven' ./... 2>&1 \
+		| grep -E '^(---|\s+ownership|\s+[a-z_]+\.go:)' || true
+	@echo ""
+	@echo "$(YELLOW)Red above = the journey asks for it and nothing provides it.$(RESET)"
+	@echo "$(YELLOW)Green = built: move the test out of the unproven tag and update the journey.$(RESET)"
+
 .PHONY: test-frontend
 test-frontend: ## Run frontend unit tests
 	@if [ -d "$(FRONTEND_DIR)" ] && [ -f "$(FRONTEND_DIR)/package.json" ]; then \
