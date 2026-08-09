@@ -197,24 +197,76 @@ test-verbose: ## Run all Go unit tests with verbose output
 test-short: ## Run only short/fast Go unit tests
 	go test -short -race ./...
 
-# unproven runs the deliberately-red tests: journey properties that nothing in
-# the code answers yet. They are NOT part of `make ci` and must never be, for
-# the same reason a smoke alarm nobody can silence gets taken off the wall — a
-# red that blocks a release teaches people to delete reds.
+# journey runs the journey suites: one test per thing a journey says has to be
+# in place. Green means built, red means not yet — so this is the todo list for
+# every journey, and a todo list made of tests cannot go stale, because running
+# it recomputes it rather than asking somebody to remember.
 #
-# Red here means "the journey asks for this and nothing provides it". Green
-# means somebody built it: move the test into the ordinary suite and delete the
-# matching "nothing proves" paragraph from the journey.
+# It is NOT part of `make ci` and must never be. Most of a journey is unbuilt for
+# most of its life, so red is the normal state here; a red that blocks a release
+# gets deleted, and then the list is gone.
 #
-# Failure is the expected outcome, so this target reports rather than fails.
-.PHONY: unproven
-unproven: ## Run the deliberately-red tests for journey properties nothing proves yet
-	@echo "$(GREEN)Journey properties with nothing behind them:$(RESET)"
-	@go test -tags unproven -run 'TestUnproven' ./... 2>&1 \
-		| grep -E '^(---|\s+ownership|\s+[a-z_]+\.go:)' || true
+# This is not where regressions go. Something that used to work and now fails is
+# a broken build, not a todo.
+.PHONY: journey
+journey: ## Journey todo list: one test per thing a journey says must be in place
+	@echo "$(GREEN)Journey requirements — green is built, red is still to do:$(RESET)"
+	@go test -tags journey -v -run 'TestJourney' ./... 2>&1 \
+		| grep -E '^(=== RUN|--- (PASS|FAIL|SKIP))|^\s+\S+\.go:[0-9]+:' \
+		| grep -v '^=== RUN' || true
 	@echo ""
-	@echo "$(YELLOW)Red above = the journey asks for it and nothing provides it.$(RESET)"
-	@echo "$(YELLOW)Green = built: move the test out of the unproven tag and update the journey.$(RESET)"
+	@echo "$(YELLOW)SKIP = cannot be answered from here yet; the reason says why.$(RESET)"
+	@echo "$(YELLOW)When one turns green it stays green — nothing to update by hand.$(RESET)"
+	@$(MAKE) --no-print-directory journey-coverage
+
+# journeys lists what the tool is supposed to do, from the journeys themselves
+# rather than from a hand-maintained index, so the list cannot disagree with the
+# directory. Each line is a journey's own title, plus whether it has a suite —
+# `yes` means its requirements are enumerated as tests you can run, `no` means
+# they are prose.
+.PHONY: journeys
+journeys: ## List every journey, its title, and whether it has a journey suite
+	@printf "$(BOLD)%-34s %-6s %s$(RESET)\n" "JOURNEY" "SUITE" "TITLE"
+	@for j in journeys/*.md; do \
+		case "$$j" in */overview.md|*/README.md) continue ;; esac; \
+		name=$$(basename "$$j" .md); \
+		title=$$(head -1 "$$j" | sed 's/^# *//'); \
+		if grep -rql "$$j" --include='*_journey_test.go' . 2>/dev/null; then \
+			suite="yes"; \
+		else \
+			suite="$(YELLOW)no$(RESET)"; \
+		fi; \
+		printf "%-34s %-6b %s\n" "$$name" "$$suite" "$$title"; \
+	done
+	@echo ""
+	@printf "$(CYAN)make journey$(RESET)          run the suites — green is built, red is still to do\n"
+	@printf "$(CYAN)make journey-coverage$(RESET) just the journeys with no suite yet\n"
+
+# journey-coverage answers the question one level up: which journeys have no
+# suite at all? A journey with none states its gaps in prose, and prose is what
+# drifts — the whole reason the suites exist. Listing them here means the drift
+# reports itself instead of waiting to be noticed.
+#
+# A suite claims its journey by naming it, so this is a text match rather than a
+# filename convention: `journeys/<name>.md` must appear in some *_journey_test.go.
+.PHONY: journey-coverage
+journey-coverage: ## List journeys with no journey suite yet
+	@covered=0; total=0; missing=""; \
+	for j in journeys/*.md; do \
+		case "$$j" in */overview.md|*/README.md) continue ;; esac; \
+		total=$$((total + 1)); \
+		if grep -rql "$$j" --include='*_journey_test.go' . 2>/dev/null; then \
+			covered=$$((covered + 1)); \
+		else \
+			missing="$$missing  $$j\n"; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "$(BOLD)Journey suites: $$covered of $$total journeys$(RESET)"; \
+	if [ -n "$$missing" ]; then \
+		echo "$(YELLOW)No suite yet — their gaps are recorded in prose, which drifts:$(RESET)"; \
+		printf "$$missing"; \
+	fi
 
 .PHONY: test-frontend
 test-frontend: ## Run frontend unit tests
