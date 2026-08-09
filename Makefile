@@ -428,15 +428,96 @@ vuln-go: ## Scan Go module + reachable code for known vulnerabilities (govulnche
 		exit 1; \
 	fi
 
+# ---------------------------------------------------------------------------
+# Trivy vulnerability-database refresh
+# ---------------------------------------------------------------------------
+# The scan is reliable; refreshing the database is not, and that has been
+# rediscovered and hand-fixed several times without the reason being written
+# down. This is the write-down. Everything below was measured against Trivy
+# 0.71.0 on 2026-08-09; the "verified" notes say how.
+#
+# Trivy pulls its 104 MiB database from an OCI registry, defaulting to
+# mirror.gcr.io with ghcr.io listed second. Intermittently the mirror ACCEPTS
+# the connection and then sends nothing. Observed: zero bytes in 21 minutes,
+# taking the whole gate down; an identical rerun a minute later fetched the same
+# artifact in under 3 seconds. Three separate things turn that stall into an
+# unbounded hang:
+#
+#  1. Trivy's own --timeout does NOT bound it. The registry request is not made
+#     with the timeout context and nothing sets a read/response deadline, so a
+#     connection that stalls after being established is unbounded. Verified
+#     against a socket that accepts and never replies: `trivy --timeout 15s` was
+#     still running 7 minutes later. Trivy's advice on the eventual failure is
+#     to RAISE --timeout, which would only lengthen the hang.
+#  2. Trivy does NOT fail over to the second registry. Failover only triggers on
+#     a registry-API error. Verified: with a stalled primary it never reached
+#     ghcr.io at all, and with a primary refusing connections outright it failed
+#     rather than trying ghcr.io. So the fallback below has to be explicit.
+#  3. Trivy catches SIGTERM and only shuts down "gracefully", which cannot
+#     interrupt the stalled read — so it keeps hanging after the signal.
+#     Verified: plain `timeout 10 trivy ...` left trivy alive 25s later, 2 of 2
+#     runs; with -k (SIGTERM then SIGKILL) it died at 15s, 3 of 3. The -k is
+#     load-bearing — a bare `timeout N` does not end this hang.
+#
+# So the refresh is separated from the scan: bounded by an external timeout that
+# escalates to SIGKILL, then retried explicitly against the fallback registry.
+# The scans then run with --skip-db-update and cannot touch the network at all.
+# A stalled mirror now costs TRIVY_DB_TIMEOUT seconds and recovers by itself.
+# (--download-db-only and --skip-db-update are mutually exclusive — trivy
+# refuses to start if both are given, which is why these are separate steps.)
+#
+# The database is only refreshed once it expires (every 24h), which is why this
+# shows up at random and never reproduces on the rerun that investigates it.
+#
+# Not the cause, though it has been blamed: there is no lock file, and nothing
+# is left behind that wedges the next run. Verified: killed mid-download with
+# SIGKILL, the immediate rerun succeeded in 3.5s. What an interrupted `make`
+# DOES leave is trivy itself, still alive and still holding the stalled
+# connection, because of (3) — worth killing, but a symptom, not the cause.
+#
+# If trivy hangs again despite this: `pkill -9 trivy`, then delete the DB cache
+# (~/Library/Caches/trivy/db on macOS, ~/.cache/trivy/db on Linux) and re-run.
+# Do not raise the timeout.
+TRIVY_DB_TIMEOUT ?= 120
+TRIVY_DB_FALLBACK ?= ghcr.io/aquasecurity/trivy-db:2
+# GNU timeout, needed for -k. Stock macOS ships no timeout(1) at all:
+# `brew install coreutils` provides it (as gtimeout, and as timeout on newer
+# formulae). Ubuntu CI runners have it as part of coreutils.
+TRIVY_TIMEOUT_BIN := $(shell command -v gtimeout 2>/dev/null || command -v timeout 2>/dev/null)
+
+.PHONY: _trivy-db
+_trivy-db:
+	@command -v trivy >/dev/null 2>&1 || exit 0; \
+	if [ -z "$(TRIVY_TIMEOUT_BIN)" ]; then \
+		echo "$(YELLOW)GNU timeout not found — refreshing the Trivy DB unbounded.$(RESET)"; \
+		echo "$(YELLOW)If this hangs, install coreutils (brew install coreutils).$(RESET)"; \
+		trivy fs --download-db-only >/dev/null; \
+		exit $$?; \
+	fi; \
+	echo "$(GREEN)Refreshing the Trivy vulnerability database...$(RESET)"; \
+	if $(TRIVY_TIMEOUT_BIN) -k 5 $(TRIVY_DB_TIMEOUT) trivy fs --download-db-only >/dev/null; then \
+		exit 0; \
+	fi; \
+	echo "$(YELLOW)Default registry stalled or failed — retrying against $(TRIVY_DB_FALLBACK)$(RESET)"; \
+	if $(TRIVY_TIMEOUT_BIN) -k 5 $(TRIVY_DB_TIMEOUT) trivy fs --download-db-only \
+		--db-repository $(TRIVY_DB_FALLBACK) >/dev/null; then \
+		exit 0; \
+	fi; \
+	echo "$(RED)Could not refresh the Trivy database from either registry.$(RESET)"; \
+	echo "$(YELLOW)This is a download problem, not a finding. See the notes above$(RESET)"; \
+	echo "$(YELLOW)_trivy-db in the Makefile before changing any timeout.$(RESET)"; \
+	exit 1
+
 # trivy-npm mirrors the BLOCKING Trivy gates in the CI security job: npm
 # production dependencies at MEDIUM+ fail the build. It scans the LOCKFILE only
 # (never node_modules / npm ci), so a compromised dep's install hook can't run.
 # ignore-unfixed is left at its default (false) to match CI.
 .PHONY: trivy-npm
-trivy-npm: ## Trivy scan of npm production deps (MEDIUM/HIGH/CRITICAL, blocking — mirrors CI)
+trivy-npm: _trivy-db ## Trivy scan of npm production deps (MEDIUM/HIGH/CRITICAL, blocking — mirrors CI)
 	@if command -v trivy >/dev/null 2>&1; then \
 		echo "$(GREEN)Running Trivy on frontend/package-lock.json...$(RESET)"; \
 		trivy fs --scanners vuln --severity MEDIUM,HIGH,CRITICAL --exit-code 1 \
+			--skip-db-update \
 			--ignorefile .trivyignore.yaml frontend/package-lock.json; \
 	else \
 		echo "$(YELLOW)trivy not found — install with:$(RESET)"; \
@@ -451,11 +532,12 @@ trivy-npm: ## Trivy scan of npm production deps (MEDIUM/HIGH/CRITICAL, blocking 
 security: vuln-go trivy-npm ## Run the blocking supply-chain gates (govulncheck + Trivy) — mirrors CI
 
 .PHONY: scan-trivy
-scan-trivy: ## Filesystem scan (vuln + secret + misconfig) with Trivy
+scan-trivy: _trivy-db ## Filesystem scan (vuln + secret + misconfig) with Trivy
 	@if command -v trivy >/dev/null 2>&1; then \
 		echo "$(GREEN)Running trivy fs (HIGH,CRITICAL gate)...$(RESET)"; \
 		trivy fs --scanners vuln,secret,misconfig \
 			--severity HIGH,CRITICAL --exit-code 1 \
+			--skip-db-update \
 			--skip-dirs frontend/node_modules --skip-dirs .samples \
 			. ; \
 	else \

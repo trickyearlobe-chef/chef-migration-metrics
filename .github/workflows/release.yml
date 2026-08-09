@@ -125,7 +125,11 @@ jobs:
           npm run lint
           npm test
 
+      # timeout-minutes on both Trivy steps: the vulnerability-DB download can
+      # stall indefinitely and Trivy's own --timeout does not bound it. See the
+      # note above _trivy-db in the Makefile.
       - name: Trivy — npm production deps, HIGH/CRITICAL (blocking)
+        timeout-minutes: 10
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -137,6 +141,7 @@ jobs:
           exit-code: '1'
 
       - name: Trivy — npm production deps, MEDIUM (blocking)
+        timeout-minutes: 10
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs

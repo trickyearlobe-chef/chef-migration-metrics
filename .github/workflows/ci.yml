@@ -159,7 +159,16 @@ jobs:
 
       # npm production deps: HIGH/CRITICAL always block. Dev deps are excluded by
       # Trivy's default (they are not shipped).
+      #
+      # Every Trivy step below carries timeout-minutes for one reason: Trivy's
+      # vulnerability-DB download can stall indefinitely (the registry accepts
+      # the connection and then sends nothing) and neither Trivy's own --timeout
+      # nor its second-registry fallback ends that stall. See the long note above
+      # _trivy-db in the Makefile for the measurements. Without this the step
+      # would sit on the runner until the 6-hour job limit. A normal run,
+      # download included, is well under a minute.
       - name: Trivy — npm production deps, HIGH/CRITICAL (blocking)
+        timeout-minutes: 10
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -174,6 +183,7 @@ jobs:
       # mediums that kept this staged have landed (react-router@6.30.4,
       # brace-expansion@5.0.6), so MEDIUM npm production vulns now fail the PR.
       - name: Trivy — npm production deps, MEDIUM (blocking)
+        timeout-minutes: 10
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -188,6 +198,7 @@ jobs:
 
       - name: Trivy — full report incl dev deps, LOW, secrets, misconfig (SARIF)
         continue-on-error: true
+        timeout-minutes: 10
         env:
           TRIVY_INCLUDE_DEV_DEPS: 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
