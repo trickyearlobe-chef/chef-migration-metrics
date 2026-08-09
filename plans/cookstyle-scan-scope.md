@@ -29,17 +29,6 @@ infrastructure with nothing in it. If another unproven property needs one, build
 
 ## Remaining
 
-- **Nobody has recomputed the estate after editing the list.** Adding a pattern changes verdicts
-  and prevalence on the next scan and the next page load, but stored verdicts from earlier scans
-  are only re-derived by the usual rescan/reclassification paths. Whether an operator expects the
-  numbers to move the moment they press save is worth watching in use — it may want the same
-  coalescing recompute a reclassification triggers.
-
-- **There is no way to list the cookbooks carrying a cop only outside cookbook code.** The count
-  is on the cop row; the drill-down beneath it deliberately lists only cookbooks the cop can
-  block, so it still totals `cookbooks_affected`. A second drill-down, or a scope toggle on the
-  existing one, would close it.
-
 - **Nothing has been run against real customer-shaped data.** The seed patterns were chosen from
   Chef's generator, not measured against the estate. The number worth checking first is how far
   the ~95% blocked figure actually moves.

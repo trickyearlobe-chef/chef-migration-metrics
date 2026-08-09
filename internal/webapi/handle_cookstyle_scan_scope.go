@@ -169,19 +169,45 @@ func (r *Router) putCookstyleScanScope(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	// Verdicts, prevalence counts and complexity all read the scope live, so
-	// this takes effect on the next scan and the next page load. Existing stored
-	// verdicts are re-derived by the usual rescan/reclassification paths.
+	changed := r.rescoreAfterScopeChange(req, "put")
+
 	r.auditCookstyle(req, "scan_scope_changed", pattern, r.defaultTargetVersion(), map[string]any{
-		"excluded": body.Excluded,
-		"reason":   reason,
+		"excluded":         body.Excluded,
+		"reason":           reason,
+		"verdicts_changed": changed,
 	})
 
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"pattern":  pattern,
-		"excluded": body.Excluded,
-		"status":   "saved",
+		"pattern":          pattern,
+		"excluded":         body.Excluded,
+		"status":           "saved",
+		"verdicts_changed": changed,
 	})
+}
+
+// rescoreAfterScopeChange re-derives every stored verdict against the new scope.
+//
+// Changing what counts as cookbook code moves the derivation for every result,
+// not just for one cop, so the cop-scoped propagation closure is the wrong tool
+// — this is the same whole-estate rescore an active-target change triggers.
+//
+// It runs synchronously so the response can say how many verdicts moved: a
+// decision that only shows up on the next scan is one somebody has to remember
+// they made. The set being re-derived is the stored scan results, which is a
+// far smaller table than the estate it describes.
+//
+// Best-effort. The decision is already saved; failing to recompute must not
+// fail the save, or an operator would retry an edit that already took.
+func (r *Router) rescoreAfterScopeChange(req *http.Request, op string) int {
+	if r.db == nil {
+		return 0
+	}
+	res, err := RescoreCookstyleResults(req.Context(), r.db, r.logger)
+	if err != nil {
+		r.logf("ERROR", "scan scope %s: rescoring stored verdicts: %v", op, err)
+		return 0
+	}
+	return res.Changed
 }
 
 func (r *Router) deleteCookstyleScanScope(w http.ResponseWriter, req *http.Request) {
@@ -199,8 +225,17 @@ func (r *Router) deleteCookstyleScanScope(w http.ResponseWriter, req *http.Reque
 	}
 
 	// A seeded pattern returns to its curated behaviour; an operator-only
-	// pattern stops applying at all.
-	r.auditCookstyle(req, "scan_scope_decision_removed", pattern, r.defaultTargetVersion(), nil)
+	// pattern stops applying at all. Either way the derivation moves for every
+	// stored result, so they are re-derived here too — removing a decision has
+	// to be as visible as making one.
+	changed := r.rescoreAfterScopeChange(req, "delete")
 
-	WriteJSON(w, http.StatusOK, map[string]any{"status": "deleted"})
+	r.auditCookstyle(req, "scan_scope_decision_removed", pattern, r.defaultTargetVersion(), map[string]any{
+		"verdicts_changed": changed,
+	})
+
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"status":           "deleted",
+		"verdicts_changed": changed,
+	})
 }

@@ -44,8 +44,8 @@ describe("AdminScanScopeSection", () => {
         },
       ],
     });
-    vi.mocked(api.saveScanScopeEntry).mockResolvedValue({ status: "saved" });
-    vi.mocked(api.deleteScanScopeEntry).mockResolvedValue({ status: "deleted" });
+    vi.mocked(api.saveScanScopeEntry).mockResolvedValue({ status: "saved", verdicts_changed: 3 });
+    vi.mocked(api.deleteScanScopeEntry).mockResolvedValue({ status: "deleted", verdicts_changed: 0 });
   });
 
   // Being judged by a list you cannot read is the thing this exists to prevent,
@@ -97,6 +97,25 @@ describe("AdminScanScopeSection", () => {
         excluded: true,
         reason: "Run by the build job only.",
       }),
+    );
+  });
+
+  // A decision that only shows up on the next scan is one somebody has to
+  // remember they made, so the screen says what just moved.
+  it("reports how many verdicts the decision moved", async () => {
+    renderSection();
+    await waitFor(() => expect(screen.getByText("Rakefile")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText("Pattern"), {
+      target: { value: "scripts/build/*" },
+    });
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Run by the build job only." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Saved. 3 verdicts changed.")).toBeInTheDocument(),
     );
   });
 

@@ -17,6 +17,7 @@ import (
 // ---------------------------------------------------------------------------
 
 type mockRescoreStore struct {
+	exclusions            []datastore.ScanScopeExclusion
 	serverResults         []datastore.CookstyleRescoreRow
 	gitResults            []datastore.CookstyleRescoreRow
 	serverUpdates         []datastore.CookstylePassedUpdate
@@ -29,6 +30,10 @@ type mockRescoreStore struct {
 
 type gitRepoKey struct {
 	Name, URL, TargetVersion string
+}
+
+func (m *mockRescoreStore) ListScanScopeExclusions(ctx context.Context) ([]datastore.ScanScopeExclusion, error) {
+	return m.exclusions, nil
 }
 
 func (m *mockRescoreStore) ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error) {

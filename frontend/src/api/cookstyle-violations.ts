@@ -174,12 +174,17 @@ export function fetchScanScope(): Promise<{ data: ScanScopeEntry[] }> {
   return apiFetch<{ data: ScanScopeEntry[] }>(buildUrl("/cookstyle/scan-scope"));
 }
 
+/**
+ * Saving re-derives every stored verdict against the new scope and reports how
+ * many moved, so a decision shows its effect immediately rather than waiting
+ * for the next scan.
+ */
 export function saveScanScopeEntry(body: {
   pattern: string;
   excluded: boolean;
   reason: string;
-}): Promise<{ status: string }> {
-  return apiFetch<{ status: string }>("/api/v1/cookstyle/scan-scope", {
+}): Promise<{ status: string; verdicts_changed: number }> {
+  return apiFetch<{ status: string; verdicts_changed: number }>("/api/v1/cookstyle/scan-scope", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -188,8 +193,8 @@ export function saveScanScopeEntry(body: {
 
 export function deleteScanScopeEntry(
   pattern: string,
-): Promise<{ status: string }> {
-  return apiFetch<{ status: string }>(
+): Promise<{ status: string; verdicts_changed: number }> {
+  return apiFetch<{ status: string; verdicts_changed: number }>(
     buildUrl("/cookstyle/scan-scope", { pattern }),
     { method: "DELETE" },
   );

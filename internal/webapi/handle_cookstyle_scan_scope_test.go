@@ -202,3 +202,41 @@ func TestScanScopePut_SavesWithTheEditorRecorded(t *testing.T) {
 		t.Error("the person who decided must be recorded")
 	}
 }
+
+// TestScanScopePut_RecomputesStoredVerdicts — a decision that only applies to
+// future scans is a decision somebody has to remember they made. Changing what
+// counts as cookbook code moves the derivation for every stored result, so the
+// verdicts are re-derived on save and the response says how many moved.
+func TestScanScopePut_RecomputesStoredVerdicts(t *testing.T) {
+	var rescored bool
+	store := &mockStore{
+		UpsertScanScopeExclusionFn: func(context.Context, string, bool, string, string) error {
+			return nil
+		},
+		ListServerCookstyleResultsForRescoreFn: func(context.Context) ([]datastore.CookstyleRescoreRow, error) {
+			rescored = true
+			return nil, nil
+		},
+	}
+
+	r := newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("19.0"))
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/cookstyle/scan-scope",
+		strings.NewReader(`{"pattern":"tooling/ci/*","excluded":true,"reason":"Invoked only by the build job."}`))
+	r.ServeHTTP(w, withAdminSession(req))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if !rescored {
+		t.Error("stored verdicts must be re-derived when the scope changes, not left until the next scan")
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if _, ok := body["verdicts_changed"]; !ok {
+		t.Error("the response must say how many verdicts moved, or nobody can tell the save did anything")
+	}
+}

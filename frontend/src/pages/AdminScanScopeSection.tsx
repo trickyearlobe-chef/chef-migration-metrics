@@ -10,6 +10,19 @@ import {
 } from "../api";
 import { ErrorAlert, InlineSpinner, LoadingSpinner } from "../components/Feedback";
 
+// Saying how many verdicts moved is the point of recomputing on save: "none"
+// is a real answer worth showing, because it means the decision was already
+// true of everything scanned rather than that nothing happened.
+function verdictMessage(changed: number): string {
+  if (changed === 0) {
+    return "Saved. No stored verdict changed — nothing scanned was affected by this.";
+  }
+  if (changed === 1) {
+    return "Saved. 1 cookbook's verdict changed.";
+  }
+  return `Saved. ${changed} verdicts changed.`;
+}
+
 const INPUT_CLASS =
   "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50";
 
@@ -32,6 +45,8 @@ export function AdminScanScopeSection() {
   const [busyPattern, setBusyPattern] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
+
   const [newPattern, setNewPattern] = useState("");
   const [newReason, setNewReason] = useState("");
   const [adding, setAdding] = useState(false);
@@ -52,9 +67,10 @@ export function AdminScanScopeSection() {
     setAdding(true);
     setActionError(null);
     saveScanScopeEntry({ pattern, excluded: true, reason })
-      .then(() => {
+      .then((res) => {
         setNewPattern("");
         setNewReason("");
+        setRecomputeMsg(verdictMessage(res.verdicts_changed));
         load();
       })
       .catch((e: Error) => setActionError(e.message))
@@ -81,7 +97,10 @@ export function AdminScanScopeSection() {
         excluded: !entry.excluded,
         reason: reason.trim(),
       })
-        .then(load)
+        .then((res) => {
+          setRecomputeMsg(verdictMessage(res.verdicts_changed));
+          return load();
+        })
         .catch((e: Error) => setActionError(e.message))
         .finally(() => setBusyPattern(null));
     },
@@ -93,7 +112,10 @@ export function AdminScanScopeSection() {
       setBusyPattern(entry.pattern);
       setActionError(null);
       deleteScanScopeEntry(entry.pattern)
-        .then(load)
+        .then((res) => {
+          setRecomputeMsg(verdictMessage(res.verdicts_changed));
+          return load();
+        })
         .catch((e: Error) => setActionError(e.message))
         .finally(() => setBusyPattern(null));
     },
@@ -117,6 +139,10 @@ export function AdminScanScopeSection() {
       </p>
 
       {actionError && <ErrorAlert message={actionError} />}
+
+      {recomputeMsg && (
+        <p className="rounded bg-blue-50 px-3 py-2 text-sm text-blue-800">{recomputeMsg}</p>
+      )}
 
       <div className="overflow-x-auto rounded border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
