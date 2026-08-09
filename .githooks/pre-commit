@@ -357,6 +357,26 @@ for file in "${STAGED_FILES[@]}"; do
     block "$file" "spec is ${lines} lines (limit ${SPEC_LINE_LIMIT}) — a journey is short; if it needs more, the detail belongs in tests or is a second journey"
   fi
 
+  # ---- the journey must name a test ---------------------------------------
+  # Agreed 2026-08-05. Nothing here says built, shipped or proven, because a
+  # status line is the first thing to rot — the stalest line in the best
+  # document we had was its status line. So the journey names the test that
+  # proves it instead, and a red test says "not proven" without anybody
+  # maintaining a sentence that says so.
+  #
+  # One resolving link satisfies the rule. It deliberately does not ask for
+  # coverage: roughly a third of what a journey promises cannot carry an
+  # assertion at all ("the list is short enough to work through"), and a rule
+  # demanding a test per claim would be met with tests that assert nothing,
+  # which is worse than no test because it looks proven. The journey says in
+  # prose which parts nothing can prove; no check can tell an honest admission
+  # from a silent omission, so that part is not enforced.
+  spec_tests=$(printf '%s\n' "$spec_content" | grep -oE '\]\([^)]+\)' \
+    | grep -cE '_test\.go|\.test\.(ts|tsx)|/test-[A-Za-z0-9_-]+\.sh') || true
+  if [[ "$spec_tests" -eq 0 ]]; then
+    block "$file" "journey names no test — link one test that proves part of it, and say in prose which parts nothing can prove; a red test is the point, it means 'not proven yet'"
+  fi
+
   # ---- checked references -------------------------------------------------
   # Resolve every markdown link that points into the repo. Line numbers are
   # preserved for the prose checks below because only the link text is blanked.
@@ -388,7 +408,30 @@ for file in "${STAGED_FILES[@]}"; do
   # ---- prose checks -------------------------------------------------------
   # Link constructs are removed first: a checked reference is allowed to name a
   # path or a symbol, unchecked prose is not.
-  spec_prose=$(printf '%s\n' "$spec_content" | sed -E 's/\[[^]]*\]\([^)]*\)//g')
+  #
+  # This reads the whole file as one record rather than line by line, because
+  # prose is wrapped at around 100 columns and a link with a long target
+  # routinely breaks between its text and its target. Line-by-line removal
+  # leaves the orphaned target behind, and it is then indistinguishable from a
+  # bare path — so writing a correctly linked reference and wrapping it would
+  # block the commit.
+  #
+  # Each removed link leaves behind exactly the newlines it contained, so the
+  # line numbers reported below still match the file the author is looking at.
+  spec_prose=$(printf '%s\n' "$spec_content" | awk '
+    BEGIN { RS = "\1" }                 # no \1 in text, so the record is the file
+    {
+      s = $0; out = ""
+      while (match(s, /\[[^]]*\]\([^)]*\)/)) {
+        link = substr(s, RSTART, RLENGTH)
+        n = gsub(/\n/, "\n", link)      # returns the newline count, link unchanged
+        pad = ""
+        for (i = 0; i < n; i++) pad = pad "\n"
+        out = out substr(s, 1, RSTART - 1) pad
+        s = substr(s, RSTART + RLENGTH)
+      }
+      printf "%s%s", out, s
+    }')
 
   spec_block "$file" '^```' \
     "code fence in a spec — a contract belongs in a test, and code is the source of truth for everything else" \
