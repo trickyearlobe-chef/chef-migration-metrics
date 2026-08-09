@@ -42,33 +42,41 @@ The tag is the only recovery path that requires deliberate effort.
 Conventions moved to `docs/project-conventions.md` — they describe how we write code rather
 than claiming what exists.
 
-## Done
+## Method, for whoever writes the next one
 
-Chunk A — six journeys, 353 lines, replacing 4,453 across ~25 source specs: where the
-estate stands, which machines can move, the one fix that unblocks thousands, whether a
-cookbook survives, what to fix first, naming a slice of the estate. Written from the app's
-routes and navigation, not from the archive, because drafting from the archive re-imports
-the fiction.
+Check the capability exists in the tree, read the archived spec only for the *why*, write the
+journey, then find the test — and **read the assertion, not the test's name.** Four claims
+drafted from plausible-sounding test names turned out to be wrong when the bodies were read,
+one of them exactly backwards. Finding the test is where a journey gets checked against
+reality, which is the main reason the rule earns its keep.
+
+Two more things the writing taught:
+
+- **The archive lies about status as well as behaviour.** The retired failure-register spec
+  carried "specified, not built" while the feature had shipped — page, handler, tests,
+  migrations. Trusting a status line in the archive would have deleted a journey for a real
+  capability.
+- **Route counts mislead.** Chunk B's "8 routes" were 5: three were redirects to tabs.
 
 ## Next
 
-**Chunks B, C, D — one session each.** Same method: check the capability exists, read the
-archived spec only for the *why*, write the journey — and name a test, which the hook now
-requires. Finding the test is where the journey gets checked against reality: three claims
-written into chunk A from plausible reading of test *names* turned out to be wrong when the
-test bodies were read, one of them backwards. Read the assertion, not the name.
+**Delete `archive/specifications/`**, and repair the 58 code comments citing spec paths that
+the deletion breaks (20 cite `cop-classification.md`, 7 `event-ingest.md`, 6
+`web-api-exports.md`, 5 each `failure-register.md` and `enriched-metric-snapshots.md`).
 
-- **B — whether a cookbook is safe.** CookStyle and cop classification, Test Kitchen, the
-  failure register, run events. 8 routes.
-- **C — who does the work.** Ownership, import, aliases, duplicates, audit, committers.
-  7 routes.
-- **D — running the service.** Authentication and SSO, configuration, collection,
-  credentials, backups, logging, system health, TLS, packaging, exports, diagnostics.
-  20 routes, and most of the requirements nobody wrote down.
+Needs the owner's agreement first: it removes a browsable copy, and the tag is then the only
+route back.
 
-**Then:** delete `archive/specifications/`, and repair the 58 code comments citing spec
-paths that the deletion breaks (20 cite `cop-classification.md`, 7 `event-ingest.md`,
-6 `web-api-exports.md`, 5 each `failure-register.md` and `enriched-metric-snapshots.md`).
+## Then, worth considering
+
+- **Nothing checks code→spec.** The hook resolves a journey's references to code; a code change
+  that invalidates an untouched journey passes. That gap was demonstrated during this work —
+  a corpus-wide check appeared to pass when it had in fact examined nothing, because staging an
+  unmodified file stages nothing. A check that reads `specifications/` directly rather than the
+  staged set would close it.
+- **`plans/` still feeds planning the way the specs did** — 6,954 lines including 577 of tech
+  debt. The cheap mechanical version is to require every file reference in a plan to resolve, so
+  a stale enumeration fails the commit.
 
 ## Open, not decided
 
@@ -81,17 +89,11 @@ paths that the deletion breaks (20 cite `cop-classification.md`, 7 `event-ingest
   red journey tests was not needed and was not built. The first journey whose central
   property nothing asserts is where that gets built — the failure mode to avoid is linking
   the nearest passing test instead, because it then reads as proof.
-- **Coverage is not mechanical.** Answered by hand on 2026-08-04: 13 of 48 routes covered,
-  and six capabilities with no route at all — certificates renewing themselves, collection
-  on a schedule, receiving pushed telemetry, retention and purge, install and upgrade,
-  anti-lockout server control. Those are the requirements held self-evident, and no
-  navigation-driven sweep would ever find them. A check could compute this instead.
-- **References are one-directional.** The hook resolves spec→code. Nothing checks code→spec.
-- **`plans/` and the backlog feed planning the same way the specs did** — 6,954 lines
-  including 577 of tech debt. The known-good rule from the abandoned branch: plans carry
-  journeys and non-derivable gotchas, not enumerations. A cheap mechanical version is to
-  require every file reference in a plan to resolve, so a stale enumeration fails the
-  commit.
+- **Coverage is not mechanical, and route coverage is a floor rather than the measure.** All 48
+  routes now map to a journey, checked by listing them against the index. The six capabilities
+  with no route are covered only in prose inside journeys, which is the best that can be done —
+  no navigation-driven sweep would ever have found them. A check could compute the route half of
+  this; nothing can compute the other half.
 - **CLAUDE.md and the memories** carry the same disease, including three internal
   contradictions. The evidence gives a principle: the rules that hold here are the ones
   with hooks behind them, so a rule that has failed repeatedly and cannot be enforced

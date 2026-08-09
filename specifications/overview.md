@@ -42,9 +42,22 @@ set centrally.
 | [Who has to do the work](ownership-attribution.md) | Whose is this, and what has nobody claimed? |
 | [Getting ownership in](ownership-intake.md) | How do I load who owns what, and keep loading it? |
 | [One person, many names](ownership-identity.md) | Is this the same engineer written down twice? |
+| [Getting in, never locked out](service-access.md) | Who may use it, and can I always get back in? |
+| [Changing it without downtime](service-configuration.md) | Can I change a setting from the screen? |
+| [Credentials that stay secret](service-secrets.md) | Where are the passwords, and who can read them? |
+| [Keeping the data flowing](service-collection.md) | Is it still collecting, and would I know? |
+| [Diagnosing a box I cannot reach](service-diagnosis.md) | What do I send support, and is it safe to send? |
+| [Not losing it](service-continuity.md) | Can I restore, and can I upgrade without loss? |
 
-Journeys for running the service are still being written. **Until this table is complete, a
-missing journey means nobody has written it yet — it does not mean the capability is missing.**
+All 48 routes in the application map to a journey above, checked by listing them against this
+table rather than assumed.
+
+**Six capabilities have no route at all**, and are covered only in prose inside these journeys:
+certificates renewing themselves, collection running on a schedule, receiving pushed telemetry,
+retention and purge, installation and upgrade, and the fallback that stops a bad setting locking
+everybody out. Those are the requirements everybody held self-evident, so no walk through the
+navigation would ever have found them — which is why route coverage is a floor and not the
+measure.
 
 ## How to read a specification here
 
