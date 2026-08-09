@@ -46,3 +46,31 @@ true now, stop and say so rather than quietly ranking some other way.
 
 I work down the list from the top, and I do not find myself thinking "why is this here"
 before I get to the end of the first page.
+
+## What proves it
+
+The distinction the whole ranking rests on — will this break, against this is worth tidying
+one day — is pinned where the effort figure is worked out. Style and modernisation advice
+[carries no weight at
+all](internal/remediation/complexity_classification_test.go#TestComputeCookstyleComplexity_CosmeticStyleWeightZero),
+so it cannot inflate the cost of a fix and push a genuinely breaking one down the list, and
+findings nobody has classified yet are [counted
+once](internal/remediation/complexity_classification_test.go#TestComputeCookstyleComplexity_UnclassifiedNoDoubleCount)
+rather than twice. Which basis a call was made on is pinned by [the cop
+mapping](internal/remediation/copmapping_test.go#TestLookupCop_KnownDeprecation), which fixes
+what a given finding is taken to mean for the upgrade.
+
+**One thing worth knowing is only half proven.** A finding the mapping does not recognise is
+asserted to come back as "no mapping" — but nothing asserts what the list then *does* with it.
+Whether an unrecognised finding is surfaced for a human or quietly dropped is decided
+elsewhere and is not pinned here, and dropping it silently is the failure mode this journey
+cares about most.
+
+**Nothing proves the ranking itself.** No test asserts that cost against benefit produces a
+sensible order, and none could — "sensible" is the engineer's judgement, and the journey's
+own success test is a feeling about the first page. What is protected is the input to the
+ranking, on the reasoning that a wrong order recovers but a padded list does not.
+
+**Verify before designing against this:** the assumption stated above — that each finding
+carries every source's verdict, tagged with its source, and a rule deciding which wins — is
+not covered by anything linked here. Check it in the tree before building on it.

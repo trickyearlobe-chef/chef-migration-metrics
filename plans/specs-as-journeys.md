@@ -53,7 +53,10 @@ the fiction.
 ## Next
 
 **Chunks B, C, D — one session each.** Same method: check the capability exists, read the
-archived spec only for the *why*, write the journey.
+archived spec only for the *why*, write the journey — and name a test, which the hook now
+requires. Finding the test is where the journey gets checked against reality: three claims
+written into chunk A from plausible reading of test *names* turned out to be wrong when the
+test bodies were read, one of them backwards. Read the assertion, not the name.
 
 - **B — whether a cookbook is safe.** CookStyle and cop classification, Test Kitchen, the
   failure register, run events. 8 routes.
@@ -67,31 +70,17 @@ archived spec only for the *why*, write the journey.
 paths that the deletion breaks (20 cite `cop-classification.md`, 7 `event-ingest.md`,
 6 `web-api-exports.md`, 5 each `failure-register.md` and `enriched-metric-snapshots.md`).
 
-## Decided, and needs building
-
-**A journey must name a test.** Agreed 2026-08-05. Enforced at commit time: the journey
-must carry a resolving link to a test. A **red** test does not block a build — it reports
-loudly, so redness means "this journey is not proven" and status becomes observable without
-anyone writing it down. Follow the existing `//go:build functional` pattern with a separate
-tag and its own make target, kept out of the gating suite.
-
-Not everything is testable, and that is the risk to design around. Roughly two thirds of
-the binding decisions in chunk A can carry a real assertion — a stale machine never reads
-as passing, untested is not passing, a rule's classification, a saved selection the server
-does not understand failing loudly. Some can only be checked through a stand-in (a chart
-configured with a zero baseline; an icon carrying a shape as well as a colour). Some cannot
-be tested at all — "the list is short enough to work through", and the decisions about what
-we deliberately do not build.
-
-**So the rule is: name a test for the parts that can be tested, let it be red if the
-behaviour is not there, and say in the journey which parts nothing can prove.** One real
-link satisfies the requirement. A journey with a test that passes without checking anything
-would be worse than one with no test, because it would look proven.
-
 ## Open, not decided
 
-- **The check catches form, not substance.** It stops copied code; it does nothing about a
-  claim written in plain English. Naming a test closes part of this.
+- **The check catches form, not substance.** It stops copied code and it now forces a
+  resolving test link, but it does nothing about a claim written in plain English — including
+  the "what nothing can prove" paragraph the convention asks for, which no check can tell
+  from a silent omission.
+- **A red test as a status signal has not been exercised.** Every chunk-A journey found an
+  existing green test to name, so the separate build tag and make target for deliberately
+  red journey tests was not needed and was not built. The first journey whose central
+  property nothing asserts is where that gets built — the failure mode to avoid is linking
+  the nearest passing test instead, because it then reads as proof.
 - **Coverage is not mechanical.** Answered by hand on 2026-08-04: 13 of 48 routes covered,
   and six capabilities with no route at all — certificates renewing themselves, collection
   on a schedule, receiving pushed telemetry, retention and purge, install and upgrade,

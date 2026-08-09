@@ -38,3 +38,27 @@ property here.
 
 I open the machines view, choose the cohort by name, and get the same set I got last week —
 and when I export it, the file matches what was on the screen.
+
+## What proves it
+
+The property called most important above — a selection the server does not understand fails
+loudly rather than silently returning everything — is pinned by [the selection
+contract](internal/webapi/saved_filter_params_test.go#TestValidateSavedFilterSelection_RejectsUnknownParam),
+with the same refusal enforced on the way in when a cohort is
+[saved](internal/webapi/handle_saved_filters_test.go#TestHandleSavedFilters_CreateRejectsUnknownParam)
+and when an existing one is
+[changed](internal/webapi/handle_saved_filters_test.go#TestHandleSavedFilter_UpdateRejectsUnknownParamForStoredView).
+Refusing at save time is what stops a cohort being stored that could only ever have failed
+when someone came back to use it.
+
+That the export and the screen return the same set for the same selection is pinned by [the
+parity
+contract](internal/datastore/node_snapshot_export_functional_test.go#TestFunctional_NodeExport_FilterParity),
+which asks both paths for one selection and compares the rows. It needs a real database, so
+it runs under its own build tag rather than in the gating suite.
+
+**What is proven is narrower than the journey.** Parity is established for the machines
+view, for one selection built directly, and no equivalent exists for the cookbook or
+repository views. Nothing checks that a cohort *recalled by name* resolves to the same
+selection on both paths — the step where a saved cohort could diverge is the step not
+covered.

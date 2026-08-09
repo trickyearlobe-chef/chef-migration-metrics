@@ -42,3 +42,23 @@ production, I say so and that sticks.
 
 The blocked list is short enough to work through, and when I pick something off it and go
 look, it really is broken.
+
+## What proves it
+
+The three properties above are each pinned by a contract next to the code that decides the
+verdict:
+
+- An untested cookbook is not a passing cookbook — [no verdicts means
+  unknown](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_NoVerdictsIsUnknown),
+  and a result too old to trust also means unknown rather than
+  fine ([stale is unknown](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_StaleIsUnknown)).
+- A verdict is not poisoned by our own infrastructure — a converge failure on its own
+  [does not make the cookbook
+  failed](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_OnlyTKFailureIsPassed).
+- A person can overrule the machine, and it shows whose verdict it is — [the overrule
+  marker](frontend/src/components/OverruledMarker.test.tsx).
+
+**Nothing proves the closing claim** — that the blocked list is short enough to work
+through and that what is on it really is broken. That is only answered by picking things
+off it and going to look, which is why the infrastructure-failure rule above is the one to
+protect: it is what keeps the list believable.

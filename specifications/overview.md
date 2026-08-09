@@ -56,11 +56,24 @@ rot:
   one that reads as uniformly confident.
 
 None of it describes how the software works. The code is the only source of truth for that,
-and a contract lives in a test that fails when it stops being true. A journey may point at
-such a test by link, and the link is checked when it is committed.
+and a contract lives in a test that fails when it stops being true.
+
+- **Every journey names a test**, as a link that is checked when it is committed. One real
+  link is enough — it is not a coverage rule.
+- **And says which parts nothing can prove.** Roughly a third of what these journeys promise
+  cannot carry an assertion at all: that a list is short enough to work through, that a chart
+  is honest, that a number is one you would defend to a board. Naming those explicitly is
+  what stops the tests that do exist reading as more than they are.
 
 **No status claims.** Nothing here says built, shipped, planned or proposed. Status written
 in prose is the thing that rots fastest, and the best document we had was wrong on exactly
-that line.
+that line. Naming a test replaces it: if the test is red the journey is not proven, and that
+says so without anybody keeping a sentence up to date.
+
+The one claim this page makes for itself, that there is a single centrally-set target version
+and that it is what decides the verdicts, is pinned by [the target version
+contract](internal/analysis/readiness_test.go#TestEvaluateOrganisation_TargetVersionDrivesVerdict),
+with [no target version set](internal/analysis/readiness_test.go#TestEvaluateOrganisation_NoTargetVersion)
+covered too, because that case must not read as everything being fine.
 
 Conventions for writing code are in `docs/project-conventions.md`.

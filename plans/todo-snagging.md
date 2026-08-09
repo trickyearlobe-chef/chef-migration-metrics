@@ -11,6 +11,21 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
+- **One role we cannot read loses the whole dependency chain.** Found on 2026-08-08 while
+  writing the role-impact journey, not by anybody using the app. Expanding a run list fails
+  outright when a referenced role is not found, rather than resolving what it can and naming
+  the part it could not. `internal/nodekitchen/runlist_test.go:260` asserts the error, so
+  this is deliberate, not an oversight — the question is whether it is still the right call.
+
+  It matters because the whole value of the role view is seeing the inherited chain, and an
+  estate with one stale role reference gets no answer instead of a partial one. Cycles and
+  nesting are both handled properly, so this is the only gap of its kind.
+
+  Not reproduced against real data, and the impact on the screens has not been traced —
+  establish how often a missing role actually occurs before changing behaviour. If it is
+  changed, the partial answer has to say which role was unreadable, or it becomes a silent
+  undercount, which is worse than the error.
+
 - **An owner's cookbook summary reports every cookbook untested, silently.** Found while
   mining the abandoned ownership plan on 2026-08-04, not by anybody using the app.
   `internal/datastore/owners.go:710-711` and `:776-777` query `cookbook_complexity` and

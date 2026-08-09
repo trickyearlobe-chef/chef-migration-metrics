@@ -38,3 +38,19 @@ recent data, say so — do not let absence of evidence render as a pass.
 I can go from "forty thousand servers" to "these are the ones I have to deal with this
 week, and here is why" without opening a single machine, and the pile I set aside as gone
 does not come back to haunt me next month.
+
+## What proves it
+
+Telling the three states apart is pinned by [the tier
+contract](internal/staleness/staleness_test.go#TestComputeTier). That a blocked machine can
+never come back as ready is pinned by [the compatibility
+contract](internal/analysis/readiness_test.go#TestCheckCookbookCompatibility_BlockedAlwaysIncompatible).
+
+"Colour alone is not enough" is checked only through a stand-in: [the status
+icons](frontend/src/components/CheckStatusIcons.test.tsx) are asserted to carry a spoken
+label and a distinct overlay shape, not just a colour. That is evidence the information
+survives without colour, not proof it is readable.
+
+**Nothing proves the part that matters most** — that the list is usable at a glance across
+tens of thousands of rows without opening anything. That is a judgement made by looking at
+it, and no assertion stands in for it.

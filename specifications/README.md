@@ -25,6 +25,33 @@ so nothing can tell you when they stop being true.
 
 Links into `archive/` are blocked. That material is historical.
 
+## Naming a test is required
+
+Every journey must link at least one test, and the commit is blocked otherwise. This is
+what replaces a status line. Nothing here says built or shipped — the journey names the test
+that proves it, and if that test is red the journey is not proven, which is visible without
+anybody maintaining a sentence that claims otherwise.
+
+**Name a test that already exists, next to the code it pins, wherever one does.** Every
+journey here does, and those tests run in the ordinary suite and are green. Nothing separate
+was built, because nothing needed building — a contract belongs next to its code, and moving
+it somewhere labelled "journeys" would be a second home for the same assertion.
+
+The case that needs a different answer is a property with **no** test: the journey should be
+able to name a red one and have that mean "not proven yet" rather than a broken build. That
+would need its own build tag and make target, following the pattern the database-backed tests
+already use. It has not been needed yet, so it has not been built — if you are writing a
+journey whose central property nothing asserts, that is the point to build it rather than to
+link the closest passing test and let it read as proof.
+
+**One resolving link satisfies the rule.** It is deliberately not a coverage rule: much of
+what a journey promises cannot carry an assertion, and a rule demanding a test per claim gets
+met with tests that assert nothing — worse than no test, because it looks proven.
+
+**So each journey also says which parts nothing can prove.** That part is not enforced,
+because no check can tell an honest admission from a silent omission. It is the half of the
+convention that depends on the writer.
+
 ## Why
 
 Two rules explain the rest:

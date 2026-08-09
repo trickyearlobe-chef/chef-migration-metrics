@@ -33,3 +33,30 @@ nothing. Small and scoped, or not at all.
 
 I can name the handful of fixes that between them unblock most of the estate, and say how
 many machines each one frees, without building it by hand from a list of servers.
+
+## What proves it
+
+The chain being followed all the way down — the part nobody holds in their head — is pinned
+by [nested role
+expansion](internal/nodekitchen/runlist_test.go#TestExpandRunList_NestedRoles), so what a role
+inherits from roles inside it is counted rather than stopping at the first level. A role that
+includes itself, directly or round a longer loop, [does not recurse
+forever](internal/nodekitchen/runlist_test.go#TestExpandRunList_CycleDetection). That a
+blocked cookbook cannot come back as compatible anywhere in that chain is pinned by [the
+compatibility
+contract](internal/analysis/readiness_test.go#TestCheckCookbookCompatibility_BlockedAlwaysIncompatible).
+
+**One role we cannot read loses the whole chain.** A role that is referenced but not found
+[fails the expansion outright](internal/nodekitchen/runlist_test.go#TestExpandRunList_MissingRole)
+rather than resolving what it can and saying which part is missing. For a journey whose whole
+value is seeing the chain, one unreadable role means no answer instead of a partial one — and a
+partial answer with a gap named in it would be more use here.
+
+**Nothing proves the counting.** How many machines a role carries, and therefore the ranking of
+which fix frees the most, is not asserted anywhere. Nor is "a role is only as good as its worst
+dependency" pinned as a roll-up rule; what is pinned is that the chain is fully walked and that
+a blocked cookbook stays blocked, which is the input that rule needs rather than the rule
+itself.
+
+**Nothing proves the judgement about the picture** — that a scoped chain is worth drawing and
+the whole estate is not. That is a decision to keep, not a property to test.

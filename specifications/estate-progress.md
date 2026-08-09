@@ -37,3 +37,23 @@ set centrally, shown so I know which one I am looking at.
 I can answer "how far through are we, and did it move this month" from one screen, without
 exporting anything, and I am willing to put the number in front of the board without
 caveating it.
+
+## What proves it
+
+The observation side — what the machines are really running — is pinned by [the deployment
+cards](frontend/src/pages/dashboard/DeploymentCards.test.tsx). Two of its assertions matter
+to this journey directly. A converge state that nothing has reached yet stays visible rather
+than dropping out of the legend, so a rollout that has not started cannot be mistaken for one
+that is finished. And the states are keyed on what the machines actually report rather than on
+what the screen calls them, which is what stops a renamed label quietly changing a number in a
+board pack.
+
+**Nothing proves the promise the journey opens with.** That every axis starts at zero, that
+analysis is never presented as observation, and that the number is one the lead is willing to
+defend — none of those are asserted anywhere. They are properties of a drawing and of a
+person's confidence in it, checked by looking at the screen before it goes in front of a
+board.
+
+**The load-bearing assumption:** that the prediction and the observation are never summed or
+averaged into a single "percent complete". Nothing stops that being done in a future change,
+and the journey says it would make a stalled rollout look solved.
