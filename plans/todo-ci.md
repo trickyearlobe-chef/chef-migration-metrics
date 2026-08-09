@@ -4,18 +4,6 @@ Tiered scan policy shipped in PR #49 (`ci: tiered supply-chain scanning +
 SHA-pin all actions`) and follow-on merges. The implementation details live in
 git history; only the open items remain here.
 
-## 0. `golang.org/x/text` v0.38.0 — the one thing `make scan-trivy` is red on
-CVE-2026-56852, denial of service, fixed in 0.39.0. Indirect (`go.mod:42`), and
-govulncheck reports it as required-but-not-called, so nothing in our code reaches
-it — which is why no CI gate fails on it. `make scan-trivy` does fail, being
-deliberately stricter than CI on purpose.
-
-Either bump it — with the supply-chain check the dependency rule requires, and it
-is likely a transitive bump rather than a direct one — or waive it in
-`.trivyignore.yaml` with a dated not-reachable rationale, the way the nanoid entry
-is written. Doing neither leaves a permanently red local target, which is how a
-scan stops being read.
-
 ## 1. Promote MEDIUM npm gate to blocking
 The Trivy npm production-dep gate fails on HIGH/CRITICAL; MEDIUM is staged behind
 `continue-on-error`. Promote it to blocking once the two pending fixable mediums
