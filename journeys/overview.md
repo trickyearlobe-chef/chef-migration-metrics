@@ -48,9 +48,12 @@ set centrally.
 | [Keeping the data flowing](service-collection.md) | Is it still collecting, and would I know? |
 | [Diagnosing a box I cannot reach](service-diagnosis.md) | What do I send support, and is it safe to send? |
 | [Not losing it](service-continuity.md) | Can I restore, and can I upgrade without loss? |
+| [Working all day](working-all-day.md) | Can I just get on with it for eight hours? |
 
 All 48 routes in the application map to a journey above, checked by listing them against this
-table rather than assumed.
+table rather than assumed. [Working all day](working-all-day.md) has no route of its own — it is
+the journey that holds what must be true on **every** screen, so a rule binding all of them has
+somewhere to live other than an arbitrary one.
 
 **Six capabilities have no route at all**, and are covered only in prose inside these journeys:
 certificates renewing themselves, collection running on a schedule, receiving pushed telemetry,
