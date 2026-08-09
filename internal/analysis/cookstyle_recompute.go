@@ -19,8 +19,8 @@ import (
 // WHATEVER classification is current at recompute time. This is what lets a trend
 // point captured after fingerprint history ships be recomputed under today's
 // criteria after a reclassification (no rescan). See
-// specifications/estate-progress.md and
-// specifications/scan-trust.md.
+// journeys/estate-progress.md and
+// journeys/scan-trust.md.
 
 // DeriveStatusFromFingerprint re-derives the rollup status from a result's stored
 // offence fingerprint under the given resolver. It is exactly the scan-time
@@ -165,7 +165,7 @@ func FingerprintValidAt(rows []datastore.CookstyleOffenceFingerprint, t time.Tim
 // complexity from its fingerprint valid at time t, under the given resolver, and
 // aggregates them. Membership is the supplied set of histories (bounded to CURRENT
 // membership — membership-at-T history does not exist; see
-// specifications/estate-progress.md). The resolver must be
+// journeys/estate-progress.md). The resolver must be
 // the one for the members' target version.
 func RecomputeRollupAt(histories []ResultFingerprintHistory, t time.Time, resolver *CopClassificationResolver) RecomputedRollup {
 	var out RecomputedRollup

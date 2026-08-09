@@ -26,7 +26,7 @@ import (
 //
 // A person's verdict on whether a cookbook actually works on the target
 // version, recorded with a reason. It exists because the automated signals are
-// wrong in both directions. Behaviour: specifications/human-verdict.md.
+// wrong in both directions. Behaviour: journeys/human-verdict.md.
 // ---------------------------------------------------------------------------
 
 const failureRegisterPrefix = "/api/v1/failure-register"

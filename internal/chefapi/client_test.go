@@ -2782,7 +2782,7 @@ func TestNodeSearchAttributes_FilesystemIsNotNarrowed(t *testing.T) {
 	//
 	// Before narrowing again, validate the shape distribution across the whole
 	// fleet from node_snapshots — see the census requirement in
-	// specifications/service-collection.md. A single node, or a lab
+	// journeys/service-collection.md. A single node, or a lab
 	// running current Chef, is not evidence about a heterogeneous estate.
 	attrs := NodeSearchAttributes()
 

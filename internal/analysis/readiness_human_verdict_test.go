@@ -12,7 +12,7 @@ import (
 
 // ---------------------------------------------------------------------------
 // A person's verdict is a third source inside the existing rollup, not a
-// parallel list. Behaviour: specifications/human-verdict.md.
+// parallel list. Behaviour: journeys/human-verdict.md.
 //
 // The automated signals are wrong in both directions — CookStyle marks
 // cookbooks blocked that demonstrably run fine, and Test Kitchen reports the

@@ -31,10 +31,10 @@ Open: Phase 5 (staleness/freshness), Phase 8 (performance).
 
 ### Re-specify Data Exports
 
-The current `specifications/data-export.md` defines three mechanisms (webhook push, Elasticsearch NDJSON, direct Logstash) that lack a coherent story. Before implementing, rewrite the spec to answer:
+The current `journeys/data-export.md` defines three mechanisms (webhook push, Elasticsearch NDJSON, direct Logstash) that lack a coherent story. Before implementing, rewrite the spec to answer:
 
 - [ ] Decide what export formats are actually needed: CSV for ad-hoc analysis, NDJSON for Logstash/Kibana, webhook push, or some combination
 - [ ] Decide whether Elasticsearch export is file-based (Logstash reads) or direct API push — current spec tries to cover both
 - [ ] Define what data is exported and in what shape (which entities, which fields, one-time snapshot vs. incremental)
 - [ ] Clarify the UI story: is the Exports page for one-off human downloads (CSV/JSON), background pipeline export (Elasticsearch), or both?
-- [ ] Update or replace `specifications/data-export.md` with the agreed design before any implementation
+- [ ] Update or replace `journeys/data-export.md` with the agreed design before any implementation

@@ -5,7 +5,7 @@
 -- It exists because the automated signals are wrong in both directions —
 -- CookStyle marks cookbooks blocked that demonstrably run fine, and Test
 -- Kitchen reports the test environment falling over as a cookbook that does
--- not work. Behaviour is specifications/human-verdict.md.
+-- not work. Behaviour is journeys/human-verdict.md.
 
 CREATE TABLE failure_register_entries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

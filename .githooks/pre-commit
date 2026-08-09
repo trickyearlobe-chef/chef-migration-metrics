@@ -296,9 +296,9 @@ for file in "${STAGED_FILES[@]}"; do
   esac
 done
 # ---------------------------------------------------------------------------
-# 4. Specifications are user journeys, not technical documents
+# 4. Journeys, not specifications
 # ---------------------------------------------------------------------------
-# A spec answers four questions in the words the person would use: who they
+# A journey answers four questions in the words the person would use: who they
 # are and what they are trying to get done, what must be true for them to
 # succeed, what they see or do, and how they would know it worked.
 #
@@ -307,7 +307,7 @@ done
 # code that defines it. A technical claim written in prose is a copy that
 # nothing re-validates — it rots, and is then believed.
 #
-# A spec MAY point at the code or test that owns a contract, but only as a
+# A journey MAY point at the code or test that owns a contract, but only as a
 # markdown link, because a link can be checked:
 #
 #     the verdict is pinned by [the derivation contract](internal/analysis/semantic_contracts_test.go#TestContract_CookstyleStatus_StaleIsUnknown)
@@ -319,13 +319,13 @@ done
 # are unresolvable, so nothing can tell you when they stop being true.
 #
 # This is enforced rather than advised because advising it did not work: the
-# warning sat at the top of the spec index and twice in CLAUDE.md, and the
-# specs drifted anyway. The retired corpus is in the tag
+# warning sat at the top of the journey index and twice in CLAUDE.md, and the
+# the specs drifted anyway. The retired corpus is in the tag
 # specifications-retired-2026-08-04 if the history is ever needed.
-SPEC_LINE_LIMIT=200
+JOURNEY_LINE_LIMIT=200
 
 # Report the first few offending lines for a pattern, and block the commit.
-spec_block() {
+journey_block() {
   local file="$1" pattern="$2" reason="$3" content="$4" hits
   hits=$(printf '%s\n' "$content" | grep -nE "$pattern" | head -3) || true
   if [[ -n "$hits" ]]; then
@@ -334,7 +334,7 @@ spec_block() {
   fi
 }
 
-spec_warn() {
+journey_warn() {
   local file="$1" pattern="$2" reason="$3" content="$4" hits
   hits=$(printf '%s\n' "$content" | grep -nE "$pattern" | head -3) || true
   if [[ -n "$hits" ]]; then
@@ -345,17 +345,17 @@ spec_warn() {
 
 for file in "${STAGED_FILES[@]}"; do
   case "$file" in
-    specifications/README.md) continue ;;   # states the rule; exempt from it
-    specifications/*.md) ;;
+    journeys/README.md) continue ;;   # states the rule; exempt from it
+    journeys/*.md) ;;
     *) continue ;;
   esac
 
-  spec_content=$(git show ":$file" 2>/dev/null) || continue
-  [[ -z "$spec_content" ]] && continue
+  journey_content=$(git show ":$file" 2>/dev/null) || continue
+  [[ -z "$journey_content" ]] && continue
 
-  lines=$(printf '%s\n' "$spec_content" | wc -l | tr -d ' ')
-  if [[ $lines -gt $SPEC_LINE_LIMIT ]]; then
-    block "$file" "spec is ${lines} lines (limit ${SPEC_LINE_LIMIT}) — a journey is short; if it needs more, the detail belongs in tests or is a second journey"
+  lines=$(printf '%s\n' "$journey_content" | wc -l | tr -d ' ')
+  if [[ $lines -gt $JOURNEY_LINE_LIMIT ]]; then
+    block "$file" "journey is ${lines} lines (limit ${JOURNEY_LINE_LIMIT}) — a journey is short; if it needs more, the detail belongs in tests or is a second journey"
   fi
 
   # ---- the journey must name a test ---------------------------------------
@@ -372,9 +372,9 @@ for file in "${STAGED_FILES[@]}"; do
   # which is worse than no test because it looks proven. The journey says in
   # prose which parts nothing can prove; no check can tell an honest admission
   # from a silent omission, so that part is not enforced.
-  spec_tests=$(printf '%s\n' "$spec_content" | grep -oE '\]\([^)]+\)' \
+  journey_tests=$(printf '%s\n' "$journey_content" | grep -oE '\]\([^)]+\)' \
     | grep -cE '_test\.go|\.test\.(ts|tsx)|/test-[A-Za-z0-9_-]+\.sh') || true
-  if [[ "$spec_tests" -eq 0 ]]; then
+  if [[ "$journey_tests" -eq 0 ]]; then
     block "$file" "journey names no test — link one test that proves part of it, and say in prose which parts nothing can prove; a red test is the point, it means 'not proven yet'"
   fi
 
@@ -386,7 +386,7 @@ for file in "${STAGED_FILES[@]}"; do
     case "$target" in
       http://*|https://*|mailto:*|'#'*) continue ;;
       archive/*)
-        block "$file" "spec links into archive/ — that material is historical and not authoritative; link the code or test that owns this instead"
+        block "$file" "journey links into archive/ — that material is historical and not authoritative; link the code or test that owns this instead"
         continue ;;
     esac
     ref_path="${target%%#*}"
@@ -398,13 +398,13 @@ for file in "${STAGED_FILES[@]}"; do
     if [[ -e "$(dirname "$file")/$ref_path" ]]; then
       ref_path="$(dirname "$file")/$ref_path"
     elif [[ ! -e "$ref_path" ]]; then
-      block "$file" "spec references '${ref_path}', which does not exist — fix the reference in the change that moved it"
+      block "$file" "journey references '${ref_path}', which does not exist — fix the reference in the change that moved it"
       continue
     fi
     if [[ -n "$ref_sym" ]] && ! grep -qF -- "$ref_sym" "$ref_path" 2>/dev/null; then
-      block "$file" "spec references '${ref_sym}' in ${ref_path}, which no longer contains it — fix the reference in the change that renamed it"
+      block "$file" "journey references '${ref_sym}' in ${ref_path}, which no longer contains it — fix the reference in the change that renamed it"
     fi
-  done < <(printf '%s\n' "$spec_content" | grep -oE '\]\([^)]+\)' | sed -E 's/^\]\(//; s/\)$//')
+  done < <(printf '%s\n' "$journey_content" | grep -oE '\]\([^)]+\)' | sed -E 's/^\]\(//; s/\)$//')
 
   # ---- prose checks -------------------------------------------------------
   # Link constructs are removed first: a checked reference is allowed to name a
@@ -419,7 +419,7 @@ for file in "${STAGED_FILES[@]}"; do
   #
   # Each removed link leaves behind exactly the newlines it contained, so the
   # line numbers reported below still match the file the author is looking at.
-  spec_prose=$(printf '%s\n' "$spec_content" | awk '
+  journey_prose=$(printf '%s\n' "$journey_content" | awk '
     BEGIN { RS = "\1" }                 # no \1 in text, so the record is the file
     {
       s = $0; out = ""
@@ -434,33 +434,33 @@ for file in "${STAGED_FILES[@]}"; do
       printf "%s%s", out, s
     }')
 
-  spec_block "$file" '^```' \
-    "code fence in a spec — a contract belongs in a test, and code is the source of truth for everything else" \
-    "$spec_prose"
+  journey_block "$file" '^```' \
+    "code fence in a journey — a contract belongs in a test, and code is the source of truth for everything else" \
+    "$journey_prose"
 
-  spec_block "$file" '(^|[^A-Za-z0-9_/.])(internal|cmd|frontend|migrations|scripts)/|[A-Za-z0-9_-]+\.(go|ts|tsx|jsx|sql|rb)([^A-Za-z0-9]|$)' \
-    "unchecked source path in a spec — make it a markdown link so a rename fails the commit, or describe what the person does instead" \
-    "$spec_prose"
+  journey_block "$file" '(^|[^A-Za-z0-9_/.])(internal|cmd|frontend|migrations|scripts)/|[A-Za-z0-9_-]+\.(go|ts|tsx|jsx|sql|rb)([^A-Za-z0-9]|$)' \
+    "unchecked source path in a journey — make it a markdown link so a rename fails the commit, or describe what the person does instead" \
+    "$journey_prose"
 
-  spec_block "$file" '(SELECT[[:space:]]+.*[[:space:]]FROM|CREATE[[:space:]]+TABLE|ALTER[[:space:]]+TABLE|INSERT[[:space:]]+INTO|(LEFT|INNER|OUTER)[[:space:]]+JOIN)' \
-    "SQL in a spec — the schema is owned by the migrations and the code" \
-    "$spec_prose"
+  journey_block "$file" '(SELECT[[:space:]]+.*[[:space:]]FROM|CREATE[[:space:]]+TABLE|ALTER[[:space:]]+TABLE|INSERT[[:space:]]+INTO|(LEFT|INNER|OUTER)[[:space:]]+JOIN)' \
+    "SQL in a journey — the schema is owned by the migrations and the code" \
+    "$journey_prose"
 
-  spec_block "$file" '(GET|POST|PUT|PATCH|DELETE)[[:space:]]+/[a-z]' \
-    "HTTP endpoint in a spec — the API is owned by the handlers" \
-    "$spec_prose"
+  journey_block "$file" '(GET|POST|PUT|PATCH|DELETE)[[:space:]]+/[a-z]' \
+    "HTTP endpoint in a journey — the API is owned by the handlers" \
+    "$journey_prose"
 
-  spec_block "$file" '[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\(|[a-zA-Z_][a-zA-Z0-9_]*\(\)' \
-    "unchecked function reference in a spec — link the test that pins it, or write it as a test that fails when it stops being true" \
-    "$spec_prose"
+  journey_block "$file" '[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\(|[a-zA-Z_][a-zA-Z0-9_]*\(\)' \
+    "unchecked function reference in a journey — link the test that pins it, or write it as a test that fails when it stops being true" \
+    "$journey_prose"
 
-  spec_block "$file" '`[A-Za-z0-9]+(_[A-Za-z0-9]+)+`|`[a-z0-9]+(\.[a-z0-9_]+)+`' \
-    "code identifier in a spec (table, column or config key) — say what the person sees, not what it is called in code" \
-    "$spec_prose"
+  journey_block "$file" '`[A-Za-z0-9]+(_[A-Za-z0-9]+)+`|`[a-z0-9]+(\.[a-z0-9_]+)+`' \
+    "code identifier in a journey (table, column or config key) — say what the person sees, not what it is called in code" \
+    "$journey_prose"
 
-  spec_warn "$file" '`[A-Za-z0-9]*[a-z0-9]([A-Z][A-Za-z0-9]*)+`' \
+  journey_warn "$file" '`[A-Za-z0-9]*[a-z0-9]([A-Z][A-Za-z0-9]*)+`' \
     "backticked CamelCase — fine if it is a product name the person would say, a symbol if it is not" \
-    "$spec_prose"
+    "$journey_prose"
 done
 
 # ---------------------------------------------------------------------------
@@ -469,7 +469,7 @@ done
 if [[ $BLOCKED -gt 0 ]]; then
   echo "" >&2
   printf "${RED}✗ Commit blocked: %d issue(s) found in staged files.${RESET}\n" "$BLOCKED" >&2
-  echo "  Review the files above (secrets, denied patterns, or oversized specs) before committing." >&2
+  echo "  Review the files above (secrets, denied patterns, or oversized journeys) before committing." >&2
   echo "  If you are certain these are safe, use: git commit --no-verify" >&2
   echo "" >&2
   exit 1

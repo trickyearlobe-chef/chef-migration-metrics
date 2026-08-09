@@ -4,7 +4,7 @@ The feature is IMPLEMENTED and in use: config-store-backed credential store
 (`internal/configstore/credential_adapter.go`), `CredentialResolver`
 (`internal/secrets/resolver.go`, DB→env→file precedence), encryption + zeroing,
 admin-status reporting, packaging perms (nfpm), and spec docs
-(`specifications/secrets-storage*.md`). Remaining = tests, doc-surfacing, startup
+(`journeys/secrets-storage*.md`). Remaining = tests, doc-surfacing, startup
 hardening, and one display-only bug. Sourcing model: only minimal values come from
 env/`config.yaml`; client keys live in the DB via the UI (see
 [[credential-sourcing-model]]) — env-var sourcing for client keys is out of scope.
@@ -60,7 +60,7 @@ env/`config.yaml`; client keys live in the DB via the UI (see
 
 - [ ] Surface a secrets-management section in the top-level `README.md`. Today it covers
   commit-prevention only and links out to the spec (`README.md:507-532`); the runtime
-  model + procedures live in `specifications/secrets-storage-*.md` but aren't surfaced.
+  model + procedures live in `journeys/secrets-storage-*.md` but aren't surfaced.
 - [ ] `deploy/docker-compose`: add `CMM_CREDENTIAL_ENCRYPTION_KEY=` placeholder to
   `.env.example` and a key-generation command to `README.md` (the RPM/DEB `env-file`
   already has the placeholder — `deploy/pkg/env-file:20`).

@@ -160,7 +160,7 @@ type AnalysisToolsConfig struct {
 	// cop classes) on the app host to load into every scan. Entries may be
 	// files, directories (expanded to *.rb), or globs. Trust boundary is
 	// deploying the app — addon cops are never web-uploaded. See
-	// specifications/scan-trust.md.
+	// journeys/scan-trust.md.
 	CookstyleAddonCopPaths    []string          `yaml:"cookstyle_addon_cop_paths" json:"cookstyle_addon_cop_paths"`
 	TestKitchenTimeoutMinutes int               `yaml:"test_kitchen_timeout_minutes"`
 	TestKitchen               TestKitchenConfig `yaml:"test_kitchen"`
@@ -596,7 +596,7 @@ func (pc PerformanceConfig) IsEnabled() bool {
 // ---------------------------------------------------------------------------
 
 // IngestConfig controls the passive POST /api/v1/ingest receiver for Chef run
-// telemetry (see specifications/run-history.md). Disabled by default — it is
+// telemetry (see journeys/run-history.md). Disabled by default — it is
 // an unauthenticated inbound endpoint (MVP tech debt) and must be opt-in.
 type IngestConfig struct {
 	Enabled           *bool `yaml:"enabled"`

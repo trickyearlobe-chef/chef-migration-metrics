@@ -12,7 +12,7 @@ would have destroyed the history it exists to create (see Fatal flaw below).
 
 ## This implements an existing contract
 
-`specifications/semantic-contracts.md` § 10 "Collection Run Gating" already specifies:
+`journeys/semantic-contracts.md` § 10 "Collection Run Gating" already specifies:
 each run gets a unique `run_id`; metric snapshots reference it; only COMPLETE runs feed
 trend queries. This is unimplemented spec, not new design. Treat § 10 as the acceptance
 target.
@@ -58,7 +58,7 @@ id and must fail loudly if it would affect more than one row.**
   `failed` (`:377-383`) and creates a new one (`:395`). Nothing "continues the same row".
 - **`checkpoint_start` is vestigial.** Never written — `collector.go:1015-1019` omits the
   field, so it is always 0; read only for a log message (`:377-378`). Note this is a spec
-  divergence: `specifications/data-collection.md:266-267` mandates page-level checkpointing
+  divergence: `journeys/data-collection.md:266-267` mandates page-level checkpointing
   that does not exist. Do not derive constraints from that spec section.
 - **`GetLatestCollectionRun` already orders correctly** — `ORDER BY started_at DESC LIMIT 1`
   (`collection_runs.go:347-348`). So do `ListCollectionRuns` (`:384-394`) and the filtered
@@ -198,9 +198,9 @@ bundle stays bounded; no consumer reads a duration that excludes most of the run
 
 **Depends on:** A–C.
 
-Update: `specifications/semantic-contracts.md` § 10 (mark the contract implemented),
-`specifications/data-collection.md:236-288` (lifecycle, crash recovery, and the
-checkpoint/resume divergence), `specifications/diagnostic-bundle.md:41` ("current run status
+Update: `journeys/semantic-contracts.md` § 10 (mark the contract implemented),
+`journeys/data-collection.md:236-288` (lifecycle, crash recovery, and the
+checkpoint/resume divergence), `journeys/diagnostic-bundle.md:41` ("current run status
 per org" becomes false).
 
 ---

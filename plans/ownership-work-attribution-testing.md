@@ -137,7 +137,7 @@ All against `mockStore` unless stated.
 ### Chunk C
 
 Take the scrub and signature vectors and their idempotence property from
-`specifications/failure-register.md`, which already holds the contract; this plan must not restate them.
+`journeys/failure-register.md`, which already holds the contract; this plan must not restate them.
 Beyond those:
 
 - Repeat signature increments `occurrence_count` and leaves `diagnosis` untouched; the upsert fills

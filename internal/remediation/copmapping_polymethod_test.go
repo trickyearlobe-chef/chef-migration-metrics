@@ -11,7 +11,7 @@ import (
 // ---------------------------------------------------------------------------
 // LookupCopForOffense — poly-method cops (one cop_name, several unrelated
 // deprecations discriminated by the offence message). See
-// specifications/scan-trust.md.
+// journeys/scan-trust.md.
 // ---------------------------------------------------------------------------
 
 func TestLookupCopForOffense_DeprecatedClassMethods_Removed(t *testing.T) {

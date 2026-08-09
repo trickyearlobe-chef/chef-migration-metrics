@@ -6,9 +6,9 @@ Trend graphs show data broken down by staleness tier. Fresh-node readiness inclu
 
 ## Specs to Read
 
-- `specifications/enriched-metric-snapshots.md` (primary)
-- `specifications/staleness-tiers.md` (staleness computation)
-- `specifications/semantic-contracts.md` (canonical definitions)
+- `journeys/enriched-metric-snapshots.md` (primary)
+- `journeys/staleness-tiers.md` (staleness computation)
+- `journeys/semantic-contracts.md` (canonical definitions)
 
 ## Steps
 

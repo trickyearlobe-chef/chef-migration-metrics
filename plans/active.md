@@ -177,12 +177,12 @@ Work order and journeys live in that plan; per-chunk scope lives in
 **Chunks 1–3 are partly built.** Identity and alias management and the failure register are
 shipped. **Owner ingest is not: it reads a file, and the SQL source has never been built.**
 Recording it as shipped is what hid the gap — the open item was in `todo-ownership.md` all
-along. Behaviour lives in `specifications/ownership-intake.md`, `ownership-identity.md` and
+along. Behaviour lives in `journeys/ownership-intake.md`, `ownership-identity.md` and
 `failure-register.md`. Three decisions from those chunks still bind:
 
 - Ingest **creates** unresolved people rather than rejecting the row, and a fuzzy candidate does
   not reject it either. Correction is deferred to the point of use, by design.
-- **Read `specifications/ownership-identity.md` § Proposed before extending aliases.**
+- **Read `journeys/ownership-identity.md` § Proposed before extending aliases.**
   `alias_type` conflates what shape an identifier is with where it came from, and uniqueness
   includes the provenance, so one address can belong to two owners. Recorded, not fixed.
 - A human verdict in the failure register **outranks CookStyle and Test Kitchen** and joins the

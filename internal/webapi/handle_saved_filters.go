@@ -13,7 +13,7 @@ import (
 )
 
 // Saved filters are a named, owned selection in a list view's own filter
-// vocabulary (see specifications/named-cohorts.md). Applying one needs no
+// vocabulary (see journeys/named-cohorts.md). Applying one needs no
 // endpoint: the client holds the params and issues the view's existing list
 // request, so the read path stays unchanged and a saved filter can never
 // diverge from what the view natively supports.

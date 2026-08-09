@@ -149,6 +149,6 @@ provisioning a TK VM. It is a **pre-filter**, never a verdict.
 
 - `scripts/cop-validation/` — the cop-blocker harness (validates the cop set).
 - `plans/todo-tech-debt.md` — over-claim demotions + harness productionise items.
-- `specifications/dual-compatibility-signals.md` — CS vs TK separation (this adds a
+- `journeys/dual-compatibility-signals.md` — CS vs TK separation (this adds a
   CS-side dynamic pre-filter; TK stays the converge signal).
 - [[cmm-validation-box]], [[kitchen-setup-hooks-requirement]].

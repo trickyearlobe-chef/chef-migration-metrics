@@ -6,7 +6,7 @@ package analysis
 // CookStyle rollup status — the classification-derived, single-source-of-truth
 // verdict for a cookbook / repo / node × target version. These wire values are
 // consumed by every read surface (lists, summary cards, detail headers, node
-// readiness, exports, trends). See specifications/scan-trust.md
+// readiness, exports, trends). See journeys/scan-trust.md
 // (CookStyle Rollup Status).
 const (
 	StatusReady       = "ready"        // 🟢 no blockers, no review-level offenses
@@ -20,7 +20,7 @@ const (
 // SeverityFatal is the cookstyle severity for a file that will not parse (a
 // syntax/parse failure). It is surfaced as a separate "won't parse — fix first"
 // data-quality flag carried ALONGSIDE the rollup status, never folded into the
-// migration classification (see specifications/scan-trust.md,
+// migration classification (see journeys/scan-trust.md,
 // Pass/Fail Determination).
 const SeverityFatal = "fatal"
 
@@ -57,7 +57,7 @@ func DeriveCookstyleStatus(offenses []CookstyleOffense, resolver *CopClassificat
 	// This is the authoritative current-state status. The message-free
 	// fingerprint recompute path (DeriveStatusFromFingerprint) keys on cop name
 	// and is the documented poly-method exception for recomputed historical trend
-	// points only (see specifications/scan-trust.md).
+	// points only (see journeys/scan-trust.md).
 	hasReview := false
 	for i := range offenses {
 		switch resolver.ResolveOffense(offenses[i].CopName, offenses[i].Message).Classification {

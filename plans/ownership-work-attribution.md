@@ -173,7 +173,7 @@ records by similarity must be bounded per row and computed away from the request
 canonicalised projection instead. **Narrowed 2026-08-02:** storing unbounded text is not the risk
 — a btree entry is capped at roughly a third of a page, so the failure is a hard write error and
 it only occurs if the text reaches an *index or unique constraint*. The rule and the
-canonicalisation are normative in `specifications/failure-register.md` § Storing the evidence.
+canonicalisation are normative in `journeys/failure-register.md` § Storing the evidence.
 
 **Migration numbers are assigned centrally, in this plan.** A duplicate version hard-errors at
 startup before anything applies, and the runner silently skips any version at or below what a
@@ -228,7 +228,7 @@ against reality rather than against fixtures we invented.
    only available measure of what the automated signals **miss**. It needs no matching: a
    handful of entries assigned by hand is the whole of the ownership requirement.
 
-   Behaviour is `specifications/failure-register.md`. **Two-sided, confirmed by the product
+   Behaviour is `journeys/failure-register.md`. **Two-sided, confirmed by the product
    owner 2026-08-02:** it records a failure nothing detected *and* overrules a wrong automated
    verdict, both with a mandatory reason. It is a third verdict source in the existing readiness
    rollup, not a parallel list.

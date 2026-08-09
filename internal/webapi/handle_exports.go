@@ -19,7 +19,7 @@ import (
 // (nodes, cookbooks, roles, git_repos), track async jobs, and serve downloads.
 // The export carries the SAME query params as the corresponding list endpoint
 // and runs the SAME datastore query, so it reproduces the filtered list exactly.
-// Why that matters to the person using it: specifications/named-cohorts.md.
+// Why that matters to the person using it: journeys/named-cohorts.md.
 // ---------------------------------------------------------------------------
 
 // exportJobResponse is the JSON envelope returned for export job status.

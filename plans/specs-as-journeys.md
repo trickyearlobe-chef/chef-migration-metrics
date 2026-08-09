@@ -18,7 +18,7 @@ mechanism has to be structural.
 - **A contract is a test.** Anything of the form "X must equal Y" belongs in a test that
   fails when it stops being true. If it cannot be written as a failing test it was never a
   contract.
-- **`specifications/` records what was built.** Intent and backlog live in `plans/`. A
+- **`journeys/` records what was built.** Intent and backlog live in `plans/`. A
   journey only qualifies if the capability is reachable in the running app.
 - **No status claims in prose.** Nothing says built, shipped, planned or proposed. The
   stalest line in the best document we had was its status line.
@@ -76,7 +76,7 @@ A grep scoped to source files reported the tidy number.
 - **Nothing checks code→spec.** The hook resolves a journey's references to code; a code change
   that invalidates an untouched journey passes. That gap was demonstrated during this work —
   a corpus-wide check appeared to pass when it had in fact examined nothing, because staging an
-  unmodified file stages nothing. A check that reads `specifications/` directly rather than the
+  unmodified file stages nothing. A check that reads `journeys/` directly rather than the
   staged set would close it.
 - **`plans/` still feeds planning the way the specs did** — 6,954 lines including 577 of tech
   debt. The cheap mechanical version is to require every file reference in a plan to resolve, so

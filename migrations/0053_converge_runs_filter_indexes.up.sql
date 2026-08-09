@@ -1,5 +1,5 @@
 -- Run events view: indexes for the run-centric top-level list over converge_runs
--- (see specifications/run-history.md). The existing
+-- (see journeys/run-history.md). The existing
 -- idx_converge_runs_org_node_time serves the per-node Runs tab (org + node
 -- lookup); the global Run events list filters/sorts differently:
 --

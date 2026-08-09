@@ -18,7 +18,7 @@ import (
 // top-level view over converge_runs. Every field is view-level and sourced from
 // converge_runs itself — the organisation filter here is the delivered org NAME,
 // NOT the global organisations-table org filter (which never contains
-// ingest-only DMZ orgs; see specifications/run-history.md).
+// ingest-only DMZ orgs; see journeys/run-history.md).
 //
 // The same filter drives two grains: the node rollup (ListConvergeRunNodesFiltered,
 // the top-level list) and the flat run list (ListConvergeRunsFiltered, the

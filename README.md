@@ -243,7 +243,7 @@ At a minimum, configure:
 - PostgreSQL datastore connection URL
 - Git base URLs for cookbook repositories (if applicable)
 
-See the [journey on changing settings](specifications/service-configuration.md) for why
+See the [journey on changing settings](journeys/service-configuration.md) for why
 configuration works the way it does. For the settings themselves:
 
 - Full YAML schema with all available settings
@@ -261,7 +261,7 @@ For each Chef Infra Server organisation, create a dedicated API client:
 knife client create chef-migration-metrics --orgname myorg -f /path/to/keys/myorg.pem
 ```
 
-Grant the client read access to nodes, cookbooks, roles, and environments. See the [journey on keeping the data flowing](specifications/service-collection.md).
+Grant the client read access to nodes, cookbooks, roles, and environments. See the [journey on keeping the data flowing](journeys/service-collection.md).
 
 ### Database Setup
 
@@ -327,7 +327,7 @@ Cop authoring notes:
   admin surface; an addon cop set to Blocker blocks readiness like any built-in
   Blocker, and reclassification takes effect without a rescan.
 
-See the [journey on trusting what the scan says](specifications/scan-trust.md) for why the
+See the [journey on trusting what the scan says](journeys/scan-trust.md) for why the
 classification works this way.
 
 ### Test Kitchen Driver Configuration
@@ -376,7 +376,7 @@ analysis_tools:
 
 Credentials referenced in `driver_secrets` and `transport.password_credential` / `transport.ssh_key_credential` are managed via the **Admin → Credentials** page in the web UI and resolved at test runtime. Plaintext is zeroed from memory after use.
 
-See the [journey on proving a cookbook really runs](specifications/converge-testing.md).
+See the [journey on proving a cookbook really runs](journeys/converge-testing.md).
 
 ### vCenter Platform Map Setup
 
@@ -500,7 +500,7 @@ Per-platform `driver_settings` are merged with the top-level defaults. Platform 
 
 The web UI currently supports **local accounts** with bcrypt password hashing, session-based authentication, and role-based access control with **Admin** and **Viewer** roles.
 
-See the [journey on getting in](specifications/service-access.md).
+See the [journey on getting in](journeys/service-access.md).
 
 > **Planned:** SAML 2.0 authentication is defined in the configuration schema but not yet implemented.
 
@@ -530,7 +530,7 @@ The `.gitignore` file excludes common secret file types (`*.pem`, `*.key`, `.env
 
 ### Credential Management
 
-For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [journey on credentials](specifications/service-secrets.md).
+For details on how the application manages credentials at runtime (encrypted storage, environment variable injection, file-based keys), see the [journey on credentials](journeys/service-secrets.md).
 
 ## Roadmap
 
@@ -542,17 +542,18 @@ The following features are defined in the specifications but not yet implemented
 | Email notifications (SMTP) | Configuration and validation in place; SMTP sender not yet built |
 | SAML 2.0 authentication | Configuration and validation in place; SP logic not yet built (endpoints return 501) |
 
-## Specifications
+## Journeys
 
-Specifications are **user journeys**, not technical documents: who the person is, what they are
+The `journeys/` directory holds **user journeys**, not technical specifications: who the person is, what they are
 trying to get done, what has to be true for them to succeed, and how they would know it worked.
 Contracts live in tests next to the code that owns them, and every journey links at least one.
 
-Start at **[specifications/overview.md](specifications/overview.md)** — the routing index, which
+Start at **[journeys/overview.md](journeys/overview.md)** — the routing index, which
 lists every journey and the question it answers. There is deliberately no second index here,
 because two indexes means one of them is out of date.
 
-The 128 component specifications this replaced were deleted: they asserted tables, endpoints and
+The 128 component specifications this replaced were deleted, and the directory renamed from
+`specifications/` so the old habit has no home to return to: they asserted tables, endpoints and
 configuration flags that did not exist. They are recoverable from the tag
 `specifications-retired-2026-08-04` if the history is ever needed.
 

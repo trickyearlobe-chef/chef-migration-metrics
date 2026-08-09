@@ -22,6 +22,6 @@ the same applies to GitHub Copilot.
   it relies on `.gitignore` (which already covers the generated dirs), so do not
   read into those paths or the tracked-but-noisy ones (`migrations/`,
   `frontend/package-lock.json`) unless the task requires it.
-- To find the right spec, start at `specifications/overview.md` (the routing
+- To find the right journey, start at `journeys/overview.md` (the routing
   index). Large specs are split into a thin `<spec>.md` index plus
   `<spec>-<section>.md` parts — open only the part you need, not a whole spec.

@@ -76,7 +76,7 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 		// Bound to CURRENT membership: intersect the fingerprint feed with the live
 		// result set so a removed-but-still-fingerprinted result (deleted cookbook,
 		// dropped repo) does not over-count earlier points. See
-		// specifications/estate-progress.md.
+		// journeys/estate-progress.md.
 		// When live membership cannot be determined, recompute over the full feed
 		// rather than show nothing (the over-count is bounded and self-heals).
 		if live, ok := liveKeys[tv]; ok {

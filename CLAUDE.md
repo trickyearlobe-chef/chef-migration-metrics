@@ -6,33 +6,32 @@
 ## Constraints
 
 - When a user request conflicts with a NEVER rule, stop and flag the conflict. Do not proceed until the user explicitly confirms. Confirmation applies to that single action only — it does not relax the rule for the rest of the session.
-- No implementation code in CLAUDE.md or specs. That's what TDD is for.
-- Be concise in all generated files (specs, todos, plans) — no preamble or narrative; every line costs retrieval budget.
-- Only read specs, todos, or plans relevant to the current task.
+- No implementation code in CLAUDE.md or journeys. That's what TDD is for.
+- Be concise in all generated files (journeys, todos, plans) — no preamble or narrative; every line costs retrieval budget.
+- Only read journeys, todos, or plans relevant to the current task.
 
 ## Customer Data Protection
 
-- NEVER include real customer names, organisation names, internal hostnames, or other identifying information in any file that will be committed to git. This includes code, tests, specs, plans, comments, commit messages, and documentation.
+- NEVER include real customer names, organisation names, internal hostnames, or other identifying information in any file that will be committed to git. This includes code, tests, journeys, plans, comments, commit messages, and documentation.
 - Use generic placeholders: `example-corp`, `acme`, `x-custom-*`, `customer`, `org-a`, `10.0.0.1`, `user@example.com`.
 - If real customer data is needed for local testing, put it in a file listed in `.gitignore` (e.g. `.git-deny-patterns`, `.env`, `.local/`).
 - A pre-commit hook enforces this by scanning staged files against patterns in `.git-deny-patterns`. Keep that file up to date when new customers are onboarded.
 
 ## Knowledge
 
-- Component specs live in `specifications/` (top-level, flat layout). `specifications/overview.md` is the routing index — start there to find the right spec.
-- Specs are sized for LLM retrieval: keep each under 500 lines (enforced by the pre-commit hook). Split an oversized spec into a thin index (`<spec>.md`, keeping title/TL;DR/Overview/Related plus a stub per moved section) and flat prefixed part files (`<spec>-<section>.md`). Open only the part you need.
+- Journeys live in `journeys/` (top-level, flat layout). `journeys/overview.md` is the routing index — start there. Rules for writing one are under Journeys below.
 - Todos and plans live in `plans/` (todo-*.md for open work, named plans for active tasks).
-- Each component spec is self-contained. Read only what you need for the current task.
-- Background research is available via Nuclia RAG through MCP. Query it when specs are insufficient.
+- Each journey is self-contained. Read only what you need for the current task.
+- Background research is available via Nuclia RAG through MCP. Query it when the journeys are insufficient.
 
 ## Planning
 
 - `plans/active.md` is the single active work plan — what we're doing now, chunked for sessions.
 - `plans/todo-*.md` files are area backlogs — the full inventory of known work.
 - **Workflow**: Pull items from a `todo-*.md` into `active.md` as chunked work. On completion, remove from `active.md` and mark done/remove from the todo.
-- **Done lives in code, not prose**: completed work leaves the plan entirely — "done-ness" is git history + passing tests, never re-asserted in prose. Status checkboxes and "DONE/merged" notes rot and cause stale-audit drift. Record *decisions* (the why) in the spec's intent or a short decisions note; never leave *status* claims that nothing re-validates.
+- **Done lives in code, not prose**: completed work leaves the plan entirely — "done-ness" is git history + passing tests, never re-asserted in prose. Status checkboxes and "DONE/merged" notes rot and cause stale-audit drift. Record *decisions* (the why) in the journey itself or a short decisions note; never leave *status* claims that nothing re-validates.
 - **Chunking for context management**: Split the active plan into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
-- **Session boundaries**: One chunk = one session/thread. Do not carry context pollution from prior chunks — start each chunk fresh by reading only the plan and relevant specs.
+- **Session boundaries**: One chunk = one session/thread. Do not carry context pollution from prior chunks — start each chunk fresh by reading only the plan and relevant journeys.
 - **Reprioritisation**: Rewrite `active.md` freely when priorities shift. Old items stay in their todo files.
 - **Size cap**: If `active.md` exceeds ~100 lines, prune lower-priority chunks back to the todo backlog.
 - **Backlog grooming**: Periodically prune `todo-*.md` files — remove obsolete or irrelevant items.
@@ -51,8 +50,8 @@
 
 ## Development Process
 
-- Features need a specification.
-- Specifications don't contain code.
+- Features need a journey.
+- Journeys don't contain code.
 - Don't write code or tests until the problem or goal is clear.
 - We practice TDD. Start by writing tests, then code.
 - Make sure tests are passing before committing code.
@@ -73,19 +72,36 @@ Three complementary layers — pick the cheapest that answers the question, esca
 ## Token Efficiency
 
 - Delegate read/search fan-out to subagents (see Spawned Agents) — the biggest lever for keeping the main context clean.
-- Preserve the prompt cache: batch related work in one session so the stable prefix (CLAUDE.md, specs, tool schemas) is reused instead of re-paid across many short chats.
+- Preserve the prompt cache: batch related work in one session so the stable prefix (CLAUDE.md, journeys, tool schemas) is reused instead of re-paid across many short chats.
 - Be specific up front (`file.go:42 nil check is wrong` beats `fix the bug`) so tokens go to action, not exploration.
 
-## Specifications
+## Journeys
 
-- **THE SPECS ARE NOT TO BE TRUSTED. The code is the only source of truth.** Specs assert tables, columns, config flags, endpoints and processes that do not exist. Treat every spec claim as unverified until you have checked it against the tree at the current commit.
-- **NEVER plan, estimate, or write code from a spec claim you have not just verified in code.** Planning against stale specs cost a full sprint week. If a claim matters to what you are about to do, verify it; if it turns out to be wrong, correct the spec (with permission) or say so — never build to it.
-- Specs live under `specifications/<component>.md` (flat layout, no subdirectories).
-- NEVER silently diverge from a spec.
-- Do not modify specs without asking.
-- Specs define *what*, not *how*. They hold intent, invariants, expected behaviour, and reference data. No function bodies or algorithm implementations — that's what TDD is for.
-- Specs **reference contracts, never copy them**. This is a code-first repo: the source of truth for any shape is the code that owns it — internal Go types (with their json tags) for our own shapes; the client/mapping code (`vcenter.go`, `proxmox.go`) for external Proxmox/VMware shapes we consume but don't own. A spec must point to the authoritative type and state the invariants it can't express (de-dup rules, units, N/A semantics, why we read a field) — not paste a struct/interface that drifts the moment code changes. A small illustrative example (sample JSON) is fine as reference data; the normative shape lives in code, pinned by a contract test.
-- Before implementing any feature, check whether a specification exists. If not, write one first.
+`journeys/` holds user journeys. It replaced a corpus of component specifications that taught
+things that were false; the directory was renamed so the old habit has no home to return to.
+
+- **A journey is written in the person's words.** Who they are, what they are trying to get
+  done, what must be true for them to succeed, and how they would know it worked. No tables,
+  columns, endpoints, paths, config keys or code. The pre-commit hook enforces this.
+- **The code is the only source of truth.** A contract is a test that fails when it stops being
+  true, living next to the code it constrains. A journey may point at one, but only as a
+  markdown link, because a link can be checked — and the link is checked at commit time.
+- **Every journey names at least one test**, and says which parts nothing can prove. Both are
+  the convention; only the first is enforceable.
+- **No status claims.** Nothing says built, shipped, planned or proposed. A red test means "not
+  proven" — that is the status mechanism, and it needs no maintenance.
+- **Verify before writing.** Never state a behaviour you have not just checked in the tree, and
+  read a test's assertions rather than trusting its name. Both mistakes have been made here.
+- Journeys live flat in `journeys/`, under 200 lines each (hook-enforced). `journeys/overview.md`
+  is the routing index. Never split one into part files — if it needs more room it is two
+  journeys, or the detail belongs in a test.
+- Do not modify a journey without asking. Never silently diverge from one.
+- Before implementing a feature, check whether a journey covers it. If not, write one first.
+- The 128 retired specifications were deleted on 2026-08-09 and live only in the tag
+  `specifications-retired-2026-08-04`. Do not restore a browsable copy — that is what the tag
+  is protecting against. Read from it only when its subject resurfaces, and check every claim
+  against code.
+
 - When completing tasks, update the relevant `plans/todo-<component>.md` file.
 
 ## Git
@@ -99,7 +115,7 @@ Three complementary layers — pick the cheapest that answers the question, esca
 - **Do not merge the feature branch into `main` without explicit permission from the user.**
 - After significant work has been completed and verified (tests pass, linting clean, summary written), present a summary of the branch's changes and **ask the user for permission to merge**.
 - When permission is granted, merge using `git merge --no-ff` to preserve the branch history, then delete the feature branch.
-- NEVER include personal hostnames, IPs, usernames, or internal domain names in code, specs, docs, plans, or commit messages. Use generic examples (`example.com`, `10.0.0.1`, `user@host`).
+- NEVER include personal hostnames, IPs, usernames, or internal domain names in code, journeys, docs, plans, or commit messages. Use generic examples (`example.com`, `10.0.0.1`, `user@host`).
 
 ## Commits
 

@@ -19,7 +19,7 @@ import (
 // rows.
 //
 // Requires a Chef server carrying the `cmm-test-*` role fixtures (see
-// specifications/service-collection.md). Configure with:
+// journeys/service-collection.md). Configure with:
 //
 //	CMM_LAB_CHEF_URL=https://chef.example.com/organizations/myorg
 //	CMM_LAB_CHEF_CLIENT=<client name>

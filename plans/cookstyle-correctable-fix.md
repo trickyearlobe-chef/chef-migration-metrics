@@ -161,7 +161,7 @@ Frontend is a faithful pass-through — no fix needed there.
 - **Does changing the fingerprint key fire spurious change detection fleet-wide?**
   Chunk 1 changes `cookstyle_fingerprint.go:37`, so every fingerprint changes on the next
   scan.
-- **Which spec gets the correctable/corrected definition?** `specifications/cookstyle-*`
+- **Which spec gets the correctable/corrected definition?** `journeys/cookstyle-*`
   matches several files; `analysis-cookstyle.md` is the likely home. Needs owner sign-off.
 - **Chunk 2's acceptance criterion is not reproducible** — the "two-offence probe
   cookbook" is not in the repo and no location is given, and the Symptom section
@@ -250,6 +250,6 @@ same host that OOMed on 2026-07-29/30.
 
 ## Related
 
-Spec `specifications/cookstyle-*.md` should state that `correctable` is the static
+Spec `journeys/cookstyle-*.md` should state that `correctable` is the static
 capability and `corrected` only reflects an applied correcting run. Ask the owner before
 editing.

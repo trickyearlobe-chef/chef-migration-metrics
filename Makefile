@@ -764,8 +764,8 @@ install-hooks: ## Install git hooks (secret scanning, specs-are-journeys check, 
 	@echo "  To bypass (use with caution): git commit --no-verify"
 
 .PHONY: test-hooks
-test-hooks: ## Test the specs-are-journeys pre-commit check
-	@.githooks/test-spec-journey-check.sh
+test-hooks: ## Test the journey pre-commit check
+	@.githooks/test-journey-check.sh
 
 .PHONY: uninstall-hooks
 uninstall-hooks: ## Remove custom git hooks path (revert to default)

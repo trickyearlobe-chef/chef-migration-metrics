@@ -24,7 +24,7 @@ days following. Figures are measured at customer scale unless marked otherwise.
   attribute for 55,488 of 55,489 Windows nodes; reverted in v2.18.9 and pinned by
   `TestNodeSearchAttributes_FilesystemIsNotNarrowed`.
 - **Validate attribute shapes against `node_snapshots`, not sample nodes** — see the
-  census requirement in `specifications/data-collection.md` § 1.4.1. One node, or a lab
+  census requirement in `journeys/data-collection.md` § 1.4.1. One node, or a lab
   on current Chef, is not evidence about a heterogeneous estate.
 - **Collection interval must exceed run duration.** Overlapping ticks are skipped
   (`scheduler.go:226`), so a short cron makes the collection peak the steady state.

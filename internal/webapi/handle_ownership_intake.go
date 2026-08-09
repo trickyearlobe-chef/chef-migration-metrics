@@ -26,7 +26,7 @@ import (
 // Discovery-driven ownership intake — /api/v1/ownership/import/*
 //
 // The fixed-header import at /api/v1/ownership/import is a separate,
-// unchanged handler. See specifications/ownership-intake.md.
+// unchanged handler. See journeys/ownership-intake.md.
 // ---------------------------------------------------------------------------
 
 // intakeMaxUploadBytes is the in-memory threshold for a multipart upload, NOT

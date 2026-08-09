@@ -4,7 +4,7 @@ MVP merged to `main` and released (**v2.18.4**): `converge_runs` ingest sink
 (`POST /api/v1/ingest`), resilient normaliser (node-direct / `run_converge` proxy /
 Automate Data Feed), partitioned store + retention ticker, Node Detail Runs tab, and the
 top-level **Run events** view (list + node detail + export, feature-gated). Below =
-post-MVP follow-ups only. Spec: `specifications/event-ingest.md`.
+post-MVP follow-ups only. Spec: `journeys/event-ingest.md`.
 
 ## Why this matters at the customer (2026-08-02)
 

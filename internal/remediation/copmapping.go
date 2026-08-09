@@ -93,7 +93,7 @@ type copVariant struct {
 }
 
 // polyMethodCopVariants maps a poly-method cop name to its message-discriminated
-// variants. See specifications/scan-trust.md. This
+// variants. See journeys/scan-trust.md. This
 // table is the source of truth for per-message remediation + RemovedIn and is
 // linter-guarded alongside the rest of the curated removal set.
 var polyMethodCopVariants = map[string][]copVariant{
@@ -286,7 +286,7 @@ func matchVariant(copName, message string) *copVariant {
 // offence message (e.g. "Socket.gethostbyname"), or "" when copName is not a
 // poly-method cop or no variant matches. Callers group offences of the same cop
 // by variant so a Blocker variant and a Review variant render (and section)
-// separately. See specifications/scan-trust.md.
+// separately. See journeys/scan-trust.md.
 func OffenseVariantToken(copName, message string) string {
 	if v := matchVariant(copName, message); v != nil {
 		return v.Token
@@ -298,7 +298,7 @@ func OffenseVariantToken(copName, message string) string {
 // offence, discriminating poly-method cops by their message. For a poly-method
 // cop the matching variant's mapping (with its own RemovedIn) is returned; a
 // message matching no variant, or a non-poly cop, falls back to LookupCop.
-// See specifications/scan-trust.md.
+// See journeys/scan-trust.md.
 func LookupCopForOffense(copName, message string) *CopMapping {
 	if v := matchVariant(copName, message); v != nil {
 		m := v.Mapping
@@ -416,7 +416,7 @@ r = Random.new`,
 	// (see scripts/cop-validation/README.md): cops that were defaulting to Review
 	// but flag a class/helper/method genuinely removed on CC19.3.15, confirmed by
 	// behavioural probe (call + catch) on the lab box — a hidden blocker, the
-	// dangerous direction per specifications/scan-trust.md.
+	// dangerous direction per journeys/scan-trust.md.
 	{
 		// Lab-verified 2026-07-16: Chef::REST is undefined on CC19.3.15 (NameError).
 		// cookstyle description states removal in Chef Infra Client 13.

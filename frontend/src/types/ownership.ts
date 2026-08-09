@@ -146,7 +146,7 @@ export type AuditLogResponse = PaginatedResponse<OwnershipAuditEntry>;
 //
 // The source's shape is not known in advance, so the administrator profiles the
 // file, maps its columns onto these fields, previews the result, then commits.
-// See specifications/ownership-intake.md.
+// See journeys/ownership-intake.md.
 // ---------------------------------------------------------------------------
 
 export type IntakeTargetField =

@@ -26,7 +26,7 @@ import (
 //	  → re-evaluate readiness for dependent (affected) organisations
 //
 // Nothing global is touched: the closure is exactly the cop's affected targets.
-// See specifications/scan-trust.md and the
+// See journeys/scan-trust.md and the
 // derivation/invalidation dependency graph in
 // plans/cookstyle-status-consistency.md.
 

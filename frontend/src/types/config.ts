@@ -12,7 +12,7 @@ export interface CollectionConfig {
 
 // IngestConfig mirrors the backend ingest section (snake_case). The three
 // booleans are *bool server-side, so GET may return null when unset (treat as
-// false in the UI). See specifications/run-history.md.
+// false in the UI). See journeys/run-history.md.
 export interface IngestConfig {
   enabled: boolean | null;
   show_run_events: boolean | null;

@@ -2,9 +2,9 @@
 # =============================================================================
 # Tests for the "specs are journeys" pre-commit check.
 # =============================================================================
-# Run: .githooks/test-spec-journey-check.sh
+# Run: .githooks/test-journey-check.sh
 #
-# The check is the only thing keeping technical claims out of specifications/,
+# The check is the only thing keeping technical claims out of journeys/,
 # and a claim that gets in is one nothing re-validates. So it gets a test.
 #
 # Each case writes a spec, stages it, runs the hook, and asserts on the exit
@@ -14,7 +14,7 @@
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-FIXTURE=specifications/_journey_check_fixture.md
+FIXTURE=journeys/_journey_check_fixture.md
 PASSED=0
 FAILED=0
 

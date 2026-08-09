@@ -3,7 +3,7 @@
 
 // ---------------------------------------------------------------------------
 // Mapping between a list view's filter-bar state and the query-param selection
-// a saved filter stores (specifications/named-cohorts.md).
+// a saved filter stores (journeys/named-cohorts.md).
 //
 // The mapping stays per-view on purpose. The param names are the view's own
 // *request* vocabulary — what its <x>FilterFromValues parser reads and what

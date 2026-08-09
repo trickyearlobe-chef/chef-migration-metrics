@@ -620,7 +620,7 @@ type storedOffense struct {
 	CopName  string `json:"cop_name"`
 	Severity string `json:"severity"`
 	// Message discriminates poly-method cops during message-aware classification
-	// (see specifications/scan-trust.md).
+	// (see journeys/scan-trust.md).
 	Message string `json:"message"`
 }
 

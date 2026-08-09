@@ -30,7 +30,7 @@ and not `saml_subject`.
 
 ## Owner ingest — what is left
 
-The discovery-driven CSV intake is in (`specifications/ownership-intake.md`).
+The discovery-driven CSV intake is in (`journeys/ownership-intake.md`).
 Remaining:
 
 - [ ] **SQL source — the reading half is built** (`internal/ownershipsql`), for SQL Server and
@@ -123,7 +123,7 @@ Remaining:
 
 ## Failure register — what is left
 
-Behaviour is `specifications/failure-register.md`. Manual entry, the standup view and the
+Behaviour is `journeys/failure-register.md`. Manual entry, the standup view and the
 human verdict inside the readiness rollup are built.
 
 - [ ] **A register entry only reaches readiness when its subject name matches a cookbook name.**
@@ -233,7 +233,7 @@ first; this one is its user-visible half.
   and the owner name. **The dangerous case is not "no match", it is "two matches":**
   `alias_type` conflates the shape of an identifier with where it came from, and uniqueness
   includes the provenance, so one address can legitimately belong to two owners (recorded in
-  `specifications/ownership-identity.md` § Proposed). Showing somebody else's estate under the
+  `journeys/ownership-identity.md` § Proposed). Showing somebody else's estate under the
   heading "mine" is worse than showing nothing, so an ambiguous match must refuse and say why.
 - [ ] **A "My stuff" control** on the node, git repo and cookbook lists, applying that owner.
 - [ ] **An honest answer for the majority who own nothing.** Most users will not resolve to an
@@ -341,7 +341,7 @@ Raised by the product owner 2026-08-02. Assigning ownership from git committers 
 *provider* of candidates, wired directly to assignment. The general shape is: for an
 entity, every provider offers candidates with their evidence and how far that source is
 trusted; a human picks. Findings and evidence:
-`specifications/ownership-identity.md` § Where ownership candidates come from.
+`journeys/ownership-identity.md` § Where ownership candidates come from.
 
 Providers, most authoritative first:
 
@@ -391,7 +391,7 @@ Providers, most authoritative first:
   git repo list, not the cookbook list, and the frontend never sends `unowned` anywhere. No
   screen answers "show me every repo with no owner".
 - [ ] **Characterise the estate before writing any rules — extend the diagnostic bundle.**
-  `specifications/diagnostic-bundle.md` is already the right vehicle: read-only, produces a
+  `journeys/diagnostic-bundle.md` is already the right vehicle: read-only, produces a
   file that can be carried back, and built around aggregate counts with identifiers as an
   explicit opt-in. **No new deployable, and nothing from an unmerged branch** — it can answer
   at scale on the version the customer already runs.
@@ -413,7 +413,7 @@ Providers, most authoritative first:
   bundle, and because it decides whether the ownership question is worth asking yet.)*
 
 - [ ] **Rules for platform identities, bots and maintainers — write them against real data.**
-  Findings and measurements: `specifications/ownership-identity.md` § Git identities are
+  Findings and measurements: `journeys/ownership-identity.md` § Git identities are
   rewritten by the hosting platform. Deliberately deferred, and safe to defer because git
   history is re-derivable from the clones on disk.
 
@@ -425,9 +425,9 @@ Providers, most authoritative first:
   names an owner after an email localpart, so two addresses for one person make two owners, and
   `owners.name` is immutable — the referencing foreign keys have no `ON UPDATE CASCADE`, so
   merging is the only repair for what is a naming accident. Design:
-  `specifications/ownership-identity.md` § The label is not an identity.
+  `journeys/ownership-identity.md` § The label is not an identity.
 - [ ] **Re-model aliases: shape is not source.** Design and evidence:
-  `specifications/ownership-identity.md` § Proposed: shape is not source. Do not restate it
+  `journeys/ownership-identity.md` § Proposed: shape is not source. Do not restate it
   here.
 
   **Timing is the open decision.** Node and repo matching consume the resolution chain this
