@@ -39,10 +39,12 @@ set centrally.
 | [Proving a cookbook really runs](converge-testing.md) | Does it work on a real machine, or just read clean? |
 | [Saying so when the machine is wrong](human-verdict.md) | I have seen this run — where do I say so? |
 | [What actually happened out there](run-history.md) | Which machines are failing, and on what? |
+| [Who has to do the work](ownership-attribution.md) | Whose is this, and what has nobody claimed? |
+| [Getting ownership in](ownership-intake.md) | How do I load who owns what, and keep loading it? |
+| [One person, many names](ownership-identity.md) | Is this the same engineer written down twice? |
 
-Journeys for ownership and for running the service are still being written. **Until this table
-is complete, a missing journey means nobody has written it yet — it does not mean the
-capability is missing.**
+Journeys for running the service are still being written. **Until this table is complete, a
+missing journey means nobody has written it yet — it does not mean the capability is missing.**
 
 ## How to read a specification here
 
