@@ -531,13 +531,25 @@ trivy-npm: _trivy-db ## Trivy scan of npm production deps (MEDIUM/HIGH/CRITICAL,
 .PHONY: security
 security: vuln-go trivy-npm ## Run the blocking supply-chain gates (govulncheck + Trivy) — mirrors CI
 
+# scan-trivy is DELIBERATELY stricter than CI, and is not a mirror of it.
+#
+# The two blocking Trivy gates in CI scan frontend/package-lock.json only; the
+# whole-tree scan there is Tier 2 — continue-on-error, exit-code 0, SARIF to the
+# Security tab — and never fails a build. This target scans the whole tree AND
+# fails on HIGH/CRITICAL, so a red here is a local early warning, not a broken
+# CI gate. Check `gh run list` before treating one as a release blocker.
+#
+# It reads .trivyignore.yaml like the CI gates do. Without that it re-reported
+# vulnerabilities already waived with a dated, reasoned entry — which teaches
+# people to ignore the output, the one thing a security scan cannot survive.
 .PHONY: scan-trivy
-scan-trivy: _trivy-db ## Filesystem scan (vuln + secret + misconfig) with Trivy
+scan-trivy: _trivy-db ## Filesystem scan (vuln + secret + misconfig) with Trivy — stricter than CI
 	@if command -v trivy >/dev/null 2>&1; then \
 		echo "$(GREEN)Running trivy fs (HIGH,CRITICAL gate)...$(RESET)"; \
 		trivy fs --scanners vuln,secret,misconfig \
 			--severity HIGH,CRITICAL --exit-code 1 \
 			--skip-db-update \
+			--ignorefile .trivyignore.yaml \
 			--skip-dirs frontend/node_modules --skip-dirs .samples \
 			. ; \
 	else \
