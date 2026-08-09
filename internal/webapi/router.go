@@ -806,6 +806,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/cookstyle/cops", r.handleCookstyleCops)
 	r.protect("/api/v1/cookstyle/cop-drift", r.handleCookstyleCopDrift)
 	r.protect("/api/v1/cookstyle/cops/", r.handleCookstyleCopSubroute)
+	r.protect("/api/v1/cookstyle/scan-scope", r.handleCookstyleScanScope)
 	r.protect("/api/v1/cookstyle/custom-cops", r.handleCookstyleCustomCops)
 	r.protect("/api/v1/cookstyle/custom-cops/", r.handleCookstyleCustomCop)
 

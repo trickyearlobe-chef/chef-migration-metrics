@@ -230,6 +230,12 @@ type ComplexityScorer struct {
 	// or override change takes effect on the next run without a restart), then
 	// memoised for that batch.
 	classifierFor func(ctx context.Context, targetChefVersion string) CopClassifier
+
+	// scanScopeFor returns the scan scope in force, read at the start of each
+	// scoring batch so an operator's edit to the exclusion list takes effect on
+	// the next run without a restart. Nil means nothing is excluded (pre-scope
+	// behaviour).
+	scanScopeFor func(ctx context.Context) ScanScoper
 }
 
 // NewComplexityScorer creates a new scorer.
@@ -245,6 +251,25 @@ func NewComplexityScorer(db *datastore.DB, logger *logging.Logger) *ComplexitySc
 // unset, scoring falls back to the legacy severity-based aggregate weights.
 func (s *ComplexityScorer) SetClassifierProvider(fn func(ctx context.Context, targetChefVersion string) CopClassifier) {
 	s.classifierFor = fn
+}
+
+// SetScanScopeProvider wires the scan scope so an offense in a file the converge
+// never executes adds nothing to a cookbook's complexity. Without it every
+// finding counts, which is what made a copied Rakefile look like cookbook work.
+//
+// It takes a provider rather than a value so the operator's exclusion list is
+// re-read per batch: a scope captured once at construction would keep scoring
+// against a list somebody had already changed.
+func (s *ComplexityScorer) SetScanScopeProvider(fn func(ctx context.Context) ScanScoper) {
+	s.scanScopeFor = fn
+}
+
+// scanScope resolves the current scope, or nil when no provider is wired.
+func (s *ComplexityScorer) scanScope(ctx context.Context) ScanScoper {
+	if s.scanScopeFor == nil {
+		return nil
+	}
+	return s.scanScopeFor(ctx)
 }
 
 // classifierCache resolves one classifier per target version up front, so the
@@ -264,9 +289,9 @@ func (s *ComplexityScorer) classifierCache(ctx context.Context, targets []string
 // cookstyleScore returns the CookStyle+TK complexity contribution. When a
 // classifier is supplied it uses the classification-weighted derivation (each
 // offense once); otherwise it returns the legacy severity-based score.
-func (s *ComplexityScorer) cookstyleScore(classifier CopClassifier, offencesJSON []byte, input ComplexityInput) int {
+func (s *ComplexityScorer) cookstyleScore(ctx context.Context, classifier CopClassifier, offencesJSON []byte, input ComplexityInput) int {
 	if classifier != nil {
-		classified := classifyOffensesForComplexity(offencesJSON, classifier)
+		classified := classifyOffensesForComplexity(offencesJSON, classifier, s.scanScope(ctx))
 		return ComputeCookstyleComplexity(classified) + tkWeight(input.TestKitchen.Status)
 	}
 	return ComputeComplexityScore(input)
@@ -501,7 +526,7 @@ func (s *ComplexityScorer) scoreOneServerCookbook(
 		Blast:             blast,
 	}
 
-	score := s.cookstyleScore(classifier, csResult.Offences, input)
+	score := s.cookstyleScore(ctx, classifier, csResult.Offences, input)
 	label := ScoreToLabel(score)
 
 	result.ComplexityScore = score
@@ -587,7 +612,7 @@ func (s *ComplexityScorer) scoreOneGitRepo(
 		Blast:             blast,
 	}
 
-	score := s.cookstyleScore(classifier, csResult.Offences, input)
+	score := s.cookstyleScore(ctx, classifier, csResult.Offences, input)
 	label := ScoreToLabel(score)
 
 	result.ComplexityScore = score
@@ -622,6 +647,9 @@ type storedOffense struct {
 	// Message discriminates poly-method cops during message-aware classification
 	// (see journeys/scan-trust.md).
 	Message string `json:"message"`
+	// Location carries the repo-relative file path, which decides whether the
+	// offense is about the cookbook at all (see ScanScoper).
+	Location OffenseLocation `json:"location"`
 }
 
 // classifyOffenses parses the JSONB offenses byte slice and counts offenses

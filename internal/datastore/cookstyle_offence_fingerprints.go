@@ -24,10 +24,23 @@ const (
 // offence messages and source locations (re-derivation does not consume them).
 // See journeys/estate-progress.md.
 type FingerprintCopEntry struct {
-	CopName     string `json:"cop_name"`
-	Count       int    `json:"count"`
-	Severity    string `json:"severity"`
-	Correctable bool   `json:"correctable"`
+	CopName  string `json:"cop_name"`
+	Count    int    `json:"count"`
+	Severity string `json:"severity"`
+
+	// ExcludedCount is how many of Count sat in files the converge never
+	// executes (a helper task, a pipeline, a test suite). Those occurrences are
+	// retained — the work is real, just somebody else's — but they take no part
+	// in the re-derived verdict. See analysis.ScanScope and
+	// journeys/scan-trust.md.
+	//
+	// It is additive on purpose: fingerprints written before scope existed have
+	// no such key, decode to zero, and therefore re-derive exactly as they did
+	// before. Recording the in-scope count instead would have read every one of
+	// those rows as wholly out of scope.
+	ExcludedCount int `json:"excluded_count,omitempty"`
+
+	Correctable bool `json:"correctable"`
 }
 
 // CookstyleOffenceFingerprint represents a row in the

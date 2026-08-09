@@ -19,6 +19,7 @@ import (
 
 type mockPropagationStore struct {
 	classifications map[string][]datastore.CopClassification
+	exclusions      []datastore.ScanScopeExclusion
 	serverRefs      []datastore.CookstyleResultRef
 	gitRefs         []datastore.CookstyleResultRef
 	orgs            []datastore.Organisation
@@ -41,6 +42,10 @@ func (m *mockPropagationStore) ListCopClassifications(ctx context.Context) ([]da
 		out = append(out, cs...)
 	}
 	return out, nil
+}
+
+func (m *mockPropagationStore) ListScanScopeExclusions(ctx context.Context) ([]datastore.ScanScopeExclusion, error) {
+	return m.exclusions, nil
 }
 
 func (m *mockPropagationStore) ListServerCookbookCookstyleResultsWithCop(ctx context.Context, cop, target string) ([]datastore.CookstyleResultRef, error) {

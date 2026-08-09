@@ -144,7 +144,10 @@ func ParseStoredOffenses(data []byte) []CookstyleOffense {
 		var out []CookstyleOffense
 		for _, fe := range files {
 			for _, o := range fe.Offenses {
-				out = append(out, CookstyleOffense{CopName: o.CopName, Severity: o.Severity})
+				// The file path is carried onto each offence: in this legacy
+				// shape it lives on the group, and scope decisions are made per
+				// offence (see ScanScope).
+				out = append(out, CookstyleOffense{CopName: o.CopName, Severity: o.Severity, File: fe.Path})
 			}
 		}
 		return out

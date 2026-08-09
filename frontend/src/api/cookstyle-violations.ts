@@ -150,3 +150,52 @@ export function deleteCustomCop(copName: string): Promise<{ status: string }> {
     { method: "DELETE" },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Scan scope — which files a converge never executes
+// ---------------------------------------------------------------------------
+
+/**
+ * One row of the effective scan-scope list. `source` is "curated" for a seeded
+ * entry standing unmodified and "operator" for anything a person decided —
+ * including a seeded entry somebody overturned, which stays in the list with
+ * excluded=false so the decision can be found and reversed.
+ */
+export interface ScanScopeEntry {
+  pattern: string;
+  excluded: boolean;
+  reason: string;
+  source: "curated" | "operator";
+  created_by?: string;
+  updated_at?: string;
+}
+
+export function fetchScanScope(): Promise<{ data: ScanScopeEntry[] }> {
+  return apiFetch<{ data: ScanScopeEntry[] }>(buildUrl("/cookstyle/scan-scope"));
+}
+
+/**
+ * Saving re-derives every stored verdict against the new scope and reports how
+ * many moved, so a decision shows its effect immediately rather than waiting
+ * for the next scan.
+ */
+export function saveScanScopeEntry(body: {
+  pattern: string;
+  excluded: boolean;
+  reason: string;
+}): Promise<{ status: string; verdicts_changed: number }> {
+  return apiFetch<{ status: string; verdicts_changed: number }>("/api/v1/cookstyle/scan-scope", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteScanScopeEntry(
+  pattern: string,
+): Promise<{ status: string; verdicts_changed: number }> {
+  return apiFetch<{ status: string; verdicts_changed: number }>(
+    buildUrl("/cookstyle/scan-scope", { pattern }),
+    { method: "DELETE" },
+  );
+}

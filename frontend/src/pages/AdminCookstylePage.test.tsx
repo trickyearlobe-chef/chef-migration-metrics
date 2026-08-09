@@ -2,9 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import * as api from "../api";
 import { AdminCookstylePage } from "./AdminCookstylePage";
+
+function renderPage(path = "/admin/cookstyle") {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <AdminCookstylePage />
+    </MemoryRouter>,
+  );
+}
 
 vi.mock("../api", async (importOriginal) => {
   const actual = await importOriginal<typeof api>();
@@ -45,34 +54,34 @@ describe("AdminCookstylePage", () => {
   });
 
   it("renders page heading", async () => {
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() =>
       expect(screen.getByText("CookStyle")).toBeInTheDocument(),
     );
   });
 
   it("renders the enabled toggle", async () => {
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() =>
       expect(screen.getByRole("switch")).toBeInTheDocument(),
     );
   });
 
   it("renders timeout field with loaded value", async () => {
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() =>
       expect(screen.getByDisplayValue("30")).toBeInTheDocument(),
     );
   });
 
   it("save button is disabled when no changes", async () => {
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() => screen.getByText("CookStyle"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
   it("enables save when config changes", async () => {
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() => screen.getByText("CookStyle"));
     fireEvent.change(screen.getByDisplayValue("30"), {
       target: { value: "45" },
@@ -81,7 +90,7 @@ describe("AdminCookstylePage", () => {
   });
 
   it("renders addon cop paths from loaded config", async () => {
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() =>
       expect(screen.getByDisplayValue("/opt/cops/no_eval.rb")).toBeInTheDocument(),
     );
@@ -93,7 +102,7 @@ describe("AdminCookstylePage", () => {
       restartRequired: false,
       verdictsChanged: 0,
     } as never);
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() => screen.getByText("CookStyle"));
 
     fireEvent.change(screen.getByLabelText("Addon cop paths"), {
@@ -115,7 +124,7 @@ describe("AdminCookstylePage", () => {
       restartRequired: false,
       verdictsChanged: 3,
     } as never);
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() => screen.getByText("CookStyle"));
     fireEvent.change(screen.getByDisplayValue("30"), {
       target: { value: "45" },
@@ -132,7 +141,7 @@ describe("AdminCookstylePage", () => {
       restartRequired: false,
       verdictsChanged: 0,
     } as never);
-    render(<AdminCookstylePage />);
+    renderPage();
     await waitFor(() => screen.getByText("CookStyle"));
     fireEvent.change(screen.getByDisplayValue("30"), {
       target: { value: "45" },
@@ -140,6 +149,52 @@ describe("AdminCookstylePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(screen.getByText("Settings saved successfully.")).toBeInTheDocument(),
+    );
+  });
+
+  // The page had grown five unrelated admin jobs stacked on one scroll. Each is
+  // now a tab, and settings is the one you land on because it is the only one
+  // that was ever the "main" screen.
+  it("lands on Settings, with a tab for each of the other jobs", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("switch")).toBeInTheDocument());
+
+    const tabs = screen.getByRole("navigation", { name: /cookstyle tabs/i });
+    for (const label of [
+      "Settings",
+      "Classifications",
+      "Cop inventory",
+      "Custom cops",
+      "Scan scope",
+    ]) {
+      expect(within(tabs).getByRole("button", { name: label })).toBeInTheDocument();
+    }
+  });
+
+  // Only the active tab's work is on screen — the point of splitting it up.
+  it("shows one tab's content at a time", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("switch")).toBeInTheDocument());
+
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: /cookstyle tabs/i })).getByRole(
+        "button",
+        { name: "Scan scope" },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("What counts as cookbook code")).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  // A deep link has to open the tab it names, so somebody can send "look at
+  // this" rather than "go to admin, then cookstyle, then the fifth tab".
+  it("opens the tab named in the URL", async () => {
+    renderPage("/admin/cookstyle?tab=scope");
+    await waitFor(() =>
+      expect(screen.getByText("What counts as cookbook code")).toBeInTheDocument(),
     );
   });
 });

@@ -64,6 +64,15 @@ func (r *Router) copResolver(ctx context.Context, targetVersion string) (*analys
 	}, nil
 }
 
+// scanScope returns the live scan scope: the curated seed list with the
+// operator's decisions layered over it. It is read per request rather than
+// cached, so an edit to the list takes effect on the next page load without a
+// restart. A read failure leaves the curated list in force (see
+// analysis.NewScanScopeFromStore for why that direction).
+func (r *Router) scanScope(ctx context.Context) *analysis.ScanScope {
+	return analysis.NewScanScopeFromStore(ctx, r.db)
+}
+
 // copRegistrySnapshot returns the live cop registry, or nil when no provider is
 // wired or the load fails. A load failure is logged and treated as "registry
 // unavailable" (non-fatal) so drift degrades gracefully.

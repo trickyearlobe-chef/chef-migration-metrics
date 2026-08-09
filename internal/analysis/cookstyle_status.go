@@ -51,6 +51,20 @@ func OffensesWontParse(offenses []CookstyleOffense) bool {
 // An empty offense slice is Ready (a scan that found nothing). Untested is the
 // caller's concern when no scan result exists at all.
 func DeriveCookstyleStatus(offenses []CookstyleOffense, resolver *CopClassificationResolver) string {
+	return DeriveCookstyleStatusInScope(offenses, resolver, DefaultScanScope())
+}
+
+// DeriveCookstyleStatusInScope is DeriveCookstyleStatus with an explicit scan
+// scope, for when an operator's edited exclusion list stands in front of the
+// curated default.
+//
+// The scope decides which offences are about the cookbook. An offence in a file
+// the converge never executes — a helper task, a pipeline definition, a test
+// suite — is real work but somebody else's, so it contributes nothing to this
+// cookbook's verdict. It is not discarded: the offences are persisted whole,
+// and every read surface still shows it, marked as non-blocking. See
+// journeys/scan-trust.md, "The repository is not the cookbook".
+func DeriveCookstyleStatusInScope(offenses []CookstyleOffense, resolver *CopClassificationResolver, scope *ScanScope) string {
 	// LIVE derivation: resolve each offence WITH its message so poly-method cops
 	// (one cop_name, several deprecations of differing impact) classify per
 	// variant — e.g. Socket.gethostbyname is Review, File.exists? is a Blocker.
@@ -60,6 +74,9 @@ func DeriveCookstyleStatus(offenses []CookstyleOffense, resolver *CopClassificat
 	// points only (see journeys/scan-trust.md).
 	hasReview := false
 	for i := range offenses {
+		if scope.ExcludesOffense(offenses[i]) {
+			continue
+		}
 		switch resolver.ResolveOffense(offenses[i].CopName, offenses[i].Message).Classification {
 		case ClassificationBlocker:
 			return StatusBlocked

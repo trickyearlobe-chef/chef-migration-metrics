@@ -1149,6 +1149,13 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 	cxScorer.SetClassifierProvider(func(ctx context.Context, target string) remediation.CopClassifier {
 		return analysis.NewResolverFromStore(ctx, app.db, target)
 	})
+	// The repository is not the cookbook: a finding in a helper task or a
+	// pipeline definition is real work but not this cookbook's, so it must not
+	// weigh on its complexity score. Resolved per batch, so an edit to the
+	// operator's exclusion list applies on the next run without a restart.
+	cxScorer.SetScanScopeProvider(func(ctx context.Context) remediation.ScanScoper {
+		return analysis.NewScanScopeFromStore(ctx, app.db)
+	})
 	collOpts = append(collOpts, collector.WithComplexityScorer(cxScorer))
 
 	readinessEval := analysis.NewReadinessEvaluatorFromConfig(

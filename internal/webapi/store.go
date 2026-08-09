@@ -402,6 +402,21 @@ type DataStore interface {
 	UpsertCopClassification(ctx context.Context, copName, classification, reason, createdBy string) error
 
 	// -----------------------------------------------------------------
+	// Scan scope — which files an operator asserts a converge never executes
+	// -----------------------------------------------------------------
+
+	// ListScanScopeExclusions returns the operator's decisions, which layer over
+	// the curated seed list in the analysis package.
+	ListScanScopeExclusions(ctx context.Context) ([]datastore.ScanScopeExclusion, error)
+
+	// UpsertScanScopeExclusion records or revises the decision for a pattern.
+	UpsertScanScopeExclusion(ctx context.Context, pattern string, excluded bool, reason, createdBy string) error
+
+	// DeleteScanScopeExclusion removes the decision for a pattern, returning it
+	// to its curated behaviour (or to nothing, if never seeded).
+	DeleteScanScopeExclusion(ctx context.Context, pattern string) error
+
+	// -----------------------------------------------------------------
 	// Event ingest (converge_runs)
 	// -----------------------------------------------------------------
 

@@ -11,6 +11,22 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
+- **The Chef server side of a scan misses Ruby that Chef genuinely ships.** Established in code
+  on 2026-08-09 while correcting the opposite error on the git side. `CookbookVersionManifest`
+  parses only the legacy cookbook segments and never `all_files`, and a segment view cannot
+  express a file in an arbitrary directory. So a cookbook holding real code outside those
+  directories is scanned without it, and the verdict is quietly based on less than what runs.
+
+  **Why it is here and not fixed alongside the scan-scope work.** The two are opposite faults
+  with opposite risks. The git side over-counted, which is now corrected. Fixing this one makes
+  the server side scan *more* files — including all the Rakefiles and CI definitions that
+  motivated the exclusion list — so it is only safe to do *after* that list exists, which it now
+  does. It is a change to what is downloaded from the Chef server, with its own volume and
+  path-handling risk, and it deserves its own test rather than riding along.
+
+  **Why it matters.** These are the numbers a migration lead quotes. Until it is fixed, a
+  cookbook can read green on the server side because nobody looked at the file that breaks it.
+
 - **When the session expires, screens keep showing the old data instead of asking me to sign in
   again.** Reported by the product owner 2026-08-09 from the shipped app: screens silently stop
   updating, and some render what looks like data belonging to a different view. Graphs that

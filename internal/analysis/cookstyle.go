@@ -76,12 +76,30 @@ type CookstyleOffense struct {
 	File string `json:"file,omitempty"`
 }
 
+// Path returns the repo-relative source path of this offense, whichever field
+// carries it. A freshly scanned offense has it in File (set from the parent
+// CookstyleFile.Path); one read back from the offences JSONB has it in
+// Location.File. Callers deciding scope should use this rather than either
+// field, because both shapes are in circulation.
+func (o CookstyleOffense) Path() string {
+	if o.File != "" {
+		return o.File
+	}
+	return o.Location.File
+}
+
 // CookstyleOffenseLocation describes the source location of an offense.
 type CookstyleOffenseLocation struct {
-	StartLine   int `json:"start_line"`
-	StartColumn int `json:"start_column"`
-	LastLine    int `json:"last_line"`
-	LastColumn  int `json:"last_column"`
+	// File is the repo-relative source path. RuboCop does not report it here —
+	// it reports it once per file — but the persisted offence does
+	// (remediation.OffenseLocation), so reading a stored offence back into this
+	// struct recovers the path. Without it every read path lost the path and
+	// nothing downstream could tell cookbook code from a helper task.
+	File        string `json:"file,omitempty"`
+	StartLine   int    `json:"start_line"`
+	StartColumn int    `json:"start_column"`
+	LastLine    int    `json:"last_line"`
+	LastColumn  int    `json:"last_column"`
 }
 
 // CookstyleSummary contains aggregate counts from the CookStyle run.
@@ -179,6 +197,13 @@ type CookstyleScanResult struct {
 	// Duration is the wall-clock time for this scan.
 	Duration time.Duration
 
+	// scanScope is the scan scope in force when this result was derived. It is
+	// carried on the result so persistence projects the fingerprint under the
+	// SAME scope the verdict used — deriving one under the operator's list and
+	// the other under the curated default would let the trend disagree with the
+	// cookbook page. Unexported: it is internal wiring, not part of the result.
+	scanScope *ScanScope
+
 	// ScannedAt is the UTC timestamp when the scan completed.
 	ScannedAt time.Time
 
@@ -248,6 +273,27 @@ type CookstyleScanner struct {
 	// change takes effect on the next scan without a restart. Falls back to no
 	// addon cops.
 	addonCopPathsFn func() []string
+}
+
+// scanScopeOrDefault returns the scope this result was derived under, falling
+// back to the curated list. The fallback matters for results built in tests or
+// by any path that does not go through the scanner.
+func (r CookstyleScanResult) scanScopeOrDefault() *ScanScope {
+	if r.scanScope != nil {
+		return r.scanScope
+	}
+	return DefaultScanScope()
+}
+
+// buildScanScope returns the scan scope in force for this scan: the curated seed
+// list with the operator's decisions layered over it, read at scan time so an
+// edit takes effect on the next scan without a restart. With no datastore it is
+// the curated list alone.
+func (s *CookstyleScanner) buildScanScope(ctx context.Context) *ScanScope {
+	if s.db == nil {
+		return DefaultScanScope()
+	}
+	return NewScanScopeFromStore(ctx, s.db)
 }
 
 // CookstyleScannerOption configures a CookstyleScanner.
@@ -627,8 +673,10 @@ func (s *CookstyleScanner) scanOneServerCookbook(
 	}
 
 	resolver := s.buildResolver(ctx, targetChefVersion)
-	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, resolver)
+	scope := s.buildScanScope(ctx)
+	sr.CookstyleStatus = DeriveCookstyleStatusInScope(sr.Offenses, resolver, scope)
 	sr.Passed = sr.CookstyleStatus != StatusBlocked
+	sr.scanScope = scope
 
 	// Step 7: log outcome.
 	if sr.Passed {
@@ -775,8 +823,10 @@ func (s *CookstyleScanner) scanOneGitRepo(
 	}
 
 	resolver := s.buildResolver(ctx, targetChefVersion)
-	sr.CookstyleStatus = DeriveCookstyleStatus(sr.Offenses, resolver)
+	scope := s.buildScanScope(ctx)
+	sr.CookstyleStatus = DeriveCookstyleStatusInScope(sr.Offenses, resolver, scope)
 	sr.Passed = sr.CookstyleStatus != StatusBlocked
+	sr.scanScope = scope
 
 	// Step 7: log outcome.
 	if sr.Passed {
@@ -1036,7 +1086,7 @@ func (s *CookstyleScanner) persistServerCookbookResult(ctx context.Context, sr C
 	// they have no offences, and recording an empty fingerprint would falsely read
 	// as "clean". See journeys/estate-progress.md.
 	if sr.ErrorMessage == "" {
-		entries, hash := BuildOffenceFingerprint(sr.Offenses)
+		entries, hash := BuildOffenceFingerprintInScope(sr.Offenses, sr.scanScopeOrDefault())
 		if _, fpErr := s.db.AppendCookstyleOffenceFingerprint(ctx, datastore.AppendCookstyleOffenceFingerprintParams{
 			ResultKind:        datastore.FingerprintKindServerCookbook,
 			OrganisationName:  sr.OrganisationName,
@@ -1097,7 +1147,7 @@ func (s *CookstyleScanner) persistGitRepoResult(ctx context.Context, sr Cookstyl
 
 	// Append a change-deduped offence fingerprint (see persistServerCookbookResult).
 	if sr.ErrorMessage == "" {
-		entries, hash := BuildOffenceFingerprint(sr.Offenses)
+		entries, hash := BuildOffenceFingerprintInScope(sr.Offenses, sr.scanScopeOrDefault())
 		if _, fpErr := s.db.AppendCookstyleOffenceFingerprint(ctx, datastore.AppendCookstyleOffenceFingerprintParams{
 			ResultKind:        datastore.FingerprintKindGitRepo,
 			GitRepoName:       sr.CookbookName,

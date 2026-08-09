@@ -34,6 +34,11 @@ type CookstyleRescoreStore interface {
 	// derivation. The resolver still applies RemovedIn auto-seed + curated
 	// defaults on top.
 	ListCopClassifications(ctx context.Context) ([]datastore.CopClassification, error)
+	// ListScanScopeExclusions supplies the operator's decisions about which files
+	// a converge never executes. A rescore re-derives every stored verdict, so it
+	// must use the same scope the pages read or it would undo those decisions
+	// wholesale.
+	ListScanScopeExclusions(ctx context.Context) ([]datastore.ScanScopeExclusion, error)
 }
 
 // RescoreResult reports how many results were evaluated and how many changed.
@@ -52,6 +57,8 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, l
 	// Memoise one classification resolver per target version so the override
 	// load happens once per target rather than once per result. The resolver
 	// applies operator overrides, RemovedIn auto-seed, and curated defaults.
+	scope := analysis.NewScanScopeFromStore(ctx, store)
+
 	resolverCache := map[string]*analysis.CopClassificationResolver{}
 	resolverFor := func(target string) *analysis.CopClassificationResolver {
 		if r, ok := resolverCache[target]; ok {
@@ -76,7 +83,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, l
 		return result, fmt.Errorf("rescore: listing server results: %w", err)
 	}
 
-	serverUpdates := rescoreRows(serverRows, resolverFor, &result)
+	serverUpdates := rescoreRows(serverRows, resolverFor, scope, &result)
 	if len(serverUpdates) > 0 {
 		if err := store.BatchUpdateServerCookstylePassed(ctx, serverUpdates); err != nil {
 			return result, fmt.Errorf("rescore: updating server results: %w", err)
@@ -89,7 +96,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, l
 		return result, fmt.Errorf("rescore: listing git results: %w", err)
 	}
 
-	gitUpdates := rescoreRows(gitRows, resolverFor, &result)
+	gitUpdates := rescoreRows(gitRows, resolverFor, scope, &result)
 	if len(gitUpdates) > 0 {
 		if err := store.BatchUpdateGitRepoCookstylePassed(ctx, gitUpdates); err != nil {
 			return result, fmt.Errorf("rescore: updating git results: %w", err)
@@ -120,7 +127,7 @@ func RescoreCookstyleResults(ctx context.Context, store CookstyleRescoreStore, l
 // rescoreRows evaluates a slice of rescore rows against the current
 // classification, collecting updates for rows whose verdict has changed. Rows
 // with error_message or nil/empty offences are skipped.
-func rescoreRows(rows []datastore.CookstyleRescoreRow, resolverFor func(target string) *analysis.CopClassificationResolver, result *RescoreResult) []datastore.CookstylePassedUpdate {
+func rescoreRows(rows []datastore.CookstyleRescoreRow, resolverFor func(target string) *analysis.CopClassificationResolver, scope *analysis.ScanScope, result *RescoreResult) []datastore.CookstylePassedUpdate {
 	var updates []datastore.CookstylePassedUpdate
 
 	for i := range rows {
@@ -146,7 +153,7 @@ func rescoreRows(rows []datastore.CookstyleRescoreRow, resolverFor func(target s
 		// full rollup status (not just passed) so a change that keeps passed but
 		// moves ready↔needs_review still re-materialises.
 		resolver := resolverFor(rescoreTargetFromID(row.ID))
-		newStatus := analysis.DeriveCookstyleStatus(offenses, resolver)
+		newStatus := analysis.DeriveCookstyleStatusInScope(offenses, resolver, scope)
 		newPassed := newStatus != analysis.StatusBlocked
 		if newStatus != row.CookstyleStatus {
 			result.Changed++

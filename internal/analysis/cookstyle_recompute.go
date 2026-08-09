@@ -36,6 +36,13 @@ func DeriveStatusFromFingerprint(cops []datastore.FingerprintCopEntry, resolver 
 	hasReview := false
 	for i := range cops {
 		c := &cops[i]
+		// Occurrences in files the converge never executes take no part in the
+		// verdict, exactly as at scan time. The fingerprint has no paths, but it
+		// records how many occurrences were out of scope, which is the only part
+		// of the path this derivation needed.
+		if c.Count-c.ExcludedCount <= 0 {
+			continue
+		}
 		switch resolver.Resolve(c.CopName).Classification {
 		case ClassificationBlocker:
 			return StatusBlocked
@@ -73,10 +80,14 @@ func ComplexityFromFingerprint(cops []datastore.FingerprintCopEntry, classifier 
 			Severity:       c.Severity,
 			Classification: classifier.Classify(c.CopName),
 		}
-		if c.Count <= 0 {
+		// Out-of-scope occurrences are somebody else's effort, so they do not
+		// inflate this cookbook's complexity — matching the scan-time path,
+		// which would otherwise disagree with the recomputed trend.
+		inScope := c.Count - c.ExcludedCount
+		if inScope <= 0 {
 			continue
 		}
-		total += remediation.ComputeCookstyleComplexity([]remediation.ClassifiedOffense{off}) * c.Count
+		total += remediation.ComputeCookstyleComplexity([]remediation.ClassifiedOffense{off}) * inScope
 	}
 	return total
 }

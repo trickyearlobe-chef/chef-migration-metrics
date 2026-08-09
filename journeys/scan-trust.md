@@ -108,15 +108,43 @@ That a finding judged breaking actually blocks the cookbook rather than being re
 ignored is pinned by [the derivation
 contract](internal/analysis/cookstyle_fullruleset_test.go#TestDeriveStatus_BlockerOutsideDepartments_Blocked).
 
-**Nothing proves any of "the repository is not the cookbook".** Not one assertion exists for it.
-The test that has to be written is a repository carrying the same breaking finding twice, once in
-cookbook code and once in a helper task: the verdict must follow only the cookbook copy, **and**
-the helper task's finding must still be readable afterwards. The second half is what stops this
-being implemented as deletion, which would satisfy the first half and lose the work.
+That a finding outside cookbook code does not block, **and is still readable afterwards**, is
+pinned by [one repository carrying the same breaking finding
+twice](internal/analysis/cookstyle_scan_scope_test.go#TestRepositoryIsNotTheCookbook) — once in
+cookbook code, once in a helper task, differing only in where they sit. The second half of that
+test is what stops this being implemented as deletion, which would satisfy the first half and
+lose the work. The same thing holds [when a verdict is worked out again
+later](internal/analysis/cookstyle_scan_scope_test.go#TestRepositoryIsNotTheCookbook_SurvivesTheFingerprint)
+from what was kept rather than from the findings themselves, and everything recorded before this
+existed [still reads as it did](internal/analysis/cookstyle_scan_scope_test.go#TestFingerprintsWrittenBeforeScopeReDeriveUnchanged),
+rather than a whole estate turning green on the day it shipped.
 
-Until that exists, the counts on the estate-wide view of findings are wrong in both directions
-and a reader cannot tell: the git side counts files that never run, and the Chef server side
-misses code that does run but sits outside the directories we read.
+That the estate-wide count separates what blocks a cookbook from what is merely everywhere is
+pinned [where the number is actually
+read](internal/webapi/handle_cookstyle_cops_scope_test.go#TestCopAggregation_SplitsBlockingFromOutsideCookbookCode).
+A repository is counted once, under the copy that decides its verdict.
+
+That I can **disagree** with the list of ignored files is pinned the same way my decision over a
+finding is. I can [name a file the shipped list never
+could](internal/analysis/scan_scope_overrides_test.go#TestOperatorCanExcludeAFileTheSeedListCannotName)
+— the script that only runs because a build job starts it, which sits somewhere different in every
+estate and says nothing about itself — and I can [overturn a shipped
+one](internal/analysis/scan_scope_overrides_test.go#TestOperatorCanDisagreeWithACuratedExclusion)
+where it is simply wrong for us. Nothing takes effect [without a reason recorded against
+it](internal/webapi/handle_cookstyle_scan_scope_test.go#TestScanScopePut_RequiresAReason), and [the
+whole list is
+readable](internal/webapi/handle_cookstyle_scan_scope_test.go#TestScanScopeList_ShowsCuratedAndOperatorEntriesTogether),
+shipped entries beside local ones — being judged by a list I cannot see is the thing this exists to
+prevent.
+
+**Nothing proves the list of files we ignore is the right list.** Every entry [carries a recorded
+reason](internal/analysis/cookstyle_scan_scope_test.go#TestScanScopeExclusionsAllCarryReasons) so
+it can be argued with, but whether a reason is *true* is the same kind of curated claim as calling
+a finding harmless, and it fails in the direction nobody reports: a file wrongly declared not to
+run hides a real blocker, and nothing looks wrong.
+
+**And the Chef server side still misses code that does run** but sits outside the places we look,
+so its counts stay low in a way a reader cannot see.
 
 **Nothing proves the knowledge itself is right.** The rules above decide what happens once a
 finding is classified; whether the recorded evidence about a given finding is accurate is a

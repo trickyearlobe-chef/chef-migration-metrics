@@ -131,7 +131,7 @@ func TestClassifyOffensesForComplexity(t *testing.T) {
 		{"cop_name":"Chef/Style/Unknown","severity":"warning"}
 	]`)
 
-	got := classifyOffensesForComplexity(jsonb, classifier)
+	got := classifyOffensesForComplexity(jsonb, classifier, nil)
 	if len(got) != 3 {
 		t.Fatalf("expected 3 classified offenses, got %d", len(got))
 	}
@@ -140,17 +140,17 @@ func TestClassifyOffensesForComplexity(t *testing.T) {
 	}
 
 	// A review-only repo scores low (acceptance criterion).
-	reviewOnly := classifyOffensesForComplexity([]byte(`[{"cop_name":"Chef/Deprecations/ResourceWithoutUnifiedTrue","severity":"refactor"}]`), classifier)
+	reviewOnly := classifyOffensesForComplexity([]byte(`[{"cop_name":"Chef/Deprecations/ResourceWithoutUnifiedTrue","severity":"refactor"}]`), classifier, nil)
 	score := ComputeCookstyleComplexity(reviewOnly)
 	if ScoreToLabel(score) != LabelLow {
 		t.Errorf("review-only repo: score %d label %q, want low", score, ScoreToLabel(score))
 	}
 
 	// Nil classifier or empty JSON yields no offenses.
-	if got := classifyOffensesForComplexity(jsonb, nil); got != nil {
+	if got := classifyOffensesForComplexity(jsonb, nil, nil); got != nil {
 		t.Errorf("nil classifier should yield nil, got %v", got)
 	}
-	if got := classifyOffensesForComplexity(nil, classifier); got != nil {
+	if got := classifyOffensesForComplexity(nil, classifier, nil); got != nil {
 		t.Errorf("empty json should yield nil, got %v", got)
 	}
 }
