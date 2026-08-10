@@ -32,10 +32,10 @@ Two faults behind it:
 
 - Derive the scheme textually, never from `url.Parse`. A parse failure decides
   nothing.
-- Accept the `jdbc:` prefix and the `mssql` alias.
-- Treat `databaseName` as a database keyword alongside `database`,
-  `initialcatalog`, `dbname` — it is the JDBC spelling.
 - Extract a Postgres path-form database textually.
+- **The accepted schemes are the ones the screen shows, and no others.** The
+  check exists to catch something missing from a format we offered, not to
+  recognise formats nobody was given.
 - Keep both refusals that earn their place: something that is not a connection
   string at all, and one that names no database.
 - When refusing, say the actual cause, and point at the keyword-value form —

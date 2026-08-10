@@ -29,13 +29,13 @@ import (
 // internal/ownershipsql's supported-driver list is the authority; if it gains a
 // driver, this list gains the scheme.
 //
-// "mssql" is here because it is a widely used alias for the same driver, and
-// refusing it teaches nothing.
+// Nothing else belongs here. These are the schemes the screen shows, and the
+// screen is where people get the format from; accepting spellings we never
+// offered only means accepting ones the driver cannot open either.
 var databaseURLSchemes = map[string]bool{
 	"postgres":   true,
 	"postgresql": true,
 	"sqlserver":  true,
-	"mssql":      true,
 }
 
 // ErrNotADatabaseURL is returned when the value is not a connection string for
@@ -97,7 +97,7 @@ func validateDatabaseURL(value []byte) ValidationResult {
 		}
 		// Postgres names the database in the path. SQL Server uses the path for
 		// a named instance, so a path alone does not count there.
-		if scheme != "sqlserver" && scheme != "mssql" && pathNamesDatabase(rest) {
+		if scheme != "sqlserver" && pathNamesDatabase(rest) {
 			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
 		}
 		return ValidationResult{Valid: false, Error: ErrDatabaseURLNamesNoDatabase}
@@ -116,9 +116,6 @@ func validateDatabaseURL(value []byte) ValidationResult {
 // splitDatabaseURLScheme reports whether the string is written in the URL
 // spelling, and if so returns the scheme folded and whatever follows "://".
 //
-// A "jdbc:" prefix is stripped: `jdbc:sqlserver://` names the same driver, and
-// it is what an application's own configuration hands over.
-//
 // The text before "://" is only a scheme if it looks like one. A keyword-value
 // string can carry a URL as an option value — a callback, a metadata address —
 // and splitting on "://" without looking would read all of it as the scheme, so
@@ -129,7 +126,6 @@ func splitDatabaseURLScheme(dsn string) (scheme, rest string, isURL bool) {
 		return "", "", false
 	}
 	candidate := strings.ToLower(strings.TrimSpace(before))
-	candidate = strings.TrimPrefix(candidate, "jdbc:")
 	if candidate == "" || strings.ContainsAny(candidate, ";=& \t/@") {
 		return "", "", false
 	}
@@ -164,8 +160,7 @@ func namesDatabase(dsn string) bool {
 			continue
 		}
 		switch normaliseConnectionKey(key) {
-		// "databaseName" is the JDBC spelling and arrives with the jdbc: prefix.
-		case "database", "databasename", "initialcatalog", "dbname":
+		case "database", "initialcatalog", "dbname":
 			if strings.TrimSpace(value) != "" {
 				return true
 			}
