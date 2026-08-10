@@ -19,27 +19,23 @@ import "strings"
 // is held as its parts rather than as a string to be parsed — see
 // plans/database-connection-as-parts.md.
 
-// charactersToEncode are the characters measured to stop a connection string
-// being parsed as a URL, with what each becomes. ":" and "@" are deliberately
-// absent: both were measured to be accepted inside a password, and encoding them
-// would be a change with no cause.
-var charactersToEncode = map[byte]string{
-	' ':  "%20",
-	'"':  "%22",
-	'#':  "%23",
-	'<':  "%3C",
-	'>':  "%3E",
-	'[':  "%5B",
-	'\\': "%5C",
-	']':  "%5D",
-	'^':  "%5E",
-	'`':  "%60",
-	'{':  "%7B",
-	'|':  "%7C",
-	'}':  "%7D",
-	'/':  "%2F",
-	'?':  "%3F",
+// mayAppearInACredential reports whether a byte can sit in a URL's userinfo as
+// it stands. Written as what is allowed rather than what is not: a list of
+// forbidden characters is a list somebody can leave something off, and a
+// password with a "£" in it found exactly that hole.
+//
+// These are the unreserved and sub-delimiter characters of RFC 3986, plus ":",
+// which separates the user from the password. Everything else — including every
+// byte of a non-ASCII character — is percent-encoded.
+func mayAppearInACredential(b byte) bool {
+	switch {
+	case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z', b >= '0' && b <= '9':
+		return true
+	}
+	return strings.IndexByte("-._~!$&'()*+,;=:", b) >= 0
 }
+
+const hexDigits = "0123456789ABCDEF"
 
 // encodeCredentialForURL percent-encodes the user and password of a URL-form
 // connection string, leaving everything else exactly as written.
@@ -48,11 +44,25 @@ var charactersToEncode = map[byte]string{
 // the host, the database and the vendor options belong to whoever wrote them and
 // are none of this function's business.
 //
-// A "%" that already begins a valid escape is left alone. That is an assumption,
-// and it is the same one every URL library makes: somebody who writes "%25" in a
-// connection string means an escaped percent. The alternative — encoding it again
-// — would corrupt a password that currently works, and the failure would look
-// like a wrong password rather than a mangled one.
+// Every "%" in a credential is a percent sign, never an escape.
+//
+// Percent-encoding is a URL idea. Nobody typing a database password is thinking
+// in URLs — they paste a user and a password and expect them to be used. So
+// "%25" is three characters somebody typed, and "%41" is three more; neither is
+// an instruction to this code.
+//
+// The alternative reading costs more than it saves. A pasted password containing
+// "%41" parses perfectly as a URL, is decoded to "A", and the driver then
+// authenticates with a password nobody typed — the login is refused, it reads as
+// a bad credential, and the search goes to the account rather than the tooling.
+// Against that, the population this would inconvenience is somebody who
+// deliberately percent-encoded a password before pasting it, which is not a
+// thing people do.
+//
+// It is a real trade, though: a stored connection whose password contains "%"
+// and works today works because it is being decoded, and after this it is sent
+// as written. That is the one case this breaks, and it breaks it loudly, as a
+// refused login.
 func encodeCredentialForURL(dsn string) string {
 	scheme, rest, isURL := splitConnectionScheme(dsn)
 	if !isURL {
@@ -66,15 +76,13 @@ func encodeCredentialForURL(dsn string) string {
 	var encoded strings.Builder
 	for i := 0; i < len(userinfo); i++ {
 		c := userinfo[i]
-		if c == '%' && !beginsEscape(userinfo[i:]) {
-			encoded.WriteString("%25")
+		if mayAppearInACredential(c) {
+			encoded.WriteByte(c)
 			continue
 		}
-		if replacement, needsEncoding := charactersToEncode[c]; needsEncoding {
-			encoded.WriteString(replacement)
-			continue
-		}
-		encoded.WriteByte(c)
+		encoded.WriteByte('%')
+		encoded.WriteByte(hexDigits[c>>4])
+		encoded.WriteByte(hexDigits[c&0x0F])
 	}
 	if encoded.String() == userinfo {
 		return dsn
@@ -100,18 +108,19 @@ func userinfoOfConnection(rest string) string {
 	if q := strings.Index(rest, "?"); q >= 0 {
 		limit = q
 	}
-	at := strings.LastIndex(rest[:limit], "@")
-	if at < 0 {
-		return ""
+	if at := strings.LastIndex(rest[:limit], "@"); at >= 0 {
+		return rest[:at]
 	}
-	return rest[:at]
-}
-
-// beginsEscape reports whether s starts with "%" followed by two hex digits.
-func beginsEscape(s string) bool {
-	return len(s) >= 3 && isHex(s[1]) && isHex(s[2])
-}
-
-func isHex(b byte) bool {
-	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
+	// No "@" before the first "?", which means the "?" is inside the password
+	// rather than starting the options — a password containing one hides the
+	// credential from the rule above, and nothing gets encoded at all. Falling
+	// back to the last "@" anywhere finds it.
+	//
+	// The trade is a connection whose *options* contain an "@" and whose password
+	// contains a "?", where this would take too much. That needs both at once,
+	// and the first branch covers every string that has an "@" where one belongs.
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		return rest[:at]
+	}
+	return ""
 }
