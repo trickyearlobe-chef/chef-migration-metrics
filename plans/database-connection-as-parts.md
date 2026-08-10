@@ -64,6 +64,29 @@ fine. It was only ever wrong as a gate.
 passed through and never adjudicated, which is the discipline this code kept
 failing at.
 
+## Where the customer's values actually come from
+
+Reported after the evening this plan came out of, and it changes the target
+rather than the reasoning.
+
+The host and the credential are held in HashiCorp Vault. Something authenticates
+to Vault using the Chef client key, extracts the values into environment
+variables, and a Python script uses them directly. Nothing in that chain
+percent-encodes anything, which settles the question this plan was written
+around: the values are literal, and a "%" in a password is a percent sign.
+
+It also says the parts already exist as parts, and are only assembled into a
+string because our screen asks for one. Two consequences worth weighing when this
+is picked up:
+
+- **Reading them from Vault directly is the better end state.** The credential
+  would never be pasted, never be typed, and never be re-encrypted by us. The
+  authentication path already exists, since the Chef client key is a credential
+  this tool already holds.
+- **Whatever their Python library expects is the dialect they know.** Worth
+  finding out before choosing what the screen accepts — matching the form they
+  already have beats teaching them a new one.
+
 ## Migration
 
 Existing credentials are strings and must keep working, so the parser stays for

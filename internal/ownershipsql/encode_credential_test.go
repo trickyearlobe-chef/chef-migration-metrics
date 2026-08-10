@@ -26,8 +26,6 @@ func TestEncodeCredential_LeavesAWorkingConnectionAlone(t *testing.T) {
 	for _, dsn := range []string{
 		"sqlserver://svc:pw@host:1433?database=cmdb",
 		"sqlserver://svc:pw@host:1433?database=cmdb&ApplicationIntent=ReadOnly",
-		// Already encoded, and must not be encoded twice.
-		"sqlserver://svc:pa%25ss@host:1433?database=cmdb",
 		// No credential at all.
 		"sqlserver://host:1433?database=cmdb",
 		// Not a URL, so there is no userinfo to find.
@@ -48,8 +46,12 @@ func TestEncodeCredential_EncodesWhatAURLCannotCarry(t *testing.T) {
 		{"sqlserver://svc:pw#rd@host:1433?database=cmdb", "svc:pw%23rd"},
 		{"sqlserver://svc:pw/rd@host:1433?database=cmdb", "svc:pw%2Frd"},
 		{`sqlserver://DOM\svc:pw@host:1433?database=cmdb`, "DOM%5Csvc:pw"},
-		// Several at once, including one already encoded, which stays as it is.
-		{"sqlserver://svc:a b%c%25d@host:1433?database=cmdb", "svc:a%20b%25c%25d"},
+		// Several at once, including "%25" — which is three characters somebody
+		// typed, not an escape, because nobody encodes a pasted password.
+		{"sqlserver://svc:a b%c%25d@host:1433?database=cmdb", "svc:a%20b%25c%2525d"},
+		// This one parses as a URL perfectly well, and is still wrong without
+		// encoding: the driver would decode it and authenticate as "passAword".
+		{"sqlserver://svc:pass%41word@host:1433?database=cmdb", "svc:pass%2541word"},
 	}
 	for _, c := range cases {
 		got := encodeCredentialForURL(c.dsn)
@@ -81,13 +83,18 @@ func TestEncodeCredential_ResultParsesAsAURL(t *testing.T) {
 	}
 }
 
-// The password must survive intact, or this turns a loud parse failure into a
-// quiet "wrong password" — which is worse, because it looks like the credential
-// is wrong rather than the tooling.
-func TestEncodeCredential_PasswordDecodesBackToWhatWasTyped(t *testing.T) {
+// The one property that matters, with no exceptions to remember: whatever was
+// typed is what the driver receives.
+//
+// Every case below is a password somebody could paste. The ones containing "%"
+// are the point — a percent sign is a percent sign, and "%41" is three
+// characters, not a letter A. Without that, the driver authenticates with a
+// password nobody typed and the refusal reads as a bad account.
+func TestEncodeCredential_WhateverWasTypedIsWhatArrives(t *testing.T) {
 	for _, password := range []string{
 		"pw%rd", "pw rd", "pw#rd", "pw/rd", "p@ssw0rd", "p:ssw0rd",
-		"pa%ss;wo rd#7Q!", "%", "%%", "%25", "already%20encoded",
+		"pa%ss;wo rd#7Q!", "%", "%%", "%25", "%41", "already%20encoded",
+		"100%sure", "50%%off", "Passw0rd!", "£ntropy",
 	} {
 		dsn := "sqlserver://svc:" + password + "@host:1433?database=cmdb"
 		parsed, err := url.Parse(encodeCredentialForURL(dsn))
@@ -96,18 +103,24 @@ func TestEncodeCredential_PasswordDecodesBackToWhatWasTyped(t *testing.T) {
 			continue
 		}
 		got, _ := parsed.User.Password()
-		// "%25" and "already%20encoded" are left alone deliberately: a valid
-		// escape is assumed to be one, since that is what anybody writing a
-		// connection string means by it. Everything else round-trips exactly.
-		if isAlreadyEncoded(password) {
-			continue
-		}
 		if got != password {
-			t.Errorf("password did not survive\n  typed:  %q\n  became: %q", password, got)
+			t.Errorf("the password changed on the way to the driver\n  typed:   %q\n  arrives: %q", password, got)
 		}
 	}
 }
 
-func isAlreadyEncoded(password string) bool {
-	return password == "%25" || password == "already%20encoded"
+// Everything outside the credential is somebody else's business and is returned
+// exactly as written, whether or not the connection parses.
+func TestEncodeCredential_ChangesNothingOutsideTheCredential(t *testing.T) {
+	for _, dsn := range []string{
+		"sqlserver://svc:pw%rd@host:1433?database=cmdb&ApplicationIntent=ReadOnly",
+		"postgres://svc:pw rd@host:5432/cmdb?sslmode=disable",
+	} {
+		got := encodeCredentialForURL(dsn)
+		_, after, _ := strings.Cut(got, "@")
+		_, wantAfter, _ := strings.Cut(dsn, "@")
+		if after != wantAfter {
+			t.Errorf("changed something outside the credential\n  before: %s\n  after:  %s", dsn, got)
+		}
+	}
 }
