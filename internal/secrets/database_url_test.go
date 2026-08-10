@@ -79,3 +79,56 @@ func TestDatabaseURL_RejectsADriverWeCannotUse(t *testing.T) {
 		t.Error("stored a connection for a driver the importer cannot open")
 	}
 }
+
+// The shapes a real SQL Server estate hands over. Every one of these was
+// refused by the first version and blocked a customer mid-session, so they are
+// pinned by the exact text rather than by a paraphrase of it.
+//
+// Two separate faults. Go's url.Query() silently drops any parameter separated
+// by a semicolon, which is how SQL Server connection strings routinely carry
+// their options — so the database was there and unseen. And the keyword-value
+// form was recognised only by "server=", while "Data Source=" is at least as
+// common and is what their DBA supplied.
+func TestDatabaseURL_AcceptsTheOptionsARealEstateCarries(t *testing.T) {
+	accepted := []string{
+		"sqlserver://svc:pw@host:1433?database=cmdb;ApplicationIntent=ReadOnly;MultiSubnetFailover=True",
+		"sqlserver://svc:pw@host:1433?database=cmdb&ApplicationIntent=ReadOnly",
+		"server=host;database=cmdb;ApplicationIntent=ReadOnly;MultiSubnetFailover=True",
+		"Data Source=host;Initial Catalog=cmdb;ApplicationIntent=ReadOnly",
+		"Data Source=host,1433;Initial Catalog=cmdb;Integrated Security=SSPI",
+		"postgres://svc:pw@host:5432/cmdb?sslmode=require&application_name=cmm",
+	}
+	for _, dsn := range accepted {
+		if err := ValidateDatabaseURL(dsn); err != nil {
+			t.Errorf("refused a connection a customer actually uses: %v\n  shape: %s",
+				err, redactForTest(dsn))
+		}
+	}
+}
+
+// Still refused, because the refusal is the point: a connection with no
+// database named fails later, in front of somebody who did not write it.
+func TestDatabaseURL_StillRefusesAConnectionWithNoDatabaseAmongItsOptions(t *testing.T) {
+	rejected := []string{
+		"sqlserver://svc:pw@host:1433?ApplicationIntent=ReadOnly;MultiSubnetFailover=True",
+		"server=host;ApplicationIntent=ReadOnly;MultiSubnetFailover=True",
+		"Data Source=host;Integrated Security=SSPI",
+	}
+	for _, dsn := range rejected {
+		if err := ValidateDatabaseURL(dsn); err == nil {
+			t.Errorf("accepted a connection naming no database: %s", redactForTest(dsn))
+		}
+	}
+}
+
+// redactForTest keeps a failure message from carrying a password, on the same
+// reasoning as the validator itself. The fixtures here are fake, but a test
+// message is copied into tickets and chat by whoever is debugging.
+func redactForTest(dsn string) string {
+	if i := strings.Index(dsn, "://"); i >= 0 {
+		if at := strings.Index(dsn[i:], "@"); at >= 0 {
+			return dsn[:i+3] + "***" + dsn[i+at:]
+		}
+	}
+	return dsn
+}
