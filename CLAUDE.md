@@ -88,6 +88,16 @@ things that were false; the directory was renamed so the old habit has no home t
   markdown link, because a link can be checked — and the link is checked at commit time.
 - **Every journey names at least one test**, and says which parts nothing can prove. Both are
   the convention; only the first is enforceable.
+- **Every journey has a suite**: `*_journey_test.go`, build tag `journey`, naming its journey in
+  a comment. One test per thing the journey says must be in place, quoting that line. Green means
+  built, red means still to do — so it is the journey's todo list, and running it recomputes the
+  list rather than asking anyone to keep one true. `make journeys` / `make journey` /
+  `make journey-coverage`. Enforced at commit and in CI.
+- **The suite is outside the gating suite and must stay there.** Red is the normal state for most
+  of a journey's life. A red that blocks a release gets deleted, and then the list is gone. It is
+  never where a regression is parked: something that used to work and now fails is a broken build.
+- **Closing a gap means writing the test, not reporting it.** Read the journey, add a test per
+  requirement, `t.Skip` with a reason where it cannot be answered honestly yet.
 - **No status claims.** Nothing says built, shipped, planned or proposed. A red test means "not
   proven" — that is the status mechanism, and it needs no maintenance.
 - **Verify before writing.** Never state a behaviour you have not just checked in the tree, and
