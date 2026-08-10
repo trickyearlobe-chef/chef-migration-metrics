@@ -72,9 +72,15 @@ type Config struct {
 	TLSMode string
 }
 
-// resolveDSN applies the TLS override, if one was asked for.
+// resolveDSN prepares the stored connection for the driver: the TLS override if
+// one was asked for, and percent-encoding of the user and password, which the
+// person who typed them should not have to do by hand.
 func (c Config) resolveDSN() (string, error) {
-	return applyTLSMode(c.Driver, c.DSN, c.TLSMode)
+	dsn, err := applyTLSMode(c.Driver, c.DSN, c.TLSMode)
+	if err != nil {
+		return "", err
+	}
+	return encodeCredentialForURL(dsn), nil
 }
 
 // sqlSource adapts a query result to ownershipimport.RowSource.

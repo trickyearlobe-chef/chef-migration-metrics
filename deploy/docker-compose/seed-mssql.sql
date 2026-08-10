@@ -77,3 +77,25 @@ GO
 --   LEFT JOIN staff s ON s.staff_id = a.staff_id
 --   WHERE s.left_company = 0 OR s.left_company IS NULL
 --   ORDER BY a.asset_id
+GO
+
+-- A login whose password contains the characters that stop a connection string
+-- being parsed as a URL: a percent sign, a semicolon, a space and a hash.
+--
+-- It exists so the encoding repair can be proved by connecting rather than
+-- asserted. A customer's connection was refused by the driver as "invalid URL
+-- format" with every visible part of it legal, and the password could not be
+-- retyped because nobody at hand knew it.
+--
+-- This is a fixture in a throwaway development container, not a credential. It
+-- is read-only on the sample database and exists nowhere else.
+IF SUSER_ID(N'cmmnasty') IS NULL
+    CREATE LOGIN cmmnasty WITH PASSWORD = N'pa%ss;wo rd#7Q!', CHECK_POLICY = OFF;
+GO
+USE cmdb;
+GO
+IF DATABASE_PRINCIPAL_ID(N'cmmnasty') IS NULL
+    CREATE USER cmmnasty FOR LOGIN cmmnasty;
+GO
+ALTER ROLE db_datareader ADD MEMBER cmmnasty;
+GO
