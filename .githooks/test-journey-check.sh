@@ -15,14 +15,44 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 FIXTURE=journeys/_journey_check_fixture.md
+# The fixture journey needs a suite like any other, or every case below blocks
+# for that reason rather than the one it is testing. It lives under .githooks/
+# and starts with an underscore, both of which the Go tool ignores, so it is
+# never compiled — the hook only greps for the journey's name inside it.
+SUITE_FIXTURE=.githooks/_journey_check_fixture_journey_test.go
+PLAN_FIXTURE=plans/_plan_check_fixture.md
 PASSED=0
 FAILED=0
 
 cleanup() {
   git rm -q --cached --ignore-unmatch "$FIXTURE" >/dev/null 2>&1 || true
-  rm -f "$FIXTURE"
+  git rm -q --cached --ignore-unmatch "$PLAN_FIXTURE" >/dev/null 2>&1 || true
+  rm -f "$FIXTURE" "$SUITE_FIXTURE" "$PLAN_FIXTURE" "$SUITE_FIXTURE.parked"
 }
 trap cleanup EXIT
+
+printf '// Suite for %s — see test-journey-check.sh\n' "$FIXTURE" > "$SUITE_FIXTURE"
+
+# assert_plan <"block"|"pass"> <description> <<< plan body on stdin
+# Plans are checked by a different rule from journeys, so they need their own
+# fixture: a plan written into the journey fixture would be checked as a journey.
+assert_plan() {
+  local want="$1" desc="$2"
+  cat > "$PLAN_FIXTURE"
+  git add -f "$PLAN_FIXTURE" >/dev/null 2>&1
+  local out status
+  out=$(.githooks/pre-commit 2>&1); status=$?
+  git rm -q --cached --ignore-unmatch "$PLAN_FIXTURE" >/dev/null 2>&1
+  rm -f "$PLAN_FIXTURE"
+
+  local got="pass"; [[ $status -ne 0 ]] && got="block"
+  if [[ "$got" != "$want" ]]; then
+    printf '  FAIL  %s (wanted %s, got %s)\n' "$desc" "$want" "$got"; FAILED=$((FAILED + 1))
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  printf '  ok    %s\n' "$desc"; PASSED=$((PASSED + 1))
+}
 
 # assert <"block"|"pass"> <description> [expected substring] <<< spec body on stdin
 # The optional third argument must appear in the hook's output. Use it when the
@@ -98,6 +128,23 @@ assert block "a journey whose only reference is to code, not to a test" <<'EOF'
 # A journey
 The verdict is decided in [the analyser](internal/analysis/cookstyle_recompute.go).
 EOF
+
+# Agreed 2026-08-10. A journey names tests that prove particular things; a suite
+# enumerates everything the journey says must be in place, so what is OUTSTANDING
+# is a list you can run rather than a paragraph somebody has to keep true. The
+# rule existed as prose for a day and reached one journey in twenty, which is the
+# protocol demonstrating its own thesis at its own expense.
+# Checked by taking the suite away rather than by writing a journey without one,
+# so the case cannot pass for the wrong reason once every other rule is satisfied.
+mv "$SUITE_FIXTURE" "$SUITE_FIXTURE.parked"
+assert block "a journey with no suite" <<'EOF'
+# A journey
+
+An engineer needs to know what is stopping the upgrade.
+
+Pinned by [the derivation](internal/analysis/cookstyle_status_test.go#TestDeriveStatus_EmptyOffensesIsReady).
+EOF
+mv "$SUITE_FIXTURE.parked" "$SUITE_FIXTURE"
 
 assert pass "a journey naming a frontend test" <<'EOF'
 # A journey
@@ -188,6 +235,34 @@ EOF
 assert block "a config key" <<'EOF'
 # A journey
 Turned on with `ingest.show_run_events`.
+EOF
+
+# ---------------------------------------------------------------------------
+# Plans do not tick things off
+# ---------------------------------------------------------------------------
+# Only the ticked box is a claim. An empty one is a backlog item, which is the
+# whole purpose of a todo file — blocking those would push a legitimate list into
+# prose for no gain.
+
+assert_plan block "a plan that ticks an item off" <<'EOF'
+# A plan
+
+- [x] Wire the collector to the new endpoint
+- [ ] Backfill the old rows
+EOF
+
+assert_plan pass "a plan listing work still to do" <<'EOF'
+# A plan
+
+- [ ] Wire the collector to the new endpoint
+- [ ] Backfill the old rows
+EOF
+
+assert_plan pass "a plan with no boxes at all" <<'EOF'
+# A plan
+
+Wire the collector to the new endpoint, then backfill the old rows. The order
+matters: the backfill reads the column the first step adds.
 EOF
 
 echo

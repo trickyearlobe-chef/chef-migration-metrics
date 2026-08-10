@@ -343,6 +343,31 @@ journey_warn() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# 3b. Plans do not tick things off
+# ---------------------------------------------------------------------------
+# Agreed 2026-08-10. CLAUDE.md has said since the plans were introduced that
+# done-ness is git history plus passing tests and is never re-asserted in prose,
+# because a ticked box is a status claim that nothing re-validates. It was a
+# convention, so it drifted: 80 ticked boxes across the backlog when measured.
+#
+# Only the TICKED box is blocked. An empty box is a backlog item, which is what
+# a todo file is for; a ticked one says work is finished, and finished work
+# leaves the plan entirely. Scoped to the plan being committed, so it clears as
+# files are touched rather than demanding one sweep of everything.
+for file in "${STAGED_FILES[@]}"; do
+  case "$file" in
+    plans/*.md) ;;
+    *) continue ;;
+  esac
+
+  plan_content=$(git show ":$file" 2>/dev/null) || continue
+  ticked=$(printf '%s\n' "$plan_content" | grep -cE '^[[:space:]]*[-*+] \[[xX]\]') || true
+  if [[ "$ticked" -gt 0 ]]; then
+    block "$file" "plan ticks ${ticked} item(s) off — done-ness is git history and passing tests, never a claim in prose; delete the finished items instead (see CLAUDE.md, Planning)"
+  fi
+done
+
 for file in "${STAGED_FILES[@]}"; do
   case "$file" in
     journeys/README.md) continue ;;   # states the rule; exempt from it
@@ -376,6 +401,24 @@ for file in "${STAGED_FILES[@]}"; do
     | grep -cE '_test\.go|\.test\.(ts|tsx)|/test-[A-Za-z0-9_-]+\.sh') || true
   if [[ "$journey_tests" -eq 0 ]]; then
     block "$file" "journey names no test — link one test that proves part of it, and say in prose which parts nothing can prove; a red test is the point, it means 'not proven yet'"
+  fi
+
+  # ---- the journey must have a suite --------------------------------------
+  # Agreed 2026-08-10, after measuring: the convention was one test per thing a
+  # journey says must be in place, run outside CI as a todo list that cannot go
+  # stale. It stood at one journey in twenty, because nothing checked it.
+  #
+  # This is a different demand from the link rule above, and does not contradict
+  # it. The link rule refuses to ask for a test per claim, because a third of
+  # what a journey promises cannot carry an assertion and the rule would be met
+  # with tests that assert nothing. This asks only that the suite EXISTS — what
+  # goes in it is a judgement, including a skip that says why a line cannot be
+  # answered yet. An honest skip is the admission; a missing suite is silence.
+  #
+  # Scoped to the journey being committed, so it drives the number down as
+  # journeys are touched rather than blocking every commit at once.
+  if ! grep -rql "$file" --include='*_journey_test.go' . 2>/dev/null; then
+    block "$file" "journey has no suite — add a *_journey_test.go under the 'journey' build tag naming this file, with one test per thing the journey says must be in place (see plans/journey-suites.md and internal/webapi/ownership_intake_journey_test.go); run it with 'make journey'"
   fi
 
   # ---- checked references -------------------------------------------------

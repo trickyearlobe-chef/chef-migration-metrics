@@ -861,6 +861,8 @@ func (r *Router) registerRoutes() {
 	// fixed-header route above, which stays in service unchanged.
 	// Every case in handleOwnershipIntake's dispatch switch needs an entry
 	// here; TestOwnershipIntakeDispatchCasesAreRouted holds the two in step.
+	// The rows an import could not use, as a worklist rather than only an export.
+	r.protect("/api/v1/ownership/import/rejections", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake)
 	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake)

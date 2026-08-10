@@ -354,6 +354,13 @@ export function OwnershipMappedImport() {
   const sourceReady =
     sourceKind === "file" ? Boolean(file) : Boolean(dbCredential && dbQuery.trim());
 
+  const blockedReason = previewBlockedReason({
+    sourceKind,
+    sourceReady,
+    hasOwner: Boolean(choices.owner?.column),
+    hasEntityKey: Boolean(choices.entity_key?.column),
+  });
+
   async function run(commit: boolean) {
     if (!sourceReady || !mappingComplete) return;
 
@@ -807,11 +814,15 @@ export function OwnershipMappedImport() {
               <button
                 type="button"
                 onClick={() => run(false)}
-                disabled={!mappingComplete}
+                disabled={blockedReason !== null}
+                title={blockedReason ?? undefined}
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Preview — nothing is saved
               </button>
+              {blockedReason && (
+                <span className="text-sm text-amber-700">{blockedReason}</span>
+              )}
               {mappings.length > 0 && (
                 <select
                   aria-label="Load a saved mapping"
@@ -1110,6 +1121,39 @@ function suggestionsFor(rows: IntakeReportRow[], value: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Why preview is not available yet
+//
+// A disabled button with no reason is the same fault as an import that drops
+// rows silently: the screen knows something the person does not, and they are
+// left guessing which of six controls is at fault. Owner and Entity key are
+// both required, and the guess cannot always find an owner column — which is
+// exactly when this button greys out and nothing says so.
+//
+// It also covers the source, which the disabled state used to ignore: with no
+// file chosen the button looked available and did nothing at all when clicked.
+// ---------------------------------------------------------------------------
+
+export function previewBlockedReason(opts: {
+  sourceKind: "file" | "database";
+  sourceReady: boolean;
+  hasOwner: boolean;
+  hasEntityKey: boolean;
+}): string | null {
+  if (!opts.sourceReady) {
+    return opts.sourceKind === "file"
+      ? "Choose a file first."
+      : "Choose a stored credential and write a query first.";
+  }
+  const missing: string[] = [];
+  if (!opts.hasOwner) missing.push("Owner");
+  if (!opts.hasEntityKey) missing.push("Entity key");
+  if (missing.length === 0) return null;
+  return `Map ${missing.join(" and ")} first — ${
+    missing.length === 1 ? "it is" : "they are"
+  } required. The guess only fills a column in when it recognises the name.`;
+}
+
+// ---------------------------------------------------------------------------
 // Guessing a starting mapping
 //
 // A guess the administrator corrects beats an empty form. It is only ever a
@@ -1117,29 +1161,34 @@ function suggestionsFor(rows: IntakeReportRow[], value: string): string {
 // they preview it.
 // ---------------------------------------------------------------------------
 
-function guessMapping(
+export function guessMapping(
   profile: IntakeSourceProfile,
 ): Partial<Record<IntakeTargetField, ColumnChoice>> {
   const guesses: Partial<Record<IntakeTargetField, ColumnChoice>> = {};
 
-  const find = (...needles: string[]) =>
+  // Each guess excludes the columns already taken. Without that, a table whose
+  // only name-ish column is `owner_name` maps BOTH the owner and the thing
+  // owned to it — every assignment imported against the owner's own name, which
+  // is silent and which a four-row preview does not obviously show.
+  const find = (taken: (string | undefined)[], ...needles: string[]) =>
     profile.columns.find((column) => {
+      if (taken.includes(column.name)) return false;
       const name = column.name.toLowerCase();
       return needles.some((needle) => name.includes(needle));
     })?.name;
 
-  const owner = find("owner", "email", "contact", "maintainer", "assignee", "user");
+  const owner = find([], "owner", "email", "contact", "maintainer", "assignee", "user");
   if (owner) {
     guesses.owner = { column: owner, transform: "trim" };
   }
 
-  const key = find("repo", "cookbook", "node", "entity", "name");
+  const key = find([owner], "repo", "cookbook", "node", "entity", "name");
   if (key) {
     guesses.entity_key = { column: key, transform: "trim" };
   }
 
-  const org = find("org", "tenant", "business");
-  if (org && org !== owner && org !== key) {
+  const org = find([owner, key], "org", "tenant", "business");
+  if (org) {
     guesses.organisation = { column: org, transform: "trim" };
   }
 

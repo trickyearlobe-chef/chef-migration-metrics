@@ -197,6 +197,107 @@ test-verbose: ## Run all Go unit tests with verbose output
 test-short: ## Run only short/fast Go unit tests
 	go test -short -race ./...
 
+# journey runs the journey suites: one test per thing a journey says has to be
+# in place. Green means built, red means not yet — so this is the todo list for
+# every journey, and a todo list made of tests cannot go stale, because running
+# it recomputes it rather than asking somebody to remember.
+#
+# It is NOT part of `make ci` and must never be. Most of a journey is unbuilt for
+# most of its life, so red is the normal state here; a red that blocks a release
+# gets deleted, and then the list is gone.
+#
+# This is not where regressions go. Something that used to work and now fails is
+# a broken build, not a todo.
+.PHONY: journey
+journey: ## Journey todo list: one test per thing a journey says must be in place
+	@echo "$(GREEN)Journey requirements — green is built, red is still to do:$(RESET)"
+	@go test -tags journey -v -run 'TestJourney' ./... 2>&1 \
+		| grep -E '^(=== RUN|--- (PASS|FAIL|SKIP))|^\s+\S+\.go:[0-9]+:' \
+		| grep -v '^=== RUN' || true
+	@echo ""
+	@echo "$(YELLOW)SKIP = cannot be answered from here yet; the reason says why.$(RESET)"
+	@echo "$(YELLOW)When one turns green it stays green — nothing to update by hand.$(RESET)"
+	@$(MAKE) --no-print-directory journey-coverage
+
+# journey-suite-check is the CI counterpart of the pre-commit rule: journeys
+# CHANGED in this push must have a suite. Scoped to the diff on purpose — a
+# repo-wide check would be red from the day it was added and would be disabled
+# within a week, which is how the rule got lost in the first place.
+#
+# BASE defaults to the previous commit; CI passes the base of the push or PR.
+# It exists so the rule survives `git commit --no-verify`, which is the only way
+# past the hook. (The wider job of running the whole hook in CI is a separate
+# backlog item — see plans/todo-ci.md.)
+BASE ?= HEAD~1
+
+.PHONY: journey-suite-check
+journey-suite-check: ## Fail if a journey changed since BASE has no journey suite
+	@missing=""; \
+	for j in $$(git diff --name-only --diff-filter=ACMR $(BASE)...HEAD -- 'journeys/*.md' 2>/dev/null); do \
+		case "$$j" in journeys/overview.md|journeys/README.md) continue ;; esac; \
+		[ -f "$$j" ] || continue; \
+		if ! grep -rql "$$j" --include='*_journey_test.go' . 2>/dev/null; then \
+			missing="$$missing  $$j\n"; \
+		fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		printf "$(RED)Journeys changed here with no suite:$(RESET)\n"; \
+		printf "$$missing"; \
+		printf "$(YELLOW)Add a *_journey_test.go under the 'journey' build tag naming the journey,$(RESET)\n"; \
+		printf "$(YELLOW)with one test per thing it says must be in place. See plans/journey-suites.md.$(RESET)\n"; \
+		exit 1; \
+	fi; \
+	printf "$(GREEN)Every journey changed here has a suite.$(RESET)\n"
+
+# journeys lists what the tool is supposed to do, from the journeys themselves
+# rather than from a hand-maintained index, so the list cannot disagree with the
+# directory. Each line is a journey's own title, plus whether it has a suite —
+# `yes` means its requirements are enumerated as tests you can run, `no` means
+# they are prose.
+.PHONY: journeys
+journeys: ## List every journey, its title, and whether it has a journey suite
+	@printf "$(BOLD)%-34s %-6s %s$(RESET)\n" "JOURNEY" "SUITE" "TITLE"
+	@for j in journeys/*.md; do \
+		case "$$j" in */overview.md|*/README.md) continue ;; esac; \
+		name=$$(basename "$$j" .md); \
+		title=$$(head -1 "$$j" | sed 's/^# *//'); \
+		if grep -rql "$$j" --include='*_journey_test.go' . 2>/dev/null; then \
+			suite="yes"; \
+		else \
+			suite="$(YELLOW)no$(RESET)"; \
+		fi; \
+		printf "%-34s %-6b %s\n" "$$name" "$$suite" "$$title"; \
+	done
+	@echo ""
+	@printf "$(CYAN)make journey$(RESET)          run the suites — green is built, red is still to do\n"
+	@printf "$(CYAN)make journey-coverage$(RESET) just the journeys with no suite yet\n"
+
+# journey-coverage answers the question one level up: which journeys have no
+# suite at all? A journey with none states its gaps in prose, and prose is what
+# drifts — the whole reason the suites exist. Listing them here means the drift
+# reports itself instead of waiting to be noticed.
+#
+# A suite claims its journey by naming it, so this is a text match rather than a
+# filename convention: `journeys/<name>.md` must appear in some *_journey_test.go.
+.PHONY: journey-coverage
+journey-coverage: ## List journeys with no journey suite yet
+	@covered=0; total=0; missing=""; \
+	for j in journeys/*.md; do \
+		case "$$j" in */overview.md|*/README.md) continue ;; esac; \
+		total=$$((total + 1)); \
+		if grep -rql "$$j" --include='*_journey_test.go' . 2>/dev/null; then \
+			covered=$$((covered + 1)); \
+		else \
+			missing="$$missing  $$j\n"; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "$(BOLD)Journey suites: $$covered of $$total journeys$(RESET)"; \
+	if [ -n "$$missing" ]; then \
+		echo "$(YELLOW)No suite yet — their gaps are recorded in prose, which drifts:$(RESET)"; \
+		printf "$$missing"; \
+	fi
+
 .PHONY: test-frontend
 test-frontend: ## Run frontend unit tests
 	@if [ -d "$(FRONTEND_DIR)" ] && [ -f "$(FRONTEND_DIR)/package.json" ]; then \

@@ -6,6 +6,7 @@ import { LoadingSpinner, ErrorAlert } from "../components/Feedback";
 import { useAuth } from "../context/AuthContext";
 import { OwnershipMappedImport } from "./OwnershipMappedImport";
 import { ScheduledImports } from "../components/ScheduledImports";
+import { ImportRejections } from "../components/ImportRejections";
 
 // ---------------------------------------------------------------------------
 // Ownership Import page — bulk import ownership assignments. Requires operator
@@ -18,7 +19,7 @@ import { ScheduledImports } from "../components/ScheduledImports";
 //     its columns, preview, then commit.
 // ---------------------------------------------------------------------------
 
-type ImportTab = "fixed" | "mapped" | "scheduled";
+type ImportTab = "fixed" | "mapped" | "scheduled" | "rejections";
 
 const TABS: { key: ImportTab; label: string }[] = [
   { key: "fixed", label: "Fixed format" },
@@ -28,6 +29,9 @@ const TABS: { key: ImportTab; label: string }[] = [
   // maintains the source. Its own tab because a schedule nobody can see the
   // state of is a schedule nobody can trust.
   { key: "scheduled", label: "Saved imports" },
+  // The rows an import could not use. Named for what it holds rather than for
+  // the mechanism, because the person who needs it is looking for their data.
+  { key: "rejections", label: "Rows not imported" },
 ];
 
 export function OwnershipImportPage() {
@@ -35,8 +39,9 @@ export function OwnershipImportPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawTab = searchParams.get("tab");
-  const activeTab: ImportTab =
-    rawTab === "mapped" || rawTab === "scheduled" ? rawTab : "fixed";
+  const activeTab: ImportTab = TABS.some((t) => t.key === rawTab)
+    ? (rawTab as ImportTab)
+    : "fixed";
 
   function switchTab(tab: ImportTab) {
     setSearchParams((prev) => {
@@ -109,6 +114,7 @@ export function OwnershipImportPage() {
       {activeTab === "fixed" && <FixedFormatImport />}
       {activeTab === "mapped" && <OwnershipMappedImport />}
       {activeTab === "scheduled" && <ScheduledImports />}
+      {activeTab === "rejections" && <ImportRejections />}
     </div>
   );
 }

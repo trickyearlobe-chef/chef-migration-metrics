@@ -90,6 +90,8 @@ func (r *Router) handleOwnershipIntake(w http.ResponseWriter, req *http.Request)
 	}
 
 	switch {
+	case path == "/api/v1/ownership/import/rejections":
+		r.handleOwnershipImportRejections(w, req)
 	case path == "/api/v1/ownership/import/tables":
 		r.handleIntakeListTables(w, req)
 	case path == "/api/v1/ownership/import/profile":

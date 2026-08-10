@@ -17,6 +17,29 @@ what a connection can actually see and pick a table, or write a query when the s
 awkward — because the person configuring this usually cannot inspect that database any other
 way, and writing a query blind against a schema you cannot see is guesswork.
 
+### Finding my way around a database I have never seen
+
+Somebody else sets up the credentials. From that point I am working blind in somebody else's
+system, and every step I cannot check is one I will have to undo in front of people.
+
+**The connection has to name its database, and I would rather it did.** My instinct was to ask
+what the account can see and pick from a list, but an account that can enumerate every database
+on a server is a broader grant than the job needs, and I would have to defend it. Naming one
+database is the same thing said more narrowly, and the person who set the credential up already
+knew which one they meant. If I need two, that is two connections.
+
+**Then the tables in it, and the views as well.** In a system of record the thing I want is
+often a view somebody already built for exactly this, and if I am only shown tables I will go
+and rebuild it badly.
+
+**Then the fields, with sample data in them.** Names lie. A column called owner might hold a
+team, a person, a login, or nothing at all in nine rows out of ten, and the name will not tell
+me which. Seeing what is actually in there is how I judge where the data I need sits. This is
+the whole of the work; everything after it is mechanical.
+
+**Something guessing the field names for me**, which already helps — as long as I can see what
+it chose and change it. A guess I cannot override is worse than no guess.
+
 To say which column means what — who the owner is, what they own, how to contact them — since
 no two of these systems agree on naming.
 
@@ -30,8 +53,15 @@ To have the rows it could not use handed back to me as a worklist — which row,
 wrong with it — so I can get the source fixed rather than silently importing three quarters of
 it.
 
+**To try the row filter and watch it work before I commit anything.** These exports are usually
+one consolidated list with a column saying whether a row is a node, a repository, or something I
+do not care about. I want to apply that filter and see what comes back — the right things, and
+roughly the right number of them. Committing first and inspecting afterwards is the wrong way
+round, and it is how the wrong import below happened.
+
 To be able to run it again on a schedule once I trust it, and to see whether the source is
-getting better or worse.
+getting better or worse. **That decision turns on having watched it run once, including how long
+it took** — a job that takes forty minutes is a different proposition from one that takes four.
 
 Not to type a password into an import screen. The connection is a stored credential.
 
@@ -49,6 +79,14 @@ to chase; one clearing the other's findings would lose work.
 
 **The preview and the commit go through the same path.** The point of a preview is that it
 tells you what the commit will do, and it can only do that if it is the same code answering.
+
+**Typing my own query is what I need today, and it will not survive the security team.** No
+listing of tables survives contact with a real system of record, and sometimes asking for what I
+want directly is the only way to get it. But it is query text entered through a screen and run
+against a database whose credentials belong to somebody else, and neither the text nor where it
+came from is anything I would call trustworthy. That argument is coming and it should. Whatever
+replaces it has to leave me able to reach data no table listing exposes, or it moves the problem
+into a ticket queue and I am blind again.
 
 ## What proves it
 
@@ -89,10 +127,43 @@ of asset has to be imported once per kind, using a row filter to select each —
 screen says so. Getting it wrong writes assignments against the wrong kind of thing, which
 happened on 2026-08-03. No test covers this because the behaviour is not wrong, only silent.
 
+That a connection has to name its database is pinned where it is stored, so the refusal reaches
+whoever composed it: a connection [naming no
+database](internal/secrets/database_url_test.go#TestDatabaseURL_RejectsAConnectionThatNamesNoDatabase)
+is refused, as is [one for a driver we cannot
+open](internal/secrets/database_url_test.go#TestDatabaseURL_RejectsADriverWeCannotUse), while
+[the forms the screen documents are
+accepted](internal/secrets/database_url_test.go#TestDatabaseURL_AcceptsTheFormsTheImportScreenDocuments).
+The refusal [never quotes the value
+back](internal/secrets/database_url_test.go#TestDatabaseURL_RefusalNeverQuotesTheValue), which
+matters here because the value is a password and this estate's logs are widely readable. The
+same refusal is repeated [at the point of
+use](internal/ownershipsql/dsn_database_test.go#TestEntryPointsRefuseAConnectionWithoutADatabase),
+so a connection stored before this existed cannot slip through.
+
+That views are offered alongside tables — usually where the thing worth importing already lives
+— is pinned [for every driver we
+support](internal/ownershipsql/list_tables_test.go#TestListTablesQuery_IncludesViewsNotJustTables).
+
 **Nothing proves a commit from a database source.** Profiling and preview are exercised against
 a real database through the full request path; committing uses the same path and the same writer
 as a file import, and has been reasoned about rather than watched. Treat the first real database
 commit as unproven.
+
+**Nothing proves a finished run says how long it took**, which is the fact the decision to
+schedule turns on. That gap is [held red on
+purpose](internal/webapi/ownership_import_unproven_test.go#TestUnproven_ARunSaysHowLongItTook)
+rather than described here and forgotten: it fails until somebody closes it.
+
+**Nothing proves I can try the row filter before committing, from a database source.** The
+checking step exists, but whether it is reachable when the source is a database rather than a
+file is asserted by nothing.
+
+**Nothing proves the field-name guessing helps.** A guess that is usually wrong is worse than
+none, because it turns mapping into auditing, and nothing here tells the two apart.
+
+**Nothing proves that looking around cannot write.** Listing, sampling and filtering are
+described as ways to find your way, and finding your way is only safe if that is true.
 
 **Nothing proves the source is right.** Everything here is about loading faithfully and
 reporting what could not be loaded. An asset database that is confidently out of date imports
