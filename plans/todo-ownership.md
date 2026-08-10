@@ -57,11 +57,10 @@ Remaining:
   needing an override connects without one and fails. Not silent — the failure now reports
   that no `sslmode` was set — but wrong. Needs a column and a migration.
 
-- [ ] **SQL Server has no TLS override.** It spells this `encrypt=`, and the two
-  vocabularies do not map onto each other cleanly enough to guess at, so an override is
-  refused for SQL Server rather than translated. It can still be set in the connection
-  string, where it works. Worth doing properly if a customer needs it: the mapping wants
-  measuring against `msdsn.Parse`, not reasoning about.
+- [ ] **`strict` TLS for SQL Server is offered but unproven against a server that supports
+  it.** The local container cannot do TDS 8.0, so the only thing measured is that it
+  correctly refuses — which is what the functional test asserts. Whether it connects to a
+  server that does support it has not been seen.
 
   **Testing it needs no customer database.** `make mssql-up`, `make seed-mssql`,
   `make test-mssql` stand up SQL Server 2022 in a container, seed a sample system of record
