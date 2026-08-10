@@ -4,6 +4,7 @@
 package secrets
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -170,7 +171,7 @@ func TestDatabaseURL_StillRefusesWhatItShould(t *testing.T) {
 			t.Errorf("accepted %s: %s", c.why, redactForTest(c.dsn))
 			continue
 		}
-		if err != c.want {
+		if !errors.Is(err, c.want) {
 			t.Errorf("refused %s for the wrong reason\n  got:  %v\n  want: %v", c.why, err, c.want)
 		}
 	}
@@ -182,6 +183,69 @@ func TestDatabaseURL_KeywordValueStringCarryingAURLIsStillKeywordValue(t *testin
 	dsn := "Server=host;Database=cmdb;Failover Partner=host2;Callback=https://example.com/hook"
 	if err := ValidateDatabaseURL(dsn); err != nil {
 		t.Errorf("read an option value as the scheme: %v", err)
+	}
+}
+
+// A refusal nobody can diagnose is barely better than no refusal.
+//
+// The value is encrypted at rest and never logged, both deliberately — this
+// estate's logs are widely readable. The cost showed up the first time somebody
+// was refused: neither they nor we could tell which rule had fired without
+// decrypting the credential, and the customer is reachable only through a VDI
+// and a screenshot. So the refusal says what SHAPE it saw, and no values at all.
+func TestDatabaseURL_RefusalSaysWhatShapeItSaw(t *testing.T) {
+	cases := []struct {
+		dsn  string
+		says string
+	}{
+		{"sqlserver://svc:pw@host:1433", "no database"},
+		{"sqlserver://svc:pw@host:1433;ApplicationIntent=ReadOnly", "semicolon"},
+		{"mysql://svc:pw@host:3306/cmdb", "scheme"},
+		{"hunter2", "not recognisable"},
+	}
+	for _, c := range cases {
+		err := ValidateDatabaseURL(c.dsn)
+		if err == nil {
+			t.Errorf("expected a refusal for %s", redactForTest(c.dsn))
+			continue
+		}
+		if !strings.Contains(strings.ToLower(err.Error()), c.says) {
+			t.Errorf("the refusal does not describe the shape\n  looked for: %q\n  got: %v", c.says, err)
+		}
+	}
+}
+
+// The whole point is that this can be pasted into a ticket. Every part of the
+// value is checked against the message, not just the password, because a host
+// name in a shared log is somebody's infrastructure.
+func TestDatabaseURL_ShapeSummaryLeaksNothingFromTheValue(t *testing.T) {
+	const (
+		user = "svcaccount"
+		pass = "hunter2"
+		host = "dbserver01"
+		db   = "assetdb"
+	)
+	dsn := "sqlserver://" + user + ":" + pass + "@" + host + ":1433;Extra=" + db
+
+	err := ValidateDatabaseURL(dsn)
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	for _, secret := range []string{user, pass, host, db} {
+		if strings.Contains(err.Error(), secret) {
+			t.Errorf("the refusal carries part of the value (%q): %v", secret, err)
+		}
+	}
+}
+
+// Wrapping the sentinel with a shape must not stop callers recognising which
+// refusal it is.
+func TestDatabaseURL_RefusalsStayIdentifiableOnceDescribed(t *testing.T) {
+	if err := ValidateDatabaseURL("sqlserver://svc:pw@host:1433"); !errors.Is(err, ErrDatabaseURLNamesNoDatabase) {
+		t.Errorf("a missing database is no longer recognisable as one: %v", err)
+	}
+	if err := ValidateDatabaseURL("mysql://svc:pw@host:3306/cmdb"); !errors.Is(err, ErrNotADatabaseURL) {
+		t.Errorf("an unusable driver is no longer recognisable as one: %v", err)
 	}
 }
 
