@@ -91,17 +91,24 @@ const TARGET_FIELDS: {
 // pre-commit secret scanner blocks `scheme://user:<8+ chars>@host` because that
 // is what a real DSN looks like. Keep any edit here under that length rather
 // than reaching for --no-verify — the rule is doing its job.
-// The modes PostgreSQL itself defines, least strict first. Kept in the same
-// order the server checks them against, so the two cannot drift into offering a
-// mode that is then refused.
-const POSTGRES_TLS_MODES = [
-  "disable",
-  "allow",
-  "prefer",
-  "require",
-  "verify-ca",
-  "verify-full",
-];
+// What each database actually offers, least strict first. The two vocabularies
+// are different and do not translate: SQL Server has no "encrypt if the server
+// offers it, otherwise do not", so it is not offered one. Every SQL Server value
+// here was measured against a real server — see internal/ownershipsql/tls_mode.go.
+//
+// A Go test reads these lists out of this file and compares them with the ones
+// the server accepts, so the screen cannot offer a mode that is then refused.
+const TLS_MODES: Record<string, string[]> = {
+  postgres: ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"],
+  sqlserver: ["disable", "require", "verify", "strict"],
+};
+
+const TLS_NOTES: Record<string, string> = {
+  postgres:
+    "PostgreSQL requires TLS unless the connection says otherwise, and fails against a server without it. Choose disable for a server with no TLS, or prefer to use it when the server offers one. disable sends the password across the network in the clear.",
+  sqlserver:
+    "SQL Server encrypts the login by default and no more. Choose require to encrypt everything without checking the certificate, or verify to check it too — verify refuses a server using SQL Server's own self-signed certificate.",
+};
 
 const CONNECTION_EXAMPLES: Record<string, { example: string; note: string }> = {
   sqlserver: {
@@ -497,7 +504,13 @@ export function OwnershipMappedImport() {
                 </span>
                 <select
                   value={dbDriver}
-                  onChange={(e) => setDbDriver(e.target.value)}
+                  onChange={(e) => {
+                    setDbDriver(e.target.value);
+                    // The vocabularies differ, so a mode chosen for one database
+                    // is not a mode the other has. Keeping it would send a value
+                    // the server then refuses.
+                    setDbTlsMode("");
+                  }}
                   className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
                 >
                   <option value="sqlserver">SQL Server</option>
@@ -523,7 +536,7 @@ export function OwnershipMappedImport() {
                 </select>
               </label>
 
-              {dbDriver === "postgres" && (
+              {TLS_MODES[dbDriver] && (
                 <label className="text-sm text-gray-700">
                   <span className="mb-1 block text-xs font-medium text-gray-500">
                     TLS
@@ -534,7 +547,7 @@ export function OwnershipMappedImport() {
                     className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
                   >
                     <option value="">As the connection says</option>
-                    {POSTGRES_TLS_MODES.map((mode) => (
+                    {(TLS_MODES[dbDriver] ?? []).map((mode) => (
                       <option key={mode} value={mode}>
                         {mode}
                       </option>
@@ -544,15 +557,8 @@ export function OwnershipMappedImport() {
               )}
             </div>
 
-            {dbDriver === "postgres" && dbTlsMode === "" && (
-              <p className="text-xs text-gray-500">
-                A PostgreSQL connection that does not say otherwise requires TLS,
-                and fails against a server without it. Set{" "}
-                <code className="font-mono">disable</code> for a server with no
-                TLS, or <code className="font-mono">prefer</code> to use it when
-                the server offers it. <code className="font-mono">disable</code>{" "}
-                sends the password across the network in the clear.
-              </p>
+            {dbTlsMode === "" && TLS_NOTES[dbDriver] && (
+              <p className="text-xs text-gray-500">{TLS_NOTES[dbDriver]}</p>
             )}
 
             {credentialError ? (

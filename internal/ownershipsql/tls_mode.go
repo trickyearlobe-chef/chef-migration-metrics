@@ -21,10 +21,46 @@ import (
 // increases. Offered as a list so the screen and the check cannot disagree.
 var PostgresTLSModes = []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
 
-// ErrTLSModeNotSupported is returned for a driver that does not use sslmode.
+// SQLServerTLSModes are the choices SQL Server actually offers, in its own
+// vocabulary rather than Postgres's.
+//
+// The two do not translate. Every value below was measured against a real server
+// (a container with SQL Server's self-signed fallback certificate), because
+// parsing alone cannot tell you this — "encrypt=false" and saying nothing about
+// encryption parse to the same value and then behave differently, since that
+// value is also Go's zero value.
+//
+//	disable   encrypt=disable                          connects, no TLS
+//	require   encrypt=true&TrustServerCertificate=true  connects, encrypted, certificate not checked
+//	verify    encrypt=true                             certificate checked, so a self-signed one is refused
+//	strict    encrypt=strict                           TDS 8.0, refused by a server that cannot do it
+//
+// There is deliberately no equivalent of Postgres's "prefer" or "allow". SQL
+// Server has no "encrypt if the server offers it, otherwise do not" — the
+// closest spelling, encrypt=false, still demands TLS for the login and still
+// verifies the certificate, so offering it under that name would be a lie.
+var SQLServerTLSModes = []string{"disable", "require", "verify", "strict"}
+
+// sqlServerTLSOptions is what each mode is written as in the connection string.
+var sqlServerTLSOptions = map[string]map[string]string{
+	"disable": {"encrypt": "disable"},
+	"require": {"encrypt": "true", "TrustServerCertificate": "true"},
+	"verify":  {"encrypt": "true", "TrustServerCertificate": "false"},
+	"strict":  {"encrypt": "strict"},
+}
+
+// TLSModesFor returns the modes a driver offers, so a screen cannot present one
+// the driver has never heard of.
+func TLSModesFor(driver string) []string {
+	if driver == DriverSQLServer {
+		return SQLServerTLSModes
+	}
+	return PostgresTLSModes
+}
+
+// ErrTLSModeNotSupported is returned for a driver with no TLS vocabulary.
 var ErrTLSModeNotSupported = errors.New(
-	"ownershipsql: only a PostgreSQL connection takes a TLS mode; SQL Server " +
-		"spells this \"encrypt=\" and it can be set in the connection string")
+	"ownershipsql: this database does not take a TLS mode")
 
 // ErrUnknownTLSMode is returned for a mode Postgres does not define. It never
 // quotes the connection, which carries the password.
@@ -44,28 +80,43 @@ func applyTLSMode(driver, dsn, mode string) (string, error) {
 	if mode == "" {
 		return dsn, nil
 	}
-	if driver != DriverPostgres {
-		return "", ErrTLSModeNotSupported
-	}
-	if !isPostgresTLSMode(mode) {
+	if !isTLSMode(driver, mode) {
 		return "", fmt.Errorf("%w: %q — one of %s",
-			ErrUnknownTLSMode, mode, strings.Join(PostgresTLSModes, ", "))
+			ErrUnknownTLSMode, mode, strings.Join(TLSModesFor(driver), ", "))
 	}
 
-	// The keyword-value spelling separates pairs with spaces; the URL spelling
-	// uses "?" then "&". Replacing in place keeps the parameter where the author
-	// put it, so a diff of the two strings shows only the value changing.
-	if replaced, ok := replaceKeywordValue(dsn, "sslmode", mode); ok {
-		return replaced, nil
+	if driver == DriverSQLServer {
+		out := dsn
+		for key, value := range sqlServerTLSOptions[mode] {
+			out = setConnectionOption(out, key, value)
+		}
+		return out, nil
 	}
+	return setConnectionOption(dsn, "sslmode", mode), nil
+}
+
+// setConnectionOption sets a parameter, replacing one already there.
+//
+// Replacing in place keeps the parameter where its author put it, so comparing
+// the two strings shows only a value changing. Two of the same parameter is a
+// connection nobody can reason about, which is why this never simply appends.
+func setConnectionOption(dsn, key, value string) string {
+	if replaced, ok := replaceKeywordValue(dsn, key, value); ok {
+		return replaced
+	}
+	// The keyword-value spellings differ: Postgres separates pairs with spaces,
+	// SQL Server with semicolons. A URL uses "?" then "&".
 	if !strings.Contains(dsn, "://") {
-		return dsn + " sslmode=" + mode, nil
+		if strings.Contains(dsn, ";") {
+			return strings.TrimSuffix(dsn, ";") + ";" + key + "=" + value
+		}
+		return dsn + " " + key + "=" + value
 	}
 	separator := "?"
 	if strings.Contains(dsn, "?") {
 		separator = "&"
 	}
-	return dsn + separator + "sslmode=" + mode, nil
+	return dsn + separator + key + "=" + value
 }
 
 // replaceKeywordValue rewrites the value of a parameter already present,
@@ -100,8 +151,8 @@ func replaceKeywordValue(dsn, key, value string) (string, bool) {
 	return out.String(), found
 }
 
-func isPostgresTLSMode(mode string) bool {
-	for _, valid := range PostgresTLSModes {
+func isTLSMode(driver, mode string) bool {
+	for _, valid := range TLSModesFor(driver) {
 		if mode == valid {
 			return true
 		}

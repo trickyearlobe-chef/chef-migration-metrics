@@ -109,16 +109,62 @@ func TestApplyTLSMode_RefusesAModePostgresDoesNotHave(t *testing.T) {
 	}
 }
 
-// SQL Server spells this differently ("encrypt="), and the two vocabularies do
-// not map onto each other cleanly enough to guess. Refusing is honest; the
-// option can still be set in the connection string, where it works.
-func TestApplyTLSMode_RefusesAnOverrideForSQLServer(t *testing.T) {
-	_, err := applyTLSMode(DriverSQLServer, "sqlserver://svc:pw@host:1433?database=cmdb", "disable")
-	if err == nil {
-		t.Error("accepted a TLS mode for SQL Server, which does not use sslmode")
+// SQL Server has its own vocabulary, and each mode is written as the options
+// MEASURED to produce that behaviour against a real server. See tls_mode.go for
+// the measurements; the live half is in the functional test.
+//
+// The mapping is not guessable. "require" has to disable certificate checking to
+// mean what Postgres means by it, and "verify" has to turn that off again.
+func TestApplyTLSMode_WritesTheMeasuredOptionsForSQLServer(t *testing.T) {
+	const dsn = "sqlserver://svc:pw@host:1433?database=cmdb"
+	cases := []struct {
+		mode  string
+		wants []string
+	}{
+		{"disable", []string{"encrypt=disable"}},
+		{"require", []string{"encrypt=true", "TrustServerCertificate=true"}},
+		{"verify", []string{"encrypt=true", "TrustServerCertificate=false"}},
+		{"strict", []string{"encrypt=strict"}},
 	}
-	if err != nil && !strings.Contains(err.Error(), "encrypt") {
-		t.Errorf("the refusal does not say what to use instead: %v", err)
+	for _, c := range cases {
+		got, err := applyTLSMode(DriverSQLServer, dsn, c.mode)
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", c.mode, err)
+		}
+		for _, want := range c.wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: does not set %s\n  got: %s", c.mode, want, got)
+			}
+		}
+		if !strings.Contains(got, "database=cmdb") {
+			t.Errorf("%s: lost the database from the connection\n  got: %s", c.mode, got)
+		}
+	}
+}
+
+// Postgres's "prefer" and "allow" are deliberately not offered for SQL Server:
+// it has no "encrypt if offered, otherwise do not", and the nearest spelling
+// still demands TLS and still verifies the certificate.
+func TestApplyTLSMode_DoesNotPretendSQLServerHasPrefer(t *testing.T) {
+	for _, mode := range []string{"prefer", "allow", "verify-ca", "verify-full"} {
+		if _, err := applyTLSMode(DriverSQLServer, "sqlserver://svc:pw@host:1433?database=cmdb", mode); err == nil {
+			t.Errorf("offered %q for SQL Server, which has no such setting", mode)
+		}
+	}
+}
+
+// And a mode set twice is replaced, not repeated, on the SQL Server side too.
+func TestApplyTLSMode_ReplacesSQLServerOptionsAlreadyPresent(t *testing.T) {
+	got, err := applyTLSMode(DriverSQLServer,
+		"sqlserver://svc:pw@host:1433?database=cmdb&encrypt=disable", "require")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Count(got, "encrypt=") != 1 {
+		t.Errorf("left more than one encrypt in the connection: %s", got)
+	}
+	if strings.Contains(got, "encrypt=disable") {
+		t.Errorf("did not replace the existing encrypt: %s", got)
 	}
 }
 
