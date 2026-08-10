@@ -91,6 +91,18 @@ const TARGET_FIELDS: {
 // pre-commit secret scanner blocks `scheme://user:<8+ chars>@host` because that
 // is what a real DSN looks like. Keep any edit here under that length rather
 // than reaching for --no-verify — the rule is doing its job.
+// The modes PostgreSQL itself defines, least strict first. Kept in the same
+// order the server checks them against, so the two cannot drift into offering a
+// mode that is then refused.
+const POSTGRES_TLS_MODES = [
+  "disable",
+  "allow",
+  "prefer",
+  "require",
+  "verify-ca",
+  "verify-full",
+];
+
 const CONNECTION_EXAMPLES: Record<string, { example: string; note: string }> = {
   sqlserver: {
     example: "sqlserver://user:pass@host:1433?database=cmdb",
@@ -217,6 +229,12 @@ export function OwnershipMappedImport() {
   const [sourceKind, setSourceKind] = useState<"file" | "database">("file");
   const [dbDriver, setDbDriver] = useState("sqlserver");
   const [dbCredential, setDbCredential] = useState("");
+  // Overrides the connection's own sslmode. Empty means "as stored", which is
+  // the right default: the connection usually already says what it wants. The
+  // override exists because the Postgres driver requires TLS when the string
+  // says nothing, so a connection that works elsewhere fails here, and the only
+  // other way to change it was retyping the whole credential.
+  const [dbTlsMode, setDbTlsMode] = useState("");
   const [dbQuery, setDbQuery] = useState("");
   const [credentialNames, setCredentialNames] = useState<string[]>([]);
   const [credentialError, setCredentialError] = useState<string | null>(null);
@@ -258,7 +276,7 @@ export function OwnershipMappedImport() {
     setError(null);
     setLoading("Looking at what is there…");
     try {
-      const res = await listImportDatabaseTables(dbDriver, dbCredential);
+      const res = await listImportDatabaseTables(dbDriver, dbCredential, dbTlsMode);
       setTables(res.data ?? []);
     } catch (err: unknown) {
       // An unreadable list must not render as an empty one.
@@ -278,7 +296,7 @@ export function OwnershipMappedImport() {
   }
 
   function databaseSource(): IntakeDatabaseSource {
-    return { driver: dbDriver, credential: dbCredential, query: dbQuery };
+    return { driver: dbDriver, credential: dbCredential, query: dbQuery, tlsMode: dbTlsMode };
   }
 
   /** Read the query's columns, so the mapping below has something to offer. */
@@ -504,7 +522,38 @@ export function OwnershipMappedImport() {
                   ))}
                 </select>
               </label>
+
+              {dbDriver === "postgres" && (
+                <label className="text-sm text-gray-700">
+                  <span className="mb-1 block text-xs font-medium text-gray-500">
+                    TLS
+                  </span>
+                  <select
+                    value={dbTlsMode}
+                    onChange={(e) => setDbTlsMode(e.target.value)}
+                    className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
+                  >
+                    <option value="">As the connection says</option>
+                    {POSTGRES_TLS_MODES.map((mode) => (
+                      <option key={mode} value={mode}>
+                        {mode}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
+
+            {dbDriver === "postgres" && dbTlsMode === "" && (
+              <p className="text-xs text-gray-500">
+                A PostgreSQL connection that does not say otherwise requires TLS,
+                and fails against a server without it. Set{" "}
+                <code className="font-mono">disable</code> for a server with no
+                TLS, or <code className="font-mono">prefer</code> to use it when
+                the server offers it. <code className="font-mono">disable</code>{" "}
+                sends the password across the network in the clear.
+              </p>
+            )}
 
             {credentialError ? (
               <p className="text-xs text-red-600">{credentialError}</p>

@@ -66,6 +66,15 @@ type Config struct {
 	Query string
 	// ConnectTimeout bounds establishing the connection. Zero means 10s.
 	ConnectTimeout time.Duration
+	// TLSMode overrides the connection's sslmode, for PostgreSQL only. Empty
+	// leaves the connection exactly as stored. Set, it wins over a mode already
+	// in the string — see tls_mode.go for why this exists.
+	TLSMode string
+}
+
+// resolveDSN applies the TLS override, if one was asked for.
+func (c Config) resolveDSN() (string, error) {
+	return applyTLSMode(c.Driver, c.DSN, c.TLSMode)
 }
 
 // sqlSource adapts a query result to ownershipimport.RowSource.
@@ -97,7 +106,12 @@ func Open(ctx context.Context, cfg Config) (ownershipimport.RowSource, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open(cfg.Driver, cfg.DSN)
+	dsn, err := cfg.resolveDSN()
+	if err != nil {
+		return nil, err
+	}
+
+	db, err := sql.Open(cfg.Driver, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("ownershipsql: opening %s connection: %w", cfg.Driver, err)
 	}
@@ -254,7 +268,12 @@ func ListTables(ctx context.Context, cfg Config) ([]Table, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open(cfg.Driver, cfg.DSN)
+	dsn, err := cfg.resolveDSN()
+	if err != nil {
+		return nil, err
+	}
+
+	db, err := sql.Open(cfg.Driver, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("ownershipsql: opening %s connection: %w", cfg.Driver, err)
 	}
