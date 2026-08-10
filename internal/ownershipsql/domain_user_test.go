@@ -24,7 +24,7 @@ import (
 // username would authenticate as nobody and look like a wrong password.
 func TestDomainUserSurvivesToTheDriver(t *testing.T) {
 	const (
-		user     = `INTRANET\svcaccount`
+		user     = `EXAMPLECORP\svcaccount`
 		password = "s0mep%ss"
 		host     = "dbhost.example.com"
 		database = "Staging"
