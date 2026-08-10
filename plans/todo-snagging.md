@@ -11,6 +11,37 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
+- **A repo stayed blocked by a file the exclusion list already excludes.** Reported by the
+  product owner 2026-08-11: a repo read blocked on a `File.exists?` finding in
+  `test/tk-libvirt/tk-libvirt.rb`, while the cop pages showed nothing blocking it. Saving any
+  scan-scope entry fixed it, and the dashboard moved markedly — so the verdicts were stale, not
+  mis-matched.
+
+  **What is established in code @ ee693c0a.** The verdict is stored, twice: on the scan result
+  (`internal/analysis/cookstyle.go:826-828`) and again as a materialised column on the repo
+  (`internal/datastore/git_repo_status_recompute.go:69-99`). Re-deriving them needs no rescan —
+  the offences are kept on the row and `rescoreRows` re-runs the verdict over them
+  (`internal/webapi/cookstyle_rescore.go:130-169`). But only two things ever call it: saving the
+  analysis-tools config (`handle_admin_config_analysis.go:148`) and an operator editing the
+  scan-scope list (`handle_cookstyle_scan_scope.go:172` and `:231`). Installing a release calls
+  neither.
+
+  **So the seeded list has no trigger of its own.** `DefaultScanScopeExclusions` ships in code
+  (`internal/analysis/scan_scope.go:72-111`); adding a pattern to it changes what every verdict
+  *would* derive to and re-derives nothing. The estate keeps answering with the old scope until
+  somebody happens to touch an unrelated setting, and nothing anywhere says it is out of date.
+
+  **Why it matters more than it looks.** These are the numbers a migration lead quotes, and the
+  failure is silent in the direction that overstates the work — repos read blocked by files that
+  cannot run. The operator half already re-derives correctly, so this only bites the curated
+  half, which is the half nobody is prompted to look at after an upgrade.
+
+  **Shape of the fix, not yet decided.** Record what scope a stored verdict was derived under and
+  re-derive on startup when it no longer matches, so a release that changes the seed list heals
+  itself. A cruder version — rescore unconditionally at startup — costs a pass over the results
+  table on every restart and would do nothing visible most times. Either way the test is that a
+  changed seed list moves a stored verdict with no operator action.
+
 - **The Chef server side of a scan misses Ruby that Chef genuinely ships.** Established in code
   on 2026-08-09 while correcting the opposite error on the git side. `CookbookVersionManifest`
   parses only the legacy cookbook segments and never `all_files`, and a segment view cannot
