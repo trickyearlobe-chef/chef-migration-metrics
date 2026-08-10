@@ -249,6 +249,12 @@ export interface IntakeDatabaseSource {
   /** Name of a stored credential holding the connection string. */
   credential: string;
   query: string;
+  /** Overrides the connection's own sslmode, PostgreSQL only. Empty leaves the
+   * stored connection exactly as it is. Needed because the Postgres driver
+   * requires TLS when the connection says nothing, so a connection that works
+   * elsewhere fails here — and the alternative was retyping the whole
+   * credential, password included. */
+  tlsMode?: string;
 }
 
 export interface IntakeRunOptions {
@@ -291,6 +297,9 @@ function appendDatabaseSource(formData: FormData, db: IntakeDatabaseSource) {
   formData.append("db_driver", db.driver);
   formData.append("db_credential", db.credential);
   formData.append("db_query", db.query);
+  if (db.tlsMode) {
+    formData.append("db_tls_mode", db.tlsMode);
+  }
 }
 
 export function profileImportSource(
@@ -320,10 +329,14 @@ export interface IntakeDatabaseTable {
 export function listImportDatabaseTables(
   driver: string,
   credential: string,
+  tlsMode?: string,
 ): Promise<{ data: IntakeDatabaseTable[] }> {
   const formData = new FormData();
   formData.append("db_driver", driver);
   formData.append("db_credential", credential);
+  if (tlsMode) {
+    formData.append("db_tls_mode", tlsMode);
+  }
   return apiFetch<{ data: IntakeDatabaseTable[] }>(
     buildUrl("/ownership/import/tables"),
     { method: "POST", body: formData },

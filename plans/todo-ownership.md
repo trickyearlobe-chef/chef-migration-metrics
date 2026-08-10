@@ -52,20 +52,16 @@ Remaining:
   `ValidateCredentialValue` already returns the driver in its metadata, so the derivation
   exists; nothing consumes it yet.
 
-- [ ] **Let the TLS mode be set without hand-editing the connection string.** A Postgres
-  connection with no `sslmode` fails against a server that has not got TLS enabled, because
-  `lib/pq` requires it by default — stricter than `psql`, and the error names TLS without
-  naming the connection string. It cost an evening. The shape summary now says when
-  `sslmode` is unset, which makes it diagnosable, not fixable.
+- [ ] **A saved import does not carry the TLS override.** The interactive import takes one
+  per run, but `ImportMapping` has no column for it, so a schedule built from a connection
+  needing an override connects without one and fails. Not silent — the failure now reports
+  that no `sslmode` was set — but wrong. Needs a column and a migration.
 
-  The decision is whose default it is. Appending `sslmode=prefer` when none is given makes
-  it work against both kinds of server, at the cost of quietly accepting an unencrypted
-  connection to a database holding asset data — a security posture change that is the
-  owner's to make, not a fix to slip in. A checkbox on the credential or the import step is
-  the explicit alternative and costs UI work. Also: the on-screen example
-  (`postgres://user:pass@host:5432/database`) cannot connect to a non-TLS server, so
-  whatever is decided, that example needs to change — we tell people a format and then it
-  fails.
+- [ ] **SQL Server has no TLS override.** It spells this `encrypt=`, and the two
+  vocabularies do not map onto each other cleanly enough to guess at, so an override is
+  refused for SQL Server rather than translated. It can still be set in the connection
+  string, where it works. Worth doing properly if a customer needs it: the mapping wants
+  measuring against `msdsn.Parse`, not reasoning about.
 
   **Testing it needs no customer database.** `make mssql-up`, `make seed-mssql`,
   `make test-mssql` stand up SQL Server 2022 in a container, seed a sample system of record

@@ -1201,6 +1201,11 @@ func (r *Router) openIntakeDatabaseSource(w http.ResponseWriter, req *http.Reque
 		Driver: driver,
 		DSN:    dsn,
 		Query:  query,
+		// An explicit override, empty unless somebody asked for one. lib/pq
+		// requires TLS when the connection says nothing, so a connection that
+		// works everywhere else fails here — and the only other way to change it
+		// was to retype the whole credential, password included.
+		TLSMode: req.FormValue("db_tls_mode"),
 	})
 	if err != nil {
 		// Report the failure rather than an empty result: an unreadable source
@@ -1262,7 +1267,11 @@ func (r *Router) handleIntakeListTables(w http.ResponseWriter, req *http.Request
 	dsn := string(cred.Plaintext)
 	defer secrets.ZeroBytes(cred.Plaintext)
 
-	tables, err := ownershipsql.ListTables(req.Context(), ownershipsql.Config{Driver: driver, DSN: dsn})
+	tables, err := ownershipsql.ListTables(req.Context(), ownershipsql.Config{
+		Driver:  driver,
+		DSN:     dsn,
+		TLSMode: req.FormValue("db_tls_mode"),
+	})
 	if err != nil {
 		// The shape travels with the failure, for the reasons given where a
 		// source is opened: the driver's error describes its own disappointment,
