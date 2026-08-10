@@ -429,3 +429,34 @@ export function deleteImportMapping(id: number): Promise<void> {
     method: "DELETE",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Import rejections — the rows an import could not use
+// ---------------------------------------------------------------------------
+
+/**
+ * One row an import could not use. Stored since imports existed, but readable
+ * only by taking an export until now — so an import that dropped a quarter of
+ * its rows said nothing to the person who could get the source fixed.
+ */
+export interface ImportRejection {
+  import_label: string;
+  run_at: string;
+  source_row: number;
+  reason: string;
+  owner_raw?: string;
+  entity_type?: string;
+  entity_key?: string;
+}
+
+export function fetchImportRejections(params?: {
+  page?: number;
+  per_page?: number;
+}): Promise<{ data: ImportRejection[]; pagination: Pagination }> {
+  return apiFetch<{ data: ImportRejection[]; pagination: Pagination }>(
+    buildUrl("/ownership/import/rejections", {
+      page: params?.page,
+      per_page: params?.per_page,
+    }),
+  );
+}

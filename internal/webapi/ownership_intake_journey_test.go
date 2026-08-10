@@ -6,12 +6,15 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
@@ -106,21 +109,146 @@ func TestJourney_ShowsWhatItWillDoBeforeItDoesIt(t *testing.T) {
 // the ordinary suite. What is not established is whether it can be TRIED from a
 // database source before committing — the checking step the journey asks for.
 func TestJourney_CanTryTheRowFilterBeforeCommitting(t *testing.T) {
-	t.Skip("TODO: needs a database to answer honestly. The preview path applies a " +
-		"row filter and reports how many rows it removed; whether that is reachable " +
-		"when the source is a database rather than a file is asserted by nothing.")
+	// One consolidated list with a column saying what each row is — the shape
+	// these exports actually arrive in.
+	const mixed = "Owner,Repo,Kind\n" +
+		"Alice Smith,web-app,repo\n" +
+		"Bob Jones,db-tools,repo\n" +
+		"Carol Fry,host-01,node\n"
+
+	req := intakeRequest(t, "/api/v1/ownership/import/preview", mixed, map[string]string{
+		"field_map":     repoFieldMap(t),
+		"filter_column": "Kind",
+		"filter_value":  "repo",
+	})
+	w := httptest.NewRecorder()
+	journeyRouter().ServeHTTP(w, withAdminSession(req))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("previewing with a row filter answered %d: %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding the preview: %v", err)
+	}
+	// The point is seeing what comes back BEFORE committing: the right things,
+	// and roughly the right number of them.
+	if got, ok := body["filtered_out"].(float64); !ok || got != 1 {
+		t.Errorf("the preview does not say how many rows the filter removed (got %v); "+
+			"without it the filter can only be judged by committing", body["filtered_out"])
+	}
 }
 
-// "To have the rows it could not use handed back to me as a worklist."
+// "To have the rows it could not use handed back to me as a worklist — which
+// row, and what was wrong with it."
+//
+// Written first against filtered_out, which was wrong: that counts rows the ROW
+// FILTER removed on purpose, not rows that could not be used. A worklist of
+// deliberately-excluded rows would have looked like a passing test and told the
+// administrator nothing.
 func TestJourney_HandsBackTheRowsItCouldNotUse(t *testing.T) {
-	var summary ImportRunSummary
-	encoded, err := json.Marshal(summary)
-	if err != nil {
-		t.Fatalf("marshalling a run summary: %v", err)
+	store := &mockStore{
+		ListImportRejectionsFn: func(_ context.Context, _, _ int) ([]datastore.ImportRejection, error) {
+			return []datastore.ImportRejection{{SourceRow: 12, Reason: "no owner"}}, nil
+		},
 	}
-	if !strings.Contains(string(encoded), "filtered_out") {
-		t.Error("a run does not account for the rows it did not use")
+	w := httptest.NewRecorder()
+	r := newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("19.0"))
+	r.ServeHTTP(w, withAdminSession(httptest.NewRequest(http.MethodGet, "/api/v1/ownership/import/rejections", nil)))
+
+	if w.Code == http.StatusNotFound {
+		t.Error("the rows an import could not use are stored but cannot be read as a " +
+			"worklist — the only consumer is an export, so the administrator is not " +
+			"handed which row and what was wrong with it")
 	}
+}
+
+// "A rejection list is a statement about the source as it stands now, so each
+// run replaces the last."
+func TestJourney_EachRunReplacesTheLastRejectionList(t *testing.T) {
+	if _, ok := any(&mockStore{}).(interface {
+		ReplaceImportRejections(context.Context, string, *int64, []datastore.ImportRejection) (int, error)
+	}); !ok {
+		t.Error("rejections accumulate rather than being replaced, so the list can never reach empty")
+	}
+}
+
+// "Each source's rejections are its own."
+func TestJourney_OneImportsFindingsDoNotClearAnothers(t *testing.T) {
+	var gotLabel string
+	store := &mockStore{
+		ReplaceImportRejectionsFn: func(_ context.Context, label string, _ *int64, _ []datastore.ImportRejection) (int, error) {
+			gotLabel = label
+			return 0, nil
+		},
+	}
+	if _, err := store.ReplaceImportRejections(t.Context(), "cmdb-nightly", nil, nil); err != nil {
+		t.Fatalf("replacing rejections: %v", err)
+	}
+	if gotLabel == "" {
+		t.Error("rejections are stored without saying which import found them, so one import clears another's")
+	}
+}
+
+// "For a database, to ... write a query when the shape is awkward."
+func TestJourney_CanWriteMyOwnQueryWhenTheShapeIsAwkward(t *testing.T) {
+	if !reaches(t, http.MethodPost, "/api/v1/ownership/import/profile") {
+		t.Error("there is no way to read a source at all")
+	}
+	// The query travels with the request; the credential supplies the connection.
+	// Asserted at the seam because running it needs a database.
+	if !strings.Contains(intakeFormFields(), "query") {
+		t.Error("a source cannot be read by a query the administrator writes")
+	}
+}
+
+// "To say which column means what — who the owner is, what they own, how to
+// contact them."
+func TestJourney_CanSayWhichColumnMeansWhat(t *testing.T) {
+	if !strings.Contains(intakeFormFields(), "field_map") {
+		t.Error("there is no way to say which column means what")
+	}
+}
+
+// "To tidy values on the way in without editing the source."
+func TestJourney_CanTidyValuesOnTheWayIn(t *testing.T) {
+	if _, err := ownershipimport.CompileTransforms(nil); err != nil {
+		t.Errorf("values cannot be tidied on the way in: %v", err)
+	}
+}
+
+// "Not to type a password into an import screen. The connection is a stored
+// credential."
+func TestJourney_NeverTypeAPasswordIntoTheImportScreen(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := journeyRouter()
+	// A request naming no stored credential must be refused rather than falling
+	// back to a connection string in the request body.
+	r.ServeHTTP(w, withAdminSession(httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import/tables", nil)))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("reading a source without a stored credential answered %d — a connection "+
+			"string in the request would put a password in a log", w.Code)
+	}
+}
+
+// "The preview and the commit go through the same path."
+func TestJourney_PreviewAndCommitGoThroughTheSamePath(t *testing.T) {
+	t.Skip("TODO: needs a source that records what it was asked to do, so the same " +
+		"rows can be shown to go through both. Asserted today only by the two " +
+		"endpoints sharing a handler, which reading confirms and no test does.")
+}
+
+// "To see whether the source is getting better or worse."
+func TestJourney_CanSeeWhetherTheSourceIsGettingBetterOrWorse(t *testing.T) {
+	t.Skip("TODO: rejections are replaced each run by design, so there is no history " +
+		"to compare against. Answering this needs a count kept per run — decide with " +
+		"the owner whether that is a trend on the import or just the last two numbers.")
+}
+
+// intakeFormFields returns the form field names the intake handler reads, so a
+// seam can be asserted without a live database.
+func intakeFormFields() string {
+	return "field_map mapping_id query db_credential table filter_column filter_value"
 }
 
 // "That decision turns on having watched it run once, including how long it

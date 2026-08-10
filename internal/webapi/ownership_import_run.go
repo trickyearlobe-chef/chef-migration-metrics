@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
@@ -39,6 +40,13 @@ type ImportRunSummary struct {
 	RowCount    int            `json:"row_count"`
 	FilteredOut int            `json:"filtered_out"`
 	Counts      map[string]int `json:"counts"`
+
+	// DurationMS is how long the run took, wall clock, including reading the
+	// source. The decision to put an import on a schedule turns on it: a job
+	// that takes forty minutes is a different proposition from one that takes
+	// four, and until this was reported the only way to find out was to sit and
+	// watch one. Zero when the run did not complete.
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // runOutcomeLabels name each outcome in the past tense.
@@ -67,6 +75,9 @@ func (s ImportRunSummary) String() string {
 	if s.FilteredOut > 0 {
 		parts = append(parts, fmt.Sprintf("%d filtered out", s.FilteredOut))
 	}
+	if s.DurationMS > 0 {
+		parts = append(parts, fmt.Sprintf("in %s", (time.Duration(s.DurationMS)*time.Millisecond).Round(time.Millisecond)))
+	}
 	return strings.Join(parts, ", ")
 }
 
@@ -85,6 +96,7 @@ func scheduledImportActor(m datastore.ImportMapping) string {
 // Only a database import can run this way. A file import has no stored source —
 // somebody has to bring the file — so there is nothing for a schedule to read.
 func (r *Router) RunSavedImport(ctx context.Context, m datastore.ImportMapping) (ImportRunSummary, error) {
+	startedAt := time.Now()
 	if m.SourceKind != intakeSourceDatabase {
 		return ImportRunSummary{}, fmt.Errorf("import %q reads a file, so it cannot run unattended", m.Name)
 	}
@@ -95,7 +107,16 @@ func (r *Router) RunSavedImport(ctx context.Context, m datastore.ImportMapping) 
 	}
 	defer func() { _ = src.Close() }()
 
-	return r.runImportFromSource(ctx, src, m)
+	summary, err := r.runImportFromSource(ctx, src, m)
+	if err != nil {
+		return ImportRunSummary{}, err
+	}
+	// Timed around the whole run, connection included: an import that takes
+	// forty minutes because the query is slow and one that takes forty minutes
+	// because the server is far away are the same decision to the person
+	// deciding whether to schedule it.
+	summary.DurationMS = time.Since(startedAt).Milliseconds()
+	return summary, nil
 }
 
 // openSavedDatabaseSource resolves the stored credential and connects.
