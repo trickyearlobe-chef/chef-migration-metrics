@@ -354,6 +354,13 @@ export function OwnershipMappedImport() {
   const sourceReady =
     sourceKind === "file" ? Boolean(file) : Boolean(dbCredential && dbQuery.trim());
 
+  const blockedReason = previewBlockedReason({
+    sourceKind,
+    sourceReady,
+    hasOwner: Boolean(choices.owner?.column),
+    hasEntityKey: Boolean(choices.entity_key?.column),
+  });
+
   async function run(commit: boolean) {
     if (!sourceReady || !mappingComplete) return;
 
@@ -807,11 +814,15 @@ export function OwnershipMappedImport() {
               <button
                 type="button"
                 onClick={() => run(false)}
-                disabled={!mappingComplete}
+                disabled={blockedReason !== null}
+                title={blockedReason ?? undefined}
                 className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Preview — nothing is saved
               </button>
+              {blockedReason && (
+                <span className="text-sm text-amber-700">{blockedReason}</span>
+              )}
               {mappings.length > 0 && (
                 <select
                   aria-label="Load a saved mapping"
@@ -1107,6 +1118,39 @@ function suggestionsFor(rows: IntakeReportRow[], value: string): string {
   const row = rows.find((r) => r.owner_raw === value && r.owner_suggestions?.length);
   if (!row?.owner_suggestions) return "";
   return row.owner_suggestions.map((s) => s.owner_name).join(", ");
+}
+
+// ---------------------------------------------------------------------------
+// Why preview is not available yet
+//
+// A disabled button with no reason is the same fault as an import that drops
+// rows silently: the screen knows something the person does not, and they are
+// left guessing which of six controls is at fault. Owner and Entity key are
+// both required, and the guess cannot always find an owner column — which is
+// exactly when this button greys out and nothing says so.
+//
+// It also covers the source, which the disabled state used to ignore: with no
+// file chosen the button looked available and did nothing at all when clicked.
+// ---------------------------------------------------------------------------
+
+export function previewBlockedReason(opts: {
+  sourceKind: "file" | "database";
+  sourceReady: boolean;
+  hasOwner: boolean;
+  hasEntityKey: boolean;
+}): string | null {
+  if (!opts.sourceReady) {
+    return opts.sourceKind === "file"
+      ? "Choose a file first."
+      : "Choose a stored credential and write a query first.";
+  }
+  const missing: string[] = [];
+  if (!opts.hasOwner) missing.push("Owner");
+  if (!opts.hasEntityKey) missing.push("Entity key");
+  if (missing.length === 0) return null;
+  return `Map ${missing.join(" and ")} first — ${
+    missing.length === 1 ? "it is" : "they are"
+  } required. The guess only fills a column in when it recognises the name.`;
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from "vitest";
-import { guessMapping } from "./OwnershipMappedImport";
+import { guessMapping, previewBlockedReason } from "./OwnershipMappedImport";
 import type { IntakeSourceProfile } from "../api";
 
 // journeys/ownership-intake.md: "Something guessing the field names for me,
@@ -54,5 +54,43 @@ describe("guessMapping", () => {
     const guess = guessMapping(profileWith("col_a", "col_b"));
     expect(guess.owner).toBeUndefined();
     expect(guess.entity_key).toBeUndefined();
+  });
+});
+
+// A disabled button with no reason is the same fault as an import that drops
+// rows silently: the screen knows something the person does not. Reported by
+// the owner testing against a customer database, where the guess could not find
+// an owner column and Preview greyed out saying nothing.
+describe("previewBlockedReason", () => {
+  const ready = {
+    sourceKind: "database" as const,
+    sourceReady: true,
+    hasOwner: true,
+    hasEntityKey: true,
+  };
+
+  it("says nothing is wrong when the form is ready", () => {
+    expect(previewBlockedReason(ready)).toBeNull();
+  });
+
+  it("names the missing required field", () => {
+    const reason = previewBlockedReason({ ...ready, hasOwner: false });
+    expect(reason).toMatch(/Owner/);
+    expect(reason).not.toMatch(/Entity key/);
+  });
+
+  it("names both when both are missing", () => {
+    const reason = previewBlockedReason({ ...ready, hasOwner: false, hasEntityKey: false });
+    expect(reason).toMatch(/Owner and Entity key/);
+  });
+
+  // The button used to look available with no source chosen, and do nothing at
+  // all when clicked — worse than being disabled, because nothing happens and
+  // nothing explains it.
+  it("asks for the source before the mapping", () => {
+    expect(previewBlockedReason({ ...ready, sourceReady: false })).toMatch(/credential|query/);
+    expect(
+      previewBlockedReason({ ...ready, sourceKind: "file", sourceReady: false }),
+    ).toMatch(/file/);
   });
 });
