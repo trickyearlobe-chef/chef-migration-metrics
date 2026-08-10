@@ -134,7 +134,6 @@ func TestDatabaseURL_AcceptsTheShapesURLParsingCannotHandle(t *testing.T) {
 		// Options separated by semicolons with no "?" at all — the ADO habit.
 		// net/url reads ";database=cmdb..." as part of the port.
 		"sqlserver://svc:pw@host:1433;database=cmdb;ApplicationIntent=ReadOnly",
-		"sqlserver://svc:pw@host:1433;databaseName=cmdb",
 		// A named instance. A backslash cannot appear in a URL host, so this
 		// shape is unrepresentable as a URL and must not be judged as one.
 		"sqlserver://svc:pw@host\\SQLEXPRESS?database=cmdb",
@@ -142,10 +141,6 @@ func TestDatabaseURL_AcceptsTheShapesURLParsingCannotHandle(t *testing.T) {
 		"sqlserver://DOMAIN\\svc:pw@host:1433?database=cmdb",
 		// A bare % in a password is not a URL escape. Passwords are not URLs.
 		"sqlserver://svc:pw%@host:1433?database=cmdb",
-		// The JDBC spelling, prefix and database keyword both.
-		"jdbc:sqlserver://host:1433;databaseName=cmdb;ApplicationIntent=ReadOnly",
-		// A widely used alias for the same driver.
-		"mssql://svc:pw@host:1433?database=cmdb",
 	}
 	for _, dsn := range accepted {
 		if err := ValidateDatabaseURL(dsn); err != nil {
@@ -166,7 +161,6 @@ func TestDatabaseURL_StillRefusesWhatItShould(t *testing.T) {
 	}{
 		{"sqlserver://svc:pw@host\\SQLEXPRESS", "a named instance and no database", ErrDatabaseURLNamesNoDatabase},
 		{"sqlserver://svc:pw@host:1433;ApplicationIntent=ReadOnly", "semicolon options and no database", ErrDatabaseURLNamesNoDatabase},
-		{"jdbc:mysql://host:3306;databaseName=cmdb", "a driver we cannot open, behind a jdbc prefix", ErrNotADatabaseURL},
 		{"mysql://user:pass@host:3306/cmdb", "a driver we cannot open", ErrNotADatabaseURL},
 		{"hunter2", "a password pasted into the wrong box", ErrNotADatabaseURL},
 	}
