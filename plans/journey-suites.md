@@ -4,13 +4,14 @@ Every journey is supposed to have one: a test per thing the journey says has to 
 run outside CI, where green means built and red means still to do. A todo list made of tests
 cannot go stale, because running it recomputes it.
 
-**It had drifted to one out of twenty before anybody measured it**, and it drifted silently
-because the only thing enforced was that a journey *links* a test. Linking proves a specific
-property. It never enumerates what is outstanding — so "what is left" lived in prose, and prose
-is the thing this exists to replace.
+**How many are done is not written here.** `make journeys` says, `make journey-coverage` names
+the ones with nothing, and `make journey` runs what exists. A count written into this file would
+be wrong the first time somebody landed a suite and would be believed anyway — which is the exact
+failure the suites exist to prevent, so it is not going to be committed in the plan for them.
 
-Run `make journeys` to see the state, `make journey` to run the suites, `make journey-coverage`
-for just the gaps. The drift now reports itself.
+It drifted for a long time because the only thing enforced was that a journey *links* a test.
+Linking proves a specific property; it never enumerates what is outstanding. So "what is left"
+lived in prose. That is now blocked at commit time and again in CI.
 
 ## The shape, from the one that exists
 
@@ -27,7 +28,7 @@ for just the gaps. The drift now reports itself.
 - **Never a parking space for regressions.** Something that used to work and now fails is a
   broken build. Parked here it becomes indistinguishable from an honest gap.
 
-## Doing the other nineteen
+## Doing the rest
 
 One journey per sitting. It is a reading job, not a writing job: read the journey, turn each
 "what I need" line into an assertion, run it, and let the result say what is true. Resist
@@ -39,7 +40,8 @@ unit test. Others will turn out to be prose that nobody can test as written, whi
 the journey line is vague rather than the code is missing — worth fixing the line, with the
 owner.
 
-Order suggested by how much is riding on them, not by size:
+Order suggested by how much is riding on them, not by size. This is a priority, not a todo —
+`make journey-coverage` is what says which are still outstanding:
 
 - scan-trust, cookbook-compatibility, remediation-priority — the verdicts everything else reads
 - node-readiness, role-impact, estate-progress — the numbers quoted to a programme board
@@ -48,9 +50,9 @@ Order suggested by how much is riding on them, not by size:
   service-diagnosis — the ones where a gap is an outage rather than a wrong number
 - converge-testing, run-history, working-all-day
 
-## Not decided
+## Decided
 
-Whether a journey with no suite should eventually fail the pre-commit hook, the way a journey
-naming no test already does. It would stop the drift returning, and it would also block every
-commit touching the other nineteen journeys until each is done — so it is a decision for when
-the number is small, not now.
+A journey with no suite fails the pre-commit hook, and fails CI if it changed in a push. Both
+scoped to the journey being touched: that pressure is the point, whereas a gate over the whole
+directory would have been red on the day it landed and switched off the week after — which is
+how the rule was lost the first time.
