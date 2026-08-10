@@ -215,25 +215,24 @@ func TestDatabaseURL_RefusalSaysWhatShapeItSaw(t *testing.T) {
 	}
 }
 
-// The whole point is that this can be pasted into a ticket. Every part of the
-// value is checked against the message, not just the password, because a host
-// name in a shared log is somebody's infrastructure.
-func TestDatabaseURL_ShapeSummaryLeaksNothingFromTheValue(t *testing.T) {
+// The whole point is that this can be pasted into a ticket, so the refusal must
+// carry the credential and nothing else. The host and the database are reported
+// deliberately — they say which machine and which database were being reached,
+// which is what makes a refusal diagnosable, and neither identifies a person.
+func TestDatabaseURL_RefusalCarriesNoCredential(t *testing.T) {
 	const (
 		user = "svcaccount"
 		pass = "hunter2"
-		host = "dbserver01"
-		db   = "assetdb"
 	)
-	dsn := "sqlserver://" + user + ":" + pass + "@" + host + ":1433;Extra=" + db
+	dsn := "sqlserver://" + user + ":" + pass + "@dbserver01:1433;Extra=assetdb"
 
 	err := ValidateDatabaseURL(dsn)
 	if err == nil {
 		t.Fatal("expected a refusal")
 	}
-	for _, secret := range []string{user, pass, host, db} {
+	for _, secret := range []string{user, pass} {
 		if strings.Contains(err.Error(), secret) {
-			t.Errorf("the refusal carries part of the value (%q): %v", secret, err)
+			t.Errorf("the refusal carries the credential (%q): %v", secret, err)
 		}
 	}
 }
@@ -246,6 +245,101 @@ func TestDatabaseURL_RefusalsStayIdentifiableOnceDescribed(t *testing.T) {
 	}
 	if err := ValidateDatabaseURL("mysql://svc:pw@host:3306/cmdb"); !errors.Is(err, ErrNotADatabaseURL) {
 		t.Errorf("an unusable driver is no longer recognisable as one: %v", err)
+	}
+}
+
+// lib/pq requires TLS when no sslmode is given, and against a server without it
+// the connection fails with an error that says nothing about the connection
+// string. That cost an evening's debugging, so the shape reports it — and the
+// shape is the only thing that reaches a log, since the value never does.
+func TestConnectionShape_SaysWhenNoSSLModeIsSet(t *testing.T) {
+	cases := []struct {
+		dsn      string
+		mentions bool
+	}{
+		{"postgres://svc:pw@host:5432/cmdb", true},
+		{"postgres://svc:pw@host:5432/cmdb?sslmode=disable", false},
+		{"postgres://svc:pw@host:5432/cmdb?sslmode=require", false},
+		{"postgresql://svc:pw@host:5432/cmdb", true},
+		// SQL Server does not use sslmode, so saying it is unset would be noise.
+		{"sqlserver://svc:pw@host:1433?database=cmdb", false},
+	}
+	for _, c := range cases {
+		got := strings.Contains(DescribeConnectionShape(c.dsn), "no sslmode set")
+		if got != c.mentions {
+			t.Errorf("shape warns about a missing sslmode = %v, want %v\n  for: %s\n  got: %s",
+				got, c.mentions, c.dsn, DescribeConnectionShape(c.dsn))
+		}
+	}
+}
+
+// Checked on the exported function directly, not only through a refusal, because
+// the logging path calls it on connections that passed validation — those are the
+// ones that reach a driver and fail there.
+func TestConnectionShape_NeverCarriesTheCredential(t *testing.T) {
+	const (
+		user = "svcaccount"
+		pass = "hunter2"
+	)
+	for _, dsn := range []string{
+		"postgres://" + user + ":" + pass + "@dbserver01:5432/assetdb",
+		// A password containing the characters that delimit a URL. The userinfo
+		// is removed whole rather than parsed, so these cannot survive it.
+		"postgres://" + user + ":p@ss:w0rd/" + pass + "@dbserver01:5432/assetdb",
+		"Server=dbserver01;Database=assetdb;User Id=" + user + ";Password=" + pass,
+		"host=dbserver01 dbname=assetdb user=" + user + " password=" + pass,
+	} {
+		shape := DescribeConnectionShape(dsn)
+		for _, secret := range []string{user, pass} {
+			if strings.Contains(shape, secret) {
+				t.Errorf("the description carries the credential (%q)\n  for: %s\n  got: %s", secret, dsn, shape)
+			}
+		}
+	}
+}
+
+// When a connection is used, it should describe itself — everything except who
+// is connecting and with what secret.
+//
+// The first version reported structure only, which said a connection was wrong
+// without saying which machine or database it was pointed at. Those are the facts
+// that turn a driver's complaint into a diagnosis, and neither is a credential.
+// The user and the password are, so they are the only things withheld.
+func TestConnectionShape_KeepsWhatDiagnosesAndDropsTheCredential(t *testing.T) {
+	const (
+		user = "svcaccount"
+		pass = "hunter2"
+	)
+	cases := []struct {
+		dsn   string
+		keeps []string
+	}{
+		{
+			"postgres://" + user + ":" + pass + "@dbserver01:5432/assetdb?sslmode=disable",
+			[]string{"dbserver01", "5432", "assetdb", "sslmode=disable"},
+		},
+		{
+			"sqlserver://" + user + ":" + pass + "@dbserver01:1433?database=assetdb&ApplicationIntent=ReadOnly",
+			[]string{"dbserver01", "1433", "database=assetdb", "ApplicationIntent=ReadOnly"},
+		},
+		{
+			"Server=dbserver01,1433;Database=assetdb;User Id=" + user + ";Password=" + pass,
+			[]string{"dbserver01", "assetdb"},
+		},
+	}
+	for _, c := range cases {
+		got := DescribeConnectionShape(c.dsn)
+		for _, keep := range c.keeps {
+			if !strings.Contains(got, keep) {
+				t.Errorf("description drops %q, which diagnoses rather than identifies\n  got: %s", keep, got)
+			}
+		}
+		if strings.Contains(got, user) {
+			t.Errorf("description carries the user\n  got: %s", got)
+		}
+		if strings.Contains(got, pass) {
+			t.Errorf("description carries the password\n  got: %s", got)
+		}
 	}
 }
 
