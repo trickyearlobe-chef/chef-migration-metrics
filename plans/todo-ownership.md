@@ -38,19 +38,12 @@ Remaining:
   profile/preview/run endpoints taking a database as an alternative source, and the UI. See
   `plans/active.md` for the ordered list.
 
-- [ ] **Work out the driver from the connection string instead of asking on the import
-  screen.** The person pasting `postgres://…` or `sqlserver://…` has already said which
-  database it is; asking again is a second chance to disagree with themselves, and the
-  screen's driver picker is one more control to get wrong. The scheme becomes load-bearing
-  rather than redundant, which is a better shape than the current one.
-
-  Two things to settle first. The keyword-value form (`Server=…;Database=…`) carries no
-  scheme at all, so it either defaults to SQL Server or is refused — and note that
-  Postgres's own keyword form (`host=… dbname=…`) is currently accepted and silently
-  labelled SQL Server, which would become a wrong driver rather than a wrong label. And
-  `db_driver` is a request field on the intake endpoints today, so it is an API change.
-  `ValidateCredentialValue` already returns the driver in its metadata, so the derivation
-  exists; nothing consumes it yet.
+- [ ] **Hold a database connection as its parts rather than as a string to be parsed** —
+  host, database, user, password and a list of vendor options, with the connection string
+  constructed when connecting. See `plans/database-connection-as-parts.md`. This absorbs the
+  question of deriving the driver from the connection string: it stops being a question.
+  The load-bearing consequence is that only the password is a secret, which removes the
+  redactor and the shape describer rather than improving them.
 
 - [ ] **A saved import does not carry the TLS override.** The interactive import takes one
   per run, but `ImportMapping` has no column for it, so a schedule built from a connection
