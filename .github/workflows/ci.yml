@@ -37,6 +37,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # journey-suite-check diffs against the base of the push or PR, so it
+          # needs more than the tip commit.
+          fetch-depth: 0
+
+      # A journey with no suite states what is left in prose, and prose drifts —
+      # that is how the convention got down to one journey in twenty before
+      # anybody measured it. The pre-commit hook enforces this too; this is the
+      # backstop for `git commit --no-verify`.
+      #
+      # Scoped to journeys CHANGED here on purpose. A repo-wide check would be
+      # red the day it landed and disabled the week after.
+      - name: Journeys changed here must have a suite
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          case "$base" in
+            ""|0000000000000000000000000000000000000000) base=HEAD~1 ;;
+          esac
+          make journey-suite-check BASE="$base"
 
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6

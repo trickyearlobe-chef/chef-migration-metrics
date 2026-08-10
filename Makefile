@@ -219,6 +219,36 @@ journey: ## Journey todo list: one test per thing a journey says must be in plac
 	@echo "$(YELLOW)When one turns green it stays green — nothing to update by hand.$(RESET)"
 	@$(MAKE) --no-print-directory journey-coverage
 
+# journey-suite-check is the CI counterpart of the pre-commit rule: journeys
+# CHANGED in this push must have a suite. Scoped to the diff on purpose — a
+# repo-wide check would be red from the day it was added and would be disabled
+# within a week, which is how the rule got lost in the first place.
+#
+# BASE defaults to the previous commit; CI passes the base of the push or PR.
+# It exists so the rule survives `git commit --no-verify`, which is the only way
+# past the hook. (The wider job of running the whole hook in CI is a separate
+# backlog item — see plans/todo-ci.md.)
+BASE ?= HEAD~1
+
+.PHONY: journey-suite-check
+journey-suite-check: ## Fail if a journey changed since BASE has no journey suite
+	@missing=""; \
+	for j in $$(git diff --name-only --diff-filter=ACMR $(BASE)...HEAD -- 'journeys/*.md' 2>/dev/null); do \
+		case "$$j" in journeys/overview.md|journeys/README.md) continue ;; esac; \
+		[ -f "$$j" ] || continue; \
+		if ! grep -rql "$$j" --include='*_journey_test.go' . 2>/dev/null; then \
+			missing="$$missing  $$j\n"; \
+		fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		printf "$(RED)Journeys changed here with no suite:$(RESET)\n"; \
+		printf "$$missing"; \
+		printf "$(YELLOW)Add a *_journey_test.go under the 'journey' build tag naming the journey,$(RESET)\n"; \
+		printf "$(YELLOW)with one test per thing it says must be in place. See plans/journey-suites.md.$(RESET)\n"; \
+		exit 1; \
+	fi; \
+	printf "$(GREEN)Every journey changed here has a suite.$(RESET)\n"
+
 # journeys lists what the tool is supposed to do, from the journeys themselves
 # rather than from a hand-maintained index, so the list cannot disagree with the
 # directory. Each line is a journey's own title, plus whether it has a suite —
