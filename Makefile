@@ -367,6 +367,10 @@ functional-test: _resolve-chef-creds ## Run functional tests against a real Chef
 
 MSSQL_SA_PASSWORD ?= Cmm_Dev_Password_2026!
 MSSQL_DSN         ?= sqlserver://sa:$(MSSQL_SA_PASSWORD)@localhost:1433?database=cmdb
+# A connection the driver refuses as typed: the password carries a percent sign,
+# a semicolon, a space and a hash, none of which a URL can hold unescaped. The
+# encoding repair is proved by connecting with it, not by asserting about it.
+MSSQL_NASTY_DSN   ?= sqlserver://cmmnasty:pa%ss;wo rd\#7Q!@localhost:1433?database=cmdb
 COMPOSE_FILE      := deploy/docker-compose/docker-compose.yml
 
 .PHONY: mssql-up
@@ -393,6 +397,7 @@ seed-mssql: ## Create the sample ownership database in SQL Server
 .PHONY: test-mssql
 test-mssql: ## Run the SQL Server ownership-ingest functional tests
 	CMM_TEST_MSSQL_DSN="$(MSSQL_DSN)" \
+	CMM_TEST_MSSQL_NASTY_DSN="$(MSSQL_NASTY_DSN)" \
 	go test -count=1 -tags $(FUNCTIONAL_TEST_TAGS) -run 'TestFunctional_MSSQL' -v ./internal/ownershipsql/
 
 .PHONY: mssql-down
