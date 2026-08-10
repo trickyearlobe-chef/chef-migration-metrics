@@ -6,6 +6,7 @@ package secrets
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -159,9 +160,23 @@ func DescribeConnectionShape(dsn string) string {
 			seen = append(seen, `options separated by semicolons before any "?"`)
 		}
 	}
-	if strings.Contains(trimmed, `\`) {
-		seen = append(seen, "contains a backslash, which no URL can carry; a named instance "+
-			"or a domain user needs the keyword-value form")
+	// The description has to name the thing it is hiding. A customer connection
+	// was refused by the driver as "invalid URL format" while every visible part
+	// of it was fine — which left the reader knowing only that the cause was in
+	// the redacted half. These characters are what put it there.
+	if isURL {
+		if unusable := charactersNoURLCanCarry(userinfoOf(rest)); unusable != "" {
+			seen = append(seen, "the user or password contains "+unusable+
+				", which cannot appear in a URL — percent-encode it, or use the "+
+				"keyword-value form, which is not parsed as one")
+		}
+	}
+	// A backslash outside the user and password means the host carries one — a
+	// named instance. Reported separately because it is a different thing to fix,
+	// and only from outside the credential so the two never say it twice.
+	if strings.Contains(withoutUserinfo(trimmed, rest, isURL), `\`) {
+		seen = append(seen, "the host contains a backslash, so it names an instance; "+
+			"that needs the keyword-value form, as no URL can carry one")
 	}
 
 	switch {
@@ -223,6 +238,94 @@ func pathNamesDatabase(rest string) bool {
 		return false
 	}
 	return strings.TrimSpace(strings.Trim(rest[slash:], "/")) != ""
+}
+
+// userinfoOf returns the part of a URL's remainder holding the user and
+// password, or empty if there is none. Bounded by the last "@" before any "?",
+// so a query value containing "@" cannot be mistaken for the end of it.
+func userinfoOf(rest string) string {
+	limit := len(rest)
+	if q := strings.Index(rest, "?"); q >= 0 {
+		limit = q
+	}
+	at := strings.LastIndex(rest[:limit], "@")
+	if at < 0 {
+		return ""
+	}
+	return rest[:at]
+}
+
+// withoutUserinfo returns the connection with the user and password taken out,
+// so a fact about the rest of it cannot be a fact about the credential.
+func withoutUserinfo(trimmed, rest string, isURL bool) string {
+	if !isURL {
+		return trimmed
+	}
+	userinfo := userinfoOf(rest)
+	if userinfo == "" {
+		return rest
+	}
+	return rest[len(userinfo):]
+}
+
+// charactersNoURLCanCarry names the characters present that stop a string being
+// parsed as a URL, and returns them as a readable list.
+//
+// Measured against the driver's own parser rather than reasoned about: "%" not
+// beginning a valid escape, a space, "#", "/" and "?" each make the string
+// unparsable, while ":" and "@" are accepted. Only the characters are named,
+// never the text around them: a password with a "%" in it is a diagnosis, and
+// the "%" alone is not the password.
+func charactersNoURLCanCarry(userinfo string) string {
+	named := make([]string, 0, 5)
+	add := func(what string) {
+		if !slices.Contains(named, what) {
+			named = append(named, what)
+		}
+	}
+
+	for i, r := range userinfo {
+		switch r {
+		case ' ':
+			add("a space")
+		case '#':
+			add(`a "#"`)
+		case '/':
+			add(`a "/"`)
+		case '?':
+			add(`a "?"`)
+		case '%':
+			// A "%" is legal when it begins a two-digit escape, which is exactly
+			// how a password carrying one is meant to be written.
+			if !isEscape(userinfo[i:]) {
+				add(`a bare "%"`)
+			}
+		case '\\':
+			add("a backslash")
+		}
+	}
+
+	switch len(named) {
+	case 0:
+		return ""
+	case 1:
+		return named[0]
+	default:
+		return strings.Join(named[:len(named)-1], ", ") + " and " + named[len(named)-1]
+	}
+}
+
+// isEscape reports whether s begins with a percent escape, "%" then two hex
+// digits.
+func isEscape(s string) bool {
+	if len(s) < 3 {
+		return false
+	}
+	return isHexDigit(s[1]) && isHexDigit(s[2])
+}
+
+func isHexDigit(b byte) bool {
+	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
 }
 
 // separatedField is one field of a connection string with the separator that

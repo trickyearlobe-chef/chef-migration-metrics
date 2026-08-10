@@ -343,6 +343,81 @@ func TestConnectionShape_KeepsWhatDiagnosesAndDropsTheCredential(t *testing.T) {
 	}
 }
 
+// The description has to name the thing it is hiding.
+//
+// A customer connection was refused by the SQL Server driver as "invalid URL
+// format". The description proved every visible part was fine — scheme, host,
+// database, options — which narrowed the cause to the user or the password, and
+// then stopped. Those are the parts that are redacted, so the reader was left
+// where they started.
+//
+// Measured against the driver's own parser: %, a space, #, / and ? in a password,
+// and a backslash in a username, each make a URL unparsable. ":" and "@" do not.
+// So the characters are named, without the values around them.
+func TestConnectionShape_NamesTheCharacterThatCannotBeInAURL(t *testing.T) {
+	cases := []struct {
+		dsn     string
+		expects bool
+		why     string
+	}{
+		{"sqlserver://svc:pw%rd@host?database=cmdb", true, "a bare % in the password"},
+		{"sqlserver://svc:pw rd@host?database=cmdb", true, "a space in the password"},
+		{"sqlserver://svc:pw#rd@host?database=cmdb", true, "a # in the password"},
+		{"sqlserver://DOM\\svc:pw@host?database=cmdb", true, "a backslash in the username"},
+		// Legal, and must not be reported: a needless warning is as bad as none.
+		{"sqlserver://svc:pw@host?database=cmdb", false, "an ordinary password"},
+		{"sqlserver://svc:p:w@host?database=cmdb", false, "a colon, which is allowed"},
+		{"sqlserver://svc:pw%25rd@host?database=cmdb", false, "a properly encoded %"},
+		// The options after "?" are not the userinfo, so a "?" there is fine.
+		{"postgres://svc:pw@host:5432/cmdb?sslmode=disable", false, "query parameters"},
+	}
+	for _, c := range cases {
+		got := strings.Contains(DescribeConnectionShape(c.dsn), "cannot appear in a URL")
+		if got != c.expects {
+			t.Errorf("reports an unusable character = %v, want %v — %s\n  got: %s",
+				got, c.expects, c.why, DescribeConnectionShape(c.dsn))
+		}
+	}
+}
+
+// A backslash in the credential and a backslash in the host are different
+// problems with the same symptom, so each is reported once and only the one that
+// applies. Saying both would send somebody to change the wrong half.
+func TestConnectionShape_TellsACredentialBackslashFromAnInstanceOne(t *testing.T) {
+	inCredential := DescribeConnectionShape(`sqlserver://DOM\svc:pw@host?database=cmdb`)
+	if !strings.Contains(inCredential, "user or password contains a backslash") {
+		t.Errorf("did not report a backslash in the credential: %s", inCredential)
+	}
+	if strings.Contains(inCredential, "host contains a backslash") {
+		t.Errorf("blamed the host for a backslash in the credential: %s", inCredential)
+	}
+
+	inHost := DescribeConnectionShape(`sqlserver://svc:pw@host\SQLEXPRESS?database=cmdb`)
+	if !strings.Contains(inHost, "host contains a backslash") {
+		t.Errorf("did not report a named instance: %s", inHost)
+	}
+	if strings.Contains(inHost, "user or password contains a backslash") {
+		t.Errorf("blamed the credential for a backslash in the host: %s", inHost)
+	}
+}
+
+// Naming the character must not turn into quoting the value around it.
+func TestConnectionShape_NamingTheCharacterRevealsNothingElse(t *testing.T) {
+	const (
+		user = "svcaccount"
+		pass = "hunter2"
+	)
+	shape := DescribeConnectionShape("sqlserver://" + user + ":" + pass + "%x@host?database=cmdb")
+	if !strings.Contains(shape, "cannot appear in a URL") {
+		t.Fatalf("did not report the unusable character: %s", shape)
+	}
+	for _, secret := range []string{user, pass} {
+		if strings.Contains(shape, secret) {
+			t.Errorf("naming the character carried the credential (%q): %s", secret, shape)
+		}
+	}
+}
+
 // redactForTest keeps a failure message from carrying a password, on the same
 // reasoning as the validator itself. The fixtures here are fake, but a test
 // message is copied into tickets and chat by whoever is debugging.
