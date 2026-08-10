@@ -635,6 +635,57 @@ func TestCredentials_Create_Success_Generic(t *testing.T) {
 	}
 }
 
+// A refused database connection has to say what shape it saw, on screen.
+//
+// The value is encrypted at rest and never logged, so when somebody was refused,
+// neither they nor we could tell which rule had fired without decrypting the
+// credential — and this customer is reachable through a VDI and a screenshot.
+// The shape is the diagnosis, so it has to survive all the way into the
+// response body, and it must carry nothing from the value itself.
+func TestCredentials_Create_RefusedDatabaseURLSaysWhatShapeItSaw(t *testing.T) {
+	cs := newMockCredentialStore(testCredentialEncryptor(t))
+	r := newTestRouterWithCredentials(cs)
+
+	const (
+		user = "svcaccount"
+		pass = "hunter2"
+		host = "dbserver01"
+	)
+	// A real shape: a DBA appending options with semicolons, and no database.
+	dsn := "sqlserver://" + user + ":" + pass + "@" + host + ":1433;ApplicationIntent=ReadOnly"
+
+	payload, err := json.Marshal(map[string]string{
+		"name":            "cmdb-connection",
+		"credential_type": secrets.CredentialTypeDatabaseURL,
+		"value":           dsn,
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/credentials", bytes.NewBuffer(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
+	}
+
+	body := w.Body.String()
+	for _, want := range []string{"shape:", "semicolons", "no database named"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the refusal reaching the screen does not say %q\n  body: %s", want, body)
+		}
+	}
+	// The same response must not carry any part of the connection string.
+	for _, secret := range []string{user, pass, host} {
+		if strings.Contains(body, secret) {
+			t.Errorf("the refusal reaching the screen carries %q from the value\n  body: %s", secret, body)
+		}
+	}
+}
+
 func TestCredentials_Create_DuplicateName(t *testing.T) {
 	cs := newMockCredentialStore(testCredentialEncryptor(t))
 	mustCreateCredential(t, cs, "dup-cred", secrets.CredentialTypeGeneric, "first")

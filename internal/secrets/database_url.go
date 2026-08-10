@@ -5,6 +5,7 @@ package secrets
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -77,7 +78,7 @@ func ValidateDatabaseURL(dsn string) error {
 func validateDatabaseURL(value []byte) ValidationResult {
 	dsn := strings.TrimSpace(string(value))
 	if dsn == "" {
-		return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
+		return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
 	}
 
 	// Whether this is a URL is decided textually, and net/url is never asked to
@@ -90,7 +91,7 @@ func validateDatabaseURL(value []byte) ValidationResult {
 	// question is whether a database is named, and that is answered on the text.
 	if scheme, rest, isURL := splitDatabaseURLScheme(dsn); isURL {
 		if !databaseURLSchemes[scheme] {
-			return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
+			return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
 		}
 		if namesDatabase(dsn) {
 			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
@@ -100,17 +101,80 @@ func validateDatabaseURL(value []byte) ValidationResult {
 		if scheme != "sqlserver" && pathNamesDatabase(rest) {
 			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
 		}
-		return ValidationResult{Valid: false, Error: ErrDatabaseURLNamesNoDatabase}
+		return ValidationResult{Valid: false, Error: describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)}
 	}
 
 	// The keyword-value spelling a DBA is as likely to hand over as a URL.
 	if !looksLikeKeywordValue(dsn) {
-		return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
+		return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
 	}
 	if !namesDatabase(dsn) {
-		return ValidationResult{Valid: false, Error: ErrDatabaseURLNamesNoDatabase}
+		return ValidationResult{Valid: false, Error: describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)}
 	}
 	return ValidationResult{Valid: true, Metadata: map[string]any{"driver": "sqlserver"}}
+}
+
+// describeConnectionShape says what a connection string is shaped like, using
+// nothing from the string itself.
+//
+// A refusal that quotes the value puts a password in a shared log. A refusal
+// that says nothing cannot be diagnosed without decrypting the credential, and
+// the people who hit it are reachable through a VDI and a screenshot. So this
+// reports structure — which form, which separators, what was missing — and no
+// values whatsoever. It is safe in a log, a ticket and a support bundle.
+//
+// The scheme is named only when it is one we recognise. An unrecognised one is
+// reported as such: text before "://" is only a scheme if the string really is a
+// URL, and in something pasted into the wrong box it could be part of a secret.
+func describeConnectionShape(dsn string) string {
+	trimmed := strings.TrimSpace(dsn)
+	if trimmed == "" {
+		return "[shape: the stored value is empty]"
+	}
+
+	var seen []string
+	scheme, rest, isURL := splitDatabaseURLScheme(trimmed)
+	switch {
+	case isURL && databaseURLSchemes[scheme]:
+		seen = append(seen, "URL form, "+scheme+" scheme")
+	case isURL:
+		seen = append(seen, "URL form, unsupported scheme")
+	case looksLikeKeywordValue(trimmed):
+		seen = append(seen, "keyword-value form")
+	default:
+		seen = append(seen, "not recognisable as a connection string")
+	}
+
+	// Where the options start is the distinction that misled a DBA once: options
+	// appended after "?" are read, options put straight after the host are not
+	// part of any URL and cannot be.
+	if isURL {
+		beforeQuery, _, _ := strings.Cut(trimmed, "?")
+		if strings.Contains(beforeQuery, ";") {
+			seen = append(seen, `options separated by semicolons before any "?"`)
+		}
+	}
+	if strings.Contains(trimmed, `\`) {
+		seen = append(seen, "contains a backslash, which no URL can carry; a named instance "+
+			"or a domain user needs the keyword-value form")
+	}
+
+	switch {
+	case namesDatabase(trimmed):
+		seen = append(seen, "database named by keyword")
+	case isURL && pathNamesDatabase(rest):
+		seen = append(seen, "database named in the path")
+	default:
+		seen = append(seen, "no database named")
+	}
+
+	return "[shape: " + strings.Join(seen, "; ") + "]"
+}
+
+// describedRefusal attaches the shape to a refusal, keeping the sentinel
+// wrapped so callers can still tell which refusal it is.
+func describedRefusal(sentinel error, dsn string) error {
+	return fmt.Errorf("%w — %s", sentinel, describeConnectionShape(dsn))
 }
 
 // splitDatabaseURLScheme reports whether the string is written in the URL

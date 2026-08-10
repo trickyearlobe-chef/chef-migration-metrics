@@ -366,8 +366,15 @@ func credentialToResponse(m *secrets.CredentialMetadata) credentialResponse {
 // isValidationError returns true if the error is a credential validation
 // error that should result in a 422 response. It checks the known validation
 // sentinel errors from the secrets package.
+// Every refusal a credential type can produce belongs here. One left out is
+// reported as an internal error, so the person who typed the value is told
+// "Failed to create credential." and the reason goes only to a log they cannot
+// read — which is the same failure as not saying anything at all. The database
+// connection refusals were missing.
 func isValidationError(err error) bool {
 	return errors.Is(err, secrets.ErrInvalidCredentialType) ||
 		errors.Is(err, secrets.ErrEmptyValue) ||
-		errors.Is(err, secrets.ErrInvalidPEMKey)
+		errors.Is(err, secrets.ErrInvalidPEMKey) ||
+		errors.Is(err, secrets.ErrNotADatabaseURL) ||
+		errors.Is(err, secrets.ErrDatabaseURLNamesNoDatabase)
 }
