@@ -30,6 +30,25 @@ and not `saml_subject`.
 
 ## Owner ingest — what is left
 
+**The customer's database import is blocked on network access, not on this code.**
+Their ownership database sits behind one name resolving to several addresses across
+subnets — an availability group, which is why their connection carries
+`MultiSubnetFailover=True`. From the host running this tool, one address refuses and
+another times out, so nothing there is reachable. Firewall rules are slow to arrange,
+so the first import will be a CSV extract instead, which is the proven path anyway.
+
+What was settled on the way, so it need not be worked out again:
+
+- **The connection string itself now works.** It was refused as "invalid URL format"
+  because the credential contained a character no URL can carry. That is repaired on
+  the way to the driver, and the failure has moved to the network layer.
+- **Their credential very likely lacks its domain prefix.** Their own script connects
+  as `DOMAIN\` + username; the connection stored here reported no backslash in it. That
+  will surface as an authentication failure once the network path opens, and it will
+  look nothing like the errors seen so far.
+- **Nothing has watched a commit from a database source.** So even with the firewall
+  open there are two unknowns, not one.
+
 The discovery-driven CSV intake is in (`journeys/ownership-intake.md`).
 Remaining:
 
