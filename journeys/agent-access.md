@@ -63,8 +63,22 @@ them picks the right one, and can tell when it has used one wrongly rather than 
 reporting the empty answer it got. We have field reports of exactly that failure on other tools
 we have built — the right tool present, not found, and an agent settling for a worse one.
 
-Read access only. I am diagnosing, not changing anything, and an assistant that can only read is
-one I can point at production without thinking hard about it.
+Reading is the whole of what I am certain about. Diagnosis is reading, and an assistant that can
+only read is one I can point at production without thinking hard about it.
+
+But I keep coming back to the register of failures somebody has looked at and made a call on.
+That is where a diagnosis is supposed to end up, and the assistant is the thing doing the
+diagnosing — so if it cannot write there, I read its answer and retype it, which is the copying I
+started out trying to stop. And when an entry is being carried by a ticket rather than a person,
+the reference is already sitting in the entry. An assistant that can also reach our ticketing
+system could follow that thread on its own: see what was found here, see what the ticket says,
+and keep the two saying the same thing. That is the part that would actually save the team time,
+and it is the part I am least sure we should allow.
+
+What stops me is not losing anything — nothing in that register is overwritten; a new call
+supersedes the old one and both stay readable. It is that the credential is me, so a note the
+assistant wrote would appear under my name, worded like something I decided, and nobody reading
+it later could tell. I would be signing findings I have not read.
 
 It has to work where the service is installed. Our customer's copy runs inside their estate,
 reached through a controlled desktop. If this needs a second thing deployed alongside it, it will
@@ -83,9 +97,19 @@ can see exactly what I can see on the screen and nothing else. Nobody has to rea
 second, parallel permissions model, and when I leave, the access leaves with me because it was
 never separate from me in the first place.
 
-**Read only, deliberately, and not a setting.** Nothing an assistant does through this can change
-the estate, the configuration, or anybody's data. A switch to relax that would be somewhere to
-make the mistake, and the value here is entirely in reading.
+**Read only until somebody decides otherwise, and read only is the default in the meantime.**
+Nothing an assistant does through this changes the estate, the configuration, or anybody's data.
+Whether it may write into the register of failures is genuinely open and is the owner's call, not
+a thing to settle by building it — so the default is written down here rather than left to
+whoever implements this first. Everything else stays read only regardless: the open question is
+about one place, not about relaxing the rule.
+
+**If it is ever allowed to write, an entry it wrote must be visibly not mine.** This is the
+condition, and it is what the open question turns on. The register exists so a later reader can
+weigh who said what and why; an entry that reads as a person's judgement when it was a machine's
+is not a lesser version of that, it is the opposite of it. So the decision to allow writing and
+the decision to record that a machine made the entry are the same decision, and neither ships
+without the other.
 
 **The credential is shown to me once, and I can destroy it at any moment.** If I lose it I make a
 new one; there is no recovering the old one. Destroying it takes effect immediately, not at the

@@ -6,13 +6,17 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
 // The journey suite for journeys/agent-access.md. Run it with `make journey`.
@@ -282,6 +286,70 @@ func TestJourney_CanAskForTheShapeBeforeTheDetail(t *testing.T) {
 func TestJourney_TheCredentialIsReadOnly(t *testing.T) {
 	t.Skip("credentials cannot be issued yet, so there is nothing whose write access can be " +
 		"checked; this becomes testable once TestJourney_ICanIssueMyselfACredential is green")
+}
+
+// "when an entry is being carried by a ticket rather than a person, the
+// reference is already sitting in the entry."
+//
+// This is what makes coordinating through a ticketing system possible at all,
+// so it is worth pinning here even though it was built for other reasons: if a
+// commitment stopped being able to name a ticket, this journey would quietly
+// lose half of what it is for.
+func TestJourney_AnEntryCanNameTheTicketCarryingIt(t *testing.T) {
+	var recorded datastore.RecordFailureVerdictParams
+	store := &mockStore{
+		RecordFailureVerdictFn: func(_ context.Context, p datastore.RecordFailureVerdictParams) (
+			datastore.FailureRegisterEntry, error) {
+			recorded = p
+			return datastore.FailureRegisterEntry{}, nil
+		},
+	}
+	body := `{"subject_name":"example-cookbook","subject_type":"git_repo",` +
+		`"cookbook_name":"example-cookbook","verdict":"broken","reason":"it is",` +
+		`"holder_type":"` + datastore.HolderTypeTicket + `","holder_ref":"EXAMPLE-123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/failure-register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("19.0")).
+		ServeHTTP(w, withAdminSession(req))
+
+	if recorded.HolderRef != "EXAMPLE-123" || recorded.HolderType != datastore.HolderTypeTicket {
+		t.Errorf("an entry cannot say which ticket is carrying it (status %d, recorded %+v), so "+
+			"an assistant that can also reach our ticketing system has no thread to follow",
+			w.Code, recorded)
+	}
+}
+
+// "an entry it wrote must be visibly not mine" — the condition the open
+// question turns on.
+func TestJourney_AnEntryAMachineWroteIsMarkedAsSuch(t *testing.T) {
+	var found string
+	entry := reflect.TypeOf(datastore.FailureRegisterEntry{})
+	for i := range entry.NumField() {
+		switch name := entry.Field(i).Name; {
+		case strings.Contains(name, "Author"),
+			strings.Contains(name, "Machine"),
+			strings.Contains(name, "Agent"),
+			strings.Contains(name, "Assistant"),
+			strings.Contains(name, "Origin"):
+			found = name
+		}
+	}
+	if found == "" {
+		t.Error("an entry records who raised it but not what raised it, so a note written by " +
+			"an assistant would read as its owner's own judgement and no later reader could " +
+			"tell — which is the condition that has to hold before writing is allowed at all")
+	}
+}
+
+// "Read only until somebody decides otherwise, and read only is the default in
+// the meantime."
+func TestJourney_TheDefaultIsReadOnly(t *testing.T) {
+	t.Skip("credentials cannot be issued yet, so nothing can be checked for write access. " +
+		"The recorded default, so it is not decided by whoever implements this first: a " +
+		"credential is read only. Whether it may write into the failure register is open and " +
+		"is the owner's call; every other surface stays read only regardless, and writing is " +
+		"conditional on TestJourney_AnEntryAMachineWroteIsMarkedAsSuch being green")
 }
 
 // "It acts as me, at my level of access, and it can see exactly what I can see
