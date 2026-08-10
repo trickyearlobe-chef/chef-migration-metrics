@@ -673,15 +673,17 @@ func TestCredentials_Create_RefusedDatabaseURLSaysWhatShapeItSaw(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	for _, want := range []string{"shape:", "semicolons", "no database named"} {
+	// The host is named on purpose: which machine was being reached is what turns
+	// a refusal into a diagnosis, and it identifies nobody.
+	for _, want := range []string{"connection:", host, "semicolons", "no database named"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the refusal reaching the screen does not say %q\n  body: %s", want, body)
 		}
 	}
-	// The same response must not carry any part of the connection string.
-	for _, secret := range []string{user, pass, host} {
+	// The credential is the one thing it must never carry.
+	for _, secret := range []string{user, pass} {
 		if strings.Contains(body, secret) {
-			t.Errorf("the refusal reaching the screen carries %q from the value\n  body: %s", secret, body)
+			t.Errorf("the refusal reaching the screen carries the credential %q\n  body: %s", secret, body)
 		}
 	}
 }

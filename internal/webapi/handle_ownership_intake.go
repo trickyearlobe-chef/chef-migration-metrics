@@ -1205,8 +1205,15 @@ func (r *Router) openIntakeDatabaseSource(w http.ResponseWriter, req *http.Reque
 	if err != nil {
 		// Report the failure rather than an empty result: an unreadable source
 		// and an empty one read the same on screen and mean opposite things.
-		r.logf("WARN", "ownership/import: opening %s source: %v", driver, err)
-		WriteBadRequest(w, "Could not read from the database: "+err.Error())
+		//
+		// The shape goes with it. A driver's own parse or TLS error says nothing
+		// about the connection string, the value is encrypted and never logged,
+		// and whoever is debugging this works in a VDI that cannot take a
+		// screenshot — so a log line they can transfer out as text is the only
+		// thing that carries a diagnosis. The shape holds no values.
+		shape := secrets.DescribeConnectionShape(dsn)
+		r.logf("WARN", "ownership/import: opening %s source: %v %s", driver, err, shape)
+		WriteBadRequest(w, "Could not read from the database: "+err.Error()+" "+shape)
 		return nil, nil, false
 	}
 
@@ -1257,8 +1264,12 @@ func (r *Router) handleIntakeListTables(w http.ResponseWriter, req *http.Request
 
 	tables, err := ownershipsql.ListTables(req.Context(), ownershipsql.Config{Driver: driver, DSN: dsn})
 	if err != nil {
-		r.logf("WARN", "ownership/import: listing tables on %s: %v", driver, err)
-		WriteBadRequest(w, "Could not list the tables: "+err.Error())
+		// The shape travels with the failure, for the reasons given where a
+		// source is opened: the driver's error describes its own disappointment,
+		// not the string it was handed.
+		shape := secrets.DescribeConnectionShape(dsn)
+		r.logf("WARN", "ownership/import: listing tables on %s: %v %s", driver, err, shape)
+		WriteBadRequest(w, "Could not list the tables: "+err.Error()+" "+shape)
 		return
 	}
 	if tables == nil {

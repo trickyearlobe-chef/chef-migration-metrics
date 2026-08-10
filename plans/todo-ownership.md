@@ -38,6 +38,35 @@ Remaining:
   profile/preview/run endpoints taking a database as an alternative source, and the UI. See
   `plans/active.md` for the ordered list.
 
+- [ ] **Work out the driver from the connection string instead of asking on the import
+  screen.** The person pasting `postgres://…` or `sqlserver://…` has already said which
+  database it is; asking again is a second chance to disagree with themselves, and the
+  screen's driver picker is one more control to get wrong. The scheme becomes load-bearing
+  rather than redundant, which is a better shape than the current one.
+
+  Two things to settle first. The keyword-value form (`Server=…;Database=…`) carries no
+  scheme at all, so it either defaults to SQL Server or is refused — and note that
+  Postgres's own keyword form (`host=… dbname=…`) is currently accepted and silently
+  labelled SQL Server, which would become a wrong driver rather than a wrong label. And
+  `db_driver` is a request field on the intake endpoints today, so it is an API change.
+  `ValidateCredentialValue` already returns the driver in its metadata, so the derivation
+  exists; nothing consumes it yet.
+
+- [ ] **Let the TLS mode be set without hand-editing the connection string.** A Postgres
+  connection with no `sslmode` fails against a server that has not got TLS enabled, because
+  `lib/pq` requires it by default — stricter than `psql`, and the error names TLS without
+  naming the connection string. It cost an evening. The shape summary now says when
+  `sslmode` is unset, which makes it diagnosable, not fixable.
+
+  The decision is whose default it is. Appending `sslmode=prefer` when none is given makes
+  it work against both kinds of server, at the cost of quietly accepting an unencrypted
+  connection to a database holding asset data — a security posture change that is the
+  owner's to make, not a fix to slip in. A checkbox on the credential or the import step is
+  the explicit alternative and costs UI work. Also: the on-screen example
+  (`postgres://user:pass@host:5432/database`) cannot connect to a non-TLS server, so
+  whatever is decided, that example needs to change — we tell people a format and then it
+  fails.
+
   **Testing it needs no customer database.** `make mssql-up`, `make seed-mssql`,
   `make test-mssql` stand up SQL Server 2022 in a container, seed a sample system of record
   and run the functional tests against it. The seed is deliberately awkward — a join across
@@ -255,8 +284,8 @@ first; this one is its user-visible half.
 to be right where somebody has to act. Everything below is an optimisation on a list that may be
 small enough to work through by hand. **Measure that list before building any of it.**
 
-- [x] **Blocking and unowned — MEASURED 2026-08-02 against the real estate. This answers the
-  question the rest of this section was waiting on.**
+**Blocking and unowned — MEASURED 2026-08-02 against the real estate. This answers the
+question the rest of this section was waiting on.**
 
   A real ownership export was imported: 18,821 assignments, 1,862 owners created, 37 seconds.
 

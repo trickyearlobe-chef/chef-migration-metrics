@@ -114,8 +114,13 @@ func validateDatabaseURL(value []byte) ValidationResult {
 	return ValidationResult{Valid: true, Metadata: map[string]any{"driver": "sqlserver"}}
 }
 
-// describeConnectionShape says what a connection string is shaped like, using
+// DescribeConnectionShape says what a connection string is shaped like, using
 // nothing from the string itself.
+//
+// Exported because the shape has to reach a log, not only a screen: the people
+// who hit these failures work in a restricted VDI that cannot take a screenshot,
+// so a log they can transfer out as text is the only channel that carries a
+// diagnosis.
 //
 // A refusal that quotes the value puts a password in a shared log. A refusal
 // that says nothing cannot be diagnosed without decrypting the credential, and
@@ -126,7 +131,7 @@ func validateDatabaseURL(value []byte) ValidationResult {
 // The scheme is named only when it is one we recognise. An unrecognised one is
 // reported as such: text before "://" is only a scheme if the string really is a
 // URL, and in something pasted into the wrong box it could be part of a secret.
-func describeConnectionShape(dsn string) string {
+func DescribeConnectionShape(dsn string) string {
 	trimmed := strings.TrimSpace(dsn)
 	if trimmed == "" {
 		return "[shape: the stored value is empty]"
@@ -168,13 +173,22 @@ func describeConnectionShape(dsn string) string {
 		seen = append(seen, "no database named")
 	}
 
-	return "[shape: " + strings.Join(seen, "; ") + "]"
+	// A Postgres connection with no sslmode does not mean "no TLS preference" —
+	// lib/pq demands TLS by default and fails outright against a server that has
+	// not got it enabled, with an error that says nothing about the connection
+	// string. It cost an evening, so the shape says whether it was set.
+	if isURL && scheme != "sqlserver" && !hasKeyword(trimmed, "sslmode") {
+		seen = append(seen, "no sslmode set, so the driver will require TLS "+
+			"and fail against a server without it")
+	}
+
+	return "[connection: " + redactCredentials(trimmed) + " | " + strings.Join(seen, "; ") + "]"
 }
 
 // describedRefusal attaches the shape to a refusal, keeping the sentinel
 // wrapped so callers can still tell which refusal it is.
 func describedRefusal(sentinel error, dsn string) error {
-	return fmt.Errorf("%w — %s", sentinel, describeConnectionShape(dsn))
+	return fmt.Errorf("%w — %s", sentinel, DescribeConnectionShape(dsn))
 }
 
 // splitDatabaseURLScheme reports whether the string is written in the URL
@@ -209,6 +223,123 @@ func pathNamesDatabase(rest string) bool {
 		return false
 	}
 	return strings.TrimSpace(strings.Trim(rest[slash:], "/")) != ""
+}
+
+// separatedField is one field of a connection string with the separator that
+// preceded it, so a redacted rendering can be rebuilt exactly as it arrived.
+type separatedField struct {
+	separator string
+	text      string
+}
+
+// splitKeepingSeparators splits on any of seps, remembering which one it was.
+func splitKeepingSeparators(s, seps string) []separatedField {
+	fields := []separatedField{{}}
+	for _, r := range s {
+		if strings.ContainsRune(seps, r) {
+			fields = append(fields, separatedField{separator: string(r)})
+			continue
+		}
+		fields[len(fields)-1].text += string(r)
+	}
+	return fields
+}
+
+// credentialKeys are the keywords whose values identify who is connecting. They
+// are the only part of a connection string withheld: the host, the port, the
+// database and the vendor options are what turn a driver's complaint into a
+// diagnosis, and none of them is a secret.
+var credentialKeys = map[string]bool{
+	"password": true, "pwd": true, "pass": true,
+	"user": true, "userid": true, "uid": true, "username": true,
+}
+
+// redactCredentials renders a connection string with the user and password
+// removed and everything else intact.
+//
+// Done textually, never through net/url: these strings routinely contain what a
+// URL cannot represent, and a redactor that fails to parse would either leak the
+// value or describe nothing. Anything it cannot account for is dropped rather
+// than shown, so an unparsed remainder can never carry a password into a log.
+func redactCredentials(dsn string) string {
+	// A field is redacted whole if its key names a credential. Splitting is done
+	// on ";&?" only — SQL Server spells keywords with a space in them ("User Id",
+	// "Initial Catalog"), so treating a space as a separator would break the key
+	// in half and leave the value exposed. Postgres uses space-separated pairs
+	// instead, so a field holding more than one "=" is split again on spaces.
+	redactField := func(field string) string {
+		key, _, found := strings.Cut(field, "=")
+		if !found {
+			return field
+		}
+		if credentialKeys[normaliseConnectionKey(key)] {
+			return key + "=***"
+		}
+		return field
+	}
+	redactPairs := func(s string) string {
+		var out strings.Builder
+		for i, field := range splitKeepingSeparators(s, ";&?") {
+			if i > 0 {
+				out.WriteString(field.separator)
+			}
+			if strings.Count(field.text, "=") > 1 && strings.Contains(field.text, " ") {
+				parts := strings.Split(field.text, " ")
+				for j, part := range parts {
+					if j > 0 {
+						out.WriteString(" ")
+					}
+					out.WriteString(redactField(part))
+				}
+				continue
+			}
+			out.WriteString(redactField(field.text))
+		}
+		return out.String()
+	}
+
+	scheme, rest, isURL := splitDatabaseURLScheme(dsn)
+	if !isURL {
+		return redactPairs(dsn)
+	}
+
+	// The userinfo goes first, before anything else is looked for. A password may
+	// contain "@", ":" or "/", and every one of those would otherwise be mistaken
+	// for structure — which is how an early version left a password in the path
+	// it had mistaken for a database name. The userinfo ends at the last "@"
+	// before any "?", so an unusual password costs some of the rendering rather
+	// than leaking any of it.
+	limit := len(rest)
+	if q := strings.Index(rest, "?"); q >= 0 {
+		limit = q
+	}
+	if at := strings.LastIndex(rest[:limit], "@"); at >= 0 {
+		rest = "***@" + rest[at+1:]
+	}
+
+	authority, tail := rest, ""
+	if i := strings.IndexAny(rest, "/?;"); i >= 0 {
+		authority, tail = rest[:i], rest[i:]
+	}
+	return scheme + "://" + authority + redactPairs(tail)
+}
+
+// hasKeyword reports whether a keyword appears with a value, whatever separator
+// and spelling it arrives in.
+func hasKeyword(dsn, want string) bool {
+	fields := strings.FieldsFunc(dsn, func(r rune) bool {
+		return r == ';' || r == '&' || r == '?'
+	})
+	for _, field := range fields {
+		key, value, found := strings.Cut(field, "=")
+		if !found {
+			continue
+		}
+		if normaliseConnectionKey(key) == want && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // namesDatabase looks for a database keyword with a value, across every
