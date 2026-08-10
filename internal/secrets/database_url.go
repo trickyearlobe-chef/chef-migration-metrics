@@ -49,6 +49,23 @@ var ErrDatabaseURLNamesNoDatabase = errors.New(
 		"postgres://user:pass@host:5432/DATABASE or " +
 		"sqlserver://user:pass@host:1433?database=DATABASE")
 
+// ValidateDatabaseURL reports whether a connection string names a database and
+// a driver the importer can open. Exported so the SQL package can apply exactly
+// this check at the point of use without a second copy of the parsing — the
+// first version had two, and a customer connection was refused by one of them.
+//
+// It errs towards accepting. The purpose is an early, helpful refusal for the
+// obvious mistake of omitting the database; a connection string is a bag of
+// vendor options this code has no business adjudicating, and refusing a valid
+// one blocks somebody with no way round it.
+func ValidateDatabaseURL(dsn string) error {
+	result := validateDatabaseURL([]byte(dsn))
+	if result.Valid {
+		return nil
+	}
+	return result.Error
+}
+
 // validateDatabaseURL checks a stored database connection string.
 //
 // No error it returns ever includes the value. The value is a password, and an
@@ -56,65 +73,84 @@ var ErrDatabaseURLNamesNoDatabase = errors.New(
 // many people can read.
 func validateDatabaseURL(value []byte) ValidationResult {
 	dsn := strings.TrimSpace(string(value))
-
-	// SQL Server's ADO spelling: server=host;database=cmdb;...
-	if !strings.Contains(dsn, "://") {
-		if !strings.Contains(strings.ToLower(dsn), "server=") {
-			return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
-		}
-		if !keywordValueNamesDatabase(dsn) {
-			return ValidationResult{Valid: false, Error: ErrDatabaseURLNamesNoDatabase}
-		}
-		return ValidationResult{Valid: true, Metadata: map[string]any{"driver": "sqlserver"}}
-	}
-
-	parsed, err := url.Parse(dsn)
-	if err != nil || !databaseURLSchemes[strings.ToLower(parsed.Scheme)] {
+	if dsn == "" {
 		return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
 	}
 
-	scheme := strings.ToLower(parsed.Scheme)
-	if !urlNamesDatabase(parsed, scheme) {
+	if strings.Contains(dsn, "://") {
+		parsed, err := url.Parse(dsn)
+		if err != nil || !databaseURLSchemes[strings.ToLower(parsed.Scheme)] {
+			return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+
+		// Read the raw string rather than url.Query(): Go drops any parameter
+		// separated by a semicolon, and SQL Server connection strings routinely
+		// use them — `?database=x;ApplicationIntent=ReadOnly` parsed as having
+		// no database at all, and a customer's valid connection was refused.
+		if namesDatabase(dsn) {
+			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
+		}
+		// Postgres names the database in the path. SQL Server uses the path for
+		// a named instance, so a path alone does not count there.
+		if scheme != "sqlserver" && strings.TrimSpace(strings.Trim(parsed.Path, "/")) != "" {
+			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
+		}
 		return ValidationResult{Valid: false, Error: ErrDatabaseURLNamesNoDatabase}
 	}
-	return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
+
+	// The keyword-value spelling a DBA is as likely to hand over as a URL.
+	if !looksLikeKeywordValue(dsn) {
+		return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
+	}
+	if !namesDatabase(dsn) {
+		return ValidationResult{Valid: false, Error: ErrDatabaseURLNamesNoDatabase}
+	}
+	return ValidationResult{Valid: true, Metadata: map[string]any{"driver": "sqlserver"}}
 }
 
-// urlNamesDatabase reports whether the connection says which database to read.
-// Postgres puts it in the path; SQL Server puts it in a query parameter and uses
-// the path for a named instance, so a path alone does not count there.
-func urlNamesDatabase(parsed *url.URL, scheme string) bool {
-	for key, values := range parsed.Query() {
-		if !strings.EqualFold(key, "database") {
-			continue
-		}
-		for _, v := range values {
-			if strings.TrimSpace(v) != "" {
-				return true
-			}
-		}
-	}
-	if scheme == "sqlserver" {
-		return false
-	}
-	return strings.TrimSpace(strings.Trim(parsed.Path, "/")) != ""
-}
-
-// keywordValueNamesDatabase looks for a non-empty database among
-// semicolon-separated key=value pairs, including the spellings SQL Server
-// tooling emits.
-func keywordValueNamesDatabase(dsn string) bool {
-	for _, pair := range strings.Split(dsn, ";") {
-		key, value, found := strings.Cut(pair, "=")
+// namesDatabase looks for a database keyword with a value, across every
+// separator these strings use. A connection string is a bag of key=value pairs
+// whichever spelling it arrives in, so they are all treated the same way.
+func namesDatabase(dsn string) bool {
+	fields := strings.FieldsFunc(dsn, func(r rune) bool {
+		return r == ';' || r == '&' || r == '?'
+	})
+	for _, field := range fields {
+		key, value, found := strings.Cut(field, "=")
 		if !found {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(key)) {
-		case "database", "initial catalog", "dbname":
+		switch normaliseConnectionKey(key) {
+		case "database", "initialcatalog", "dbname":
 			if strings.TrimSpace(value) != "" {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+// looksLikeKeywordValue reports whether this is a connection string at all,
+// rather than a password somebody pasted into the wrong box. Deliberately
+// generous: the alternative to accepting an odd one is refusing a valid one.
+func looksLikeKeywordValue(dsn string) bool {
+	for _, field := range strings.Split(dsn, ";") {
+		key, _, found := strings.Cut(field, "=")
+		if !found {
+			continue
+		}
+		switch normaliseConnectionKey(key) {
+		case "server", "datasource", "addr", "address", "host", "database",
+			"initialcatalog", "dbname":
+			return true
+		}
+	}
+	return false
+}
+
+// normaliseConnectionKey folds the spellings the same keyword arrives in:
+// "Initial Catalog", "initial catalog" and "InitialCatalog" are one key.
+func normaliseConnectionKey(key string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), " ", ""))
 }
