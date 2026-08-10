@@ -20,16 +20,39 @@ FIXTURE=journeys/_journey_check_fixture.md
 # and starts with an underscore, both of which the Go tool ignores, so it is
 # never compiled — the hook only greps for the journey's name inside it.
 SUITE_FIXTURE=.githooks/_journey_check_fixture_journey_test.go
+PLAN_FIXTURE=plans/_plan_check_fixture.md
 PASSED=0
 FAILED=0
 
 cleanup() {
   git rm -q --cached --ignore-unmatch "$FIXTURE" >/dev/null 2>&1 || true
-  rm -f "$FIXTURE" "$SUITE_FIXTURE"
+  git rm -q --cached --ignore-unmatch "$PLAN_FIXTURE" >/dev/null 2>&1 || true
+  rm -f "$FIXTURE" "$SUITE_FIXTURE" "$PLAN_FIXTURE" "$SUITE_FIXTURE.parked"
 }
 trap cleanup EXIT
 
 printf '// Suite for %s — see test-journey-check.sh\n' "$FIXTURE" > "$SUITE_FIXTURE"
+
+# assert_plan <"block"|"pass"> <description> <<< plan body on stdin
+# Plans are checked by a different rule from journeys, so they need their own
+# fixture: a plan written into the journey fixture would be checked as a journey.
+assert_plan() {
+  local want="$1" desc="$2"
+  cat > "$PLAN_FIXTURE"
+  git add -f "$PLAN_FIXTURE" >/dev/null 2>&1
+  local out status
+  out=$(.githooks/pre-commit 2>&1); status=$?
+  git rm -q --cached --ignore-unmatch "$PLAN_FIXTURE" >/dev/null 2>&1
+  rm -f "$PLAN_FIXTURE"
+
+  local got="pass"; [[ $status -ne 0 ]] && got="block"
+  if [[ "$got" != "$want" ]]; then
+    printf '  FAIL  %s (wanted %s, got %s)\n' "$desc" "$want" "$got"; FAILED=$((FAILED + 1))
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  printf '  ok    %s\n' "$desc"; PASSED=$((PASSED + 1))
+}
 
 # assert <"block"|"pass"> <description> [expected substring] <<< spec body on stdin
 # The optional third argument must appear in the hook's output. Use it when the
@@ -212,6 +235,34 @@ EOF
 assert block "a config key" <<'EOF'
 # A journey
 Turned on with `ingest.show_run_events`.
+EOF
+
+# ---------------------------------------------------------------------------
+# Plans do not tick things off
+# ---------------------------------------------------------------------------
+# Only the ticked box is a claim. An empty one is a backlog item, which is the
+# whole purpose of a todo file — blocking those would push a legitimate list into
+# prose for no gain.
+
+assert_plan block "a plan that ticks an item off" <<'EOF'
+# A plan
+
+- [x] Wire the collector to the new endpoint
+- [ ] Backfill the old rows
+EOF
+
+assert_plan pass "a plan listing work still to do" <<'EOF'
+# A plan
+
+- [ ] Wire the collector to the new endpoint
+- [ ] Backfill the old rows
+EOF
+
+assert_plan pass "a plan with no boxes at all" <<'EOF'
+# A plan
+
+Wire the collector to the new endpoint, then backfill the old rows. The order
+matters: the backfill reads the column the first step adds.
 EOF
 
 echo

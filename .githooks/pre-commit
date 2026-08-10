@@ -343,6 +343,31 @@ journey_warn() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# 3b. Plans do not tick things off
+# ---------------------------------------------------------------------------
+# Agreed 2026-08-10. CLAUDE.md has said since the plans were introduced that
+# done-ness is git history plus passing tests and is never re-asserted in prose,
+# because a ticked box is a status claim that nothing re-validates. It was a
+# convention, so it drifted: 80 ticked boxes across the backlog when measured.
+#
+# Only the TICKED box is blocked. An empty box is a backlog item, which is what
+# a todo file is for; a ticked one says work is finished, and finished work
+# leaves the plan entirely. Scoped to the plan being committed, so it clears as
+# files are touched rather than demanding one sweep of everything.
+for file in "${STAGED_FILES[@]}"; do
+  case "$file" in
+    plans/*.md) ;;
+    *) continue ;;
+  esac
+
+  plan_content=$(git show ":$file" 2>/dev/null) || continue
+  ticked=$(printf '%s\n' "$plan_content" | grep -cE '^[[:space:]]*[-*+] \[[xX]\]') || true
+  if [[ "$ticked" -gt 0 ]]; then
+    block "$file" "plan ticks ${ticked} item(s) off — done-ness is git history and passing tests, never a claim in prose; delete the finished items instead (see CLAUDE.md, Planning)"
+  fi
+done
+
 for file in "${STAGED_FILES[@]}"; do
   case "$file" in
     journeys/README.md) continue ;;   # states the rule; exempt from it
