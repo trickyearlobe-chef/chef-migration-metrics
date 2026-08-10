@@ -5,7 +5,6 @@ package secrets
 
 import (
 	"errors"
-	"net/url"
 	"strings"
 )
 
@@ -29,10 +28,14 @@ import (
 // tree and must not grow a dependency on a domain package to validate bytes.
 // internal/ownershipsql's supported-driver list is the authority; if it gains a
 // driver, this list gains the scheme.
+//
+// "mssql" is here because it is a widely used alias for the same driver, and
+// refusing it teaches nothing.
 var databaseURLSchemes = map[string]bool{
 	"postgres":   true,
 	"postgresql": true,
 	"sqlserver":  true,
+	"mssql":      true,
 }
 
 // ErrNotADatabaseURL is returned when the value is not a connection string for
@@ -77,23 +80,24 @@ func validateDatabaseURL(value []byte) ValidationResult {
 		return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
 	}
 
-	if strings.Contains(dsn, "://") {
-		parsed, err := url.Parse(dsn)
-		if err != nil || !databaseURLSchemes[strings.ToLower(parsed.Scheme)] {
+	// Whether this is a URL is decided textually, and net/url is never asked to
+	// parse it. A connection string is routinely something net/url cannot
+	// represent: a named instance (`host\INSTANCE`), a Windows-auth user
+	// (`DOMAIN\svc`), a bare `%` in a password, or options separated by
+	// semicolons with no `?` at all. Every one of those was refused as an
+	// unsupported driver — naming the driver, when the scheme was right and the
+	// real cause was a parse failure. Nothing here needs a parsed URL: the only
+	// question is whether a database is named, and that is answered on the text.
+	if scheme, rest, isURL := splitDatabaseURLScheme(dsn); isURL {
+		if !databaseURLSchemes[scheme] {
 			return ValidationResult{Valid: false, Error: ErrNotADatabaseURL}
 		}
-		scheme := strings.ToLower(parsed.Scheme)
-
-		// Read the raw string rather than url.Query(): Go drops any parameter
-		// separated by a semicolon, and SQL Server connection strings routinely
-		// use them — `?database=x;ApplicationIntent=ReadOnly` parsed as having
-		// no database at all, and a customer's valid connection was refused.
 		if namesDatabase(dsn) {
 			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
 		}
 		// Postgres names the database in the path. SQL Server uses the path for
 		// a named instance, so a path alone does not count there.
-		if scheme != "sqlserver" && strings.TrimSpace(strings.Trim(parsed.Path, "/")) != "" {
+		if scheme != "sqlserver" && scheme != "mssql" && pathNamesDatabase(rest) {
 			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
 		}
 		return ValidationResult{Valid: false, Error: ErrDatabaseURLNamesNoDatabase}
@@ -109,6 +113,44 @@ func validateDatabaseURL(value []byte) ValidationResult {
 	return ValidationResult{Valid: true, Metadata: map[string]any{"driver": "sqlserver"}}
 }
 
+// splitDatabaseURLScheme reports whether the string is written in the URL
+// spelling, and if so returns the scheme folded and whatever follows "://".
+//
+// A "jdbc:" prefix is stripped: `jdbc:sqlserver://` names the same driver, and
+// it is what an application's own configuration hands over.
+//
+// The text before "://" is only a scheme if it looks like one. A keyword-value
+// string can carry a URL as an option value — a callback, a metadata address —
+// and splitting on "://" without looking would read all of it as the scheme, so
+// anything containing a separator or a space means this is not URL spelling.
+func splitDatabaseURLScheme(dsn string) (scheme, rest string, isURL bool) {
+	before, after, found := strings.Cut(dsn, "://")
+	if !found {
+		return "", "", false
+	}
+	candidate := strings.ToLower(strings.TrimSpace(before))
+	candidate = strings.TrimPrefix(candidate, "jdbc:")
+	if candidate == "" || strings.ContainsAny(candidate, ";=& \t/@") {
+		return "", "", false
+	}
+	return candidate, after, true
+}
+
+// pathNamesDatabase reports whether the part after the host names a database in
+// the path, as Postgres does. Read textually for the same reason as everything
+// else here: the string may be one net/url cannot parse.
+func pathNamesDatabase(rest string) bool {
+	end := strings.IndexAny(rest, "?;")
+	if end >= 0 {
+		rest = rest[:end]
+	}
+	slash := strings.Index(rest, "/")
+	if slash < 0 {
+		return false
+	}
+	return strings.TrimSpace(strings.Trim(rest[slash:], "/")) != ""
+}
+
 // namesDatabase looks for a database keyword with a value, across every
 // separator these strings use. A connection string is a bag of key=value pairs
 // whichever spelling it arrives in, so they are all treated the same way.
@@ -122,7 +164,8 @@ func namesDatabase(dsn string) bool {
 			continue
 		}
 		switch normaliseConnectionKey(key) {
-		case "database", "initialcatalog", "dbname":
+		// "databaseName" is the JDBC spelling and arrives with the jdbc: prefix.
+		case "database", "databasename", "initialcatalog", "dbname":
 			if strings.TrimSpace(value) != "" {
 				return true
 			}
@@ -135,7 +178,7 @@ func namesDatabase(dsn string) bool {
 // rather than a password somebody pasted into the wrong box. Deliberately
 // generous: the alternative to accepting an odd one is refusing a valid one.
 func looksLikeKeywordValue(dsn string) bool {
-	for _, field := range strings.Split(dsn, ";") {
+	for field := range strings.SplitSeq(dsn, ";") {
 		key, _, found := strings.Cut(field, "=")
 		if !found {
 			continue
