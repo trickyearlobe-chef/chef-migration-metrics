@@ -1117,29 +1117,34 @@ function suggestionsFor(rows: IntakeReportRow[], value: string): string {
 // they preview it.
 // ---------------------------------------------------------------------------
 
-function guessMapping(
+export function guessMapping(
   profile: IntakeSourceProfile,
 ): Partial<Record<IntakeTargetField, ColumnChoice>> {
   const guesses: Partial<Record<IntakeTargetField, ColumnChoice>> = {};
 
-  const find = (...needles: string[]) =>
+  // Each guess excludes the columns already taken. Without that, a table whose
+  // only name-ish column is `owner_name` maps BOTH the owner and the thing
+  // owned to it — every assignment imported against the owner's own name, which
+  // is silent and which a four-row preview does not obviously show.
+  const find = (taken: (string | undefined)[], ...needles: string[]) =>
     profile.columns.find((column) => {
+      if (taken.includes(column.name)) return false;
       const name = column.name.toLowerCase();
       return needles.some((needle) => name.includes(needle));
     })?.name;
 
-  const owner = find("owner", "email", "contact", "maintainer", "assignee", "user");
+  const owner = find([], "owner", "email", "contact", "maintainer", "assignee", "user");
   if (owner) {
     guesses.owner = { column: owner, transform: "trim" };
   }
 
-  const key = find("repo", "cookbook", "node", "entity", "name");
+  const key = find([owner], "repo", "cookbook", "node", "entity", "name");
   if (key) {
     guesses.entity_key = { column: key, transform: "trim" };
   }
 
-  const org = find("org", "tenant", "business");
-  if (org && org !== owner && org !== key) {
+  const org = find([owner, key], "org", "tenant", "business");
+  if (org) {
     guesses.organisation = { column: org, transform: "trim" };
   }
 

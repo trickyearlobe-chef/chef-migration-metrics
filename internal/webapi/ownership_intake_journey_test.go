@@ -90,10 +90,10 @@ func TestJourney_CanSeeTheFieldsWithSampleDataInThem(t *testing.T) {
 // "Something guessing the field names for me, which already helps — as long as
 // I can see what it chose and change it."
 func TestJourney_FieldNamesAreGuessedForMe(t *testing.T) {
-	t.Skip("TODO: locate this. The owner reports it exists and helps; searching " +
-		"for guess/suggest/infer/automap across the intake handler and the import " +
-		"screen did not find it. Until it is found it can be neither pinned nor " +
-		"honestly called missing.")
+	t.Skip("Covered on the frontend, where the guess lives: " +
+		"frontend/src/pages/OwnershipMappedImportGuess.test.tsx. Recorded here so " +
+		"the journey line is not silently unaccounted for — the guess reads column " +
+		"names, so there is nothing on this side to assert.")
 }
 
 // "To see what it will do before it does it."
