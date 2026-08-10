@@ -83,9 +83,19 @@ is picked up:
   would never be pasted, never be typed, and never be re-encrypted by us. The
   authentication path already exists, since the Chef client key is a credential
   this tool already holds.
-- **Whatever their Python library expects is the dialect they know.** Worth
-  finding out before choosing what the screen accepts — matching the form they
-  already have beats teaching them a new one.
+- **The library is pymssql, which takes separate arguments** — server, user,
+  password, database — and no connection string at all. So there is no dialect to
+  match: they have never written one, have never escaped anything, and had no
+  reason to think they should.
+
+  This is the strongest argument for the whole change. The parts design is not a
+  tidier internal shape; it is the shape the values already have, in Vault and in
+  their script. Today the screen asks them to serialise four fields into a format
+  they have never used, so that this code can parse them back apart — and every
+  failure of the last day was in that round trip. Ask for the four fields.
+
+  Worth confirming against their script rather than taking it from a description
+  of the library.
 
 ## Migration
 
