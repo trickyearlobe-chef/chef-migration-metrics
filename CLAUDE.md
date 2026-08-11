@@ -106,12 +106,17 @@ things that were false; the directory was renamed so the old habit has no home t
   whole directory against a grandfathered list, failing both when a journey outside it has no
   suite and when one on it gains a suite that has not been struck off — so the number only ever
   goes down. It never looks at whether a suite passes.
-- **Before implementing any part of a journey, run `make journey-coverage`. If that journey has
-  no suite, writing the whole suite is the first task** — every doneness test the journey implies,
-  before any implementation. They all start red or skipped, and that is correct: red is the todo
-  list, and a partial suite is worse than none because it reads as the full list. Completeness is
-  a judgement nothing can check, which is exactly why it has to be done deliberately and up front
-  rather than grown a test at a time alongside the code.
+- **Before implementing any part of a journey, check its suite exists AND still covers it.**
+  `make journey-coverage` answers the first. The second is a read: go through the journey line by
+  line and confirm each thing it says must be true has a test. Journeys get edited and suites do
+  not follow, so a suite that was complete when written may now be a subset — and a subset reads
+  as the full list, which is worse than nothing.
+  - **No suite: writing the whole suite is the first task**, before any implementation. All red or
+    skipped to begin with, which is correct — red is the todo list.
+  - **Suite short of the journey: close the gap first**, same rule. Never start implementing
+    against a list you already know is incomplete.
+  - Completeness is a judgement nothing can check, which is exactly why it is done deliberately
+    and up front rather than grown a test at a time alongside the code.
 - **Incompleteness never blocks a release.** The suite is outside the gating suite and must stay
   there — `make journey` is not part of `make ci`. Red is the normal state for most of a journey's
   life. A red that blocks a release gets deleted, and then the list is gone. It is never where a
