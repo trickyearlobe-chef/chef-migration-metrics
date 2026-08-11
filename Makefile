@@ -300,7 +300,15 @@ journey-ratchet: ## Fail if any journey outside the grandfathered list has no su
 		printf "$(YELLOW)Delete those lines from $(JOURNEY_RATCHET) — the count only goes down.$(RESET)\n"; \
 		rc=1; \
 	fi; \
-	[ $$rc -eq 0 ] && printf "$(GREEN)Journey suite ratchet holds.$(RESET)\n"; \
+	was=$$(git show $(BASE):$(JOURNEY_RATCHET) 2>/dev/null | grep -c '^journeys/' || true); \
+	now=$$(grep -c '^journeys/' $(JOURNEY_RATCHET) || true); \
+	if [ "$$was" -gt 0 ] && [ "$$now" -gt "$$was" ]; then \
+		printf "$(RED)$(JOURNEY_RATCHET) grew from %s to %s.$(RESET)\n" "$$was" "$$now"; \
+		printf "$(YELLOW)The list only shrinks. Adding a line is how a ratchet becomes a suggestion:$(RESET)\n"; \
+		printf "$(YELLOW)it is the way to delete a suite without anything noticing. Write the suite.$(RESET)\n"; \
+		rc=1; \
+	fi; \
+	[ $$rc -eq 0 ] && printf "$(GREEN)Journey suite ratchet holds (%s outstanding).$(RESET)\n" "$$now"; \
 	exit $$rc
 
 # journeys lists what the tool is supposed to do, from the journeys themselves

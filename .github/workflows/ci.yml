@@ -66,7 +66,12 @@ jobs:
       # cannot net to zero, and a journey that gains a suite has to be struck
       # off the list before the build goes green again.
       - name: Journey suite ratchet
-        run: make journey-ratchet
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          case "$base" in
+            ""|0000000000000000000000000000000000000000) base=HEAD~1 ;;
+          esac
+          make journey-ratchet BASE="$base"
 
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
