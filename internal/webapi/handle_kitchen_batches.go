@@ -311,6 +311,14 @@ func (r *Router) handleGetKitchenBatch(w http.ResponseWriter, req *http.Request,
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleUpdateKitchenBatch(w http.ResponseWriter, req *http.Request, id string) {
+	// Creating a batch is operatorOnly at the wrapper, so changing, running,
+	// cancelling or deleting one cannot ask less. The subtree this arrives
+	// through carries reads too — a batch, its progress and its instances stay
+	// open to anybody with a session — so the check belongs to the verb.
+	if !requireOperatorOrAdmin(w, req) {
+		return
+	}
+
 	var body createBatchRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
@@ -344,6 +352,14 @@ func (r *Router) handleUpdateKitchenBatch(w http.ResponseWriter, req *http.Reque
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleDeleteKitchenBatch(w http.ResponseWriter, req *http.Request, id string) {
+	// Creating a batch is operatorOnly at the wrapper, so changing, running,
+	// cancelling or deleting one cannot ask less. The subtree this arrives
+	// through carries reads too — a batch, its progress and its instances stay
+	// open to anybody with a session — so the check belongs to the verb.
+	if !requireOperatorOrAdmin(w, req) {
+		return
+	}
+
 	err := r.db.DeleteKitchenBatch(req.Context(), id)
 	if err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {
@@ -362,6 +378,14 @@ func (r *Router) handleDeleteKitchenBatch(w http.ResponseWriter, req *http.Reque
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleRunKitchenBatch(w http.ResponseWriter, req *http.Request, id string) {
+	// Creating a batch is operatorOnly at the wrapper, so changing, running,
+	// cancelling or deleting one cannot ask less. The subtree this arrives
+	// through carries reads too — a batch, its progress and its instances stay
+	// open to anybody with a session — so the check belongs to the verb.
+	if !requireOperatorOrAdmin(w, req) {
+		return
+	}
+
 	if !requirePOST(w, req) {
 		return
 	}
@@ -867,6 +891,14 @@ func (r *Router) batchTargetVersion(b datastore.KitchenBatch) string {
 // ---------------------------------------------------------------------------
 
 func (r *Router) handleCancelKitchenBatch(w http.ResponseWriter, req *http.Request, id string) {
+	// Creating a batch is operatorOnly at the wrapper, so changing, running,
+	// cancelling or deleting one cannot ask less. The subtree this arrives
+	// through carries reads too — a batch, its progress and its instances stay
+	// open to anybody with a session — so the check belongs to the verb.
+	if !requireOperatorOrAdmin(w, req) {
+		return
+	}
+
 	if !requirePOST(w, req) {
 		return
 	}

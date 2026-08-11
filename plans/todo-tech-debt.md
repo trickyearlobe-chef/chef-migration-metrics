@@ -623,14 +623,19 @@ session:
   is admin (reclassifying a shipped one already was). Reading both stays open to anybody with a
   session, so the guard is on the method rather than the route.
 
-**Fourteen write operations remain reachable by anybody with a session**, and are accepted:
-saved filters (the caller's own), exports (reads only), the two rescan triggers, the kitchen
-queue's cancel and retry, `POST`/`DELETE /git-repos/{name}/exclude`, and the kitchen batch item
-verbs. **The last two are asymmetric with their own neighbours** — `POST /kitchen/batches`
-requires operator while `PUT`/`DELETE`/`run`/`cancel` on a batch do not, and
-`POST /kitchen/git/exclusions` is admin while the git-repo exclusion beside it is open. Worth
-settling when the wider verification happens; neither reaches secrets, the server, collection,
-or the estate record.
+Two asymmetries were closed at the same time, each aligned to the neighbour it disagreed with:
+the kitchen batch item verbs (`PUT`, `DELETE`, `run`, `cancel`) are operator because creating a
+batch already was, and `POST`/`DELETE /git-repos/{name}/exclude` is admin because excluding a
+repository from test runs already was. Reading is untouched in every case.
+
+**Eight write operations remain reachable by anybody with a session**, and are accepted: saved
+filters (the caller's own), `POST /exports` (reads only), the two rescan triggers, and the
+kitchen queue's cancel and retry. **The queue pair is now the one thing left that disagrees with
+its neighbour** — cancelling a batch takes an operator, cancelling the queued run inside it does
+not. Not settled either way; it was accepted before the batch verbs moved.
+
+**The description still understates 54 operations**, saying "authenticated" where a viewer is
+in fact refused, because enforcement happens in two layers and only the wrapper is recorded.
 
 **The proper fix, when this is picked up:** record the *effective* required role — the stricter
 of wrapper and handler — and add a test that probes each operation with a viewer and fails when
