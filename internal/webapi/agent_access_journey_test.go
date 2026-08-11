@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -381,6 +382,37 @@ func TestJourney_AnEntryAMachineWroteIsMarkedAsSuch(t *testing.T) {
 		t.Error("an entry records who raised it but not what raised it, so a note written by " +
 			"an assistant would read as its owner's own judgement and no later reader could " +
 			"tell — which is the condition that has to hold before writing is allowed at all")
+	}
+}
+
+// "How something got in is settled when it signs in, not claimed as it asks...
+// the service attaches that, never the caller."
+//
+// The session is what every request is judged by and the only thing the caller
+// cannot write, so it is where the way in has to be recorded. A field on the
+// request — a header, a client name — would be a claim, and an audit entry a
+// caller can set reads as fact without being one.
+//
+// It sits beside the provider a session already records, which is the same kind
+// of fact assigned the same way, so this is checked against the session rather
+// than against anything an assistant would have to build.
+func TestJourney_TheWayInIsRecordedOnTheSessionNotTheRequest(t *testing.T) {
+	var found string
+	session := reflect.TypeOf(auth.SessionInfo{})
+	for i := range session.NumField() {
+		switch name := session.Field(i).Name; {
+		case strings.Contains(name, "AccessMethod"),
+			strings.Contains(name, "Origin"),
+			strings.Contains(name, "Channel"),
+			strings.Contains(name, "ViaCredential"):
+			found = name
+		}
+	}
+	if found == "" {
+		t.Error("a session records who signed in but not how they got in, so nothing can tell " +
+			"an entry made at a screen from one made by a credential somebody handed to a tool " +
+			"— and the only other place to put it is something the caller sends, which it could " +
+			"set to anything")
 	}
 }
 
