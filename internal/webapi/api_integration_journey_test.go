@@ -193,8 +193,11 @@ func TestJourney_TheShapeCannotChangeUnderACaller(t *testing.T) {
 // "Whether it survives contact with an unattended job is the open question."
 func TestJourney_AnUnattendedJobOutlivesThePersonWhoSetItUp(t *testing.T) {
 	t.Skip("credentials cannot be issued at all yet, so nothing about an unattended job's " +
-		"access can be checked. Recorded so it is not decided by whoever builds it first: the " +
-		"assistant journey decided a credential is a person at that person's level of access, " +
-		"and nobody has decided whether that holds for a program that runs nightly and outlives " +
-		"the engineer who set it up. It is the owner's call, not an implementation detail")
+		"access can be checked. The question this test was parked on is answered: a job that " +
+		"runs unattended gets an account of its own — local, or one the identity provider " +
+		"already carries for a machine — rather than borrowing the account of whoever set it " +
+		"up. So there is nothing here that outlives anybody. What is left to check is that a " +
+		"credential issued from a machine's own record carries that account's level and no " +
+		"more, which needs " +
+		"TestJourney_ICanIssueMyselfACredential green first")
 }

@@ -67,8 +67,10 @@ controlled desktop. A second thing deployed alongside will not happen there.
 starts rotting when it is committed — the failure that killed the document set this replaced. A
 renamed path must break the build, not a customer's client.
 
-**A credential is a person, not a service account.** My level of access, exactly what I see on
-screen. No second permissions model, and when I leave the access leaves with me.
+**A credential is another way into the same account.** My level of access, exactly what I see on
+screen, through something other than the web interface. No second permissions model. An account
+can belong to a machine as easily as to me, so nothing here needs a service account. When I leave,
+my access leaves with me.
 
 **The person making one chooses whether it can write; read only if they do not choose.** Not an
 administrator setting — the choice belongs to whoever is about to hand it to a tool, because only
@@ -106,7 +108,7 @@ signed in](internal/auth/middleware_test.go#TestRequireAuthValidBearerToken) as 
 [cookie is](internal/auth/middleware_test.go#TestRequireAuthValidCookie), an expired one [is
 not](internal/auth/middleware_test.go#TestRequireAuthExpiredSession), and reaching above your
 level [is refused](internal/auth/middleware_test.go#TestRequireRoleDenied) — the mechanism that
-makes "a credential is a person" true rather than aspirational.
+makes "a credential carries its account's level and no more" true rather than aspirational.
 
 An address nobody serves [is reported as not
 existing](internal/webapi/router_api_routing_test.go#TestUnroutedAPIPath_IsNotFoundNotMethodNotAllowed)

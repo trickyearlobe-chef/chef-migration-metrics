@@ -427,9 +427,15 @@ func TestJourney_AWritingCredentialCannotReachAnythingElse(t *testing.T) {
 
 // "It acts as me, at my level of access, and it can see exactly what I can see
 // on the screen and nothing else."
-func TestJourney_TheCredentialIsThePersonNotAServiceAccount(t *testing.T) {
-	t.Skip("credentials cannot be issued yet; that a credential carries its owner's level of " +
-		"access — and no second permissions model — is checkable once one can be issued")
+//
+// A credential belongs to an account, and an account may belong to a machine as
+// easily as to a person — an unattended job gets its own rather than borrowing
+// somebody's, and the assistant in an editor holds one of mine and acts as me.
+// Either way there is one permissions model, and this is the test of that.
+func TestJourney_TheCredentialCarriesItsAccountsLevelAndNoMore(t *testing.T) {
+	t.Skip("credentials cannot be issued yet; that a credential carries its account's level of " +
+		"access — and no second permissions model beside the one the screens already use — is " +
+		"checkable once one can be issued")
 }
 
 // agentJourneyTemplateToPath turns an OpenAPI path template into something
