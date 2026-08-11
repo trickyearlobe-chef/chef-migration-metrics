@@ -107,6 +107,11 @@ things that were false; the directory was renamed so the old habit has no home t
   there — `make journey` is not part of `make ci`. Red is the normal state for most of a journey's
   life. A red that blocks a release gets deleted, and then the list is gone. It is never where a
   regression is parked: something that used to work and now fails is a broken build.
+- **A green one stays.** Implementing something turns its test green; nothing is removed at that
+  point. The green is the proof it was built and that we were happy with the result, and the suite
+  as a whole becomes the feature inventory — what this product does, enumerated and runnable,
+  which is what you would want in hand if the debt ever justified starting again. The suite only
+  accumulates.
 - **Closing a gap means writing the test, not reporting it.** Read the journey, add a test per
   requirement, `t.Skip` with a reason where it cannot be answered honestly yet.
 - **No status claims.** Nothing says built, shipped, planned or proposed. A red test means "not
