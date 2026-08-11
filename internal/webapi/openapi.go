@@ -96,8 +96,9 @@ func (r *Router) operation(path, method string, role RouteRole) map[string]any {
 
 	// The access level is part of what a caller needs to know before trying,
 	// and it is the one thing here that is enforced rather than described.
-	op["x-required-role"] = string(role)
-	if role != RolePublic {
+	effective := effectiveRole(method, path, role)
+	op["x-required-role"] = string(effective)
+	if effective != RolePublic {
 		op["security"] = []any{map[string]any{"bearerAuth": []any{}}}
 	}
 
@@ -171,4 +172,43 @@ func (r *Router) DescribedAddresses() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// effectiveRole is what a caller actually needs to use one operation.
+//
+// Access is enforced in two places: the wrapper a route is registered with,
+// which covers every method on it, and a role check inside the handler, which
+// can apply to one method only — reading a batch is open to anybody while
+// running it is not. Only the wrapper is visible in the route table, so a
+// description built from that alone understates more than fifty operations,
+// and an integration built on a viewer credential meets refusals the document
+// did not predict.
+//
+// The stricter of the two wins. Handler-level requirements are declared in
+// apiRoles, and a test probes every operation and fails when a declaration and
+// the service disagree — so this cannot drift the way a second hand-written
+// list would.
+func effectiveRole(method, path string, wrapper RouteRole) RouteRole {
+	declared, ok := apiRoles[method+" "+path]
+	if !ok {
+		return wrapper
+	}
+	if roleRank(declared) > roleRank(wrapper) {
+		return declared
+	}
+	return wrapper
+}
+
+// roleRank orders the roles from least to most demanding.
+func roleRank(role RouteRole) int {
+	switch role {
+	case RoleAdmin:
+		return 3
+	case RoleOperator:
+		return 2
+	case RoleAuthenticated:
+		return 1
+	default:
+		return 0
+	}
 }

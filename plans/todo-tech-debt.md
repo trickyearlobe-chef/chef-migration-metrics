@@ -634,8 +634,16 @@ kitchen queue's cancel and retry. **The queue pair is now the one thing left tha
 its neighbour** — cancelling a batch takes an operator, cancelling the queued run inside it does
 not. Not settled either way; it was accepted before the batch verbs moved.
 
-**The description still understates 54 operations**, saying "authenticated" where a viewer is
-in fact refused, because enforcement happens in two layers and only the wrapper is recorded.
+**The description now says what is actually required.** It reports the stricter of the wrapper
+and the handler, and `TestOpenAPI_DescribedRoleIsTheRoleEnforced` probes every operation and
+fails three ways: a requirement not described, a requirement described that is not enforced, and
+a described role that disagrees with the enforced one. All three were checked by breaking them
+deliberately. So hardening an endpoint updates the description or fails a build.
+
+**One thing that surfaced from describing it, and nobody has decided it:** eight reads require
+admin, including `GET /cookstyle/cops/{cop_name}/classification` and `GET /ownership/duplicates`.
+That may be right, but it was never chosen — it falls out of a role check placed on the whole
+handler rather than on the methods that write.
 
 **The proper fix, when this is picked up:** record the *effective* required role — the stricter
 of wrapper and handler — and add a test that probes each operation with a viewer and fails when

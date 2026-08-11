@@ -259,3 +259,72 @@ var apiDocs = map[string]string{
 	"PUT /api/v1/owners/{name}":                                          "Correct an owner's details.",
 	"PUT /api/v1/ownership/import/mappings/{id}":                         "Change a saved import.",
 }
+
+// What a handler requires beyond the wrapper its route was registered with.
+//
+// Some handlers check the caller's role themselves, per method, because the
+// same address serves reads that everybody may make and writes that they may
+// not. Those requirements are invisible in the route table, so they are
+// declared here and folded into the description by effectiveRole.
+//
+// This is a second place where a fact about access is written down, which is
+// exactly the shape of thing that rots — so it is not trusted. Every entry, and
+// every absence, is checked against the running service by
+// TestOpenAPI_DescribedRoleIsTheRoleEnforced, which probes each operation and
+// fails with the line to add or remove.
+var apiRoles = map[string]RouteRole{
+	"DELETE /api/v1/cookstyle/custom-cops/{name}":          RoleAdmin,
+	"DELETE /api/v1/cookstyle/scan-scope":                  RoleAdmin,
+	"DELETE /api/v1/git-repos/{name}/exclude":              RoleAdmin,
+	"DELETE /api/v1/kitchen/batches/{id}":                  RoleOperator,
+	"DELETE /api/v1/kitchen/git/exclusions/{id}":           RoleAdmin,
+	"DELETE /api/v1/kitchen/node-runs/{id}":                RoleOperator,
+	"DELETE /api/v1/owners/{name}":                         RoleAdmin,
+	"DELETE /api/v1/owners/{name}/assignments/{id}":        RoleOperator,
+	"DELETE /api/v1/ownership/aliases":                     RoleOperator,
+	"DELETE /api/v1/ownership/aliases/{id}":                RoleOperator,
+	"DELETE /api/v1/ownership/import/mappings/{id}":        RoleAdmin,
+	"GET /api/v1/cookstyle/cops/{cop_name}/classification": RoleAdmin,
+	"GET /api/v1/ownership/duplicates":                     RoleAdmin,
+	"GET /api/v1/ownership/duplicates/dismissed":           RoleAdmin,
+	"GET /api/v1/ownership/import/clear":                   RoleAdmin,
+	"GET /api/v1/ownership/import/mappings":                RoleAdmin,
+	"GET /api/v1/ownership/import/mappings/{id}":           RoleAdmin,
+	"GET /api/v1/ownership/import/rejections":              RoleAdmin,
+	"PATCH /api/v1/failure-register/{id}":                  RoleOperator,
+	"POST /api/v1/cookbooks/{name}/committers/assign":      RoleOperator,
+	"POST /api/v1/cookbooks/{name}/reset-git":              RoleOperator,
+	"POST /api/v1/cookstyle/custom-cops":                   RoleAdmin,
+	"POST /api/v1/failure-register":                        RoleOperator,
+	"POST /api/v1/failure-register/{id}/resolve":           RoleOperator,
+	"POST /api/v1/git-repos/{name}/committers/assign":      RoleOperator,
+	"POST /api/v1/git-repos/{name}/exclude":                RoleAdmin,
+	"POST /api/v1/git-repos/{name}/reset":                  RoleOperator,
+	"POST /api/v1/kitchen/batches/{id}/cancel":             RoleOperator,
+	"POST /api/v1/kitchen/batches/{id}/run":                RoleOperator,
+	"POST /api/v1/kitchen/git/exclusions":                  RoleAdmin,
+	"POST /api/v1/owners":                                  RoleOperator,
+	"POST /api/v1/owners/{name}/assignments":               RoleOperator,
+	"POST /api/v1/ownership/aliases":                       RoleOperator,
+	"POST /api/v1/ownership/aliases/import":                RoleOperator,
+	"POST /api/v1/ownership/aliases/{id}":                  RoleOperator,
+	"POST /api/v1/ownership/duplicates/dismiss":            RoleAdmin,
+	"POST /api/v1/ownership/duplicates/rescan":             RoleAdmin,
+	"POST /api/v1/ownership/duplicates/restore":            RoleAdmin,
+	"POST /api/v1/ownership/import":                        RoleOperator,
+	"POST /api/v1/ownership/import/clear":                  RoleAdmin,
+	"POST /api/v1/ownership/import/commit":                 RoleAdmin,
+	"POST /api/v1/ownership/import/mappings":               RoleAdmin,
+	"POST /api/v1/ownership/import/mappings/{id}/run":      RoleAdmin,
+	"POST /api/v1/ownership/import/preview":                RoleAdmin,
+	"POST /api/v1/ownership/import/profile":                RoleAdmin,
+	"POST /api/v1/ownership/import/tables":                 RoleAdmin,
+	"POST /api/v1/ownership/merge":                         RoleAdmin,
+	"POST /api/v1/ownership/reassign":                      RoleOperator,
+	"PUT /api/v1/cookstyle/cops/{cop_name}/classification": RoleAdmin,
+	"PUT /api/v1/cookstyle/custom-cops/{name}":             RoleAdmin,
+	"PUT /api/v1/cookstyle/scan-scope":                     RoleAdmin,
+	"PUT /api/v1/kitchen/batches/{id}":                     RoleOperator,
+	"PUT /api/v1/owners/{name}":                            RoleOperator,
+	"PUT /api/v1/ownership/import/mappings/{id}":           RoleAdmin,
+}
