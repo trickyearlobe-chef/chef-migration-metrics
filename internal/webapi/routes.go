@@ -110,5 +110,14 @@ func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc, subPaths
 	r.handle(pattern, RoleOperator, guarded, subPaths...)
 }
 
-// get declares a sub-path answered only for GET.
-func get(suffix string) SubPath { return SubPath{Suffix: suffix, Methods: []string{http.MethodGet}} }
+// sub declares one address under a subtree, with the methods its handler
+// answers. Read from the handler's dispatch, never from the comment above it:
+// the comments were checked and found both incomplete (the bare `{name}`
+// detail case is undocumented in several) and stale (one names a sub-path that
+// was removed), which is the rot this whole mechanism exists to end.
+func sub(suffix string, methods ...string) SubPath {
+	if len(methods) == 0 {
+		methods = []string{http.MethodGet}
+	}
+	return SubPath{Suffix: suffix, Methods: methods}
+}

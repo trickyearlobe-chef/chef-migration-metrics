@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -61,6 +62,38 @@ func TestRoutes_EveryRecordedRouteIsServed(t *testing.T) {
 		if matched != rt.Pattern {
 			t.Errorf("%s is recorded, but a request for it is served by %q instead",
 				rt.Pattern, matched)
+		}
+	}
+}
+
+// A declared sub-path that does not land on the subtree that declared it is a
+// typo describing an address nobody serves — and it would read as authoritative
+// precisely because it was declared next to the registration.
+//
+// This proves where the address lands, not that the handler dispatches it. The
+// second half is only answerable by asking the handler for real, which is what
+// the journey suite does against the served description.
+func TestRoutes_EveryDeclaredSubPathLandsOnItsSubtree(t *testing.T) {
+	router := newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("19.0"))
+
+	for _, rt := range router.Routes() {
+		for _, sp := range rt.SubPaths {
+			if !rt.IsSubtree() {
+				t.Errorf("%s declares sub-path %q but is not a subtree, so nothing dispatches it",
+					rt.Pattern, sp.Suffix)
+				continue
+			}
+			address := rt.Pattern + strings.ReplaceAll(
+				strings.ReplaceAll(sp.Suffix, "{", ""), "}", "")
+			_, matched := router.mux.Handler(httptest.NewRequest(http.MethodGet, address, nil))
+			if matched != rt.Pattern {
+				t.Errorf("%s declares %q, but a request for %s is served by %q instead",
+					rt.Pattern, sp.Suffix, address, matched)
+			}
+			if len(sp.Methods) == 0 {
+				t.Errorf("%s%s declares no methods, so a caller cannot tell how to reach it",
+					rt.Pattern, sp.Suffix)
+			}
 		}
 	}
 }
