@@ -219,6 +219,22 @@ journey: ## Journey todo list: one test per thing a journey says must be in plac
 	@echo "$(YELLOW)When one turns green it stays green — nothing to update by hand.$(RESET)"
 	@$(MAKE) --no-print-directory journey-coverage
 
+# journey-status is the session-start form: one line, because a wall of text at
+# the top of every session becomes wallpaper, and wallpaper is how the previous
+# convention got lost. The full list is `make journey`, run when choosing work.
+.PHONY: journey-status
+journey-status: ## One line: how much of the journeys is proven, and how much is not enumerated
+	@out=$$(go test -tags journey -v -run 'TestJourney' ./... 2>&1 | grep -E '^--- (PASS|FAIL|SKIP)'); \
+	pass=$$(printf '%s\n' "$$out" | grep -c '^--- PASS' || true); \
+	fail=$$(printf '%s\n' "$$out" | grep -c '^--- FAIL' || true); \
+	skip=$$(printf '%s\n' "$$out" | grep -c '^--- SKIP' || true); \
+	nosuite=$$(grep -c '^journeys/' $(JOURNEY_RATCHET) || true); \
+	printf "$(BOLD)Journeys:$(RESET) $(GREEN)%s proven$(RESET), $(RED)%s outstanding$(RESET), $(YELLOW)%s blocked$(RESET), $(YELLOW)%s journeys not enumerated$(RESET)\n" \
+		"$$pass" "$$fail" "$$skip" "$$nosuite"; \
+	if [ "$$fail" -gt 0 ] || [ "$$nosuite" -gt 0 ]; then \
+		printf "$(CYAN)make journey$(RESET) for the list — outstanding ones are the backlog, blocked ones name their blocker\n"; \
+	fi
+
 # journey-suite-check is the CI counterpart of the pre-commit rule: journeys
 # CHANGED in this push must have a suite. Scoped to the diff on purpose — a
 # repo-wide check would be red from the day it was added and would be disabled
@@ -248,6 +264,52 @@ journey-suite-check: ## Fail if a journey changed since BASE has no journey suit
 		exit 1; \
 	fi; \
 	printf "$(GREEN)Every journey changed here has a suite.$(RESET)\n"
+
+# journey-ratchet is the repo-wide half that journey-suite-check deliberately
+# is not. It never looks at whether a suite PASSES — red is the todo list and
+# must never block a release. It looks only at whether the list exists.
+#
+# The grandfathered set is a list of names, not a count, so filling one gap and
+# opening another cannot net to zero. It fails in both directions: a journey
+# with no suite that is not on the list, and a journey on the list that now has
+# one. The second is what makes it a ratchet — the moment somebody writes a
+# suite, the build tells them to strike the line, and it can never go back.
+JOURNEY_RATCHET := journeys/suites-outstanding.txt
+
+.PHONY: journey-ratchet
+journey-ratchet: ## Fail if any journey outside the grandfathered list has no suite
+	@grep -v '^#' $(JOURNEY_RATCHET) | grep -v '^$$' | sort > /tmp/.journey-allowed.$$$$; \
+	for j in journeys/*.md; do \
+		case "$$j" in */overview.md|*/README.md) continue ;; esac; \
+		grep -rql "$$j" --include='*_journey_test.go' . >/dev/null 2>&1 || echo "$$j"; \
+	done | sort > /tmp/.journey-actual.$$$$; \
+	added=$$(comm -13 /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$); \
+	fixed=$$(comm -23 /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$); \
+	rm -f /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$; \
+	rc=0; \
+	if [ -n "$$added" ]; then \
+		printf "$(RED)These journeys have no suite and are not grandfathered:$(RESET)\n"; \
+		printf "%s\n" "$$added" | sed 's/^/  /'; \
+		printf "$(YELLOW)Write the whole suite before implementing any of it — every doneness$(RESET)\n"; \
+		printf "$(YELLOW)test the journey implies, all red. See plans/journey-suites.md.$(RESET)\n"; \
+		rc=1; \
+	fi; \
+	if [ -n "$$fixed" ]; then \
+		printf "$(GREEN)These journeys now have a suite:$(RESET)\n"; \
+		printf "%s\n" "$$fixed" | sed 's/^/  /'; \
+		printf "$(YELLOW)Delete those lines from $(JOURNEY_RATCHET) — the count only goes down.$(RESET)\n"; \
+		rc=1; \
+	fi; \
+	was=$$(git show $(BASE):$(JOURNEY_RATCHET) 2>/dev/null | grep -c '^journeys/' || true); \
+	now=$$(grep -c '^journeys/' $(JOURNEY_RATCHET) || true); \
+	if [ "$$was" -gt 0 ] && [ "$$now" -gt "$$was" ]; then \
+		printf "$(RED)$(JOURNEY_RATCHET) grew from %s to %s.$(RESET)\n" "$$was" "$$now"; \
+		printf "$(YELLOW)The list only shrinks. Adding a line is how a ratchet becomes a suggestion:$(RESET)\n"; \
+		printf "$(YELLOW)it is the way to delete a suite without anything noticing. Write the suite.$(RESET)\n"; \
+		rc=1; \
+	fi; \
+	[ $$rc -eq 0 ] && printf "$(GREEN)Journey suite ratchet holds (%s outstanding).$(RESET)\n" "$$now"; \
+	exit $$rc
 
 # journeys lists what the tool is supposed to do, from the journeys themselves
 # rather than from a hand-maintained index, so the list cannot disagree with the

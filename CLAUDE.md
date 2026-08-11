@@ -28,6 +28,15 @@
 
 - `plans/active.md` is the single active work plan — what we're doing now, chunked for sessions.
 - `plans/todo-*.md` files are area backlogs — the full inventory of known work.
+- **"What's next" starts with `make journey`, and the candidates are the reds.** They are the only
+  backlog that is recomputed rather than remembered, so where they and the prose plans disagree,
+  the reds are right. Read them alongside `active.md`, which still decides priority when it says
+  anything; the reds decide what is actually outstanding.
+  - A **skip** is not a candidate — its message names what is blocking it, and that blocker is
+    usually the real next task.
+  - A red that used to be green is a **regression, not a candidate**. It is a broken build, and
+    picking it up as work-to-do quietly re-implements something that was already built. Nothing
+    records which were green before, so this one is judgement.
 - **Workflow**: Pull items from a `todo-*.md` into `active.md` as chunked work. On completion, remove from `active.md` and mark done/remove from the todo.
 - **Done lives in code, not prose**: completed work leaves the plan entirely — "done-ness" is git history + passing tests, never re-asserted in prose. Status checkboxes and "DONE/merged" notes rot and cause stale-audit drift. Record *decisions* (the why) in the journey itself or a short decisions note; never leave *status* claims that nothing re-validates.
 - **Chunking for context management**: Split the active plan into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
@@ -39,7 +48,7 @@
 
 ## Quality Maintenance
 
-- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main | grep -v '^  abandoned/'`) and for each either merge, queue, or abandon it — branches must not accumulate silently. `abandoned/*` is excluded by that filter: skip it, do not report it, do not re-ask.
+- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main | grep -v '^  abandoned/'`) and for each either merge, queue, or abandon it — branches must not accumulate silently. `abandoned/*` is excluded by that filter: skip it, do not report it, do not re-ask. (f) run `make journey-status` — one line, ~12s. Report it only if something moved: a count that went the wrong way is a regression, and a regression is a broken build, not a task. Do not print the full list unless asked; `make journey` is for choosing work.
 - TODO hygiene: update todos as items complete or block; don't end a session with a net TODO increase unless they're genuine open questions.
 - Verify before you record: any claim about code state or completion must be checked against the tree at the current commit and cite `file:line @ <short-SHA>`. Never record a status/audit claim from memory or stale context — re-read the code first. Stale audits come from recording claims that were never re-verified.
 - Watch context relevance (re-check every few tool calls): suggest a fresh thread when the chunk is complete, context is >50% stale/irrelevant, or scope has shifted significantly from the plan.
@@ -88,14 +97,30 @@ things that were false; the directory was renamed so the old habit has no home t
   markdown link, because a link can be checked — and the link is checked at commit time.
 - **Every journey names at least one test**, and says which parts nothing can prove. Both are
   the convention; only the first is enforceable.
-- **Every journey has a suite**: `*_journey_test.go`, build tag `journey`, naming its journey in
+- **Every journey needs a suite**: `*_journey_test.go`, build tag `journey`, naming its journey in
   a comment. One test per thing the journey says must be in place, quoting that line. Green means
   built, red means still to do — so it is the journey's todo list, and running it recomputes the
   list rather than asking anyone to keep one true. `make journeys` / `make journey` /
-  `make journey-coverage`. Enforced at commit and in CI.
-- **The suite is outside the gating suite and must stay there.** Red is the normal state for most
-  of a journey's life. A red that blocks a release gets deleted, and then the list is gone. It is
-  never where a regression is parked: something that used to work and now fails is a broken build.
+  `make journey-coverage`. Most journeys do not have one yet; `make journey-coverage` says which.
+  That a journey HAS a suite is checked at commit and in CI. `make journey-ratchet` holds the
+  whole directory against a grandfathered list, failing both when a journey outside it has no
+  suite and when one on it gains a suite that has not been struck off — so the number only ever
+  goes down. It never looks at whether a suite passes.
+- **Before implementing any part of a journey, run `make journey-coverage`. If that journey has
+  no suite, writing the whole suite is the first task** — every doneness test the journey implies,
+  before any implementation. They all start red or skipped, and that is correct: red is the todo
+  list, and a partial suite is worse than none because it reads as the full list. Completeness is
+  a judgement nothing can check, which is exactly why it has to be done deliberately and up front
+  rather than grown a test at a time alongside the code.
+- **Incompleteness never blocks a release.** The suite is outside the gating suite and must stay
+  there — `make journey` is not part of `make ci`. Red is the normal state for most of a journey's
+  life. A red that blocks a release gets deleted, and then the list is gone. It is never where a
+  regression is parked: something that used to work and now fails is a broken build.
+- **A green one stays.** Implementing something turns its test green; nothing is removed at that
+  point. The green is the proof it was built and that we were happy with the result, and the suite
+  as a whole becomes the feature inventory — what this product does, enumerated and runnable,
+  which is what you would want in hand if the debt ever justified starting again. The suite only
+  accumulates.
 - **Closing a gap means writing the test, not reporting it.** Read the journey, add a test per
   requirement, `t.Skip` with a reason where it cannot be answered honestly yet.
 - **No status claims.** Nothing says built, shipped, planned or proposed. A red test means "not

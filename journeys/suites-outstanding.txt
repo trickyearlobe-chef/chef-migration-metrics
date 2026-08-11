@@ -1,0 +1,27 @@
+# Journeys with no suite yet — the ratchet's grandfathered list.
+#
+# Not a status claim: nothing here is trusted. `make journey-ratchet` recomputes
+# the real set on every run and fails if this file disagrees in either
+# direction, so it cannot rot — a journey that gains a suite fails the build
+# until it is removed from here, and it can never be added back.
+#
+# The number only goes down. Removing a line is the point.
+journeys/converge-testing.md
+journeys/cookbook-compatibility.md
+journeys/estate-progress.md
+journeys/human-verdict.md
+journeys/named-cohorts.md
+journeys/node-readiness.md
+journeys/ownership-attribution.md
+journeys/ownership-identity.md
+journeys/remediation-priority.md
+journeys/role-impact.md
+journeys/run-history.md
+journeys/scan-trust.md
+journeys/service-access.md
+journeys/service-collection.md
+journeys/service-configuration.md
+journeys/service-continuity.md
+journeys/service-diagnosis.md
+journeys/service-secrets.md
+journeys/working-all-day.md
