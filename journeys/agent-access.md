@@ -42,7 +42,8 @@ that I have one and roughly when it was last used, and I want to be able to thro
 a new one the moment I am unsure about it — pasting credentials into editor tooling means they
 end up in more places than I can keep track of.
 
-Everything the API can answer, described in a form that is standard and current. There is an API
+Everything the API can answer, described in OpenAPI — Swagger, as most people still say it —
+because that is what every assistant and every client generator already reads. There is an API
 today. Nobody outside this project can describe it, and the descriptions we have written by hand
 have been wrong before — paths that were renamed, and at least one that was written up as though
 it had been built and never was. A description I cannot trust is worse for me than none, because
