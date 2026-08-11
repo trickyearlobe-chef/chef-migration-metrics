@@ -49,6 +49,11 @@ type Router struct {
 	version       string
 	schemaVersion int
 
+	// routes is every address registered, recorded as it is registered. It is
+	// what the API description is generated from, and what a drift test checks
+	// that description against in both directions. See routes.go.
+	routes []Route
+
 	// duplicateScanRunning guards the possible-duplicate-owners scan. The scan
 	// walks the whole owner catalogue, which takes tens of seconds on a large
 	// one, so it runs detached from the request that asked for it and only one
@@ -648,49 +653,23 @@ func (r *Router) Hub() *EventHub {
 }
 
 // registerRoutes wires all API endpoints into the ServeMux. Routes are
-// grouped by concern matching the Web API specification sections.
-// protect registers a route that requires authentication (any valid session).
-// When authMiddleware is nil (auth not configured), the handler is registered
-// without session enforcement so the API remains usable in development.
-func (r *Router) protect(pattern string, handler http.HandlerFunc) {
-	if r.authMiddleware != nil {
-		r.mux.Handle(pattern, r.authMiddleware.Authenticated(handler))
-	} else {
-		r.mux.HandleFunc(pattern, handler)
-	}
-}
-
-// adminOnly registers a route that requires authentication AND the admin role.
-// When authMiddleware is nil, the handler is registered without enforcement.
-func (r *Router) adminOnly(pattern string, handler http.HandlerFunc) {
-	if r.authMiddleware != nil {
-		r.mux.Handle(pattern, r.authMiddleware.AdminOnly(handler))
-	} else {
-		r.mux.HandleFunc(pattern, handler)
-	}
-}
-
-// operatorOnly registers a route that requires authentication AND at least
-// operator role. When authMiddleware is nil, the handler is registered without
-// enforcement.
-func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc) {
-	if r.authMiddleware != nil {
-		r.mux.Handle(pattern, r.authMiddleware.OperatorOnly(handler))
-	} else {
-		r.mux.HandleFunc(pattern, handler)
-	}
-}
-
+// grouped by concern.
+//
+// Every registration goes through the recording funnel in routes.go —
+// public, protect, operatorOnly, adminOnly — and nothing here touches the mux
+// directly. That is what lets the API describe itself: a route registered
+// around the funnel would be served and undescribed, so a test reads this
+// function and fails if the mux appears in it.
 func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Health & version (public — no auth required)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/health", r.handleHealth)
-	r.mux.HandleFunc("/api/v1/version", r.handleVersion)
+	r.public("/api/v1/health", r.handleHealth)
+	r.public("/api/v1/version", r.handleVersion)
 	// Event ingest sink — INTENTIONALLY UNAUTHENTICATED (MVP tech debt). Passive
 	// receiver for Chef run telemetry; gated at runtime by ingest.enabled.
-	r.mux.HandleFunc("/api/v1/ingest", r.handleIngest)
-	r.mux.HandleFunc("/api/v1/server/tls-status", r.handleServerTLSStatus)
+	r.public("/api/v1/ingest", r.handleIngest)
+	r.public("/api/v1/server/tls-status", r.handleServerTLSStatus)
 
 	// -----------------------------------------------------------------
 	// WebSocket real-time events
@@ -701,7 +680,7 @@ func (r *Router) registerRoutes() {
 		r.logf("INFO", "WebSocket endpoint enabled at /api/v1/ws (max_connections=%d)",
 			r.cfg.Server.WebSocket.MaxConnections)
 	} else {
-		r.mux.HandleFunc("/api/v1/ws", func(w http.ResponseWriter, req *http.Request) {
+		r.public("/api/v1/ws", func(w http.ResponseWriter, req *http.Request) {
 			WriteError(w, http.StatusNotFound, ErrCodeNotFound,
 				"WebSocket endpoint is disabled in server configuration.")
 		})
@@ -711,27 +690,27 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Authentication endpoints (public — no session required for login)
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/api/v1/auth/info", r.handleAuthInfo)
+	r.public("/api/v1/auth/info", r.handleAuthInfo)
 	if r.localAuth != nil && r.sessions != nil {
-		r.mux.HandleFunc("/api/v1/auth/login", r.handleLogin)
-		r.mux.HandleFunc("/api/v1/auth/logout", r.handleLogout)
+		r.public("/api/v1/auth/login", r.handleLogin)
+		r.public("/api/v1/auth/logout", r.handleLogout)
 		r.protect("/api/v1/auth/me", r.handleMe)
 	} else {
-		r.mux.HandleFunc("/api/v1/auth/login", r.handleNotImplemented)
-		r.mux.HandleFunc("/api/v1/auth/logout", r.handleNotImplemented)
-		r.mux.HandleFunc("/api/v1/auth/me", r.handleNotImplemented)
+		r.public("/api/v1/auth/login", r.handleNotImplemented)
+		r.public("/api/v1/auth/logout", r.handleNotImplemented)
+		r.public("/api/v1/auth/me", r.handleNotImplemented)
 	}
 	// SAML endpoints — wired when a SAML provider is configured.
 	if r.samlHandler != nil {
-		r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.samlHandler.HandleMetadata)
-		r.mux.HandleFunc("/api/v1/auth/saml/login", r.samlHandler.HandleLogin)
-		r.mux.HandleFunc("/api/v1/auth/saml/acs", r.samlHandler.HandleACS)
-		r.mux.HandleFunc("/api/v1/auth/saml/slo", r.samlHandler.HandleSLO)
+		r.public("/api/v1/auth/saml/metadata", r.samlHandler.HandleMetadata)
+		r.public("/api/v1/auth/saml/login", r.samlHandler.HandleLogin)
+		r.public("/api/v1/auth/saml/acs", r.samlHandler.HandleACS)
+		r.public("/api/v1/auth/saml/slo", r.samlHandler.HandleSLO)
 	} else {
-		r.mux.HandleFunc("/api/v1/auth/saml/acs", r.handleNotImplemented)
-		r.mux.HandleFunc("/api/v1/auth/saml/metadata", r.handleNotImplemented)
-		r.mux.HandleFunc("/api/v1/auth/saml/login", r.handleNotImplemented)
-		r.mux.HandleFunc("/api/v1/auth/saml/slo", r.handleNotImplemented)
+		r.public("/api/v1/auth/saml/acs", r.handleNotImplemented)
+		r.public("/api/v1/auth/saml/metadata", r.handleNotImplemented)
+		r.public("/api/v1/auth/saml/login", r.handleNotImplemented)
+		r.public("/api/v1/auth/saml/slo", r.handleNotImplemented)
 	}
 
 	// -----------------------------------------------------------------
@@ -1025,7 +1004,7 @@ func (r *Router) registerRoutes() {
 	// Frontend SPA fallback — serves index.html for client-side routing.
 	// Public so the login page can be served without a session.
 	// -----------------------------------------------------------------
-	r.mux.HandleFunc("/", r.handleFrontendFallback)
+	r.public("/", r.handleFrontendFallback)
 }
 
 // webSocketOpts builds the WebSocketHandler options from the loaded config.
