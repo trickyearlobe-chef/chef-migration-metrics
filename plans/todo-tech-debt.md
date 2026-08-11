@@ -597,3 +597,69 @@ few lines, and each one is independently shippable.
 
 **A lint rule would stop the thirteenth.** `.catch(() => set…([]))` with no error state is
 mechanically detectable, and is always this bug.
+
+## Write access below operator — accepted for now, with two exceptions to look at
+
+Found 2026-08-11 while generating the API description. Enforcement happens in two places: the
+wrapper a route is registered with, and `requireAdminRole` / `requireOperatorOrAdmin` inside
+some handlers (`handle_ownership.go:189,203`, 30 call sites). Of the write operations
+registered as merely authenticated, 37 guard themselves in the handler and 18 do not.
+
+**The owner's bar, stated 2026-08-11:** acceptable as it stands provided nothing below operator
+can pull secrets from the store, or damage the server, collection or data. Verification of the
+wider question is deferred, deliberately, not forgotten.
+
+**Checked against that bar at `f8609d01`**, by probing every described operation with a viewer
+session:
+
+- **Secrets — holds.** All credential routes are admin at the wrapper; `credentialToResponse`
+  carries metadata only and never the value; every other handler that reads the credential store
+  (ownership import, SAML admin, admin status) either is admin at the wrapper or answers a
+  viewer 403.
+- **Server and collection — holds.** Every `/admin/config/*` route, restart, backups, vacuum and
+  SAML keypair generation is admin at the wrapper.
+- **Data — holds now.** Two paths did not and were closed on the owner's instruction: deleting
+  a node kitchen run is operator (triggering one already was), and writing a custom static check
+  is admin (reclassifying a shipped one already was). Reading both stays open to anybody with a
+  session, so the guard is on the method rather than the route.
+
+Two asymmetries were closed at the same time, each aligned to the neighbour it disagreed with:
+the kitchen batch item verbs (`PUT`, `DELETE`, `run`, `cancel`) are operator because creating a
+batch already was, and `POST`/`DELETE /git-repos/{name}/exclude` is admin because excluding a
+repository from test runs already was. Reading is untouched in every case.
+
+**Eight write operations remain reachable by anybody with a session**, and are accepted: saved
+filters (the caller's own), `POST /exports` (reads only), the two rescan triggers, and the
+kitchen queue's cancel and retry.
+
+**The queue pair looks like it disagrees with its neighbour and does not — decided 2026-08-11.**
+Cancelling a *batch* takes an operator, while cancelling or retrying a queued run does not, and
+that is deliberate: a test run fails for environmental reasons — DHCP, an auth failure — far
+more often than for anything about the cookbook, and the person who wants an updated result is
+whoever is reading the repository, not an operator. Retry is theirs to press.
+
+It is also the only one of these that is wired to a control an ordinary user can see:
+`/git-repos/:name` is not behind `RequireAdmin`, and its `GitKitchenSection` renders
+`KitchenQueuePanel`, whose Cancel and Retry buttons have no role gating. Hardening the endpoint
+would leave a viewer looking at a button that answers 403.
+
+**Check the UI before hardening any of the rest.** The four already tightened were safe because
+each is only reachable from a page behind `RequireAdmin`, or from no page at all — verified, not
+assumed. That will not hold for everything left.
+
+**The description now says what is actually required.** It reports the stricter of the wrapper
+and the handler, and `TestOpenAPI_DescribedRoleIsTheRoleEnforced` probes every operation and
+fails three ways: a requirement not described, a requirement described that is not enforced, and
+a described role that disagrees with the enforced one. All three were checked by breaking them
+deliberately. So hardening an endpoint updates the description or fails a build.
+
+**One thing that surfaced from describing it, and nobody has decided it:** eight reads require
+admin, including `GET /cookstyle/cops/{cop_name}/classification` and `GET /ownership/duplicates`.
+That may be right, but it was never chosen — it falls out of a role check placed on the whole
+handler rather than on the methods that write.
+
+**The proper fix, when this is picked up:** record the *effective* required role — the stricter
+of wrapper and handler — and add a test that probes each operation with a viewer and fails when
+the declaration and the behaviour disagree. Until then the served description understates the
+requirement on 37 operations, saying "authenticated" where the answer is operator or admin, so a
+generated client built on a viewer credential meets 403s the document did not predict.

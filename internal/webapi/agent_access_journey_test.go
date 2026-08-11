@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
@@ -113,10 +114,18 @@ func TestJourney_EveryDescribedPathIsReallyServed(t *testing.T) {
 		t.Skip("no API description is served yet; TestJourney_TheAPIDescribesItself is the gap")
 	}
 	paths, _ := doc["paths"].(map[string]any)
+	router := agentJourneyRouter()
 	for path := range paths {
+		// Ask where the address lands rather than serving it. Serving it runs
+		// the real handler against a store that holds nothing, so "no such
+		// cookbook" and "no such endpoint" come back identical — and the two
+		// mean opposite things to somebody reading the description. It also
+		// runs write handlers, which a probe has no business doing.
 		concrete := agentJourneyTemplateToPath(path)
-		if agentJourneyGet(t, concrete).Code == http.StatusNotFound {
-			t.Errorf("the description promises %q, which the service does not serve", path)
+		if _, matched := router.mux.Handler(
+			httptest.NewRequest(http.MethodGet, concrete, nil)); matched == "/" {
+			t.Errorf("the description promises %q, which nothing serves — it is answered by "+
+				"the frontend fallback", path)
 		}
 	}
 }
@@ -124,10 +133,20 @@ func TestJourney_EveryDescribedPathIsReallyServed(t *testing.T) {
 // "the day somebody renames something, I find out because a build went red" —
 // the other direction: every route registered must appear in the description.
 func TestJourney_EveryServedRouteIsDescribed(t *testing.T) {
-	t.Skip("nothing enumerates the routes this service registers, so the description cannot " +
-		"be checked for omissions — a renamed or added path would go undescribed silently. " +
-		"Recording the route table where every route is already funnelled through its access " +
-		"check is what unblocks this test")
+	doc := agentJourneyDescription(t)
+	if doc == nil {
+		t.Skip("no API description is served yet; TestJourney_TheAPIDescribesItself is the gap")
+	}
+	described, _ := doc["paths"].(map[string]any)
+
+	for _, rt := range agentJourneyRouter().Routes() {
+		for _, addr := range describableAddresses(rt) {
+			if _, ok := described[addr.path]; !ok {
+				t.Errorf("%s is served and undescribed, so an assistant working from the "+
+					"description does not know it can be asked", addr.path)
+			}
+		}
+	}
 }
 
 // "And to tell what it can ask for without being told. What we expose has to
@@ -366,6 +385,37 @@ func TestJourney_AnEntryAMachineWroteIsMarkedAsSuch(t *testing.T) {
 	}
 }
 
+// "How something got in is settled when it signs in, not claimed as it asks...
+// the service attaches that, never the caller."
+//
+// The session is what every request is judged by and the only thing the caller
+// cannot write, so it is where the way in has to be recorded. A field on the
+// request — a header, a client name — would be a claim, and an audit entry a
+// caller can set reads as fact without being one.
+//
+// It sits beside the provider a session already records, which is the same kind
+// of fact assigned the same way, so this is checked against the session rather
+// than against anything an assistant would have to build.
+func TestJourney_TheWayInIsRecordedOnTheSessionNotTheRequest(t *testing.T) {
+	var found string
+	session := reflect.TypeOf(auth.SessionInfo{})
+	for i := range session.NumField() {
+		switch name := session.Field(i).Name; {
+		case strings.Contains(name, "AccessMethod"),
+			strings.Contains(name, "Origin"),
+			strings.Contains(name, "Channel"),
+			strings.Contains(name, "ViaCredential"):
+			found = name
+		}
+	}
+	if found == "" {
+		t.Error("a session records who signed in but not how they got in, so nothing can tell " +
+			"an entry made at a screen from one made by a credential somebody handed to a tool " +
+			"— and the only other place to put it is something the caller sends, which it could " +
+			"set to anything")
+	}
+}
+
 // "I want to choose, at the moment I make a credential, whether it can only
 // read or can also write" — and "read only is what they get if they do not
 // choose."
@@ -409,9 +459,15 @@ func TestJourney_AWritingCredentialCannotReachAnythingElse(t *testing.T) {
 
 // "It acts as me, at my level of access, and it can see exactly what I can see
 // on the screen and nothing else."
-func TestJourney_TheCredentialIsThePersonNotAServiceAccount(t *testing.T) {
-	t.Skip("credentials cannot be issued yet; that a credential carries its owner's level of " +
-		"access — and no second permissions model — is checkable once one can be issued")
+//
+// A credential belongs to an account, and an account may belong to a machine as
+// easily as to a person — an unattended job gets its own rather than borrowing
+// somebody's, and the assistant in an editor holds one of mine and acts as me.
+// Either way there is one permissions model, and this is the test of that.
+func TestJourney_TheCredentialCarriesItsAccountsLevelAndNoMore(t *testing.T) {
+	t.Skip("credentials cannot be issued yet; that a credential carries its account's level of " +
+		"access — and no second permissions model beside the one the screens already use — is " +
+		"checkable once one can be issued")
 }
 
 // agentJourneyTemplateToPath turns an OpenAPI path template into something

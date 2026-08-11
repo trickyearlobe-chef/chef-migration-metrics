@@ -60,9 +60,9 @@ display's job.
 **Completeness is asked for, not stumbled into.** Lists stay bounded by default, or somebody one
 day gets the whole estate by accident. Getting all of it is deliberate, and allowed to be slow.
 
-**A program is not a person — but that is not settled here.** Credentials follow the assistant
-journey, and that decision was made for somebody sitting at an editor. Whether it survives an
-unattended job is the open question below.
+**A program gets an account of its own.** Credentials follow the assistant journey, and that
+decision was made for somebody sitting at an editor. It survives an unattended job because the
+job stops borrowing mine: it has its own, and the level it needs is set on it.
 
 ## How I would know it worked
 
@@ -100,9 +100,7 @@ stops it going stale; it does nothing about it changing under somebody.
 **Nothing proves an unattended job can run for a month.** All exercised by hand, in one sitting, by
 somebody logged in.
 
-**The load-bearing assumption, and the open question:** that anchoring access on a person works for
-a program running unattended. Inherited from the assistant journey and uncomfortable here — the job
-outlives the engineer who set it up, so when they leave the load stops, or worse keeps running as
-somebody who has gone. The alternative is an account that is not a person, rejected there for
-reasons that do not obviously apply to a schedule. Nobody has decided this. Do not decide it by
-building it.
+**The load-bearing assumption, now settled: the job gets its own account.** We already make these
+— local ones here, and our identity provider carries accounts for machines — so it does not have
+to borrow mine, and the load neither stops when I leave nor keeps running as somebody who has
+gone.

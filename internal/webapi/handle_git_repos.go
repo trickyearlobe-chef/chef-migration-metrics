@@ -736,6 +736,14 @@ func (r *Router) handleListExcludedGitRepos(w http.ResponseWriter, req *http.Req
 
 // handleGitRepoExclude marks a git repo as excluded from kitchen testing.
 func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, name string) {
+	// Leaving a repository out of scanning moves every verdict it feeds, so it
+	// is held to the same role as excluding one from test runs, which is admin.
+	// Seeing which repositories are excluded stays open — that list is what
+	// explains why something is missing from a screen.
+	if !requireAdminRole(w, req) {
+		return
+	}
+
 	if !requirePOST(w, req) {
 		return
 	}
@@ -771,6 +779,14 @@ func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, 
 // handleGitRepoClearExclusion removes the kitchen exclusion flag from a
 // git repo.
 func (r *Router) handleGitRepoClearExclusion(w http.ResponseWriter, req *http.Request, name string) {
+	// Leaving a repository out of scanning moves every verdict it feeds, so it
+	// is held to the same role as excluding one from test runs, which is admin.
+	// Seeing which repositories are excluded stays open — that list is what
+	// explains why something is missing from a screen.
+	if !requireAdminRole(w, req) {
+		return
+	}
+
 	if !requireMethod(w, req, http.MethodDelete) {
 		return
 	}
