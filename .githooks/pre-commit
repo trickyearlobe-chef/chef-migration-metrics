@@ -371,6 +371,10 @@ done
 for file in "${STAGED_FILES[@]}"; do
   case "$file" in
     journeys/README.md) continue ;;   # states the rule; exempt from it
+    journeys/overview.md) continue ;; # the routing index, not a journey — and the
+                                      # CI counterpart in the Makefile already
+                                      # exempts it, so a journey could not be added
+                                      # to the index without tripping this
     journeys/*.md) ;;
     *) continue ;;
   esac

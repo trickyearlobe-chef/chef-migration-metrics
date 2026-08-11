@@ -113,11 +113,23 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		CompatibleCount         int      `json:"compatible_count"`
 		IncompatibleCount       int      `json:"incompatible_count"`
 		UntestedCount           int      `json:"untested_count"`
-		TKStatus                string   `json:"tk_status,omitempty"`
+		// Both always present, and never blank: a role that nothing has tested
+		// is untested, which is a state, not the absence of one. Blank left a
+		// caller unable to tell it from a field this version does not have,
+		// and left the screen rendering a badge with no status in it.
+		TKStatus string `json:"tk_status"`
 	}
 
 	result := make([]roleResp, 0, len(rows))
 	for _, row := range rows {
+		compatibilityStatus := row.CompatibilityStatus
+		if compatibilityStatus == "" {
+			compatibilityStatus = "untested"
+		}
+		tkStatus := row.TKStatus
+		if tkStatus == "" {
+			tkStatus = "untested"
+		}
 		result = append(result, roleResp{
 			RoleName:                row.RoleName,
 			Organisations:           row.Organisations,
@@ -125,11 +137,11 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 			DirectCookbookCount:     row.DirectCookbookCount,
 			TransitiveCookbookCount: row.TransitiveCookbookCount,
 			TotalCookbookCount:      row.TotalCookbookCount,
-			CompatibilityStatus:     row.CompatibilityStatus,
+			CompatibilityStatus:     compatibilityStatus,
 			CompatibleCount:         row.CompatibleCount,
 			IncompatibleCount:       row.IncompatibleCount,
 			UntestedCount:           row.UntestedCount,
-			TKStatus:                row.TKStatus,
+			TKStatus:                tkStatus,
 		})
 	}
 

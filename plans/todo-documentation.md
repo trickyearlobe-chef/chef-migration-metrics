@@ -66,9 +66,15 @@ nothing that generates a client.
 - [ ] **Then fix the 3 wrong paths and delete or mark the proposals**, so the specs stop
   asserting endpoints that were never built.
 
-**Answer the auth question before offering this to anyone.** There are no API keys or
-service tokens. `RequireAuth` takes a session token from `Authorization: Bearer` or the
-cookie, and sessions come from a user login — so an integration holds a person's
-credentials and re-authenticates when the session expires. Whether to offer service
-accounts with scoped tokens is a product decision, and it is a prerequisite for the API
-being usable by anything other than our own frontend, not a detail of documenting it.
+**The auth question is answered, in the journey, not here.** There are no API keys or service
+tokens. `RequireAuth` takes a session token from `Authorization: Bearer` or the cookie, and
+sessions come from a user login — so an integration holds a person's credentials and
+re-authenticates when the session expires. The product decision that was outstanding is settled
+in [asking my assistant why this is failing](../journeys/agent-access.md): a per-person credential
+issued from one's own record, carrying that person's level of access, read-only — not a service
+account with a second permissions model.
+
+That journey is what this section now serves, and its suite
+(`internal/webapi/agent_access_journey_test.go`, run with `make journey`) is the live list of
+what is outstanding. The four boxes above are the description work; the credential and the
+assistant-facing surface are red tests there.
