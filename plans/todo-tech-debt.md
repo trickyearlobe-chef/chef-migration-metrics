@@ -618,19 +618,19 @@ session:
   viewer 403.
 - **Server and collection — holds.** Every `/admin/config/*` route, restart, backups, vacuum and
   SAML keypair generation is admin at the wrapper.
-- **Data — does not hold, in two places.** A viewer completed these against a mock store:
-  - `DELETE /api/v1/kitchen/node-runs/{id}` → 204. Deletes the record of a test run, which is
-    evidence about whether a cookbook actually converges.
-  - `POST`, `PUT`, `DELETE /api/v1/cookstyle/custom-cops/{name}` → 200/400 (past the gate).
-    A custom static check changes verdicts across the estate, and its sibling
-    `PUT /cookstyle/cops/{cop}/classification` is admin-guarded.
+- **Data — holds now.** Two paths did not and were closed on the owner's instruction: deleting
+  a node kitchen run is operator (triggering one already was), and writing a custom static check
+  is admin (reclassifying a shipped one already was). Reading both stays open to anybody with a
+  session, so the guard is on the method rather than the route.
 
-Both are authenticated-insider only, and neither destroys the estate record or stops collection.
-Recorded so the exceptions are a decision rather than an oversight.
-
-**Two more asymmetries, lower stakes:** `POST /kitchen/batches` needs operator but
-`PUT`/`DELETE`/`run`/`cancel` on a batch do not; `POST`/`DELETE /git-repos/{name}/exclude` are
-open while `POST /kitchen/git/exclusions` is admin.
+**Fourteen write operations remain reachable by anybody with a session**, and are accepted:
+saved filters (the caller's own), exports (reads only), the two rescan triggers, the kitchen
+queue's cancel and retry, `POST`/`DELETE /git-repos/{name}/exclude`, and the kitchen batch item
+verbs. **The last two are asymmetric with their own neighbours** — `POST /kitchen/batches`
+requires operator while `PUT`/`DELETE`/`run`/`cancel` on a batch do not, and
+`POST /kitchen/git/exclusions` is admin while the git-repo exclusion beside it is open. Worth
+settling when the wider verification happens; neither reaches secrets, the server, collection,
+or the estate record.
 
 **The proper fix, when this is picked up:** record the *effective* required role — the stricter
 of wrapper and handler — and add a test that probes each operation with a viewer and fails when

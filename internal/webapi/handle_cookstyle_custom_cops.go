@@ -20,6 +20,12 @@ func (r *Router) handleCookstyleCustomCops(w http.ResponseWriter, req *http.Requ
 	case http.MethodGet:
 		r.listCustomCops(w, req)
 	case http.MethodPost:
+		// A check written here moves verdicts across the whole estate, which is
+		// the same power as reclassifying a shipped one — and that is admin.
+		// Anyone with a session may still read them.
+		if !requireAdminRole(w, req) {
+			return
+		}
 		r.createCustomCop(w, req)
 	default:
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
@@ -33,8 +39,14 @@ func (r *Router) handleCookstyleCustomCop(w http.ResponseWriter, req *http.Reque
 	case http.MethodGet:
 		r.getCustomCop(w, req)
 	case http.MethodPut:
+		if !requireAdminRole(w, req) {
+			return
+		}
 		r.updateCustomCop(w, req)
 	case http.MethodDelete:
+		if !requireAdminRole(w, req) {
+			return
+		}
 		r.deleteCustomCop(w, req)
 	default:
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,

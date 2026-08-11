@@ -173,6 +173,14 @@ func (r *Router) handleGetNodeKitchenRun(w http.ResponseWriter, req *http.Reques
 }
 
 func (r *Router) handleDeleteNodeKitchenRun(w http.ResponseWriter, req *http.Request, id string) {
+	// What happened when a cookbook ran on a real machine is the evidence that
+	// outranks the static check, so removing it is at least as much as starting
+	// one — and starting one is already operatorOnly. Reading stays open: the
+	// same address answers GET.
+	if !requireOperatorOrAdmin(w, req) {
+		return
+	}
+
 	err := r.db.DeleteNodeKitchenRun(req.Context(), id)
 	if err != nil {
 		if errors.Is(err, datastore.ErrNotFound) {
