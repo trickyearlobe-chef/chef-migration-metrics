@@ -281,13 +281,6 @@ func TestJourney_CanAskForTheShapeBeforeTheDetail(t *testing.T) {
 	}
 }
 
-// "Read access only." Nothing reached through an assistant credential may
-// change anything.
-func TestJourney_TheCredentialIsReadOnly(t *testing.T) {
-	t.Skip("credentials cannot be issued yet, so there is nothing whose write access can be " +
-		"checked; this becomes testable once TestJourney_ICanIssueMyselfACredential is green")
-}
-
 // "when an entry is being carried by a ticket rather than a person, the
 // reference is already sitting in the entry."
 //
@@ -342,14 +335,45 @@ func TestJourney_AnEntryAMachineWroteIsMarkedAsSuch(t *testing.T) {
 	}
 }
 
-// "Read only until somebody decides otherwise, and read only is the default in
-// the meantime."
-func TestJourney_TheDefaultIsReadOnly(t *testing.T) {
-	t.Skip("credentials cannot be issued yet, so nothing can be checked for write access. " +
-		"The recorded default, so it is not decided by whoever implements this first: a " +
-		"credential is read only. Whether it may write into the failure register is open and " +
-		"is the owner's call; every other surface stays read only regardless, and writing is " +
-		"conditional on TestJourney_AnEntryAMachineWroteIsMarkedAsSuch being green")
+// "I want to choose, at the moment I make a credential, whether it can only
+// read or can also write" — and "read only is what they get if they do not
+// choose."
+func TestJourney_ICanChooseWhetherMyCredentialCanWrite(t *testing.T) {
+	path, ok := agentJourneyServes(t,
+		"/api/v1/auth/me/tokens",
+		"/api/v1/auth/me/api-tokens",
+		"/api/v1/me/tokens",
+		"/api/v1/users/me/tokens",
+	)
+	if !ok {
+		t.Error("credentials cannot be issued at all, so there is no point at which a person " +
+			"chooses read-only or read-and-write, and no default for them to fall back to")
+		return
+	}
+	var listing struct {
+		Tokens []struct {
+			CanWrite *bool `json:"can_write"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal(agentJourneyGet(t, path).Body.Bytes(), &listing); err != nil {
+		t.Errorf("what a credential is allowed to do is not visible to its owner: %v", err)
+		return
+	}
+	for i, tok := range listing.Tokens {
+		if tok.CanWrite == nil {
+			t.Errorf("credential %d does not say whether it can write, so its owner cannot "+
+				"tell a question-asking credential from one that records findings", i)
+		}
+	}
+}
+
+// "Writing means the register of failures, and nothing else."
+func TestJourney_AWritingCredentialCannotReachAnythingElse(t *testing.T) {
+	t.Skip("credentials cannot be issued yet, so there is nothing whose write access can be " +
+		"exercised. Decided, so it is not settled by whoever builds this first: a credential " +
+		"that can write may record in the failure register and nowhere else, and one that " +
+		"cannot write may do none of it. Becomes checkable once " +
+		"TestJourney_ICanChooseWhetherMyCredentialCanWrite is green")
 }
 
 // "It acts as me, at my level of access, and it can see exactly what I can see

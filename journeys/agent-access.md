@@ -66,19 +66,21 @@ we have built — the right tool present, not found, and an agent settling for a
 Reading is the whole of what I am certain about. Diagnosis is reading, and an assistant that can
 only read is one I can point at production without thinking hard about it.
 
-But I keep coming back to the register of failures somebody has looked at and made a call on.
-That is where a diagnosis is supposed to end up, and the assistant is the thing doing the
-diagnosing — so if it cannot write there, I read its answer and retype it, which is the copying I
-started out trying to stop. And when an entry is being carried by a ticket rather than a person,
-the reference is already sitting in the entry. An assistant that can also reach our ticketing
-system could follow that thread on its own: see what was found here, see what the ticket says,
-and keep the two saying the same thing. That is the part that would actually save the team time,
-and it is the part I am least sure we should allow.
+But diagnosis is supposed to end up in the register of failures somebody has looked at and made a
+call on, and the assistant is the thing doing the diagnosing — so if it cannot write there, I
+read its answer and retype it, which is the copying I started out trying to stop. And when an
+entry is being carried by a ticket rather than a person, the reference is already sitting in the
+entry. An assistant that can also reach our ticketing system can follow that thread on its own:
+see what was found here, see what the ticket says, and keep the two saying the same thing. That
+is the part that saves the team real time.
 
-What stops me is not losing anything — nothing in that register is overwritten; a new call
-supersedes the old one and both stay readable. It is that the credential is me, so a note the
-assistant wrote would appear under my name, worded like something I decided, and nobody reading
-it later could tell. I would be signing findings I have not read.
+So I want to choose, at the moment I make a credential, whether it can only read or can also
+write. Most of mine will be read-only, because most of the time I am asking questions and I would
+rather not think about it. When I am working through a batch of failures I will make one that can
+write, and I will know I did. What I will not accept is a note the assistant wrote appearing
+under my name, worded like something I decided, with nobody able to tell afterwards. Nothing in
+that register is overwritten — a new call supersedes the old one and both stay readable — so the
+risk is not losing anything, it is signing findings I have not read.
 
 It has to work where the service is installed. Our customer's copy runs inside their estate,
 reached through a controlled desktop. If this needs a second thing deployed alongside it, it will
@@ -97,19 +99,20 @@ can see exactly what I can see on the screen and nothing else. Nobody has to rea
 second, parallel permissions model, and when I leave, the access leaves with me because it was
 never separate from me in the first place.
 
-**Read only until somebody decides otherwise, and read only is the default in the meantime.**
-Nothing an assistant does through this changes the estate, the configuration, or anybody's data.
-Whether it may write into the register of failures is genuinely open and is the owner's call, not
-a thing to settle by building it — so the default is written down here rather than left to
-whoever implements this first. Everything else stays read only regardless: the open question is
-about one place, not about relaxing the rule.
+**The person making a credential chooses whether it can write, and read only is what they get if
+they do not choose.** Not an administrator setting, not a property of the service — the choice
+belongs to whoever will be handing the credential to a tool, at the moment they hand it over,
+because they are the only one who knows what they are about to do with it. A credential that can
+write is a deliberate act, and it stays visible as one.
 
-**If it is ever allowed to write, an entry it wrote must be visibly not mine.** This is the
-condition, and it is what the open question turns on. The register exists so a later reader can
-weigh who said what and why; an entry that reads as a person's judgement when it was a machine's
-is not a lesser version of that, it is the opposite of it. So the decision to allow writing and
-the decision to record that a machine made the entry are the same decision, and neither ships
-without the other.
+**Writing means the register of failures, and nothing else.** The estate, the configuration and
+anybody's account stay out of reach whatever the credential says. A credential that can write is
+not an unlocked version of the service; it is one that can record a finding where findings go.
+
+**An entry it wrote must be visibly not mine.** The register exists so a later reader can weigh
+who said what and why, and an entry that reads as a person's judgement when it was a machine's is
+not a lesser version of that — it is the opposite of it. So allowing writing and recording what
+made the entry are one decision, and neither ships without the other.
 
 **The credential is shown to me once, and I can destroy it at any moment.** If I lose it I make a
 new one; there is no recovering the old one. Destroying it takes effect immediately, not at the
@@ -166,7 +169,10 @@ plugging a real editor into it, not by a test.
 
 **Nothing proves the credential does not leak.** Editor tooling copies configuration into places
 neither I nor this service can see. Being able to destroy a credential quickly is the mitigation,
-and it is a mitigation, not a fix.
+and it is a mitigation, not a fix. One that can write is the worse loss, and the only thing
+standing between a leaked one and a register full of findings nobody made is that most of mine
+will be read-only and I will have chosen the ones that are not. That is a habit, not a control,
+and it is the weakest part of this.
 
 **The load-bearing assumption:** that the set of things worth asking is close to the set of things
 the screens already answer. If diagnosis actually needs questions no screen asks — cutting across
