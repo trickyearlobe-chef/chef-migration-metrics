@@ -88,14 +88,23 @@ things that were false; the directory was renamed so the old habit has no home t
   markdown link, because a link can be checked — and the link is checked at commit time.
 - **Every journey names at least one test**, and says which parts nothing can prove. Both are
   the convention; only the first is enforceable.
-- **Every journey has a suite**: `*_journey_test.go`, build tag `journey`, naming its journey in
+- **Every journey needs a suite**: `*_journey_test.go`, build tag `journey`, naming its journey in
   a comment. One test per thing the journey says must be in place, quoting that line. Green means
   built, red means still to do — so it is the journey's todo list, and running it recomputes the
   list rather than asking anyone to keep one true. `make journeys` / `make journey` /
-  `make journey-coverage`. Enforced at commit and in CI.
-- **The suite is outside the gating suite and must stay there.** Red is the normal state for most
-  of a journey's life. A red that blocks a release gets deleted, and then the list is gone. It is
-  never where a regression is parked: something that used to work and now fails is a broken build.
+  `make journey-coverage`. Most journeys do not have one yet; `make journey-coverage` says which.
+  That a journey HAS a suite is checked at commit and in CI, but only for a journey changed in
+  that commit — so it never fires for the ones already here.
+- **Before implementing any part of a journey, run `make journey-coverage`. If that journey has
+  no suite, writing the whole suite is the first task** — every doneness test the journey implies,
+  before any implementation. They all start red or skipped, and that is correct: red is the todo
+  list, and a partial suite is worse than none because it reads as the full list. Completeness is
+  a judgement nothing can check, which is exactly why it has to be done deliberately and up front
+  rather than grown a test at a time alongside the code.
+- **Incompleteness never blocks a release.** The suite is outside the gating suite and must stay
+  there — `make journey` is not part of `make ci`. Red is the normal state for most of a journey's
+  life. A red that blocks a release gets deleted, and then the list is gone. It is never where a
+  regression is parked: something that used to work and now fails is a broken build.
 - **Closing a gap means writing the test, not reporting it.** Read the journey, add a test per
   requirement, `t.Skip` with a reason where it cannot be answered honestly yet.
 - **No status claims.** Nothing says built, shipped, planned or proposed. A red test means "not
