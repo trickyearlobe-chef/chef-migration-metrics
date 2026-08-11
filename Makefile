@@ -228,10 +228,15 @@ journey-status: ## One line: how much of the journeys is proven, and how much is
 	pass=$$(printf '%s\n' "$$out" | grep -c '^--- PASS' || true); \
 	fail=$$(printf '%s\n' "$$out" | grep -c '^--- FAIL' || true); \
 	skip=$$(printf '%s\n' "$$out" | grep -c '^--- SKIP' || true); \
-	nosuite=$$(grep -c '^journeys/' $(JOURNEY_RATCHET) || true); \
+	nosuite=$$($(JOURNEY_NOSUITE) | grep -c '^journeys/' || true); \
+	listed=$$(grep -c '^journeys/' $(JOURNEY_RATCHET) || true); \
 	printf "$(BOLD)Journeys:$(RESET) $(GREEN)%s proven$(RESET), $(RED)%s outstanding$(RESET), $(YELLOW)%s blocked$(RESET), $(YELLOW)%s journeys not enumerated$(RESET)\n" \
 		"$$pass" "$$fail" "$$skip" "$$nosuite"; \
-	if [ "$$fail" -gt 0 ] || [ "$$nosuite" -gt 0 ]; then \
+	if [ "$$nosuite" -ne "$$listed" ]; then \
+		printf "$(RED)Slippage: $(JOURNEY_RATCHET) says %s, the tree says %s.$(RESET)\n" "$$listed" "$$nosuite"; \
+		printf "$(YELLOW)Run 'make journey-ratchet' and fix it now — otherwise it lands as a red$(RESET)\n"; \
+		printf "$(YELLOW)build on whoever pushes next, most likely for work somebody did right.$(RESET)\n"; \
+	elif [ "$$fail" -gt 0 ] || [ "$$nosuite" -gt 0 ]; then \
 		printf "$(CYAN)make journey$(RESET) for the list — outstanding ones are the backlog, blocked ones name their blocker\n"; \
 	fi
 
@@ -276,13 +281,23 @@ journey-suite-check: ## Fail if a journey changed since BASE has no journey suit
 # suite, the build tells them to strike the line, and it can never go back.
 JOURNEY_RATCHET := journeys/suites-outstanding.txt
 
+# The one computation of "which journeys have no suite", shared by the ratchet
+# and by the session-start status. Defined once because they disagreed: the
+# status read the count out of the list file, so the single thing it most needed
+# to catch — a suite written and the line not struck off — was invisible to it,
+# and surfaced instead as a red build on whoever pushed next.
+#
+# No `case` in here: its patterns end in an unbalanced `)`, which bash
+# mis-parses inside the `$(...)` the status target wraps this in. The ratchet
+# never hit it because it pipes straight to a file.
+JOURNEY_NOSUITE = for j in $$(ls journeys/*.md | grep -v -e '/overview\.md$$' -e '/README\.md$$'); do \
+		grep -rql "$$j" --include='*_journey_test.go' . >/dev/null 2>&1 || echo "$$j"; \
+	done | sort
+
 .PHONY: journey-ratchet
 journey-ratchet: ## Fail if any journey outside the grandfathered list has no suite
 	@grep -v '^#' $(JOURNEY_RATCHET) | grep -v '^$$' | sort > /tmp/.journey-allowed.$$$$; \
-	for j in journeys/*.md; do \
-		case "$$j" in */overview.md|*/README.md) continue ;; esac; \
-		grep -rql "$$j" --include='*_journey_test.go' . >/dev/null 2>&1 || echo "$$j"; \
-	done | sort > /tmp/.journey-actual.$$$$; \
+	$(JOURNEY_NOSUITE) > /tmp/.journey-actual.$$$$; \
 	added=$$(comm -13 /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$); \
 	fixed=$$(comm -23 /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$); \
 	rm -f /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$; \

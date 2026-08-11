@@ -130,6 +130,37 @@ func TestJourney_EveryServedRouteIsDescribed(t *testing.T) {
 		"check is what unblocks this test")
 }
 
+// "And to tell what it can ask for without being told. What we expose has to
+// name its own capabilities well enough that an assistant picks the right one
+// from a long list."
+//
+// An assistant sees a flat list of capabilities and their descriptions, and
+// nothing else. A capability with no description is one it will skip or misuse
+// — the failure the field reports on our other tools describe: the right tool
+// present, not found, and an agent settling for a worse one.
+func TestJourney_EveryCapabilityDescribesItself(t *testing.T) {
+	doc := agentJourneyDescription(t)
+	if doc == nil {
+		t.Skip("nothing describes the API yet; TestJourney_TheAPIDescribesItself is the gap")
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	for path, item := range paths {
+		ops, _ := item.(map[string]any)
+		for method, op := range ops {
+			fields, _ := op.(map[string]any)
+			if fields == nil {
+				continue
+			}
+			summary, _ := fields["summary"].(string)
+			description, _ := fields["description"].(string)
+			if strings.TrimSpace(summary) == "" && strings.TrimSpace(description) == "" {
+				t.Errorf("%s %s says nothing about what it is for, so an assistant scanning "+
+					"the list cannot tell whether it is the right one", method, path)
+			}
+		}
+	}
+}
+
 // "A credential I can get for myself, from my own record, without raising a
 // ticket."
 func TestJourney_ICanIssueMyselfACredential(t *testing.T) {
