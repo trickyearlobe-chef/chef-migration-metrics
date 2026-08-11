@@ -31,10 +31,24 @@ type Route struct {
 	Pattern string
 	// Role is the access level enforced at registration.
 	Role RouteRole
+	// Methods are the HTTP methods this address answers. GET when nothing is
+	// declared, which is what most of them are. A wrong one here would describe
+	// an address a caller cannot use, so a test asks the service whether each
+	// described method is actually accepted rather than trusting the default.
+	Methods []string
 	// SubPaths are the addresses a subtree handler dispatches by segment.
 	// Empty for an ordinary route. Declared where the dispatch happens, because
 	// nothing else can see them.
 	SubPaths []SubPath
+}
+
+// RouteOption declares something about a route that the registration itself
+// cannot show: which methods it answers, or which addresses live under it.
+type RouteOption func(*Route)
+
+// methods declares the HTTP methods a route answers.
+func methods(ms ...string) RouteOption {
+	return func(rt *Route) { rt.Methods = ms }
 }
 
 // SubPath is one address under a subtree pattern, dispatched inside the
@@ -68,14 +82,18 @@ func (r *Router) Routes() []Route {
 // would be served and undescribed, which is the failure the record exists to
 // prevent. A test reads registerRoutes and fails if anything reaches the mux
 // directly.
-func (r *Router) handle(pattern string, role RouteRole, handler http.Handler, subPaths ...SubPath) {
-	r.routes = append(r.routes, Route{Pattern: pattern, Role: role, SubPaths: subPaths})
+func (r *Router) handle(pattern string, role RouteRole, handler http.Handler, opts ...RouteOption) {
+	rt := Route{Pattern: pattern, Role: role, Methods: []string{http.MethodGet}}
+	for _, opt := range opts {
+		opt(&rt)
+	}
+	r.routes = append(r.routes, rt)
 	r.mux.Handle(pattern, handler)
 }
 
 // public registers a route served without a session.
-func (r *Router) public(pattern string, handler http.HandlerFunc, subPaths ...SubPath) {
-	r.handle(pattern, RolePublic, handler, subPaths...)
+func (r *Router) public(pattern string, handler http.HandlerFunc, opts ...RouteOption) {
+	r.handle(pattern, RolePublic, handler, opts...)
 }
 
 // protect registers a route that requires authentication (any valid session).
@@ -83,31 +101,31 @@ func (r *Router) public(pattern string, handler http.HandlerFunc, subPaths ...Su
 // without session enforcement so the API remains usable in development. The
 // route is still recorded as requiring a session: the record describes what the
 // service serves, not how one deployment happens to be configured.
-func (r *Router) protect(pattern string, handler http.HandlerFunc, subPaths ...SubPath) {
+func (r *Router) protect(pattern string, handler http.HandlerFunc, opts ...RouteOption) {
 	guarded := http.Handler(handler)
 	if r.authMiddleware != nil {
 		guarded = r.authMiddleware.Authenticated(handler)
 	}
-	r.handle(pattern, RoleAuthenticated, guarded, subPaths...)
+	r.handle(pattern, RoleAuthenticated, guarded, opts...)
 }
 
 // adminOnly registers a route that requires authentication AND the admin role.
-func (r *Router) adminOnly(pattern string, handler http.HandlerFunc, subPaths ...SubPath) {
+func (r *Router) adminOnly(pattern string, handler http.HandlerFunc, opts ...RouteOption) {
 	guarded := http.Handler(handler)
 	if r.authMiddleware != nil {
 		guarded = r.authMiddleware.AdminOnly(handler)
 	}
-	r.handle(pattern, RoleAdmin, guarded, subPaths...)
+	r.handle(pattern, RoleAdmin, guarded, opts...)
 }
 
 // operatorOnly registers a route that requires authentication AND at least
 // operator role.
-func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc, subPaths ...SubPath) {
+func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc, opts ...RouteOption) {
 	guarded := http.Handler(handler)
 	if r.authMiddleware != nil {
 		guarded = r.authMiddleware.OperatorOnly(handler)
 	}
-	r.handle(pattern, RoleOperator, guarded, subPaths...)
+	r.handle(pattern, RoleOperator, guarded, opts...)
 }
 
 // sub declares one address under a subtree, with the methods its handler
@@ -115,9 +133,11 @@ func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc, subPaths
 // the comments were checked and found both incomplete (the bare `{name}`
 // detail case is undocumented in several) and stale (one names a sub-path that
 // was removed), which is the rot this whole mechanism exists to end.
-func sub(suffix string, methods ...string) SubPath {
-	if len(methods) == 0 {
-		methods = []string{http.MethodGet}
+func sub(suffix string, ms ...string) RouteOption {
+	if len(ms) == 0 {
+		ms = []string{http.MethodGet}
 	}
-	return SubPath{Suffix: suffix, Methods: methods}
+	return func(rt *Route) {
+		rt.SubPaths = append(rt.SubPaths, SubPath{Suffix: suffix, Methods: ms})
+	}
 }

@@ -113,10 +113,18 @@ func TestJourney_EveryDescribedPathIsReallyServed(t *testing.T) {
 		t.Skip("no API description is served yet; TestJourney_TheAPIDescribesItself is the gap")
 	}
 	paths, _ := doc["paths"].(map[string]any)
+	router := agentJourneyRouter()
 	for path := range paths {
+		// Ask where the address lands rather than serving it. Serving it runs
+		// the real handler against a store that holds nothing, so "no such
+		// cookbook" and "no such endpoint" come back identical — and the two
+		// mean opposite things to somebody reading the description. It also
+		// runs write handlers, which a probe has no business doing.
 		concrete := agentJourneyTemplateToPath(path)
-		if agentJourneyGet(t, concrete).Code == http.StatusNotFound {
-			t.Errorf("the description promises %q, which the service does not serve", path)
+		if _, matched := router.mux.Handler(
+			httptest.NewRequest(http.MethodGet, concrete, nil)); matched == "/" {
+			t.Errorf("the description promises %q, which nothing serves — it is answered by "+
+				"the frontend fallback", path)
 		}
 	}
 }
@@ -124,10 +132,20 @@ func TestJourney_EveryDescribedPathIsReallyServed(t *testing.T) {
 // "the day somebody renames something, I find out because a build went red" —
 // the other direction: every route registered must appear in the description.
 func TestJourney_EveryServedRouteIsDescribed(t *testing.T) {
-	t.Skip("nothing enumerates the routes this service registers, so the description cannot " +
-		"be checked for omissions — a renamed or added path would go undescribed silently. " +
-		"Recording the route table where every route is already funnelled through its access " +
-		"check is what unblocks this test")
+	doc := agentJourneyDescription(t)
+	if doc == nil {
+		t.Skip("no API description is served yet; TestJourney_TheAPIDescribesItself is the gap")
+	}
+	described, _ := doc["paths"].(map[string]any)
+
+	for _, rt := range agentJourneyRouter().Routes() {
+		for _, addr := range describableAddresses(rt) {
+			if _, ok := described[addr.path]; !ok {
+				t.Errorf("%s is served and undescribed, so an assistant working from the "+
+					"description does not know it can be asked", addr.path)
+			}
+		}
+	}
 }
 
 // "And to tell what it can ask for without being told. What we expose has to

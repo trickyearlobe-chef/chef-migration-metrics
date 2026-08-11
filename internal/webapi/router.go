@@ -664,11 +664,16 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Health & version (public — no auth required)
 	// -----------------------------------------------------------------
+	// The description of everything below. Behind a session: it names every
+	// address this deployment serves, which is not something to hand out
+	// unauthenticated inside a customer estate.
+	r.protect(openAPIPath, r.handleOpenAPI)
+
 	r.public("/api/v1/health", r.handleHealth)
 	r.public("/api/v1/version", r.handleVersion)
 	// Event ingest sink — INTENTIONALLY UNAUTHENTICATED (MVP tech debt). Passive
 	// receiver for Chef run telemetry; gated at runtime by ingest.enabled.
-	r.public("/api/v1/ingest", r.handleIngest)
+	r.public("/api/v1/ingest", r.handleIngest, methods("POST"))
 	r.public("/api/v1/server/tls-status", r.handleServerTLSStatus)
 
 	// -----------------------------------------------------------------
@@ -692,12 +697,12 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.public("/api/v1/auth/info", r.handleAuthInfo)
 	if r.localAuth != nil && r.sessions != nil {
-		r.public("/api/v1/auth/login", r.handleLogin)
-		r.public("/api/v1/auth/logout", r.handleLogout)
+		r.public("/api/v1/auth/login", r.handleLogin, methods("POST"))
+		r.public("/api/v1/auth/logout", r.handleLogout, methods("POST"))
 		r.protect("/api/v1/auth/me", r.handleMe)
 	} else {
-		r.public("/api/v1/auth/login", r.handleNotImplemented)
-		r.public("/api/v1/auth/logout", r.handleNotImplemented)
+		r.public("/api/v1/auth/login", r.handleNotImplemented, methods("POST"))
+		r.public("/api/v1/auth/logout", r.handleNotImplemented, methods("POST"))
 		r.public("/api/v1/auth/me", r.handleNotImplemented)
 	}
 	// SAML endpoints — wired when a SAML provider is configured.
@@ -800,15 +805,15 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/cookstyle/cop-drift", r.handleCookstyleCopDrift)
 	r.protect("/api/v1/cookstyle/cops/", r.handleCookstyleCopSubroute,
 		sub("{cop_name}/cookbooks"), sub("{cop_name}/classification", "GET", "PUT"))
-	r.protect("/api/v1/cookstyle/scan-scope", r.handleCookstyleScanScope)
-	r.protect("/api/v1/cookstyle/custom-cops", r.handleCookstyleCustomCops)
+	r.protect("/api/v1/cookstyle/scan-scope", r.handleCookstyleScanScope, methods("GET", "PUT", "DELETE"))
+	r.protect("/api/v1/cookstyle/custom-cops", r.handleCookstyleCustomCops, methods("GET", "POST"))
 	r.protect("/api/v1/cookstyle/custom-cops/", r.handleCookstyleCustomCop,
 		sub("{name}", "GET", "PUT", "DELETE"))
 
 	// -----------------------------------------------------------------
 	// Export endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/exports", r.handleExports)
+	r.protect("/api/v1/exports", r.handleExports, methods("POST"))
 	r.protect("/api/v1/exports/", r.handleExportStatus,
 		sub("{job_id}"), sub("{job_id}/download"))
 
@@ -849,46 +854,46 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Ownership endpoints (viewer for reads, operator/admin for writes)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/owners", r.handleOwners)
+	r.protect("/api/v1/owners", r.handleOwners, methods("GET", "POST"))
 	r.protect("/api/v1/owners/", r.handleOwners,
 		sub("{name}", "GET", "PUT", "DELETE"), sub("{name}/assignments", "GET", "POST"),
 		sub("{name}/assignments/{id}", "DELETE"))
-	r.protect("/api/v1/ownership/reassign", r.handleOwnershipEndpoints)
+	r.protect("/api/v1/ownership/reassign", r.handleOwnershipEndpoints, methods("POST"))
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints)
-	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints)
+	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints, methods("POST"))
 	// Discovery-driven intake. Registered as exact patterns beside the
 	// fixed-header route above, which stays in service unchanged.
 	// Every case in handleOwnershipIntake's dispatch switch needs an entry
 	// here; TestOwnershipIntakeDispatchCasesAreRouted holds the two in step.
 	// The rows an import could not use, as a worklist rather than only an export.
 	r.protect("/api/v1/ownership/import/rejections", r.handleOwnershipIntake)
-	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake)
-	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake)
-	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake)
-	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake)
-	r.protect("/api/v1/ownership/import/mappings", r.handleOwnershipIntake)
+	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake, methods("POST"))
+	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake, methods("POST"))
+	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake, methods("POST"))
+	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake, methods("POST"))
+	r.protect("/api/v1/ownership/import/mappings", r.handleOwnershipIntake, methods("GET", "POST"))
 	r.protect("/api/v1/ownership/import/mappings/", r.handleOwnershipIntake,
 		sub("{id}", "GET", "PUT", "DELETE"), sub("{id}/run", "POST"))
-	r.protect("/api/v1/ownership/import/clear", r.handleOwnershipIntake)
-	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases)
+	r.protect("/api/v1/ownership/import/clear", r.handleOwnershipIntake, methods("GET", "POST"))
+	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases, methods("GET", "POST", "DELETE"))
 	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases,
 		sub("{id}", "GET", "POST", "DELETE"))
-	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport)
+	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport, methods("POST"))
 	r.protect("/api/v1/ownership/aliases/suggest", r.handleOwnershipAliasSuggest)
 	// Identity management: recognising a duplicate person, and folding one
 	// into another so the correction survives the next ingest.
 	r.protect("/api/v1/ownership/duplicates", r.handleOwnershipDuplicates)
-	r.protect("/api/v1/ownership/duplicates/rescan", r.handleOwnershipDuplicatesRescan)
-	r.protect("/api/v1/ownership/duplicates/dismiss", r.handleOwnershipDuplicatesDismiss)
+	r.protect("/api/v1/ownership/duplicates/rescan", r.handleOwnershipDuplicatesRescan, methods("POST"))
+	r.protect("/api/v1/ownership/duplicates/dismiss", r.handleOwnershipDuplicatesDismiss, methods("POST"))
 	r.protect("/api/v1/ownership/duplicates/dismissed", r.handleOwnershipDuplicatesDismissed)
-	r.protect("/api/v1/ownership/duplicates/restore", r.handleOwnershipDuplicatesRestore)
-	r.protect("/api/v1/ownership/merge", r.handleOwnershipMerge)
+	r.protect("/api/v1/ownership/duplicates/restore", r.handleOwnershipDuplicatesRestore, methods("POST"))
+	r.protect("/api/v1/ownership/merge", r.handleOwnershipMerge, methods("POST"))
 
 	// The failure register: a person's verdict on whether a cookbook actually
 	// works, which outranks CookStyle and Test Kitchen. Reads are viewer;
 	// recording, revising and resolving need operator or admin.
-	r.protect("/api/v1/failure-register", r.handleFailureRegister)
+	r.protect("/api/v1/failure-register", r.handleFailureRegister, methods("GET", "POST"))
 	r.protect("/api/v1/failure-register/", r.handleFailureRegister,
 		sub("{id}", "GET", "PATCH"), sub("{id}/resolve", "POST"),
 		sub("subject/{subject_type}/{subject_name}"))
@@ -896,25 +901,25 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)
 	// -----------------------------------------------------------------
-	r.adminOnly("/api/v1/admin/credentials", r.handleCredentials)
+	r.adminOnly("/api/v1/admin/credentials", r.handleCredentials, methods("GET", "POST"))
 	r.adminOnly("/api/v1/admin/credentials/", r.handleCredentials,
 		sub("{name}", "PUT", "DELETE"), sub("{name}/test", "POST"))
-	r.adminOnly("/api/v1/admin/config/organisations", r.handleAdminConfigOrganisations)
-	r.adminOnly("/api/v1/admin/config/collection", r.handleAdminConfigCollection)
-	r.adminOnly("/api/v1/admin/config/target-versions", r.handleAdminConfigTargetVersions)
-	r.adminOnly("/api/v1/admin/config/git-urls", r.handleAdminConfigGitURLs)
-	r.adminOnly("/api/v1/admin/config/concurrency", r.handleAdminConfigConcurrency)
-	r.adminOnly("/api/v1/admin/config/logging", r.handleAdminConfigLogging)
-	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools)
-	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen)
-	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer)
-	r.adminOnly("/api/v1/admin/config/server/generate-csr", r.handleAdminConfigServerGenerateCSR)
-	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth)
-	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports)
-	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness)
-	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup)
-	r.adminOnly("/api/v1/admin/config/ingest", r.handleAdminConfigIngest)
-	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair)
+	r.adminOnly("/api/v1/admin/config/organisations", r.handleAdminConfigOrganisations, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/collection", r.handleAdminConfigCollection, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/target-versions", r.handleAdminConfigTargetVersions, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/git-urls", r.handleAdminConfigGitURLs, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/concurrency", r.handleAdminConfigConcurrency, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/logging", r.handleAdminConfigLogging, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen, methods("GET", "PUT", "DELETE"))
+	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/server/generate-csr", r.handleAdminConfigServerGenerateCSR, methods("POST"))
+	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/config/ingest", r.handleAdminConfigIngest, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair, methods("POST"))
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
 	r.adminOnly("/api/v1/admin/saml/endpoints", r.handleSAMLEndpoints)
 	r.adminOnly("/api/v1/admin/platform-mapping/status", r.handlePlatformMappingStatus)
@@ -927,7 +932,7 @@ func (r *Router) registerRoutes() {
 		sub("{name}"))
 
 	// Kitchen analysis trigger (operator — operational action)
-	r.operatorOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger)
+	r.operatorOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger, methods("POST"))
 
 	// -----------------------------------------------------------------
 	// Hypervisor endpoints (viewer for reads, operator for operational,
@@ -937,14 +942,14 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs)
 	r.operatorOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM,
 		sub("{id}/destroy", "DELETE", "POST"))
-	r.operatorOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup)
-	r.adminOnly("/api/v1/admin/hypervisor/test-connection", r.handleHypervisorTestConnection)
-	r.operatorOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep)
+	r.operatorOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup, methods("POST"))
+	r.adminOnly("/api/v1/admin/hypervisor/test-connection", r.handleHypervisorTestConnection, methods("POST"))
+	r.operatorOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep, methods("POST"))
 
 	// -----------------------------------------------------------------
 	// Node Kitchen endpoints (operator for triggers)
 	// -----------------------------------------------------------------
-	r.operatorOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger)
+	r.operatorOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger, methods("POST"))
 	r.protect("/api/v1/kitchen/node-runs", r.handleNodeKitchenRuns)
 	r.protect("/api/v1/kitchen/node-runs/", r.handleNodeKitchenRunDetail,
 		sub("{id}", "GET", "DELETE"))
@@ -952,7 +957,7 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Kitchen Batch endpoints (operator for management)
 	// -----------------------------------------------------------------
-	r.operatorOnly("/api/v1/kitchen/batches", r.handleKitchenBatches)
+	r.operatorOnly("/api/v1/kitchen/batches", r.handleKitchenBatches, methods("GET", "POST"))
 	r.protect("/api/v1/kitchen/batches/", r.handleKitchenBatchDetail,
 		sub("{id}", "GET", "PUT", "DELETE"), sub("{id}/progress"), sub("{id}/instances"),
 		sub("{id}/run", "POST"), sub("{id}/cancel", "POST"))
@@ -962,9 +967,9 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/kitchen/git/instances", r.handleGitKitchenInstances)
 	r.protect("/api/v1/kitchen/git/results", r.handleGitKitchenResults)
-	r.operatorOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun)
-	r.operatorOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll)
-	r.protect("/api/v1/kitchen/git/exclusions", r.handleKitchenExclusions)
+	r.operatorOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun, methods("POST"))
+	r.operatorOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll, methods("POST"))
+	r.protect("/api/v1/kitchen/git/exclusions", r.handleKitchenExclusions, methods("GET", "POST"))
 	r.protect("/api/v1/kitchen/git/exclusions/", r.handleDeleteKitchenExclusion,
 		sub("{id}", "DELETE"))
 
@@ -978,43 +983,43 @@ func (r *Router) registerRoutes() {
 	// Saved filter endpoints — any authenticated user manages their own;
 	// mutations are owner-only, enforced in the handler.
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/saved-filters", r.handleSavedFilters)
+	r.protect("/api/v1/saved-filters", r.handleSavedFilters, methods("GET", "POST"))
 	r.protect("/api/v1/saved-filters/", r.handleSavedFilter,
 		sub("{id}", "PATCH", "DELETE"))
 
 	if r.authStore != nil {
-		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers)
+		r.adminOnly("/api/v1/admin/users", r.handleAdminUsers, methods("GET", "POST"))
 		r.adminOnly("/api/v1/admin/users/", r.handleAdminUsers,
 			sub("{username}", "PUT", "DELETE"), sub("{username}/password", "PUT"))
 	} else {
-		r.adminOnly("/api/v1/admin/users", r.handleNotImplemented)
+		r.adminOnly("/api/v1/admin/users", r.handleNotImplemented, methods("GET", "POST"))
 		r.adminOnly("/api/v1/admin/users/", r.handleNotImplemented,
 			sub("{username}", "PUT", "DELETE"), sub("{username}/password", "PUT"))
 	}
-	r.adminOnly("/api/v1/admin/restart", r.handleAdminRestart)
+	r.adminOnly("/api/v1/admin/restart", r.handleAdminRestart, methods("POST"))
 	r.adminOnly("/api/v1/admin/status", r.handleAdminStatus)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
 	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)
-	r.adminOnly("/api/v1/admin/backups", r.handleAdminBackups)
+	r.adminOnly("/api/v1/admin/backups", r.handleAdminBackups, methods("GET", "POST"))
 	r.adminOnly("/api/v1/admin/backups/", r.handleAdminBackups,
 		sub("{id}", "GET", "DELETE"), sub("{id}/restore", "POST"))
 	r.adminOnly("/api/v1/admin/backups/status", r.handleAdminBackupStatus)
-	r.operatorOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle)
-	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames)
-	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset)
+	r.operatorOnly("/api/v1/admin/rescan-all-cookstyle", r.handleAdminRescanAllCookstyle, methods("POST"))
+	r.adminOnly("/api/v1/admin/platform-display-names", r.handlePlatformDisplayNames, methods("GET", "PUT"))
+	r.adminOnly("/api/v1/admin/platform-display-names/reset", r.handlePlatformDisplayNamesReset, methods("POST"))
 
 	// Performance diagnostics (admin-only, gated on config + recorder).
 	if r.cfg.Performance.IsEnabled() && r.recorder != nil {
-		r.adminOnly("/api/v1/admin/performance", r.handlePerformance)
-		r.adminOnly("/api/v1/admin/performance/db", r.handlePerformanceDB)
+		r.adminOnly("/api/v1/admin/performance", r.handlePerformance, methods("GET", "DELETE"))
+		r.adminOnly("/api/v1/admin/performance/db", r.handlePerformanceDB, methods("GET", "DELETE"))
 	}
 
 	// Database maintenance (always available to admins).
-	r.adminOnly("/api/v1/admin/performance/vacuum", r.handleVacuumFull)
+	r.adminOnly("/api/v1/admin/performance/vacuum", r.handleVacuumFull, methods("POST"))
 
 	// EXPLAIN runner (always available to admins — does not depend on the request
 	// recorder or performance.enabled).
-	r.adminOnly("/api/v1/admin/performance/explain", r.handleExplain)
+	r.adminOnly("/api/v1/admin/performance/explain", r.handleExplain, methods("POST"))
 	r.adminOnly("/api/v1/admin/performance/explain/catalog", r.handleExplainCatalog)
 
 	// pprof endpoints (admin-only, only registered when explicitly enabled).

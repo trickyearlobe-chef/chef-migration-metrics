@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -145,4 +146,88 @@ func findRoute(routes []Route, pattern string) (Route, bool) {
 		}
 	}
 	return Route{}, false
+}
+
+// The point of generating the description: the set it claims and the set the
+// service serves cannot drift apart, because they are computed from the same
+// record. These two tests are what turn a rename into a red build here rather
+// than a broken client at a customer.
+
+func TestOpenAPI_DescribesEveryServedAddress(t *testing.T) {
+	router := newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("19.0"))
+
+	described := map[string]bool{}
+	for _, p := range router.DescribedAddresses() {
+		described[p] = true
+	}
+
+	for _, rt := range router.Routes() {
+		for _, addr := range describableAddresses(rt) {
+			if !described[addr.path] {
+				t.Errorf("%s is served but the description does not mention it, so anybody "+
+					"working from the description does not know it exists", addr.path)
+			}
+		}
+	}
+}
+
+func TestOpenAPI_DescribesNothingItDoesNotServe(t *testing.T) {
+	router := newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("19.0"))
+
+	served := map[string]bool{}
+	for _, rt := range router.Routes() {
+		for _, addr := range describableAddresses(rt) {
+			served[addr.path] = true
+		}
+	}
+
+	for _, p := range router.DescribedAddresses() {
+		if !served[p] {
+			t.Errorf("the description promises %s, which nothing serves — a caller writes "+
+				"against it and fails at three in the morning", p)
+		}
+	}
+}
+
+// A subtree that declares no sub-paths describes nothing, and would leave a
+// whole area of the service invisible while everything here stayed green.
+func TestOpenAPI_NoSubtreeIsLeftUndeclared(t *testing.T) {
+	for _, rt := range newTestRouterWithMockAndConfig(&mockStore{},
+		testConfigWithTargetVersions("19.0")).Routes() {
+		if !strings.HasPrefix(rt.Pattern, "/api/") || !rt.IsSubtree() {
+			continue
+		}
+		if len(rt.SubPaths) == 0 {
+			t.Errorf("%s dispatches addresses inside its handler but declares none, so that "+
+				"whole area is served and undescribed", rt.Pattern)
+		}
+	}
+}
+
+// The description is only reachable if it is served where a client looks for it.
+func TestOpenAPI_IsServed(t *testing.T) {
+	w := httptest.NewRecorder()
+	newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("19.0")).
+		ServeHTTP(w, withAdminSession(httptest.NewRequest(http.MethodGet, openAPIPath, nil)))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("the description is not served at %s (status %d)", openAPIPath, w.Code)
+	}
+	var doc struct {
+		OpenAPI string                    `json:"openapi"`
+		Paths   map[string]map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("what is served at %s is not readable as JSON: %v", openAPIPath, err)
+	}
+	if doc.OpenAPI == "" {
+		t.Error("what is served is not an OpenAPI document, so standard tooling cannot read it")
+	}
+	if len(doc.Paths) == 0 {
+		t.Error("the description names no paths, so it describes nothing")
+	}
+	if _, ok := doc.Paths[openAPIPath]; !ok {
+		t.Error("the description does not describe itself, so a client cannot discover how it " +
+			"was fetched")
+	}
 }
