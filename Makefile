@@ -219,6 +219,22 @@ journey: ## Journey todo list: one test per thing a journey says must be in plac
 	@echo "$(YELLOW)When one turns green it stays green — nothing to update by hand.$(RESET)"
 	@$(MAKE) --no-print-directory journey-coverage
 
+# journey-status is the session-start form: one line, because a wall of text at
+# the top of every session becomes wallpaper, and wallpaper is how the previous
+# convention got lost. The full list is `make journey`, run when choosing work.
+.PHONY: journey-status
+journey-status: ## One line: how much of the journeys is proven, and how much is not enumerated
+	@out=$$(go test -tags journey -v -run 'TestJourney' ./... 2>&1 | grep -E '^--- (PASS|FAIL|SKIP)'); \
+	pass=$$(printf '%s\n' "$$out" | grep -c '^--- PASS' || true); \
+	fail=$$(printf '%s\n' "$$out" | grep -c '^--- FAIL' || true); \
+	skip=$$(printf '%s\n' "$$out" | grep -c '^--- SKIP' || true); \
+	nosuite=$$(grep -c '^journeys/' $(JOURNEY_RATCHET) || true); \
+	printf "$(BOLD)Journeys:$(RESET) $(GREEN)%s proven$(RESET), $(RED)%s outstanding$(RESET), $(YELLOW)%s blocked$(RESET), $(YELLOW)%s journeys not enumerated$(RESET)\n" \
+		"$$pass" "$$fail" "$$skip" "$$nosuite"; \
+	if [ "$$fail" -gt 0 ] || [ "$$nosuite" -gt 0 ]; then \
+		printf "$(CYAN)make journey$(RESET) for the list — outstanding ones are the backlog, blocked ones name their blocker\n"; \
+	fi
+
 # journey-suite-check is the CI counterpart of the pre-commit rule: journeys
 # CHANGED in this push must have a suite. Scoped to the diff on purpose — a
 # repo-wide check would be red from the day it was added and would be disabled

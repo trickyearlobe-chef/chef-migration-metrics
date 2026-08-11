@@ -48,7 +48,7 @@
 
 ## Quality Maintenance
 
-- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main | grep -v '^  abandoned/'`) and for each either merge, queue, or abandon it — branches must not accumulate silently. `abandoned/*` is excluded by that filter: skip it, do not report it, do not re-ask.
+- Session start checklist: (a) read CLAUDE.md, (b) read the plan, (c) check for draft files pending review, (d) check git status, (e) list unmerged branches (`git branch --no-merged main | grep -v '^  abandoned/'`) and for each either merge, queue, or abandon it — branches must not accumulate silently. `abandoned/*` is excluded by that filter: skip it, do not report it, do not re-ask. (f) run `make journey-status` — one line, ~12s. Report it only if something moved: a count that went the wrong way is a regression, and a regression is a broken build, not a task. Do not print the full list unless asked; `make journey` is for choosing work.
 - TODO hygiene: update todos as items complete or block; don't end a session with a net TODO increase unless they're genuine open questions.
 - Verify before you record: any claim about code state or completion must be checked against the tree at the current commit and cite `file:line @ <short-SHA>`. Never record a status/audit claim from memory or stale context — re-read the code first. Stale audits come from recording claims that were never re-verified.
 - Watch context relevance (re-check every few tool calls): suggest a fresh thread when the chunk is complete, context is >50% stale/irrelevant, or scope has shifted significantly from the plan.
