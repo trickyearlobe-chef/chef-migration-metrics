@@ -28,6 +28,15 @@
 
 - `plans/active.md` is the single active work plan — what we're doing now, chunked for sessions.
 - `plans/todo-*.md` files are area backlogs — the full inventory of known work.
+- **"What's next" starts with `make journey`, and the candidates are the reds.** They are the only
+  backlog that is recomputed rather than remembered, so where they and the prose plans disagree,
+  the reds are right. Read them alongside `active.md`, which still decides priority when it says
+  anything; the reds decide what is actually outstanding.
+  - A **skip** is not a candidate — its message names what is blocking it, and that blocker is
+    usually the real next task.
+  - A red that used to be green is a **regression, not a candidate**. It is a broken build, and
+    picking it up as work-to-do quietly re-implements something that was already built. Nothing
+    records which were green before, so this one is judgement.
 - **Workflow**: Pull items from a `todo-*.md` into `active.md` as chunked work. On completion, remove from `active.md` and mark done/remove from the todo.
 - **Done lives in code, not prose**: completed work leaves the plan entirely — "done-ness" is git history + passing tests, never re-asserted in prose. Status checkboxes and "DONE/merged" notes rot and cause stale-audit drift. Record *decisions* (the why) in the journey itself or a short decisions note; never leave *status* claims that nothing re-validates.
 - **Chunking for context management**: Split the active plan into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
