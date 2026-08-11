@@ -82,6 +82,13 @@ an unlocked service; it can record a finding where findings go.
 **An entry it wrote must be visibly not mine.** The register exists so a later reader can weigh
 who said what. So allowing writing and recording what made the entry are one decision.
 
+**How something got in is settled when it signs in, not claimed as it asks.** A tool can say it is
+anything, so nothing it says about itself is worth recording. What is worth recording is what I
+made on purpose — signing in at a screen, or a credential I created and named — and the service
+attaches that, never the caller. Which means it tells apart a screen from a credential, and one
+credential from another, but not two things sharing one credential. That is honest: it says what I
+did.
+
 **Shown once, destroyable instantly.** No recovering an old one. Immediate, because the reason to
 destroy one is believing somebody else has it.
 
