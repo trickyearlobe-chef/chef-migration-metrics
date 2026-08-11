@@ -479,3 +479,43 @@ Dependency on stable username: the whole graph assumes `username` stays stable
 username falls back to the (possibly transient) NameID and both login anchoring
 and ownership matching break. Surface a config warning if `username_attr` is
 empty for a SAML provider.
+
+## Decisions that bind, moved out of the active plan
+
+Kept because they are the reasoning, not the status: the work they describe is in `main` and
+its done-ness is git history and passing tests. Do not re-litigate these by finding them
+inconvenient.
+
+- **Ingest creates unresolved people rather than rejecting the row**, and a fuzzy candidate does
+  not reject it either. Correction is deferred to the point of use, by design.
+- **A human verdict in the failure register outranks CookStyle and Test Kitchen**, and joins the
+  existing per-source verdicts rather than sitting beside them.
+- **Import and duplicate handling are admin-only**, reversing two earlier decisions on the
+  owner's instruction. A preview shows the contents of a system of record, and writing nothing
+  is not the same as showing nothing.
+- **A schedule belongs to a saved import, not to a global setting.** A saved mapping held only
+  the field map, so an unattended run had no connection to run against; widening it into a saved
+  import is what makes scheduling possible, and lets each system of record carry its own cadence.
+- **A scheduled run commits.** Staging for review was not built: a schedule that needs somebody
+  to approve it is a reminder, not a schedule.
+- **No global on/off switch for the scheduler.** It polls and does nothing when nothing is
+  scheduled. A schedule the screen shows and a flag silently suppresses is the failure the
+  feature exists to avoid.
+- **Entity matching is retired; identity matching is not.** What the measurement retired is
+  guessing which repo or node belongs to whom when nobody recorded it. Resolving the several
+  identifiers one person has onto one owner record is what aliasing exists for, it is what "my
+  stuff" needs, and it is open above. Do not let the 92% be read as retiring it.
+
+**The audit log's detail keys are inconsistent between writers, and the corrections export
+depends on them.** A merge records `into_owner`, a reassignment `to_owner`, a dismissal
+`owner_a`/`owner_b`, and a deleted assignment names the owner on the entry itself. The first
+export assumed `to_owner` throughout and produced an empty "should be" column on every real
+merge — a report telling somebody to fix their data with the fix missing. A test now asserts the
+keys against the writer's own type rather than a literal.
+
+**Known gap:** rejected import rows are not in the corrections export, because the per-run report
+is built and discarded. They are the most direct statement of source data quality there is.
+
+**Verification owed:** no scheduled import has been watched firing against a real database. Every
+layer is covered by tests and the app runs with the scheduler started, but nobody has seen one
+fire.
