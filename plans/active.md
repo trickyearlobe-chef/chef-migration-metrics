@@ -5,7 +5,35 @@ Single source of truth for what is in flight. **Read this first at session start
 Only work that is in flight or next lives here. Everything else is in a `todo-*.md`
 backlog — do not re-summarise it here; the duplication is what makes this file stale.
 
-## Branch map (2026-08-03)
+## NOW — the assistant/API credential (chunk 2), on `feature/api-description`
+
+**Read first:** [asking my assistant why this is failing](../journeys/agent-access.md), then run
+`make journey`. The reds in `internal/webapi/agent_access_journey_test.go` are the chunk, and they
+were written before any of it was built, so the list is complete rather than grown a test at a
+time. Nothing else here needs reading to start.
+
+**The branch is finished for chunk 1 and unmerged, awaiting sign-off — do not merge it.** 13
+commits, `make ci` green. It landed the generated API description (route table, sub-paths, 242
+summaries, effective roles) and closed four permission gaps found on the way. What it decided that
+the code does not say is in `plans/todo-documentation.md` and `plans/todo-tech-debt.md`; do not
+re-derive it.
+
+**Both product questions chunk 2 used to be blocked on are answered, in the journeys:**
+
+- A job that runs unattended **gets its own account** — local, or one the identity provider
+  already carries for a machine. There is no service account and no second permissions model.
+- **How something got in is settled when it signs in**, attached by the service and never supplied
+  by the caller. It belongs on the session, beside the provider a session already records.
+
+**One rule that cost us a near-miss, and applies to anything else being tightened:** check whether
+an ordinary user can see a control wired to an endpoint *before* hardening it, not whether
+neighbouring endpoints look consistent. Reasoning from neighbours would have broken the Retry
+button on the git repo page, which viewers use to re-run a test that failed on DHCP or auth.
+
+**Still open, nobody has decided:** a feature switched off at runtime is still described, so an
+assistant asks for it and is told it does not exist.
+
+## Branch map (2026-08-03 — stale below this line; `main` is v2.21.12, not v2.18.13)
 
 `main` — **v2.18.13** tagged and pushed. Collection is hourly. A few commits sit unpushed on
 top of the tag: the git repo owner filter, and the snagging fixes made after it was cut.
