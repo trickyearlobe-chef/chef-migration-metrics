@@ -24,47 +24,26 @@ Sequencing: highest-traffic specs first (the ones agents actually reach for). En
 contract tests, or a checker that greps asserted config keys and endpoints against the code
 — is what makes it stick; without it the set rots again. Related: `plans/spec-drift-control.md`.
 
-## A generated API description — the first surface where drift is made impossible
+## The API description
 
-Raised 2026-08-03: the product owner was asked whether we have an API. We do, and it cannot
-currently be described to anybody. This is also the cheapest place to prove the enforcement
-idea above, because the route table is enumerable and the answer is checkable by a test.
+Built. Served at `/api/v1/openapi.json`, generated from the route table, with the set held
+from both directions by tests in `internal/webapi/router_routes_test.go`. The three endpoints
+the old spec set asserted and never served went with that spec set; nothing claims them now.
 
-**Measured 2026-08-03** (routes from `router.go`, paths from `journeys/*.md`, diffed
-both ways) — the baseline to improve on:
+**One decision worth not re-litigating:** the sub-paths under each subtree pattern are read
+from the handler's dispatch, never from the `// /api/v1/...` comments above it. Those comments
+were tried and are not a source of truth — several omit the bare detail case, and one named a
+sub-path that had been removed.
 
-| | |
-|---|---|
-| route patterns registered under `/api/v1` | 155 |
-| registered but named in no spec | **48** |
-| documented paths not served | 8 |
-| — of those, genuinely wrong claims | **3** |
+**Known gap, nobody has decided it.** A feature switched off at runtime (run events, today)
+still appears in the description, because the route is registered either way and the gate
+lives inside the handler. An assistant reading the description will ask for it and get "no
+such address" — the journey's exact worry about a tool that insists rather than correcting
+itself. Either mark gated operations in the document or generate against live gate state.
 
-The 48 are not edge cases: the ownership import/alias/duplicate surface, saved filters, run
-events, the kitchen queue, the failure register, SAML admin, seven dashboard endpoints. The
-3 wrong ones are `/api/v1/admin/test-kitchen/config` (real path
-`/api/v1/admin/config/test-kitchen`, asserted in two specs), `/api/v1/kitchen/git-run` (real
-path `/api/v1/kitchen/git/run`) and `/api/v1/cookstyle/violations`, headed "New Endpoint"
-and never built. There is **no OpenAPI document anywhere**, so nothing machine-readable and
-nothing that generates a client.
-
-- [ ] **Record the route table as it is registered.** `protect`, `adminOnly`, `operatorOnly`
-  and their siblings are the single funnel every route passes through, so the pattern and
-  the required role can be captured there. No source parsing, no new dependency, and the
-  list cannot fall behind the routes because it *is* the routes.
-- [ ] **A test that fails on drift, in both directions.** Every recorded route must appear
-  in the OpenAPI document and every documented path must be a recorded route. This is the
-  whole point: descriptions stay hand-written, but the set cannot rot, and a renamed path
-  breaks the build instead of a customer's client.
-- [ ] **Mind the prefix routes — this is where a naive version will under-deliver.** The mux
-  registers subtrees (`/api/v1/git-repos/`) whose sub-paths are dispatched inside the
-  handler by segment (`:name/committers/assign`, `:name/rescan`, `:name/:version/
-  remediation`). Those endpoints are invisible to the mux, so route-set equality alone
-  describes the subtree and not the endpoints. Each prefix needs its sub-paths declared
-  where they are dispatched, or the count will look complete while a third of the real
-  surface is still undescribed — the same failure, one level down.
-- [ ] **Then fix the 3 wrong paths and delete or mark the proposals**, so the specs stop
-  asserting endpoints that were never built.
+**What is left is not description work.** It is the credential and the assistant-facing
+surface, and the live list is the red tests in `internal/webapi/agent_access_journey_test.go`
+(`make journey`).
 
 **The auth question is answered, in the journey, not here.** There are no API keys or service
 tokens. `RequireAuth` takes a session token from `Authorization: Bearer` or the cookie, and
@@ -72,9 +51,6 @@ sessions come from a user login — so an integration holds a person's credentia
 re-authenticates when the session expires. The product decision that was outstanding is settled
 in [asking my assistant why this is failing](../journeys/agent-access.md): a per-person credential
 issued from one's own record, carrying that person's level of access, read-only — not a service
-account with a second permissions model.
-
-That journey is what this section now serves, and its suite
-(`internal/webapi/agent_access_journey_test.go`, run with `make journey`) is the live list of
-what is outstanding. The four boxes above are the description work; the credential and the
-assistant-facing surface are red tests there.
+account with a second permissions model. Whether that survives an unattended job is open, and
+[building against this from the outside](../journeys/api-integration.md) says not to settle it
+by building it.
