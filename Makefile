@@ -249,6 +249,44 @@ journey-suite-check: ## Fail if a journey changed since BASE has no journey suit
 	fi; \
 	printf "$(GREEN)Every journey changed here has a suite.$(RESET)\n"
 
+# journey-ratchet is the repo-wide half that journey-suite-check deliberately
+# is not. It never looks at whether a suite PASSES — red is the todo list and
+# must never block a release. It looks only at whether the list exists.
+#
+# The grandfathered set is a list of names, not a count, so filling one gap and
+# opening another cannot net to zero. It fails in both directions: a journey
+# with no suite that is not on the list, and a journey on the list that now has
+# one. The second is what makes it a ratchet — the moment somebody writes a
+# suite, the build tells them to strike the line, and it can never go back.
+JOURNEY_RATCHET := journeys/suites-outstanding.txt
+
+.PHONY: journey-ratchet
+journey-ratchet: ## Fail if any journey outside the grandfathered list has no suite
+	@grep -v '^#' $(JOURNEY_RATCHET) | grep -v '^$$' | sort > /tmp/.journey-allowed.$$$$; \
+	for j in journeys/*.md; do \
+		case "$$j" in */overview.md|*/README.md) continue ;; esac; \
+		grep -rql "$$j" --include='*_journey_test.go' . >/dev/null 2>&1 || echo "$$j"; \
+	done | sort > /tmp/.journey-actual.$$$$; \
+	added=$$(comm -13 /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$); \
+	fixed=$$(comm -23 /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$); \
+	rm -f /tmp/.journey-allowed.$$$$ /tmp/.journey-actual.$$$$; \
+	rc=0; \
+	if [ -n "$$added" ]; then \
+		printf "$(RED)These journeys have no suite and are not grandfathered:$(RESET)\n"; \
+		printf "%s\n" "$$added" | sed 's/^/  /'; \
+		printf "$(YELLOW)Write the whole suite before implementing any of it — every doneness$(RESET)\n"; \
+		printf "$(YELLOW)test the journey implies, all red. See plans/journey-suites.md.$(RESET)\n"; \
+		rc=1; \
+	fi; \
+	if [ -n "$$fixed" ]; then \
+		printf "$(GREEN)These journeys now have a suite:$(RESET)\n"; \
+		printf "%s\n" "$$fixed" | sed 's/^/  /'; \
+		printf "$(YELLOW)Delete those lines from $(JOURNEY_RATCHET) — the count only goes down.$(RESET)\n"; \
+		rc=1; \
+	fi; \
+	[ $$rc -eq 0 ] && printf "$(GREEN)Journey suite ratchet holds.$(RESET)\n"; \
+	exit $$rc
+
 # journeys lists what the tool is supposed to do, from the journeys themselves
 # rather than from a hand-maintained index, so the list cannot disagree with the
 # directory. Each line is a journey's own title, plus whether it has a suite —

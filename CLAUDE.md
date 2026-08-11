@@ -93,8 +93,10 @@ things that were false; the directory was renamed so the old habit has no home t
   built, red means still to do — so it is the journey's todo list, and running it recomputes the
   list rather than asking anyone to keep one true. `make journeys` / `make journey` /
   `make journey-coverage`. Most journeys do not have one yet; `make journey-coverage` says which.
-  That a journey HAS a suite is checked at commit and in CI, but only for a journey changed in
-  that commit — so it never fires for the ones already here.
+  That a journey HAS a suite is checked at commit and in CI. `make journey-ratchet` holds the
+  whole directory against a grandfathered list, failing both when a journey outside it has no
+  suite and when one on it gains a suite that has not been struck off — so the number only ever
+  goes down. It never looks at whether a suite passes.
 - **Before implementing any part of a journey, run `make journey-coverage`. If that journey has
   no suite, writing the whole suite is the first task** — every doneness test the journey implies,
   before any implementation. They all start red or skipped, and that is correct: red is the todo

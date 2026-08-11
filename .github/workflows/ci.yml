@@ -57,6 +57,17 @@ jobs:
           esac
           make journey-suite-check BASE="$base"
 
+      # The repo-wide half, made survivable by grandfathering what was already
+      # here. It checks only that a suite EXISTS — never that it passes. Red is
+      # the provable backlog and must never block a release, which is why
+      # `make journey` stays out of `make ci`.
+      #
+      # Fails in both directions, so filling one gap while opening another
+      # cannot net to zero, and a journey that gains a suite has to be struck
+      # off the list before the build goes green again.
+      - name: Journey suite ratchet
+        run: make journey-ratchet
+
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
