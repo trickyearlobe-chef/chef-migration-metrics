@@ -597,3 +597,43 @@ few lines, and each one is independently shippable.
 
 **A lint rule would stop the thirteenth.** `.catch(() => set…([]))` with no error state is
 mechanically detectable, and is always this bug.
+
+## Write access below operator — accepted for now, with two exceptions to look at
+
+Found 2026-08-11 while generating the API description. Enforcement happens in two places: the
+wrapper a route is registered with, and `requireAdminRole` / `requireOperatorOrAdmin` inside
+some handlers (`handle_ownership.go:189,203`, 30 call sites). Of the write operations
+registered as merely authenticated, 37 guard themselves in the handler and 18 do not.
+
+**The owner's bar, stated 2026-08-11:** acceptable as it stands provided nothing below operator
+can pull secrets from the store, or damage the server, collection or data. Verification of the
+wider question is deferred, deliberately, not forgotten.
+
+**Checked against that bar at `f8609d01`**, by probing every described operation with a viewer
+session:
+
+- **Secrets — holds.** All credential routes are admin at the wrapper; `credentialToResponse`
+  carries metadata only and never the value; every other handler that reads the credential store
+  (ownership import, SAML admin, admin status) either is admin at the wrapper or answers a
+  viewer 403.
+- **Server and collection — holds.** Every `/admin/config/*` route, restart, backups, vacuum and
+  SAML keypair generation is admin at the wrapper.
+- **Data — does not hold, in two places.** A viewer completed these against a mock store:
+  - `DELETE /api/v1/kitchen/node-runs/{id}` → 204. Deletes the record of a test run, which is
+    evidence about whether a cookbook actually converges.
+  - `POST`, `PUT`, `DELETE /api/v1/cookstyle/custom-cops/{name}` → 200/400 (past the gate).
+    A custom static check changes verdicts across the estate, and its sibling
+    `PUT /cookstyle/cops/{cop}/classification` is admin-guarded.
+
+Both are authenticated-insider only, and neither destroys the estate record or stops collection.
+Recorded so the exceptions are a decision rather than an oversight.
+
+**Two more asymmetries, lower stakes:** `POST /kitchen/batches` needs operator but
+`PUT`/`DELETE`/`run`/`cancel` on a batch do not; `POST`/`DELETE /git-repos/{name}/exclude` are
+open while `POST /kitchen/git/exclusions` is admin.
+
+**The proper fix, when this is picked up:** record the *effective* required role — the stricter
+of wrapper and handler — and add a test that probes each operation with a viewer and fails when
+the declaration and the behaviour disagree. Until then the served description understates the
+requirement on 37 operations, saying "authenticated" where the answer is operator or admin, so a
+generated client built on a viewer credential meets 403s the document did not predict.
