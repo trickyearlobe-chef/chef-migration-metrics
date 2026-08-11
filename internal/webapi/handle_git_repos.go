@@ -374,9 +374,11 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 		Cookstyle  []datastore.GitRepoCookstyleResult `json:"cookstyle,omitempty"`
 		Complexity []datastore.GitRepoComplexity      `json:"complexity,omitempty"`
 		Ownership  entityOwners                       `json:"ownership"`
-		TKStatus   string                             `json:"tk_status,omitempty"`
-		TKPassed   int                                `json:"tk_passed,omitempty"`
-		TKTotal    int                                `json:"tk_total,omitempty"`
+		// Always present: a test state is one of a known set, and an absent
+		// field is not one of them. See journeys/api-integration.md.
+		TKStatus string `json:"tk_status"`
+		TKPassed int    `json:"tk_passed,omitempty"`
+		TKTotal  int    `json:"tk_total,omitempty"`
 	}
 
 	details := make([]gitRepoDetailEntry, 0, len(gitRepos))

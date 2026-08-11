@@ -449,7 +449,7 @@ export function CookbooksPage() {
                         />
                       </td>
                       <td>
-                        {cb.tk_status ? (
+                        {cb.tk_status && cb.tk_status !== "no_repo" ? (
                           <TKBadge status={cb.tk_status} size="sm" />
                         ) : (
                           <span className="text-xs text-gray-400" title="No matching Git repository found for this cookbook">—</span>

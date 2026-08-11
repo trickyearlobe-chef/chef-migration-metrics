@@ -7,6 +7,7 @@ package webapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -121,6 +122,47 @@ func TestJourney_TheResultsWeHoldComeBackWithTheThing(t *testing.T) {
 				"integration gets names and has to ask somebody here where the results live",
 				held)
 		}
+	}
+}
+
+// "If a cookbook has no repository, say so — do not send me the same blank I
+// would get for a question nobody has answered yet."
+func TestJourney_StatesCanBeToldApart(t *testing.T) {
+	rows := []datastore.CookbookFilterRow{
+		{Name: "has-no-repo", Version: "1.0.0", TKStatus: "no_repo"},
+		{Name: "never-tested", Version: "1.0.0", TKStatus: ""},
+	}
+	store := &mockStore{
+		ListCookbooksFilteredFn: func(_ context.Context, _ datastore.CookbookFilter) (
+			[]datastore.CookbookFilterRow, int, error) {
+			return rows, len(rows), nil
+		},
+	}
+	w := httptest.NewRecorder()
+	newTestRouterWithMockAndConfig(store, testConfigWithTargetVersions("19.0")).ServeHTTP(
+		w, withAdminSession(httptest.NewRequest(http.MethodGet, "/api/v1/cookbooks", nil)))
+
+	var body struct {
+		Data []struct {
+			Name     string  `json:"name"`
+			TKStatus *string `json:"tk_status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("cookbook list did not answer: %v", err)
+	}
+	if len(body.Data) != len(rows) {
+		t.Fatalf("expected %d cookbooks, got %d", len(rows), len(body.Data))
+	}
+	for _, cb := range body.Data {
+		if cb.TKStatus == nil {
+			t.Errorf("%s: the state is missing from the answer entirely, so a program cannot "+
+				"tell 'we do not know' from 'this version has no such field'", cb.Name)
+		}
+	}
+	if body.Data[0].TKStatus != nil && *body.Data[0].TKStatus != "no_repo" {
+		t.Errorf("having no repository is sent as %q, the same thing an unanswered question "+
+			"sends, so two different states arrive identical", *body.Data[0].TKStatus)
 	}
 }
 

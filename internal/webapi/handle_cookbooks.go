@@ -148,15 +148,16 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		Compatibility     string `json:"compatibility"`
 		CookstyleStatus   string `json:"cookstyle_status"`
 		TargetChefVersion string `json:"target_chef_version,omitempty"`
-		TKStatus          string `json:"tk_status,omitempty"`
+		// Always present, and never rewritten: "no_repo" is a different state
+		// from "nobody has tested this", and collapsing either into an absent
+		// field leaves a caller unable to tell them apart — or to tell them
+		// from a version of the API that has no such field. The screen renders
+		// a dash for both; that is the screen's job, not this one's.
+		TKStatus string `json:"tk_status"`
 	}
 
 	result := make([]cookbookResp, 0, len(rows))
 	for _, cb := range rows {
-		tkDisplay := cb.TKStatus
-		if tkDisplay == "no_repo" {
-			tkDisplay = ""
-		}
 		resp := cookbookResp{
 			ID:                cb.OrganisationName + "/" + cb.Name + "/" + cb.Version,
 			OrganisationID:    cb.OrganisationName,
@@ -170,7 +171,7 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 			Compatibility:     cb.Compatibility,
 			CookstyleStatus:   cb.CookstyleStatus,
 			TargetChefVersion: targetChefVersion,
-			TKStatus:          tkDisplay,
+			TKStatus:          cb.TKStatus,
 		}
 		result = append(result, resp)
 	}
