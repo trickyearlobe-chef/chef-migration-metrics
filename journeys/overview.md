@@ -43,6 +43,7 @@ set centrally.
 | [Getting ownership in](ownership-intake.md) | How do I load who owns what, and keep loading it? |
 | [One person, many names](ownership-identity.md) | Is this the same engineer written down twice? |
 | [Asking my assistant why this is failing](agent-access.md) | Can the AI in my editor read what this knows? |
+| [Building against this from the outside](api-integration.md) | Can I write a program against it, and is it documented? |
 | [Getting in, never locked out](service-access.md) | Who may use it, and can I always get back in? |
 | [Changing it without downtime](service-configuration.md) | Can I change a setting from the screen? |
 | [Credentials that stay secret](service-secrets.md) | Where are the passwords, and who can read them? |
