@@ -630,9 +630,22 @@ repository from test runs already was. Reading is untouched in every case.
 
 **Eight write operations remain reachable by anybody with a session**, and are accepted: saved
 filters (the caller's own), `POST /exports` (reads only), the two rescan triggers, and the
-kitchen queue's cancel and retry. **The queue pair is now the one thing left that disagrees with
-its neighbour** — cancelling a batch takes an operator, cancelling the queued run inside it does
-not. Not settled either way; it was accepted before the batch verbs moved.
+kitchen queue's cancel and retry.
+
+**The queue pair looks like it disagrees with its neighbour and does not — decided 2026-08-11.**
+Cancelling a *batch* takes an operator, while cancelling or retrying a queued run does not, and
+that is deliberate: a test run fails for environmental reasons — DHCP, an auth failure — far
+more often than for anything about the cookbook, and the person who wants an updated result is
+whoever is reading the repository, not an operator. Retry is theirs to press.
+
+It is also the only one of these that is wired to a control an ordinary user can see:
+`/git-repos/:name` is not behind `RequireAdmin`, and its `GitKitchenSection` renders
+`KitchenQueuePanel`, whose Cancel and Retry buttons have no role gating. Hardening the endpoint
+would leave a viewer looking at a button that answers 403.
+
+**Check the UI before hardening any of the rest.** The four already tightened were safe because
+each is only reachable from a page behind `RequireAdmin`, or from no page at all — verified, not
+assumed. That will not hold for everything left.
 
 **The description now says what is actually required.** It reports the stricter of the wrapper
 and the handler, and `TestOpenAPI_DescribedRoleIsTheRoleEnforced` probes every operation and
