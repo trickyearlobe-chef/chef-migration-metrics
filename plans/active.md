@@ -42,6 +42,23 @@ built and tested, see `internal/webapi/credential_scope_test.go`.
   records how an entry got in.
 - Streamable HTTP against SSE. The client entry assumes the former.
 
+**A red against an API this surface uses is fixed on the way past, not noted.** Exposing a call
+to an assistant is relying on it, and relying on something with a known defect against it while
+leaving the defect is how the defect becomes permanent. The reds most likely to be in scope, all
+of them measured rather than suspected:
+
+- `TestJourney_SomethingItCannotUnderstandIsRefused` — a body with a field the service does not
+  understand is accepted and silently dropped. An assistant sending a nearly-right body is the
+  case this was written for: it is told the call worked, and neither side can say what was acted
+  on. Expect this one first.
+- `TestJourney_NothingIsAdvertisedThatIsNeverRead` — a described body can list fields nothing
+  reads. An assistant builds its call from the description, so this is the journey's own "cannot
+  tell when it has used one wrongly", arriving by a different route.
+- The two ratchets below — an address whose answer is undescribed gives an assistant no model to
+  decode into, so exposing one means describing it first.
+- `TestDebt_EverySettingsSectionAnswersTheSameShape` (`make debt`) — only if the settings are
+  exposed at all.
+
 **Carry forward from the description work, because the same rules apply:**
 
 - **The unit is the (method, address), never the handler.** One handler serves many addresses and
