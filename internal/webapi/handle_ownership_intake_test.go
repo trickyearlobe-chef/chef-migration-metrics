@@ -1100,7 +1100,6 @@ func TestIntakeMappings_NonNumericIDIs404(t *testing.T) {
 	}
 }
 
-
 // ---------------------------------------------------------------------------
 // Importing one kind of row from a consolidated export
 //

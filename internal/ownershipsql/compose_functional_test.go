@@ -75,7 +75,7 @@ func TestFunctional_MSSQL_ComposedURLConnects(t *testing.T) {
 
 	// Baseline: written in by hand it is refused, so connecting below is the
 	// composition working and not the password being harmless.
-	naive := strings.Replace(visible, "@", ":"+password+"@", 1)
+	naive := strings.ReplaceAll(visible, PasswordMarker, password)
 	if err := canConnect(ctx, DriverSQLServer, naive); err == nil {
 		t.Fatal("the awkward password connects unescaped, so this test proves nothing")
 	}
@@ -115,9 +115,9 @@ func TestFunctional_MSSQL_TheWrongKeywordQuotingIsRefusedByTheServer(t *testing.
 	ctx := context.Background()
 
 	wrong := map[string]string{
-		"raw":           visible + ";password=" + password,
-		"brace-quoted":  visible + ";password=" + odbcQuote(password),
-		"single-quoted": visible + ";password='" + password + "'",
+		"raw":           strings.ReplaceAll(visible, PasswordMarker, password),
+		"brace-quoted":  strings.ReplaceAll(visible, PasswordMarker, odbcQuote(password)),
+		"single-quoted": strings.ReplaceAll(visible, PasswordMarker, "'"+password+"'"),
 	}
 	for name, dsn := range wrong {
 		t.Run(name, func(t *testing.T) {
@@ -217,7 +217,8 @@ func TestFunctional_MSSQL_TheServerQuotesTheAccountBackAsTyped(t *testing.T) {
 	for _, account := range accounts {
 		t.Run(account, func(t *testing.T) {
 			composed, err := Compose(DriverSQLServer,
-				"sqlserver://"+account+"@"+host[1], "definitely-not-the-password")
+				"sqlserver://"+account+":"+PasswordMarker+"@"+host[1],
+				"definitely-not-the-password")
 			if err != nil {
 				t.Fatalf("composing: %v", err)
 			}
@@ -267,7 +268,8 @@ func TestFunctional_MSSQL_ABackslashAccountAsksForIntegratedAuthentication(t *te
 	} {
 		t.Run(account, func(t *testing.T) {
 			composed, err := Compose(DriverSQLServer,
-				"sqlserver://"+account+"@"+host[1], "definitely-not-the-password")
+				"sqlserver://"+account+":"+PasswordMarker+"@"+host[1],
+				"definitely-not-the-password")
 			if err != nil {
 				t.Fatalf("composing: %v", err)
 			}
@@ -348,9 +350,11 @@ func TestFunctional_Postgres_ComposedConnectionsConnect(t *testing.T) {
 		database := strings.TrimPrefix(admin.Path, "/")
 
 		visibles := map[string]string{
-			"url": "postgres://" + user + "@" + admin.Host + "/" + database + "?sslmode=disable",
+			"url": "postgres://" + user + ":" + PasswordMarker + "@" + admin.Host +
+				"/" + database + "?sslmode=disable",
 			"keyword": "host=" + admin.Hostname() + " port=" + portOf(admin) +
-				" dbname=" + database + " user=" + user + " sslmode=disable",
+				" dbname=" + database + " user=" + user +
+				" password=" + PasswordMarker + " sslmode=disable",
 		}
 		for name, visible := range visibles {
 			t.Run(name, func(t *testing.T) {

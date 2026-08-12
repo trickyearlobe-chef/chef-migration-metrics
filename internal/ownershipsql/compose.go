@@ -11,17 +11,45 @@ import (
 // Composing a connection from a part somebody can read and a part they cannot.
 //
 // See journeys/ownership-connection.md. The administrator holds one connection
-// string with the address, the database and the account in it, and the password
-// is kept apart and put in here. Only the password is hidden, because it is the
-// only value nobody can inspect; hiding the rest is what made a fortnight of
-// failures unreadable.
+// string with the address, the database and the account in it, and marks where
+// the password goes. Only the password is hidden, because it is the only value
+// nobody can inspect; hiding the rest is what made a fortnight of failures
+// unreadable.
 //
-// Every escaping rule below was MEASURED against a running server, not read from
-// documentation — see compose_functional_test.go. Reasoning about them produced
-// several confident wrong answers, and one of those wrong answers had already
-// been written into the plan: brace-quoting an ADO password is accepted by the
-// parser, arrives with the braces still attached, and comes back as "login
-// failed" — a wrong password rather than a bad string.
+// The position is marked rather than worked out. A connection can want its
+// password somewhere this code would not have guessed, and guessing produces a
+// string that reads correctly and is refused — which is the failure this whole
+// journey exists to end. So the marker is required, and a connection without
+// one is refused rather than repaired: sending the literal marker to a server
+// would authenticate as nobody and read as a wrong password.
+//
+// Every escaping rule below was MEASURED against a running server, not read
+// from documentation — see compose_functional_test.go. Reasoning about them
+// produced several confident wrong answers, and one of those wrong answers had
+// already been written into the plan: brace-quoting an ADO password is accepted
+// by the parser, arrives with the braces still attached, and comes back as
+// "login failed" — a wrong password rather than a bad string.
+
+// PasswordMarker is where the password goes. The administrator positions it;
+// the proposed starting connection already contains one, so most people never
+// have to think about it.
+//
+// Chosen to survive being passed around, which is not a small thing: these
+// connections get pasted into tickets, scripts, Makefiles and shells on the way
+// to us. Measured rather than assumed, because two earlier spellings did not
+// survive and one of them cost a wrong test run:
+//
+//   - "${password}" is expanded by every shell, silently, to nothing.
+//   - "[password]" is a glob character class — it became "d" in both bash and
+//     zsh purely because a file named "d" was in the directory.
+//   - "<password>" is redirection, "#password#" is a comment, and "%password%"
+//     collides with percent-encoding in the URL spelling.
+//
+// Letters and underscores have no meaning to a shell, to make, to a URL or to a
+// keyword connection string. It also says what it is, which is the one part of
+// "tell me how to mark it" that survives being pasted somewhere with no screen
+// attached.
+const PasswordMarker = "PASSWORD_GOES_HERE"
 
 // PasswordMask stands in for the password wherever a connection is shown. It is
 // a fixed width, so it does not leak the length of the password.
@@ -75,87 +103,92 @@ type Composed struct {
 	Form Form
 }
 
-// Compose puts the password into a visible connection string, escaped for the
-// form the string is written in and the driver it is going to.
-//
-// The visible connection must not already carry a password. Two passwords in
-// one connection is not a thing to guess at: whichever won, the administrator
-// would be reading one and sending the other.
-func Compose(driver, visible, password string) (Composed, error) {
+// ErrNoPasswordMarker is returned when a connection does not say where the
+// password goes. It is its own error so a screen can name the marker rather
+// than repeating a sentence.
+var ErrNoPasswordMarker = fmt.Errorf(
+	"the connection does not say where the password goes: put %s where it belongs", PasswordMarker)
+
+// Compose puts the password where the connection says it goes, escaped for the
+// form the connection is written in and the driver it is going to.
+func Compose(driver, connection, password string) (Composed, error) {
 	if !IsSupportedDriver(driver) {
 		return Composed{}, fmt.Errorf("ownershipsql: unsupported driver %q", driver)
 	}
-	trimmed := strings.TrimSpace(visible)
+	trimmed := strings.TrimSpace(connection)
 	if trimmed == "" {
 		return Composed{}, fmt.Errorf("ownershipsql: the connection is empty")
 	}
+	if !strings.Contains(trimmed, PasswordMarker) {
+		return Composed{}, fmt.Errorf("ownershipsql: %w", ErrNoPasswordMarker)
+	}
 
 	form := DetectForm(trimmed)
-	build, err := composerFor(driver, form, trimmed)
+	prepared, err := prepareVisibleParts(form, trimmed)
 	if err != nil {
 		return Composed{}, err
 	}
-	return Composed{
-		DSN:    build(password),
-		Masked: build(PasswordMask),
-		Form:   form,
-	}, nil
-}
 
-// composerFor validates the visible connection once and returns a function that
-// writes a given secret into it. Returning a builder rather than a string is
-// what guarantees the masked view and the real connection differ in exactly one
-// place: they are the same code run twice.
-func composerFor(driver string, form Form, visible string) (func(secret string) string, error) {
-	switch form {
-	case FormURL:
-		return urlComposer(visible)
-	case FormODBC:
-		return keywordComposer(visible, ";", odbcQuote)
-	default:
-		if driver == DriverPostgres {
-			return keywordComposer(visible, " ", postgresQuote)
-		}
-		return keywordComposer(visible, ";", adoQuote)
+	// Whether the administrator already wrote the quotes around the marker
+	// decides whether this adds its own. Quoting an already-quoted value gives
+	// the driver two wrappers, and it strips one — so the password arrives with
+	// stray quotation marks and the login is refused.
+	quoted := markerIsAlreadyQuoted(prepared, form, driver)
+	escape := escaperFor(form, driver, quoted)
+
+	build := func(secret string) string {
+		return strings.ReplaceAll(prepared, PasswordMarker, escape(secret))
 	}
+	return Composed{DSN: build(password), Masked: build(PasswordMask), Form: form}, nil
 }
 
 // ---------------------------------------------------------------------------
-// The URL spelling
+// Preparing the parts the administrator can see
 // ---------------------------------------------------------------------------
 
-func urlComposer(visible string) (func(string) string, error) {
-	scheme, rest, isURL := splitConnectionScheme(visible)
+// prepareVisibleParts escapes the things that cannot travel as written.
+//
+// Only the account, and only in a URL. A Windows domain login carries a
+// backslash that no URL can hold, and that is the customer's own account. This
+// is not a quiet rewrite: what arrives at the server is the account as typed —
+// measured through the driver's parser — and the composed connection is shown,
+// so the encoding is on screen rather than behind them.
+func prepareVisibleParts(form Form, connection string) (string, error) {
+	if form != FormURL {
+		// The keyword spellings need nothing encoded: what the administrator
+		// wrote is what the parser reads.
+		return connection, nil
+	}
+
+	scheme, rest, isURL := splitConnectionScheme(connection)
 	if !isURL {
-		return nil, fmt.Errorf("ownershipsql: %q is not a connection URL", visible)
+		return "", fmt.Errorf("ownershipsql: %q is not a connection URL", connection)
 	}
-	account := userinfoOfConnection(rest)
-	if account == "" {
-		return nil, fmt.Errorf(
-			"ownershipsql: the connection names no account, so there is nowhere to put the password")
+	userinfo := userinfoOfConnection(rest)
+	if userinfo == "" {
+		// No account, so nothing to encode. The marker is elsewhere in the
+		// string and that is the administrator's business.
+		return connection, nil
 	}
-	if strings.Contains(account, ":") {
-		return nil, fmt.Errorf(
-			"ownershipsql: the connection already carries a password; remove it — " +
-				"the password is held separately and put in for you")
-	}
-	tail := rest[len(account):] // starts at the "@"
 
-	// The account is percent-encoded because a Windows domain login contains a
-	// backslash, which no URL can carry, and that is the customer's own account.
-	// This is not a quiet rewrite: what arrives at the server is the account as
-	// typed — measured through the driver's parser — and the composed string is
-	// shown, so the encoding is on screen rather than behind them.
-	encodedAccount := percentEncode(account, accountAllows)
-	return func(secret string) string {
-		return scheme + "://" + encodedAccount + ":" + percentEncode(secret, passwordAllows) + tail
-	}, nil
+	// The account is what precedes the first ":", which is what separates it
+	// from the password. If the marker is in that position there is no account
+	// to encode.
+	account, remainder, hasSeparator := strings.Cut(userinfo, ":")
+	if strings.Contains(account, PasswordMarker) {
+		return connection, nil
+	}
+	encoded := percentEncode(account, accountAllows)
+	if !hasSeparator {
+		return scheme + "://" + encoded + rest[len(userinfo):], nil
+	}
+	return scheme + "://" + encoded + ":" + remainder + rest[len(userinfo):], nil
 }
 
-// accountAllows reports whether a byte may sit in the user portion as it stands.
-// It is the unreserved and sub-delimiter set of RFC 3986 — and unlike a
-// password, ":" is excluded, because that is what separates the account from the
-// password that is about to be appended.
+// accountAllows reports whether a byte may sit in the user portion as it
+// stands. It is the unreserved and sub-delimiter set of RFC 3986 — and unlike a
+// password, ":" is excluded, because that is what separates the account from
+// the password.
 func accountAllows(b byte) bool { return mayAppearInACredential(b) && b != ':' }
 
 // passwordAllows is the same set with ":" permitted: everything after the first
@@ -178,60 +211,99 @@ func percentEncode(s string, allowed func(byte) bool) string {
 }
 
 // ---------------------------------------------------------------------------
-// The keyword spellings
+// Escaping, by form
 // ---------------------------------------------------------------------------
 
-// keywordComposer appends a password setting to a key=value connection.
-//
-// The separator and the quoting rule are the two things that differ between the
-// three keyword dialects, so they are the two things passed in.
-func keywordComposer(visible, separator string, quote func(string) string) (func(string) string, error) {
-	if key := existingPasswordKey(visible, separator); key != "" {
-		return nil, fmt.Errorf(
-			"ownershipsql: the connection already sets %q; remove it — "+
-				"the password is held separately and put in for you", key)
+// quoteCharsFor is the pair the administrator may have written around the
+// marker themselves. A URL has no such pair.
+func quoteCharsFor(form Form, driver string) (open, close string) {
+	switch {
+	case form == FormODBC:
+		return "{", "}"
+	case form == FormKeyword && driver == DriverPostgres:
+		return "'", "'"
+	case form == FormKeyword:
+		return `"`, `"`
+	default:
+		return "", ""
 	}
-	prefix := strings.TrimRight(visible, separator+" ")
-	return func(secret string) string {
-		return prefix + separator + "password=" + quote(secret)
-	}, nil
 }
 
-// passwordKeys are the spellings each dialect accepts for the same setting. A
-// connection that sets any of them already has a password in it.
-var passwordKeys = map[string]bool{"password": true, "pwd": true}
-
-func existingPasswordKey(visible, separator string) string {
-	for _, part := range strings.Split(visible, separator) {
-		name, _, found := strings.Cut(part, "=")
-		if !found {
-			continue
-		}
-		name = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(name, "odbc:")))
-		if passwordKeys[name] {
-			return name
-		}
+// markerIsAlreadyQuoted reports whether every marker is written inside the
+// quotes its form uses, so this does not add a second pair.
+func markerIsAlreadyQuoted(connection string, form Form, driver string) bool {
+	open, close := quoteCharsFor(form, driver)
+	if open == "" {
+		return false
 	}
-	return ""
+	found := false
+	for i := 0; ; {
+		at := strings.Index(connection[i:], PasswordMarker)
+		if at < 0 {
+			break
+		}
+		at += i
+		before := at > 0 && string(connection[at-1]) == open
+		afterAt := at + len(PasswordMarker)
+		after := afterAt < len(connection) && string(connection[afterAt]) == close
+		if !before || !after {
+			return false
+		}
+		found = true
+		i = afterAt
+	}
+	return found
 }
 
-// adoQuote wraps a value for SQL Server's ";"-separated keyword spelling.
+// escaperFor returns how a secret is written for this form. When the marker is
+// already wrapped in the form's quotes, only the inside is escaped — the
+// wrapper is the administrator's and is left alone.
+func escaperFor(form Form, driver string, alreadyQuoted bool) func(string) string {
+	switch {
+	case form == FormURL:
+		return func(s string) string { return percentEncode(s, passwordAllows) }
+	case form == FormODBC:
+		if alreadyQuoted {
+			return odbcEscapeInner
+		}
+		return odbcQuote
+	case driver == DriverPostgres:
+		if alreadyQuoted {
+			return postgresEscapeInner
+		}
+		return postgresQuote
+	default:
+		if alreadyQuoted {
+			return adoEscapeInner
+		}
+		return adoQuote
+	}
+}
+
+// adoEscapeInner doubles a double quote, which is how SQL Server's ";"-separated
+// keyword spelling carries one inside a quoted value.
 //
-// Measured, and it is the one that was written down backwards. The driver
+// Measured, and this is the rule that was written down backwards. The driver
 // strips one pair of surrounding double quotes and collapses each doubled
 // double quote inside them; braces mean nothing to it, so a brace-quoted
 // password arrives with its braces attached and the server answers "login
 // failed for user" — a wrong credential rather than a bad string, which sends
 // the search to the account instead of the tooling.
-func adoQuote(v string) string { return `"` + strings.ReplaceAll(v, `"`, `""`) + `"` }
+func adoEscapeInner(v string) string { return strings.ReplaceAll(v, `"`, `""`) }
 
-// odbcQuote wraps a value for the "odbc:" spelling, which does use braces, and
-// doubles a closing brace inside one. This is why the rule cannot be chosen by
-// driver alone: the same driver reads both, and they disagree.
-func odbcQuote(v string) string { return "{" + strings.ReplaceAll(v, "}", "}}") + "}" }
+func adoQuote(v string) string { return `"` + adoEscapeInner(v) + `"` }
 
-// postgresQuote wraps a value for libpq's space-separated keyword spelling,
-// which quotes with single quotes and escapes with a backslash.
-func postgresQuote(v string) string {
-	return `'` + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + `'`
+// odbcEscapeInner doubles a closing brace, which is how the "odbc:" spelling
+// carries one. This is why the rule cannot be chosen by driver alone: the same
+// driver reads both spellings, and they disagree.
+func odbcEscapeInner(v string) string { return strings.ReplaceAll(v, "}", "}}") }
+
+func odbcQuote(v string) string { return "{" + odbcEscapeInner(v) + "}" }
+
+// postgresEscapeInner backslash-escapes what libpq's space-separated keyword
+// spelling treats as special inside single quotes.
+func postgresEscapeInner(v string) string {
+	return strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v)
 }
+
+func postgresQuote(v string) string { return `'` + postgresEscapeInner(v) + `'` }

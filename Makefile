@@ -488,8 +488,11 @@ MSSQL_NASTY_DSN   ?= sqlserver://cmmnasty:pa%ss;wo rd\#7Q!@localhost:1433?databa
 # variable reference in test-mssql below. It reads a quoted value after a
 # password-shaped name as a hardcoded credential, which for "$(...)" it is not.
 MSSQL_NASTY_PW        ?= pa%ss;wo rd\#7Q!
-MSSQL_VISIBLE_URL     ?= sqlserver://cmmnasty@localhost:1433?database=cmdb
-MSSQL_VISIBLE_KEYWORD ?= server=localhost;port=1433;database=cmdb;user id=cmmnasty
+# PASSWORD_GOES_HERE marks where the password goes. Letters and underscores
+# because they survive a shell: "${...}" was expanded to nothing here, and
+# "[...]" is a glob that matched a file in the working directory.
+MSSQL_VISIBLE_URL     ?= sqlserver://cmmnasty:PASSWORD_GOES_HERE@localhost:1433?database=cmdb
+MSSQL_VISIBLE_KEYWORD ?= server=localhost;port=1433;database=cmdb;user id=cmmnasty;password=PASSWORD_GOES_HERE
 COMPOSE_FILE      := deploy/docker-compose/docker-compose.yml
 
 .PHONY: mssql-up
@@ -518,8 +521,8 @@ test-mssql: ## Run the SQL Server ownership-ingest functional tests
 	CMM_TEST_MSSQL_DSN="$(MSSQL_DSN)" \
 	CMM_TEST_MSSQL_NASTY_DSN="$(MSSQL_NASTY_DSN)" \
 	CMM_TEST_MSSQL_NASTY_PW="$(MSSQL_NASTY_PW)" \
-	CMM_TEST_MSSQL_VISIBLE_URL="$(MSSQL_VISIBLE_URL)" \
-	CMM_TEST_MSSQL_VISIBLE_KEYWORD="$(MSSQL_VISIBLE_KEYWORD)" \
+	CMM_TEST_MSSQL_VISIBLE_URL='$(MSSQL_VISIBLE_URL)' \
+	CMM_TEST_MSSQL_VISIBLE_KEYWORD='$(MSSQL_VISIBLE_KEYWORD)' \
 	go test -count=1 -tags $(FUNCTIONAL_TEST_TAGS) -run 'TestFunctional_MSSQL' -v ./internal/ownershipsql/
 
 .PHONY: mssql-down

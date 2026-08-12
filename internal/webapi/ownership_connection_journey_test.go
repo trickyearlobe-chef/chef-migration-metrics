@@ -71,7 +71,8 @@ func TestJourney_OnlyThePasswordIsOutOfSight(t *testing.T) {
 // one.
 func TestJourney_ThePasswordIsPutInForMeAndEscapedCorrectly(t *testing.T) {
 	const password = `pa%ss;wo rd/w0rd!`
-	visible := `sqlserver://EXAMPLECORP\svcaccount@dbhost.example.com:1433?database=Staging`
+	visible := `sqlserver://EXAMPLECORP\svcaccount:` + ownershipsql.PasswordMarker +
+		`@dbhost.example.com:1433?database=Staging`
 
 	// Baseline: the visible connection really does not carry the password, so
 	// finding it below is this code putting it there.
@@ -98,6 +99,37 @@ func TestJourney_ThePasswordIsPutInForMeAndEscapedCorrectly(t *testing.T) {
 	}
 }
 
+// "I say where it goes, and the screen tells me how to say it."
+//
+// Half of this is built: the position is marked rather than guessed, and a
+// connection that does not say where the password goes is refused by name
+// instead of being repaired. The other half is a screen that says so.
+func TestJourney_IAmToldHowToMarkWhereThePasswordGoes(t *testing.T) {
+	const password = "s3cr3t"
+	withMarker := `sqlserver://svc:` + ownershipsql.PasswordMarker +
+		`@dbhost.example.com:1433?database=Staging`
+	without := `sqlserver://svc@dbhost.example.com:1433?database=Staging`
+
+	// Baseline: with the marker it composes, so the refusal below is the
+	// missing marker and not something else wrong with the connection.
+	if _, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, withMarker, password); err != nil {
+		t.Fatalf("the fixture proves nothing: even with the marker this will not compose: %v", err)
+	}
+
+	_, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, without, password)
+	if err == nil {
+		t.Fatal("a connection that never says where the password goes was accepted, so " +
+			"something I did not write is being sent")
+	}
+	if !strings.Contains(err.Error(), ownershipsql.PasswordMarker) {
+		t.Errorf("the refusal does not tell me what to write: %v", err)
+	}
+
+	t.Skip("The refusal names the marker; no screen does. Nothing shows the administrator " +
+		"how to mark the position before they get it wrong, which is the half of this " +
+		"requirement that is about being told rather than being refused.")
+}
+
 // "It must not quietly rewrite anything the administrator can see: typing an
 // account one way and sending it another is the same unreadable failure in a
 // new place."
@@ -110,7 +142,8 @@ func TestJourney_ThePasswordIsPutInForMeAndEscapedCorrectly(t *testing.T) {
 // quiet: it is there to be read in the masked view.
 func TestJourney_NothingIVisiblyTypedIsRewrittenBehindMe(t *testing.T) {
 	const account = `EXAMPLECORP\svcaccount`
-	visible := "sqlserver://" + account + "@dbhost.example.com:1433?database=Staging"
+	visible := "sqlserver://" + account + ":" + ownershipsql.PasswordMarker +
+		"@dbhost.example.com:1433?database=Staging"
 
 	composed, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, visible, "irrelevant")
 	if err != nil {
@@ -141,11 +174,13 @@ func TestJourney_TheEscapingMatchesTheFormOfTheStringItWasGiven(t *testing.T) {
 		form    ownershipsql.Form
 	}{
 		"url": {
-			`sqlserver://EXAMPLECORP\svc@dbhost.example.com:1433?database=Staging`,
+			`sqlserver://EXAMPLECORP\svc:` + ownershipsql.PasswordMarker +
+				`@dbhost.example.com:1433?database=Staging`,
 			ownershipsql.FormURL,
 		},
 		"keyword": {
-			`server=dbhost.example.com;database=Staging;user id=EXAMPLECORP\svc`,
+			`server=dbhost.example.com;database=Staging;user id=EXAMPLECORP\svc;password=` +
+				ownershipsql.PasswordMarker,
 			ownershipsql.FormKeyword,
 		},
 	}
@@ -176,7 +211,8 @@ func TestJourney_TheEscapingMatchesTheFormOfTheStringItWasGiven(t *testing.T) {
 // "To be shown what will actually be sent, with the password masked."
 func TestJourney_IAmShownWhatWillActuallyBeSent(t *testing.T) {
 	const password = `pa%ss;wo rd!`
-	visible := `sqlserver://EXAMPLECORP\svc@dbhost.example.com:1433?database=Staging`
+	visible := `sqlserver://EXAMPLECORP\svc:` + ownershipsql.PasswordMarker +
+		`@dbhost.example.com:1433?database=Staging`
 
 	composed, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, visible, password)
 	if err != nil {

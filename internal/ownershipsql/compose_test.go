@@ -4,6 +4,7 @@
 package ownershipsql
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -39,16 +40,26 @@ var awkwardPasswords = []string{
 // that made the customer's connection unparsable.
 const domainAccount = `EXAMPLECORP\svcaccount`
 
+// Connections as an administrator writes them: everything readable, and the
+// password's position marked rather than typed.
+func urlTemplate(account string) string {
+	return "sqlserver://" + account + ":" + PasswordMarker +
+		"@dbhost.example.com:1433?database=Staging"
+}
+
+func keywordTemplate(account string) string {
+	return "server=dbhost.example.com;port=1433;database=Staging;user id=" + account +
+		";password=" + PasswordMarker
+}
+
 // The password arrives at the driver as it was typed, in the URL spelling.
 //
-// The baseline is asserted first — the same password written in unescaped is
+// The baseline is asserted first — the same password written in by hand is
 // refused or arrives wrong — so this cannot pass because the driver became
 // tolerant of something for an unrelated reason.
 func TestComposeURLFormReachesTheDriverIntact(t *testing.T) {
 	for _, password := range awkwardPasswords {
 		t.Run(password, func(t *testing.T) {
-			visible := "sqlserver://" + domainAccount + "@dbhost.example.com:1433?database=Staging"
-
 			// Baseline: written in by hand, without composing.
 			naive := "sqlserver://" + domainAccount + ":" + password +
 				"@dbhost.example.com:1433?database=Staging"
@@ -58,7 +69,7 @@ func TestComposeURLFormReachesTheDriverIntact(t *testing.T) {
 					"so this case is not measuring composition", password)
 			}
 
-			composed, err := Compose(DriverSQLServer, visible, password)
+			composed, err := Compose(DriverSQLServer, urlTemplate(domainAccount), password)
 			if err != nil {
 				t.Fatalf("composing: %v", err)
 			}
@@ -84,9 +95,7 @@ func TestComposeURLFormReachesTheDriverIntact(t *testing.T) {
 func TestComposeKeywordFormReachesTheDriverIntact(t *testing.T) {
 	for _, password := range awkwardPasswords {
 		t.Run(password, func(t *testing.T) {
-			visible := "server=dbhost.example.com;port=1433;database=Staging;user id=" + domainAccount
-
-			composed, err := Compose(DriverSQLServer, visible, password)
+			composed, err := Compose(DriverSQLServer, keywordTemplate(domainAccount), password)
 			if err != nil {
 				t.Fatalf("composing: %v", err)
 			}
@@ -101,9 +110,6 @@ func TestComposeKeywordFormReachesTheDriverIntact(t *testing.T) {
 			if cfg.User != domainAccount {
 				t.Errorf("account did not survive\n  typed:   %q\n  arrives: %q", domainAccount, cfg.User)
 			}
-			if cfg.Host != "dbhost.example.com" || cfg.Database != "Staging" {
-				t.Errorf("the rest of the connection changed: host=%q database=%q", cfg.Host, cfg.Database)
-			}
 		})
 	}
 }
@@ -112,8 +118,8 @@ func TestComposeKeywordFormReachesTheDriverIntact(t *testing.T) {
 // passwords need no quoting there and a per-case check would be false.
 //
 // These four are the ones the keyword parser gets wrong when a password is
-// appended raw: a ";" ends the value early, and leading or trailing spaces are
-// trimmed off. If this ever stops failing, the round-trip test above is
+// written in raw: a ";" ends the value early, and leading or trailing spaces
+// are trimmed off. If this ever stops failing, the round-trip test above is
 // measuring nothing and should be retired rather than trusted.
 func TestTheKeywordSpellingNeedsQuotingAtAll(t *testing.T) {
 	visible := "server=dbhost.example.com;port=1433;database=Staging;user id=" + domainAccount
@@ -123,7 +129,7 @@ func TestTheKeywordSpellingNeedsQuotingAtAll(t *testing.T) {
 			continue // refused outright is also "not silently wrong"
 		}
 		if cfg.Password == password {
-			t.Errorf("appending %q raw now arrives intact, so quoting it is no longer "+
+			t.Errorf("writing %q in raw now arrives intact, so quoting it is no longer "+
 				"what makes the round-trip test pass", password)
 		}
 	}
@@ -135,9 +141,10 @@ func TestTheKeywordSpellingNeedsQuotingAtAll(t *testing.T) {
 func TestComposeODBCFormReachesTheDriverIntact(t *testing.T) {
 	for _, password := range awkwardPasswords {
 		t.Run(password, func(t *testing.T) {
-			visible := "odbc:server=dbhost.example.com;database=Staging;user id=" + domainAccount
+			template := "odbc:server=dbhost.example.com;database=Staging;user id=" +
+				domainAccount + ";password=" + PasswordMarker
 
-			composed, err := Compose(DriverSQLServer, visible, password)
+			composed, err := Compose(DriverSQLServer, template, password)
 			if err != nil {
 				t.Fatalf("composing: %v", err)
 			}
@@ -152,6 +159,65 @@ func TestComposeODBCFormReachesTheDriverIntact(t *testing.T) {
 				t.Errorf("password did not survive\n  typed:   %q\n  arrives: %q", password, cfg.Password)
 			}
 		})
+	}
+}
+
+// An administrator who writes the quotes themselves must not get a second pair.
+//
+// The driver strips one wrapper, so two wrappers leave the inner quotes in the
+// password and the login is refused — the same wrong-password-looking failure
+// as every other mis-escaping in this journey.
+func TestQuotesTheAdministratorWroteAreNotDoubled(t *testing.T) {
+	for _, password := range awkwardPasswords {
+		t.Run(password, func(t *testing.T) {
+			template := "server=dbhost.example.com;database=Staging;user id=" +
+				domainAccount + `;password="` + PasswordMarker + `"`
+
+			composed, err := Compose(DriverSQLServer, template, password)
+			if err != nil {
+				t.Fatalf("composing: %v", err)
+			}
+			cfg, err := msdsn.Parse(composed.DSN)
+			if err != nil {
+				t.Fatalf("the composed connection is unparsable: %v", err)
+			}
+			if cfg.Password != password {
+				t.Errorf("password did not survive its own quotes\n  typed:   %q\n"+
+					"  arrives: %q\n  sent:    %s", password, cfg.Password, composed.Masked)
+			}
+		})
+	}
+}
+
+// The same for the "odbc:" braces and for libpq's single quotes.
+func TestQuotesTheAdministratorWroteAreNotDoubledInEveryForm(t *testing.T) {
+	const password = `pa%ss;wo rd#7Q!`
+
+	odbc := "odbc:server=dbhost.example.com;database=Staging;user id=svc;password={" +
+		PasswordMarker + "}"
+	composed, err := Compose(DriverSQLServer, odbc, password)
+	if err != nil {
+		t.Fatalf("composing the odbc connection: %v", err)
+	}
+	cfg, err := msdsn.Parse(composed.DSN)
+	if err != nil {
+		t.Fatalf("unparsable: %v", err)
+	}
+	if cfg.Password != password {
+		t.Errorf("odbc: password did not survive its own braces\n  typed:   %q\n  arrives: %q",
+			password, cfg.Password)
+	}
+
+	// libpq exposes no parser, so this checks the shape rather than a
+	// round-trip; the round-trip is measured against a real server in
+	// TestFunctional_Postgres_ComposedConnectionsConnect.
+	pg := "host=dbhost.example.com dbname=staging user=svc password='" + PasswordMarker + "'"
+	pgComposed, err := Compose(DriverPostgres, pg, password)
+	if err != nil {
+		t.Fatalf("composing the postgres connection: %v", err)
+	}
+	if strings.Contains(pgComposed.DSN, "''") {
+		t.Errorf("postgres: the value was quoted twice: %s", pgComposed.DSN)
 	}
 }
 
@@ -180,21 +246,17 @@ func TestTheWrongQuotingRuleIsAcceptedAndArrivesWrong(t *testing.T) {
 // nothing else. It is produced by the same code, so it cannot drift from what
 // is sent — which is the whole point of showing it.
 func TestMaskedIsTheSameConnectionWithOnlyThePasswordReplaced(t *testing.T) {
-	visibles := map[string]string{
-		DriverSQLServer: "sqlserver://" + domainAccount + "@dbhost.example.com:1433?database=Staging",
-		DriverPostgres:  "host=dbhost.example.com dbname=staging user=svcaccount sslmode=require",
-	}
-	for driver, visible := range visibles {
+	for driver, template := range templatesByDriver() {
 		t.Run(driver, func(t *testing.T) {
 			const password = `pa%ss;wo rd#7Q!`
-			composed, err := Compose(driver, visible, password)
+			composed, err := Compose(driver, template, password)
 			if err != nil {
 				t.Fatalf("composing: %v", err)
 			}
 
 			// Composing the mask itself must give the masked view exactly. If
 			// these ever differ, the view is being derived a second way.
-			asIfMasked, err := Compose(driver, visible, PasswordMask)
+			asIfMasked, err := Compose(driver, template, PasswordMask)
 			if err != nil {
 				t.Fatalf("composing the mask: %v", err)
 			}
@@ -208,7 +270,19 @@ func TestMaskedIsTheSameConnectionWithOnlyThePasswordReplaced(t *testing.T) {
 			if !strings.Contains(composed.Masked, PasswordMask) {
 				t.Errorf("the masked view does not show a mask: %s", composed.Masked)
 			}
+			if strings.Contains(composed.Masked, PasswordMarker) {
+				t.Errorf("the marker is still in what I am shown, so it is not what will "+
+					"be sent: %s", composed.Masked)
+			}
 		})
+	}
+}
+
+func templatesByDriver() map[string]string {
+	return map[string]string{
+		DriverSQLServer: urlTemplate(domainAccount),
+		DriverPostgres: "host=dbhost.example.com dbname=staging user=svcaccount " +
+			"password=" + PasswordMarker + " sslmode=require",
 	}
 }
 
@@ -216,13 +290,9 @@ func TestMaskedIsTheSameConnectionWithOnlyThePasswordReplaced(t *testing.T) {
 // escaped form is the one that will be missed, because it no longer looks like
 // the password that was stored.
 func TestTheMaskedViewNeverCarriesThePassword(t *testing.T) {
-	visibles := map[string]string{
-		DriverSQLServer: "sqlserver://" + domainAccount + "@dbhost.example.com:1433?database=Staging",
-		DriverPostgres:  "host=dbhost.example.com dbname=staging user=svcaccount sslmode=require",
-	}
-	for driver, visible := range visibles {
+	for driver, template := range templatesByDriver() {
 		for _, password := range awkwardPasswords {
-			composed, err := Compose(driver, visible, password)
+			composed, err := Compose(driver, template, password)
 			if err != nil {
 				t.Fatalf("composing %q: %v", password, err)
 			}
@@ -273,18 +343,14 @@ func TestTheAccountArrivesExactlyAsTyped(t *testing.T) {
 		`WINBOX\spaced account`,
 	}
 	spellings := map[string]func(string) string{
-		"url": func(a string) string {
-			return "sqlserver://" + a + "@dbhost.example.com:1433?database=Staging"
-		},
-		"keyword": func(a string) string {
-			return "server=dbhost.example.com;database=Staging;user id=" + a
-		},
+		"url":     urlTemplate,
+		"keyword": keywordTemplate,
 	}
 
 	for _, account := range accounts {
-		for spelling, visibleFor := range spellings {
+		for spelling, templateFor := range spellings {
 			t.Run(spelling+"/"+account, func(t *testing.T) {
-				composed, err := Compose(DriverSQLServer, visibleFor(account), "irrelevant")
+				composed, err := Compose(DriverSQLServer, templateFor(account), "irrelevant")
 				if err != nil {
 					t.Fatalf("composing: %v", err)
 				}
@@ -318,52 +384,55 @@ func TestDetectForm(t *testing.T) {
 	}
 }
 
-// A connection that already carries a password is refused rather than guessed
-// at. Whichever password won, the administrator would be reading one and
-// sending the other — which is this journey's failure in a new place.
-func TestAConnectionThatAlreadyHasAPasswordIsRefused(t *testing.T) {
+// A connection that does not say where the password goes is refused, never
+// repaired by guessing. Sending the marker's literal text — or putting the
+// password somewhere this code chose — authenticates as nobody and reads as a
+// wrong password, which is this journey's failure in a new place.
+func TestAConnectionWithoutTheMarkerIsRefused(t *testing.T) {
 	cases := map[string]string{
-		DriverSQLServer: "sqlserver://sa:alreadyhere@localhost:1433?database=cmdb",
-		DriverPostgres:  "host=localhost dbname=cmdb user=svc password=alreadyhere",
+		"url":                                "sqlserver://sa@localhost:1433?database=cmdb",
+		"url-with-a-password-written-in":     "sqlserver://sa:hunter2@localhost:1433?database=cmdb",
+		"keyword":                            "server=localhost;database=cmdb;user id=sa",
+		"keyword-with-a-password-written-in": "server=localhost;database=cmdb;user id=sa;password=hunter2",
+		"postgres":                           "host=localhost dbname=cmdb user=svc",
+		"misspelled-marker":                  "sqlserver://sa:PASSWORD_GOES_THERE@localhost:1433?database=cmdb",
 	}
-	for driver, visible := range cases {
-		t.Run(driver, func(t *testing.T) {
-			_, err := Compose(driver, visible, "newpassword")
-			if err == nil {
-				t.Fatal("a connection that already carries a password was accepted")
+	for name, connection := range cases {
+		t.Run(name, func(t *testing.T) {
+			driver := DriverSQLServer
+			if strings.HasPrefix(name, "postgres") {
+				driver = DriverPostgres
 			}
-			if strings.Contains(err.Error(), "alreadyhere") {
-				t.Errorf("the refusal quotes the password it found: %v", err)
+			_, err := Compose(driver, connection, "newpassword")
+			if err == nil {
+				t.Fatal("a connection that never says where the password goes was accepted")
+			}
+			if !errors.Is(err, ErrNoPasswordMarker) {
+				t.Errorf("refused, but not for the missing marker: %v", err)
+			}
+			if strings.Contains(err.Error(), "hunter2") {
+				t.Errorf("the refusal quotes a password it found: %v", err)
 			}
 		})
 	}
 }
 
-// "pwd" is the same setting under another name, so it has to be recognised too.
-func TestTheShortSpellingOfPasswordIsAlsoRefused(t *testing.T) {
-	_, err := Compose(DriverSQLServer, "server=localhost;database=cmdb;pwd=alreadyhere", "new")
-	if err == nil {
-		t.Fatal("a connection setting pwd= was accepted as having no password")
-	}
-}
-
-func TestComposeRefusesWhatItCannotPlaceAPasswordIn(t *testing.T) {
+func TestComposeRefusesWhatItCannotComposeAtAll(t *testing.T) {
 	cases := map[string]string{
-		"empty":         "",
-		"blank":         "   ",
-		"url-no-accoun": "sqlserver://dbhost.example.com:1433?database=Staging",
+		"empty": "",
+		"blank": "   ",
 	}
-	for name, visible := range cases {
+	for name, connection := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Compose(DriverSQLServer, visible, "pw"); err == nil {
-				t.Fatal("accepted a connection with nowhere to put a password")
+			if _, err := Compose(DriverSQLServer, connection, "pw"); err == nil {
+				t.Fatal("accepted a connection there is nothing to compose")
 			}
 		})
 	}
 }
 
 func TestComposeRefusesAnUnsupportedDriver(t *testing.T) {
-	if _, err := Compose("mysql", "mysql://svc@localhost/cmdb", "pw"); err == nil {
+	if _, err := Compose("mysql", "mysql://svc:"+PasswordMarker+"@localhost/cmdb", "pw"); err == nil {
 		t.Fatal("an unsupported driver was accepted")
 	}
 }

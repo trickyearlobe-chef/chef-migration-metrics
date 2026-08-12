@@ -66,8 +66,9 @@ type Config struct {
 	// is about.
 	DSN string
 	// Connection is the part an administrator can read: the address, the
-	// database and the account, with no password in it. When it is set it is
-	// used instead of DSN, and Password is composed into it.
+	// database and the account, with the password's position marked by
+	// PasswordMarker rather than written out. When it is set it is used instead
+	// of DSN, and Password is put where the marker says.
 	Connection string
 	// Password is the one value that is kept out of sight, because it is the
 	// one nobody can inspect and therefore the one nobody can check. It is put

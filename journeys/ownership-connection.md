@@ -21,6 +21,13 @@ see, so it is the one I can never check. Everything else, including the account 
 in front of it, sits in the string where I can read it and fix it myself. Punctuation in a
 password is what broke this before, and it broke invisibly.
 
+**I say where it goes, and the screen tells me how to say it.** I mark the spot myself, because
+a connection can want its password somewhere nobody could have guessed, and I have pasted enough
+of these from other people's tooling to know they do not all look alike. But a marker I am
+expected to know about and can read nowhere is just a new thing to get wrong — the screen has to
+show me how to write it. If I leave it out, refuse me and say so. Do not decide for me and send
+something I did not write.
+
 **To be shown what will actually be sent, with the password masked.** This is the thing I have
 been missing. If I can read the composed connection I can see in one glance whether the account,
 the domain or the punctuation came out wrong — which is the entire question we spent days
