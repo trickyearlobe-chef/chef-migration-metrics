@@ -53,6 +53,9 @@ type Route struct {
 	// Forms names the fields each method reads from a form submission, keyed
 	// by method. See takesForm.
 	Forms map[string][]formField
+	// Queries names the query parameters each method reads, keyed by method.
+	// See takesQuery.
+	Queries map[string][]queryParam
 }
 
 // Answer is what one method on one address writes back: a zero value of the
@@ -106,6 +109,9 @@ type SubPath struct {
 	// Answers names the Go type each method writes back, keyed by method. See
 	// answers.
 	Answers map[string]Answer
+	// Queries names the query parameters each method reads, keyed by method.
+	// See takesQuery.
+	Queries map[string][]queryParam
 }
 
 // IsSubtree reports whether the pattern matches everything beneath it.
@@ -266,6 +272,59 @@ func takesForm(method string, fields ...formField) RouteOption {
 			rt.Forms = map[string][]formField{}
 		}
 		rt.Forms[method] = fields
+	}
+}
+
+// queryParam is one query-string parameter an address reads: its name, and
+// whether the call is refused without it.
+//
+// Required is the part a caller cannot discover any other way. Four addresses
+// answer 400 to a plain GET because something they need was not in the query,
+// and a description that lists the parameter without saying it is required
+// reads as optional — which is how somebody ends up with a refusal naming a
+// parameter they had never heard of.
+//
+// What a parameter *means*, and what values it takes, is not written here.
+// There is no type to reflect — these are string keys read by hand — and a
+// sentence beside the code is the thing that rots. The name and whether it is
+// required are both checkable, and they are checked.
+type queryParam struct {
+	Name     string
+	Required bool
+}
+
+// takesQuery declares the query parameters a method on this address reads.
+//
+// Pagination is declared separately with paginated(), because its bounds are
+// read off the constants the service applies. These are the filters, and the
+// unit is the (method, address) for the same reason: one handler serves many
+// addresses and reads different parameters at each.
+func takesQuery(method string, params ...queryParam) RouteOption {
+	return func(rt *Route) {
+		if rt.Queries == nil {
+			rt.Queries = map[string][]queryParam{}
+		}
+		rt.Queries[method] = params
+	}
+}
+
+// subTakesQuery is takesQuery for one address under a subtree. Panics when the
+// suffix has not been declared with sub first — see subTakes for why.
+func subTakesQuery(suffix, method string, params ...queryParam) RouteOption {
+	return func(rt *Route) {
+		for i := range rt.SubPaths {
+			if rt.SubPaths[i].Suffix != suffix {
+				continue
+			}
+			if rt.SubPaths[i].Queries == nil {
+				rt.SubPaths[i].Queries = map[string][]queryParam{}
+			}
+			rt.SubPaths[i].Queries[method] = params
+			return
+		}
+		panic("subTakesQuery(" + suffix + ", " + method + ") on " + rt.Pattern +
+			": no such sub-path is declared, so the parameters would describe nothing. " +
+			"Declare it with sub() first, and keep sub() before subTakesQuery().")
 	}
 }
 

@@ -757,39 +757,68 @@ func (r *Router) registerRoutes() {
 	// Dashboard endpoints (viewer — any authenticated user)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/dashboard/version-distribution", r.handleDashboardVersionDistribution,
-		answers("GET", versionDistributionResponse{}))
+		answers("GET", versionDistributionResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/version-distribution/trend", r.handleDashboardVersionDistributionTrend,
-		answers("GET", versionDistTrendResponse{}))
+		answers("GET", versionDistTrendResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/readiness", r.handleDashboardReadiness,
-		answers("GET", readinessResponse{}))
+		answers("GET", readinessResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/readiness/trend", r.handleDashboardReadinessTrend,
-		answers("GET", readinessTrendResponse{}))
+		answers("GET", readinessTrendResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "stale"}, queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend,
-		answers("GET", complexityTrendResponse{}))
+		answers("GET", complexityTrendResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}))
 	r.protect("/api/v1/dashboard/cookstyle/recompute-trend", r.handleDashboardCookstyleRecomputeTrend,
 		answers("GET", cookstyleRecomputeTrendResponse{}))
 	r.protect("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend,
-		answers("GET", staleTrendResponse{}))
+		answers("GET", staleTrendResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}))
 	r.protect("/api/v1/dashboard/deployment/trend", r.handleDashboardDeploymentTrend,
-		answers("GET", deploymentTrendResponse{}))
+		answers("GET", deploymentTrendResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}))
 	r.protect("/api/v1/dashboard/deployment/status", r.handleDashboardDeploymentStatus,
-		answers("GET", deploymentStatusResponse{}))
+		answers("GET", deploymentStatusResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}))
 	r.protect("/api/v1/dashboard/platform-distribution", r.handleDashboardPlatformDistribution,
-		answers("GET", platformDistributionResponse{}))
+		answers("GET", platformDistributionResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility,
-		answers("GET", cookbookCompatibilityResponse{}))
+		answers("GET", cookbookCompatibilityResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/git-repo-compatibility", r.handleDashboardGitRepoCompatibility,
-		answers("GET", gitRepoCompatibilityResponse{}))
+		answers("GET", gitRepoCompatibilityResponse{}),
+		takesQuery("GET", queryParam{Name: "owner"}, queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/test-kitchen-compatibility", r.handleDashboardTestKitchenCompatibility,
-		answers("GET", testKitchenCompatibilityResponse{}))
+		answers("GET", testKitchenCompatibilityResponse{}),
+		takesQuery("GET", queryParam{Name: "owner"}, queryParam{Name: "unowned"}))
 	r.protect("/api/v1/dashboard/cookbook-download-status", r.handleDashboardCookbookDownloadStatus,
-		answers("GET", cookbookDownloadStatusResponse{}))
+		answers("GET", cookbookDownloadStatusResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}))
 
 	// -----------------------------------------------------------------
 	// Node endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/nodes", r.handleNodes, paginated(),
-		answersPage("GET", nodeResp{}))
+		answersPage("GET", nodeResp{}),
+		takesQuery("GET", queryParam{Name: "chef_version"}, queryParam{Name: "cookstyle_status"},
+			queryParam{Name: "environment"}, queryParam{Name: "kitchen_status"},
+			queryParam{Name: "migration_state"}, queryParam{Name: "node_name"},
+			queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "platform"}, queryParam{Name: "policy_group"},
+			queryParam{Name: "policy_name"}, queryParam{Name: "readiness_filter"},
+			queryParam{Name: "ready_to_activate"}, queryParam{Name: "role"},
+			queryParam{Name: "stale"}, queryParam{Name: "tags"},
+			queryParam{Name: "target_chef_version"}, queryParam{Name: "target_converge_status"},
+			queryParam{Name: "target_version"}, queryParam{Name: "unowned"}))
 	r.protect("/api/v1/nodes/by-version/", r.handleNodesByVersion,
 		sub("{chef_version}"), subAnswers("{chef_version}", "GET", nodesByVersionResponse{}))
 	r.protect("/api/v1/nodes/by-cookbook/", r.handleNodesByCookbook,
@@ -814,7 +843,12 @@ func (r *Router) registerRoutes() {
 	// Cookbook endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/cookbooks", r.handleCookbooks, paginated(),
-		answersPage("GET", cookbookResp{}))
+		answersPage("GET", cookbookResp{}),
+		takesQuery("GET", queryParam{Name: "active"}, queryParam{Name: "compatibility"},
+			queryParam{Name: "cookstyle_status"}, queryParam{Name: "download_status"},
+			queryParam{Name: "name"}, queryParam{Name: "organisation"},
+			queryParam{Name: "owner"}, queryParam{Name: "tk_status"},
+			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/cookbooks/", r.handleCookbookDetail,
 		sub("{name}"), sub("{name}/rescan", "POST"), sub("{name}/reset-git", "POST"),
 		sub("{name}/platform-coverage"), sub("{name}/committers"),
@@ -827,7 +861,8 @@ func (r *Router) registerRoutes() {
 	// Role endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/roles", r.handleRoles, paginated(),
-		answers("GET", roleListResponse{}))
+		answers("GET", roleListResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}))
 	r.protect("/api/v1/roles/", r.handleRoleDetail,
 		sub("{name}"), sub("{name}/dependency-graph"),
 		subAnswers("{name}", "GET", datastore.RoleDetail{}),
@@ -837,7 +872,9 @@ func (r *Router) registerRoutes() {
 	// Git repo endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/git-repos", r.handleGitRepos, paginated(),
-		answersPage("GET", gitRepoResp{}))
+		answersPage("GET", gitRepoResp{}),
+		takesQuery("GET", queryParam{Name: "has_test_suite"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/git-repos/", r.handleGitRepoDetail,
 		sub("excluded"), sub("{name}"), sub("{name}/exclude", "POST", "DELETE"),
 		sub("{name}/rescan", "POST"), sub("{name}/reset", "POST"), sub("{name}/committers"),
@@ -857,7 +894,8 @@ func (r *Router) registerRoutes() {
 	// journeys/run-history.md and handle_run_events.go.
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/run-events/nodes", r.handleRunEventNodes, paginated(),
-		answersPage("GET", datastore.ConvergeRunListItem{}))
+		answersPage("GET", datastore.ConvergeRunListItem{}),
+		takesQuery("GET", queryParam{Name: "since"}, queryParam{Name: "until"}))
 	// Measured, not assumed: this one honours per_page and returns no
 	// pagination metadata at all, so a caller cannot tell from an answer that
 	// it was bounded. Describing it is the only thing that says so today.
@@ -865,7 +903,8 @@ func (r *Router) registerRoutes() {
 		sub("{organisation}/{name}"), subCappedNotPaged("{organisation}/{name}"),
 		subAnswers("{organisation}/{name}", "GET", nodeRunEventsResponse{}))
 	r.protect("/api/v1/run-events/runs", r.handleRunEventRuns, paginated(),
-		answersPage("GET", datastore.ConvergeRunListItem{}))
+		answersPage("GET", datastore.ConvergeRunListItem{}),
+		takesQuery("GET", queryParam{Name: "since"}, queryParam{Name: "until"}))
 
 	// Viewer-readable UI feature flags (so the frontend can hide gated surfaces).
 	r.protect("/api/v1/features", r.handleFeatures,
@@ -874,8 +913,12 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Remediation endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/remediation/priority", r.handleRemediationPriority, paginated())
-	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary)
+	r.protect("/api/v1/remediation/priority", r.handleRemediationPriority, paginated(),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
+	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary,
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+			queryParam{Name: "unowned"}))
 
 	// -----------------------------------------------------------------
 	// Cookstyle cop analysis & classification
@@ -897,7 +940,9 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Export endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/exports", r.handleExports, methods("POST"))
+	r.protect("/api/v1/exports", r.handleExports, methods("POST"),
+		takesQuery("POST", queryParam{Name: "export_type", Required: true}, queryParam{Name: "format", Required: true},
+			queryParam{Name: "owner"}, queryParam{Name: "unowned"}))
 	r.protect("/api/v1/exports/", r.handleExportStatus,
 		sub("{job_id}"), sub("{job_id}/download"))
 
@@ -913,17 +958,23 @@ func (r *Router) registerRoutes() {
 	// Filter option endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/filters/environments", r.handleFilterEnvironments,
-		answers("GET", filterValuesResponse{}))
+		answers("GET", filterValuesResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "q"}))
 	r.protect("/api/v1/filters/roles", r.handleFilterRoles,
-		answers("GET", filterValuesResponse{}))
+		answers("GET", filterValuesResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "q"}))
 	r.protect("/api/v1/filters/tags", r.handleFilterTags,
-		answers("GET", filterValuesResponse{}))
+		answers("GET", filterValuesResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "q"}))
 	r.protect("/api/v1/filters/policy-names", r.handleFilterPolicyNames,
-		answers("GET", filterValuesResponse{}))
+		answers("GET", filterValuesResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "q"}))
 	r.protect("/api/v1/filters/policy-groups", r.handleFilterPolicyGroups,
-		answers("GET", filterValuesResponse{}))
+		answers("GET", filterValuesResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "q"}))
 	r.protect("/api/v1/filters/platforms", r.handleFilterPlatforms,
-		answers("GET", platformFilterResponse{}))
+		answers("GET", platformFilterResponse{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "q"}))
 	r.protect("/api/v1/filters/target-chef-versions", r.handleFilterTargetChefVersions,
 		answers("GET", filterValuesResponse{}))
 	r.protect("/api/v1/filters/complexity-labels", r.handleFilterComplexityLabels,
@@ -939,9 +990,14 @@ func (r *Router) registerRoutes() {
 	// Log endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/logs", r.handleLogs, paginated(),
-		answersPage("GET", datastore.LogEntry{}))
+		answersPage("GET", datastore.LogEntry{}),
+		takesQuery("GET", queryParam{Name: "collection_run_id"}, queryParam{Name: "cookbook_name"},
+			queryParam{Name: "min_severity"}, queryParam{Name: "organisation"},
+			queryParam{Name: "scope"}, queryParam{Name: "severity"},
+			queryParam{Name: "since"}, queryParam{Name: "until"}))
 	r.protect("/api/v1/logs/collection-runs", r.handleCollectionRuns, paginated(),
-		answersPage("GET", datastore.CollectionRunWithOrg{}))
+		answersPage("GET", datastore.CollectionRunWithOrg{}),
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "status"}))
 	r.protect("/api/v1/logs/", r.handleLogDetail,
 		sub("{id}"), subAnswers("{id}", "GET", datastore.LogEntry{}))
 
@@ -1010,10 +1066,12 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport,
 		methods("POST"),
 		takesForm("POST", formField{Name: "format"}, formField{Name: "file", File: true}))
-	r.protect("/api/v1/ownership/aliases/suggest", r.handleOwnershipAliasSuggest)
+	r.protect("/api/v1/ownership/aliases/suggest", r.handleOwnershipAliasSuggest,
+		takesQuery("GET", queryParam{Name: "q", Required: true}, queryParam{Name: "limit"}))
 	// Identity management: recognising a duplicate person, and folding one
 	// into another so the correction survives the next ingest.
-	r.protect("/api/v1/ownership/duplicates", r.handleOwnershipDuplicates, paginated())
+	r.protect("/api/v1/ownership/duplicates", r.handleOwnershipDuplicates, paginated(),
+		takesQuery("GET", queryParam{Name: "min_similarity"}))
 	r.protect("/api/v1/ownership/duplicates/rescan", r.handleOwnershipDuplicatesRescan, methods("POST"))
 	r.protect("/api/v1/ownership/duplicates/dismiss", r.handleOwnershipDuplicatesDismiss,
 		methods("POST"), takes("POST", dismissDuplicateRequest{}))
@@ -1101,7 +1159,8 @@ func (r *Router) registerRoutes() {
 
 	// Kitchen analysis endpoints (viewer — any authenticated user)
 	r.protect("/api/v1/kitchen/analysis/summary", r.handleKitchenAnalysisSummary)
-	r.protect("/api/v1/kitchen/analysis/platforms", r.handleKitchenAnalysisPlatforms)
+	r.protect("/api/v1/kitchen/analysis/platforms", r.handleKitchenAnalysisPlatforms,
+		takesQuery("GET", queryParam{Name: "min_count"}, queryParam{Name: "os_family"}))
 	r.protect("/api/v1/kitchen/analysis/cookbooks", r.handleKitchenAnalysisCookbooksRouter)
 	r.protect("/api/v1/kitchen/analysis/cookbooks/", r.handleKitchenAnalysisCookbooksRouter,
 		sub("{name}"))
@@ -1114,7 +1173,8 @@ func (r *Router) registerRoutes() {
 	// admin for destructive/config)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/hypervisor/templates", r.handleHypervisorTemplates)
-	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs)
+	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs,
+		takesQuery("GET", queryParam{Name: "status"}))
 	r.operatorOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM,
 		sub("{id}/destroy", "DELETE", "POST"))
 	r.operatorOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup, methods("POST"))
@@ -1126,7 +1186,8 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.operatorOnly("/api/v1/kitchen/node-run", r.handleNodeKitchenTrigger, methods("POST"),
 		takes("POST", nodekitchen.RunRequest{}))
-	r.protect("/api/v1/kitchen/node-runs", r.handleNodeKitchenRuns)
+	r.protect("/api/v1/kitchen/node-runs", r.handleNodeKitchenRuns,
+		takesQuery("GET", queryParam{Name: "org", Required: true}, queryParam{Name: "node"}))
 	r.protect("/api/v1/kitchen/node-runs/", r.handleNodeKitchenRunDetail,
 		sub("{id}", "GET", "DELETE"))
 
@@ -1143,19 +1204,24 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Git Kitchen endpoints (operator for triggers)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/kitchen/git/instances", r.handleGitKitchenInstances)
-	r.protect("/api/v1/kitchen/git/results", r.handleGitKitchenResults)
+	r.protect("/api/v1/kitchen/git/instances", r.handleGitKitchenInstances,
+		takesQuery("GET", queryParam{Name: "repo", Required: true}))
+	r.protect("/api/v1/kitchen/git/results", r.handleGitKitchenResults,
+		takesQuery("GET", queryParam{Name: "repo"}))
 	r.operatorOnly("/api/v1/kitchen/git/run", r.handleGitKitchenRun, methods("POST"),
 		takes("POST", gitKitchenRunRequest{}))
 	r.operatorOnly("/api/v1/kitchen/git/run-all", r.handleGitKitchenRunAll, methods("POST"),
 		takes("POST", gitKitchenRunAllRequest{}))
 	r.protect("/api/v1/kitchen/git/exclusions", r.handleKitchenExclusions, methods("GET", "POST"),
-		takes("POST", createKitchenExclusionRequest{}))
+		takes("POST", createKitchenExclusionRequest{}),
+		takesQuery("GET", queryParam{Name: "repo"}))
 	r.protect("/api/v1/kitchen/git/exclusions/", r.handleDeleteKitchenExclusion,
 		sub("{id}", "DELETE"))
 
 	// Kitchen queue endpoints
-	r.protect("/api/v1/kitchen/queue", r.handleKitchenQueueList)
+	r.protect("/api/v1/kitchen/queue", r.handleKitchenQueueList,
+		takesQuery("GET", queryParam{Name: "repo"}, queryParam{Name: "status"},
+			queryParam{Name: "type"}))
 	r.protect("/api/v1/kitchen/queue/stats", r.handleKitchenQueueStats)
 	r.protect("/api/v1/kitchen/queue/", r.handleKitchenQueueRouting,
 		sub("{id}"), sub("{id}/cancel", "POST"), sub("{id}/retry", "POST"))

@@ -49,6 +49,10 @@ func (r *Router) openAPIDocument() map[string]any {
 					op["parameters"] = append(
 						op["parameters"].([]any), perPageParameter())
 				}
+				for _, param := range addr.queries[method] {
+					op["parameters"] = append(
+						op["parameters"].([]any), queryParameter(param))
+				}
 				if body := describedInput(schemas, method, addr, method+" "+addr.path); body != nil {
 					op["requestBody"] = body
 				}
@@ -197,6 +201,7 @@ type address struct {
 	capped    map[string]bool
 	answers   map[string]Answer
 	forms     map[string][]formField
+	queries   map[string][]queryParam
 }
 
 // describableAddresses turns a recorded route into the addresses a caller can
@@ -213,13 +218,15 @@ func describableAddresses(rt Route) []address {
 	}
 	if !rt.IsSubtree() {
 		return []address{{path: rt.Pattern, methods: rt.Methods, bodies: rt.Bodies,
-			paginated: rt.Paginated, answers: rt.Answers, forms: rt.Forms}}
+			paginated: rt.Paginated, answers: rt.Answers, forms: rt.Forms,
+			queries: rt.Queries}}
 	}
 	out := make([]address, 0, len(rt.SubPaths))
 	for _, sp := range rt.SubPaths {
 		out = append(out, address{
 			path: rt.Pattern + sp.Suffix, methods: sp.Methods, bodies: sp.Bodies,
-			paginated: sp.Paginated, capped: sp.Capped, answers: sp.Answers})
+			paginated: sp.Paginated, capped: sp.Capped, answers: sp.Answers,
+			queries: sp.Queries})
 	}
 	return out
 }
@@ -264,6 +271,19 @@ func paginationParameters() []any {
 			},
 		},
 		perPageParameter(),
+	}
+}
+
+// queryParameter describes one filter.
+//
+// A string, always: everything arrives as text and the handler parses it, so
+// saying "integer" here would describe the parse rather than the wire. What
+// values it accepts is not claimed — nothing can derive that, and a guess in a
+// generated client refuses calls the service would have taken.
+func queryParameter(param queryParam) map[string]any {
+	return map[string]any{
+		"name": param.Name, "in": "query", "required": param.Required,
+		"schema": map[string]any{"type": "string"},
 	}
 }
 
