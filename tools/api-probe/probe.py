@@ -32,7 +32,7 @@ anything still unfilled is reported as unprobed rather than guessed at.
 Usage:
 
     CMM_API_TOKEN=<a token from your account page> \\
-        python3 tools/api-probe/probe.py https://127.0.0.1 out.json
+        python3 tools/api-probe/probe.py https://127.0.0.1
 
 The token is read from the environment on purpose. Do not pass it on the
 command line, where it lands in shell history.
@@ -50,7 +50,11 @@ ssl_ctx.check_hostname = False
 ssl_ctx.verify_mode = ssl.CERT_NONE
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "https://127.0.0.1"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "probe2-out.json"
+# Defaults inside the tool's own directory, which is ignored by git. A
+# capture written to the repository root is one `git add .` away from
+# being committed, and an object's keys in it can be data — a map keyed
+# by organisation or version carries customer names.
+OUT = sys.argv[2] if len(sys.argv) > 2 else "tools/api-probe/probe-out.json"
 TOKEN = os.environ.get("CMM_API_TOKEN", "").strip()
 if not TOKEN:
     sys.exit("CMM_API_TOKEN is not set")

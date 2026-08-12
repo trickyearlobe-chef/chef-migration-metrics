@@ -217,7 +217,10 @@ events.db
 events.db-shm
 events.db-wal
 
-# API probe output. Shapes only, no values — but it is a large generated
-# capture from whatever instance you pointed at, not source.
+# API probe output. Shapes only, no values — but an object's keys can be data,
+# and it is a generated capture from whatever instance you pointed at, not
+# source. Globbed rather than named: the tool takes an output path, and a
+# capture written to the repository root is one `git add .` from being
+# committed.
 tools/api-probe/*.json
-probe-out.json
+probe*.json
