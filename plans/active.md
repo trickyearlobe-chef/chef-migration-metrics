@@ -14,12 +14,9 @@ Agreed 2026-08-13: build the rest of `journeys/ownership-connection.md`. The com
 and measured; everything left is what the administrator can see. Order below is dependency, not
 preference. Detail and the measurements behind it: `plans/todo-ownership.md`.
 
-- **A. The password never comes back in a message.** Backend only, no dependencies, and the one
-  that fails dangerously rather than annoyingly. Every spelling, including escaped — that is the
-  case that gets missed. Their logs go to a Splunk many people read.
-- **B. Testing a connection is its own act,** separate from listing tables, reporting which of
-  the five things failed in the words of whatever refused. Depends on A, because the refusal is
-  the thing most likely to quote the password back.
+The backend is done: composing, redaction and the connection test are built and measured against
+running servers. What is left is everything an administrator can see, and it starts with storage.
+
 - **C. The connection is readable configuration; only the password is a secret.** Config store
   and credential shape. Everything on a screen depends on this.
 - **D. Endpoints** take a connection and a password, return the composed connection masked, and
