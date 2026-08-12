@@ -8,50 +8,51 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — the assistant-facing surface (chunk 3)
+## NOW — parameters, bodies and response shapes in the description (chunk 4)
 
-**Read first:** [asking my assistant why this is failing](../journeys/agent-access.md), then run
-`make journey`. One red is left in `internal/webapi/agent_access_journey_test.go`:
-`TheAssistantSurfaceIsBuiltIn`. The service hosts nothing an editor assistant can connect to, so
-using it would mean deploying a second thing beside it — which cannot happen inside the customer
-estate. It has to ship and upgrade with everything else.
+**Start here; nothing from the branch's earlier work is needed.** The browsable page is built and
+merged into the branch. What it exposes is that the description is thin: measured 2026-08-12 on
+249 operations, **81 carry path parameters** (derived from `{name}` segments, cannot rot),
+**0 carry a request body** though 106 are writes, **0 carry a query parameter**, and every single
+one declares a bare `200: "The answer."`. A generated client from this has no inputs.
 
-The description and the credential it would be built on are both there now, so this chunk is the
-protocol endpoint and nothing else.
+**The founding constraint.** The description is derived from what is served, never written beside
+it — a hand-maintained table is the trap that killed the 128 specifications. So the answer is
+reflection over real types, not a lookup map. `apiRoles` is the one exception and it survives only
+because a test probes the running service and fails on disagreement.
 
-**Two things it must not re-litigate.** The credential is the account's own, at the account's own
-level, and read-only unless its maker chose otherwise. How a caller got in is settled at sign-in
-and lives on the session — the surface reads it, never sets it.
+**Scope, in order:**
 
-**One rule that cost a near-miss, and applies to anything else being tightened:** check whether an
-ordinary user can see a control wired to an endpoint *before* hardening it, rather than reasoning
-from whether neighbouring endpoints look consistent. Reasoning from neighbours would have broken
-the Retry button on the git repo page, which viewers use to re-run a test that failed on DHCP or
-auth. Detail: `plans/todo-tech-debt.md`.
+1. **Lift the 22 anonymous `var body struct` declarations to named types**, then reflect them into
+   `requestBody`. They live in ownership (4), ownership identity (3), failure register (3), admin
+   users (3), ownership import (2), ownership aliases (2), credentials (2), git repos (1), auth
+   tokens (1), auth (1). Use `sg` — `var body struct { $$$ }` is a shape, not a regex — and
+   confirm call sites with LSP `findReferences`, because anonymous structs are invisible to text
+   search.
+2. **Query parameters from the shared machinery**, not per route: 24 routes call
+   `ParsePagination`, and there are 5 filter helpers. Describe those once and attach them where
+   the helper is used. The long tail is 69 direct `req.URL.Query()` reads — leave them until the
+   shared sets are done, and count what is left.
+3. **Response schemas** last, and the least mechanical: handlers write datastore types through
+   `WriteJSON` with nothing declaring which.
 
-**Still open, nobody has decided:** a feature switched off at runtime is still described, so an
-assistant asks for it and is told it does not exist. Detail: `plans/todo-documentation.md`.
+**Never pull node-ingest structs into this.** Checked: none of the 22 is in the ingest path. The
+Chef attribute data underneath ingest is genuinely flexible — 112 `map[string]any` /
+`json.RawMessage` sites — and a named type there turns a real-world shape change into a decode
+failure. A body is a candidate only if this service decides its shape.
 
-## QUEUED NEXT — the description as a page an operator can read
+**The lift pays three times**, which is why it is worth doing properly: the description, a usable
+generated client, and shape-drift detection —
+`TestJourney_TheShapeCannotChangeUnderACaller` in `internal/webapi/api_integration_journey_test.go`
+is skipped today because nothing records what an answer looked like at a release.
 
-Nothing renders it today: the document is served at `GET /api/v1/openapi.json` and there is no
-page and no renderer dependency. Owner's spec, 2026-08-12: **a side tab, visible to operators and
-admins only.** Bundled, not a CDN; lazy-loaded; supply-chain checked before anything is added.
+Renderer research, if the hand-rolled page is ever revisited: `plans/todo-documentation.md`.
 
-**Try-it-out stays off** — the page is served to a signed-in person, so a "try" button fires real
-calls as them, and the destructive ones are one click from a document people open to browse.
+## AFTER THAT — the assistant surface
 
-**Settled, and deliberately not a security boundary.** The page is reachable by any authenticated
-person, and so is the document at `GET /api/v1/openapi.json` — that stays as it is. Only the *tab*
-is limited to operators and admins, to keep it out of a viewer's way. A viewer who types the
-address still gets the page, and that is the intended behaviour, not a hole.
-
-Do not "fix" the mismatch by guarding the route or the document. This is the case the
-check-before-hardening rule exists for: the reasoning from neighbouring restricted tabs would be
-wrong here, and closing the document would stop an assistant holding a viewer's credential from
-working at all.
-
-Sized as a small chunk, and it does not block the surface above.
+The last red in the agent-access suite: `TheAssistantSurfaceIsBuiltIn`. The service hosts nothing
+an editor assistant can connect to, so using it would mean deploying a second thing beside it,
+which cannot happen inside the customer estate. Agreed to run on its own branch and thread.
 
 ## The top open question is not ownership — it is whether the blocking list is true
 
