@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -111,8 +110,7 @@ type createTokenRequest struct {
 // that will ever contain it.
 func (r *Router) createMyToken(w http.ResponseWriter, req *http.Request, username string) {
 	var body createTokenRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Could not read the request: "+err.Error())
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

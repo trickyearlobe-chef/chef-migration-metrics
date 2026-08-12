@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -56,8 +55,7 @@ func (r *Router) handleCreateKitchenExclusion(w http.ResponseWriter, req *http.R
 	}
 
 	var body createKitchenExclusionRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

@@ -225,8 +225,7 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 	}
 
 	var body recordVerdictRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -319,8 +318,7 @@ func (r *Router) handleReviseFailureEntry(w http.ResponseWriter, req *http.Reque
 	}
 
 	var body reviseFailureEntryRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -382,8 +380,12 @@ func (r *Router) handleResolveFailureEntry(w http.ResponseWriter, req *http.Requ
 	}
 
 	var body resolveFailureEntryRequest
-	// An empty body is legitimate: the note is optional.
-	_ = json.NewDecoder(req.Body).Decode(&body)
+	// An empty body is legitimate: the note is optional. Anything that is
+	// there is still held to the same standard — ignoring every error meant a
+	// misspelt note was resolved silently without one.
+	if !decodeOptionalJSONBody(w, req, &body) {
+		return
+	}
 
 	entry, err := r.db.ResolveFailureEntry(req.Context(), id, adminUsername(req), body.Note)
 	if errors.Is(err, datastore.ErrNotFound) {

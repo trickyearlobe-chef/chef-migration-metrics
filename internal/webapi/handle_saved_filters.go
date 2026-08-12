@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -97,8 +96,7 @@ func (r *Router) createSavedFilter(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body savedFilterCreateRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -138,8 +136,7 @@ func (r *Router) updateSavedFilter(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body savedFilterUpdateRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.Name == nil && body.Filters == nil && body.Shared == nil {

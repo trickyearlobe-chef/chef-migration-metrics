@@ -4,8 +4,10 @@
 package webapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -505,8 +507,20 @@ func decodeAdminConfigBody(w http.ResponseWriter, req *http.Request, target any)
 		WriteBadRequest(w, "Failed to read request body.")
 		return false
 	}
-	if err := yaml.Unmarshal(body, target); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	// Held to the same standard as every other body: a settings section that
+	// quietly dropped what it did not recognise is how a screen came to have a
+	// text box for a setting this service has never had. An administrator typed
+	// a path into it, saved, and was told it worked.
+	decoder := yaml.NewDecoder(bytes.NewReader(body))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(target); err != nil {
+		if errors.Is(err, io.EOF) {
+			// An empty body leaves the section as it was, which is what it has
+			// always done — the YAML decoder simply reports it as an error and
+			// the one this replaced did not.
+			return true
+		}
+		WriteBadRequest(w, requestBodyProblem(err))
 		return false
 	}
 	return true

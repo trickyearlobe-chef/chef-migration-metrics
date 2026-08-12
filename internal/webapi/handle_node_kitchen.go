@@ -5,7 +5,6 @@ package webapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,8 +22,7 @@ func (r *Router) handleNodeKitchenTrigger(w http.ResponseWriter, req *http.Reque
 	}
 
 	var body nodekitchen.RunRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

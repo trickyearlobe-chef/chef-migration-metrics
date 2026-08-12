@@ -190,7 +190,6 @@ export function AdminCopClassificationsSection() {
     setBusyCop(editCop);
     try {
       await setCopClassification(editCop, {
-        target_chef_version: target,
         classification: editValue,
         reason: editReason || undefined,
       });

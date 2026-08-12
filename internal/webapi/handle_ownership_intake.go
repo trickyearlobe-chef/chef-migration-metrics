@@ -855,8 +855,7 @@ type importMappingRequest struct {
 
 func decodeMappingBody(w http.ResponseWriter, req *http.Request) (mappingRequestBody, bool) {
 	var raw importMappingRequest
-	if err := json.NewDecoder(req.Body).Decode(&raw); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &raw) {
 		return mappingRequestBody{}, false
 	}
 	if strings.TrimSpace(raw.Name) == "" {

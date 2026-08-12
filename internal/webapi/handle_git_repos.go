@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -767,8 +766,7 @@ func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, 
 	}
 
 	var body excludeGitRepoRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

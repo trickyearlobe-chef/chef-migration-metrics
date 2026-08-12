@@ -384,11 +384,17 @@ func isBodyDecodeCall(call *ast.CallExpr) bool {
 		sel.Sel.Name == "Decode" && len(call.Args) == 1 && decodesTheRequestBody(sel.X) {
 		return true
 	}
+	// decodeJSONBody(w, req, &x) / decodeOptionalJSONBody(w, req, &x) — the
+	// ordinary way a body is read, refusing anything the service does not
+	// understand. See request_body.go.
+	//
 	// decodeAdminConfigBody(w, req, &x) — the settings sections, read by the
 	// YAML decoder so that a caller may send either YAML or JSON.
-	if fn, ok := call.Fun.(*ast.Ident); ok &&
-		fn.Name == "decodeAdminConfigBody" && len(call.Args) == 3 {
-		return true
+	if fn, ok := call.Fun.(*ast.Ident); ok && len(call.Args) == 3 {
+		switch fn.Name {
+		case "decodeJSONBody", "decodeOptionalJSONBody", "decodeAdminConfigBody":
+			return true
+		}
 	}
 	// json.Unmarshal(body, &x) / yaml.Unmarshal(body, &x), where body was read
 	// off the request. Only counted inside a handler that reads the request

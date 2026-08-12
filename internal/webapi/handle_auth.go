@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
@@ -32,8 +31,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 
 	// Parse request body.
 	var body loginRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.Username == "" || body.Password == "" {

@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -66,8 +65,7 @@ func (r *Router) handleExplain(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body explainRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

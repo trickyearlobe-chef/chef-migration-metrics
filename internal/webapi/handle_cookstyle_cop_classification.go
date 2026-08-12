@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
@@ -49,8 +48,7 @@ func (r *Router) putCookstyleCopClassification(w http.ResponseWriter, req *http.
 	}
 
 	var body classificationPutRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

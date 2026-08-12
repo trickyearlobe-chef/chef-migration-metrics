@@ -207,7 +207,16 @@ export function fetchServerConfig(): Promise<ServerConfig> {
 export function saveServerConfig(
   value: ServerConfig,
 ): Promise<PutConfigResponse<ServerConfig>> {
-  return apiMutateConfig<ServerConfig>(buildUrl("/admin/config/server"), value);
+  // The certificate chain and the ACME status are read-only things the GET
+  // attaches; the screen carries them in the same object it edits, so they came
+  // back on every save. The service now refuses a body carrying anything it
+  // does not read, so stripping them here is what keeps saving possible — and
+  // what finally makes the "never sent on save" in the types true.
+  const { tls_certificate_info: _chain, acme_status: _acme, ...settings } = value;
+  return apiMutateConfig<ServerConfig>(
+    buildUrl("/admin/config/server"),
+    settings,
+  );
 }
 
 export function fetchAuthConfig(): Promise<AuthConfig> {

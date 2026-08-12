@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -67,8 +66,7 @@ func (r *Router) listCustomCops(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) createCustomCop(w http.ResponseWriter, req *http.Request) {
 	var body datastore.CustomCopDefinition
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if err := validateCustomCop(body); err != nil {
@@ -118,8 +116,7 @@ func (r *Router) updateCustomCop(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body datastore.CustomCopDefinition
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	body.CopName = copName

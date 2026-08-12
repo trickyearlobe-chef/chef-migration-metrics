@@ -69,8 +69,7 @@ func (r *Router) handleCreateOwnerAlias(w http.ResponseWriter, req *http.Request
 	}
 
 	var body createOwnerAliasRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

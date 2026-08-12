@@ -338,8 +338,7 @@ func (r *Router) handleCreateOwner(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body createOwnerRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -542,8 +541,7 @@ func (r *Router) handleUpdateOwner(w http.ResponseWriter, req *http.Request, nam
 	}
 
 	var body updateOwnerRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -682,8 +680,7 @@ func (r *Router) handleCreateAssignments(w http.ResponseWriter, req *http.Reques
 	}
 
 	var body createAssignmentsRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -829,8 +826,7 @@ func (r *Router) handleOwnershipReassign(w http.ResponseWriter, req *http.Reques
 	}
 
 	var body reassignOwnershipRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

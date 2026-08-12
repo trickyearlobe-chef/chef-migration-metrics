@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -148,8 +147,7 @@ type createCredentialRequest struct {
 
 func (r *Router) handleCreateCredential(w http.ResponseWriter, req *http.Request) {
 	var body createCredentialRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -219,8 +217,7 @@ func (r *Router) handleUpdateCredential(w http.ResponseWriter, req *http.Request
 	}
 
 	var body rotateCredentialRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.Value == "" {

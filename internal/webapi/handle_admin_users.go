@@ -4,7 +4,6 @@
 package webapi
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -98,8 +97,7 @@ func (r *Router) handleAdminCreateUser(w http.ResponseWriter, req *http.Request)
 	}
 
 	var body createUserRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -211,8 +209,7 @@ func (r *Router) handleAdminUpdateUser(w http.ResponseWriter, req *http.Request)
 	}
 
 	var body updateUserRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -300,8 +297,7 @@ func (r *Router) handleAdminResetPassword(w http.ResponseWriter, req *http.Reque
 	}
 
 	var body resetPasswordRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.Password == "" {

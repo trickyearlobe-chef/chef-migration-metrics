@@ -41,8 +41,7 @@ func (r *Router) handleOwnershipMerge(w http.ResponseWriter, req *http.Request) 
 	}
 
 	var body mergeOwnersRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -154,8 +153,7 @@ func (r *Router) handleOwnershipDuplicatesDismiss(w http.ResponseWriter, req *ht
 	}
 
 	var body dismissDuplicateRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.OwnerA == "" || body.OwnerB == "" {
@@ -223,8 +221,7 @@ func (r *Router) handleOwnershipDuplicatesRestore(w http.ResponseWriter, req *ht
 	}
 
 	var body restoreDuplicateRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.OwnerA == "" || body.OwnerB == "" {
