@@ -35,6 +35,23 @@ const failureRegisterPrefix = "/api/v1/failure-register"
 // over. A week is what a standup compares against.
 const defaultRegisterWindowDays = 7
 
+// failureRegisterListResponse is what people have recorded as actually broken.
+//
+// Summary is null when the trend could not be computed — the list is still
+// worth having without it, so this answers rather than failing, and says which
+// of the two happened rather than sending an empty summary that reads as
+// "nothing is wrong".
+type failureRegisterListResponse struct {
+	Data       []datastore.FailureRegisterEntry  `json:"data"`
+	Pagination PaginationResponse                `json:"pagination"`
+	Summary    *datastore.FailureRegisterSummary `json:"summary,omitempty"`
+}
+
+// failureRegisterHistoryResponse is every verdict recorded against one subject.
+type failureRegisterHistoryResponse struct {
+	Data []datastore.FailureRegisterEntry `json:"data"`
+}
+
 func (r *Router) handleFailureRegister(w http.ResponseWriter, req *http.Request) {
 	rest := strings.TrimPrefix(req.URL.Path, failureRegisterPrefix)
 	rest = strings.Trim(rest, "/")
@@ -116,9 +133,9 @@ func (r *Router) handleListFailureRegister(w http.ResponseWriter, req *http.Requ
 		entries = []datastore.FailureRegisterEntry{}
 	}
 
-	body := map[string]any{
-		"data":       entries,
-		"pagination": NewPaginationResponse(pg, total),
+	body := failureRegisterListResponse{
+		Data:       entries,
+		Pagination: NewPaginationResponse(pg, total),
 	}
 
 	// Whether the list is getting too large. The size and the direction matter
@@ -135,7 +152,7 @@ func (r *Router) handleListFailureRegister(w http.ResponseWriter, req *http.Requ
 	if err != nil {
 		r.logf("WARN", "failure-register: summarising: %v", err)
 	} else {
-		body["summary"] = summary
+		body.Summary = &summary
 	}
 
 	WriteJSON(w, http.StatusOK, body)
@@ -159,7 +176,7 @@ func (r *Router) handleFailureRegisterHistory(w http.ResponseWriter, req *http.R
 	if entries == nil {
 		entries = []datastore.FailureRegisterEntry{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": entries})
+	WriteJSON(w, http.StatusOK, failureRegisterHistoryResponse{Data: entries})
 }
 
 func (r *Router) handleGetFailureEntry(w http.ResponseWriter, req *http.Request, id string) {

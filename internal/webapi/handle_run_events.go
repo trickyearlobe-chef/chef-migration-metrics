@@ -188,7 +188,7 @@ func (r *Router) handleFilterRunOrganisations(w http.ResponseWriter, req *http.R
 	if orgs == nil {
 		orgs = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": orgs})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: orgs})
 }
 
 // handleFilterRunChefVersions handles GET /api/v1/filters/run-chef-versions —
@@ -209,5 +209,5 @@ func (r *Router) handleFilterRunChefVersions(w http.ResponseWriter, req *http.Re
 	if versions == nil {
 		versions = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": versions})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: versions})
 }

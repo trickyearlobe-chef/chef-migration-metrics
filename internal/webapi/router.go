@@ -692,7 +692,8 @@ func (r *Router) registerRoutes() {
 	// Event ingest sink — INTENTIONALLY UNAUTHENTICATED (MVP tech debt). Passive
 	// receiver for Chef run telemetry; gated at runtime by ingest.enabled.
 	r.public("/api/v1/ingest", r.handleIngest, methods("POST"))
-	r.public("/api/v1/server/tls-status", r.handleServerTLSStatus)
+	r.public("/api/v1/server/tls-status", r.handleServerTLSStatus,
+		answers("GET", TLSStatus{}))
 
 	// -----------------------------------------------------------------
 	// WebSocket real-time events
@@ -713,12 +714,13 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Authentication endpoints (public — no session required for login)
 	// -----------------------------------------------------------------
-	r.public("/api/v1/auth/info", r.handleAuthInfo)
+	r.public("/api/v1/auth/info", r.handleAuthInfo,
+		answers("GET", authInfoResponse{}))
 	if r.localAuth != nil && r.sessions != nil {
 		r.public("/api/v1/auth/login", r.handleLogin, methods("POST"),
 			takes("POST", loginRequest{}))
 		r.public("/api/v1/auth/logout", r.handleLogout, methods("POST"))
-		r.protect("/api/v1/auth/me", r.handleMe)
+		r.protect("/api/v1/auth/me", r.handleMe, answers("GET", meResponse{}))
 	} else {
 		r.public("/api/v1/auth/login", r.handleNotImplemented, methods("POST"),
 			takes("POST", loginRequest{}))
@@ -866,7 +868,8 @@ func (r *Router) registerRoutes() {
 		answersPage("GET", datastore.ConvergeRunListItem{}))
 
 	// Viewer-readable UI feature flags (so the frontend can hide gated surfaces).
-	r.protect("/api/v1/features", r.handleFeatures)
+	r.protect("/api/v1/features", r.handleFeatures,
+		answers("GET", featuresResponse{}))
 
 	// -----------------------------------------------------------------
 	// Remediation endpoints (viewer)
@@ -909,26 +912,38 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Filter option endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/filters/environments", r.handleFilterEnvironments)
-	r.protect("/api/v1/filters/roles", r.handleFilterRoles)
-	r.protect("/api/v1/filters/tags", r.handleFilterTags)
-	r.protect("/api/v1/filters/policy-names", r.handleFilterPolicyNames)
-	r.protect("/api/v1/filters/policy-groups", r.handleFilterPolicyGroups)
-	r.protect("/api/v1/filters/platforms", r.handleFilterPlatforms)
-	r.protect("/api/v1/filters/target-chef-versions", r.handleFilterTargetChefVersions)
-	r.protect("/api/v1/filters/complexity-labels", r.handleFilterComplexityLabels)
+	r.protect("/api/v1/filters/environments", r.handleFilterEnvironments,
+		answers("GET", filterValuesResponse{}))
+	r.protect("/api/v1/filters/roles", r.handleFilterRoles,
+		answers("GET", filterValuesResponse{}))
+	r.protect("/api/v1/filters/tags", r.handleFilterTags,
+		answers("GET", filterValuesResponse{}))
+	r.protect("/api/v1/filters/policy-names", r.handleFilterPolicyNames,
+		answers("GET", filterValuesResponse{}))
+	r.protect("/api/v1/filters/policy-groups", r.handleFilterPolicyGroups,
+		answers("GET", filterValuesResponse{}))
+	r.protect("/api/v1/filters/platforms", r.handleFilterPlatforms,
+		answers("GET", platformFilterResponse{}))
+	r.protect("/api/v1/filters/target-chef-versions", r.handleFilterTargetChefVersions,
+		answers("GET", filterValuesResponse{}))
+	r.protect("/api/v1/filters/complexity-labels", r.handleFilterComplexityLabels,
+		answers("GET", filterValuesResponse{}))
 	// Run events filter options — sourced from converge_runs, NOT the
 	// organisations table (so ingest-only DMZ orgs are selectable).
-	r.protect("/api/v1/filters/run-organisations", r.handleFilterRunOrganisations)
-	r.protect("/api/v1/filters/run-chef-versions", r.handleFilterRunChefVersions)
+	r.protect("/api/v1/filters/run-organisations", r.handleFilterRunOrganisations,
+		answers("GET", filterValuesResponse{}))
+	r.protect("/api/v1/filters/run-chef-versions", r.handleFilterRunChefVersions,
+		answers("GET", filterValuesResponse{}))
 
 	// -----------------------------------------------------------------
 	// Log endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/logs", r.handleLogs, paginated())
-	r.protect("/api/v1/logs/collection-runs", r.handleCollectionRuns, paginated())
+	r.protect("/api/v1/logs", r.handleLogs, paginated(),
+		answersPage("GET", datastore.LogEntry{}))
+	r.protect("/api/v1/logs/collection-runs", r.handleCollectionRuns, paginated(),
+		answersPage("GET", datastore.CollectionRunWithOrg{}))
 	r.protect("/api/v1/logs/", r.handleLogDetail,
-		sub("{id}"))
+		sub("{id}"), subAnswers("{id}", "GET", datastore.LogEntry{}))
 
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)
@@ -988,12 +1003,16 @@ func (r *Router) registerRoutes() {
 	// works, which outranks CookStyle and Test Kitchen. Reads are viewer;
 	// recording, revising and resolving need operator or admin.
 	r.protect("/api/v1/failure-register", r.handleFailureRegister, methods("GET", "POST"),
-		takes("POST", recordVerdictRequest{}), paginated())
+		takes("POST", recordVerdictRequest{}), paginated(),
+		answers("GET", failureRegisterListResponse{}))
 	r.protect("/api/v1/failure-register/", r.handleFailureRegister,
 		sub("{id}", "GET", "PATCH"), sub("{id}/resolve", "POST"),
 		sub("subject/{subject_type}/{subject_name}"),
 		subTakes("{id}", "PATCH", reviseFailureEntryRequest{}),
-		subTakes("{id}/resolve", "POST", resolveFailureEntryRequest{}))
+		subTakes("{id}/resolve", "POST", resolveFailureEntryRequest{}),
+		subAnswers("{id}", "GET", datastore.FailureRegisterEntry{}),
+		subAnswers("subject/{subject_type}/{subject_name}", "GET",
+			failureRegisterHistoryResponse{}))
 
 	// -----------------------------------------------------------------
 	// Admin endpoints (admin role required)
@@ -1122,7 +1141,8 @@ func (r *Router) registerRoutes() {
 	// mutations are owner-only, enforced in the handler.
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/saved-filters", r.handleSavedFilters, methods("GET", "POST"),
-		takes("POST", savedFilterCreateRequest{}))
+		takes("POST", savedFilterCreateRequest{}),
+		answers("GET", []datastore.SavedFilter{}))
 	r.protect("/api/v1/saved-filters/", r.handleSavedFilter,
 		sub("{id}", "PATCH", "DELETE"),
 		subTakes("{id}", "PATCH", savedFilterUpdateRequest{}))
