@@ -8,7 +8,6 @@ import type {
   AuditLogResponse,
   OwnershipLookupResponse,
   ReassignResponse,
-  ImportResponse,
   CookbookCommittersResponse,
   CommitterAssignResponse,
   IntakeFieldMap,
@@ -187,19 +186,6 @@ export function fetchAuditLog(
       filters as Record<string, string | number | boolean | undefined>,
     ),
   );
-}
-
-export async function importOwnership(
-  file: File,
-  format: "csv" | "json",
-): Promise<ImportResponse> {
-  const formData = new FormData();
-  formData.append("format", format);
-  formData.append("file", file);
-  return apiFetch<ImportResponse>(buildUrl("/ownership/import"), {
-    method: "POST",
-    body: formData,
-  });
 }
 
 export function fetchCookbookCommitters(

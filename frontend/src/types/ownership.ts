@@ -126,17 +126,6 @@ export interface ReassignResponse {
   source_owner_deleted: boolean;
 }
 
-export interface ImportResponse {
-  imported: number;
-  skipped: number;
-  errors: ImportError[];
-}
-
-export interface ImportError {
-  line: number;
-  error: string;
-}
-
 export type OwnerListResponse = PaginatedResponse<Owner>;
 export type AssignmentListResponse = PaginatedResponse<OwnershipAssignment>;
 export type AuditLogResponse = PaginatedResponse<OwnershipAuditEntry>;

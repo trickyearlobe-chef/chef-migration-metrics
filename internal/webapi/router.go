@@ -1057,10 +1057,7 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints, paginated(),
 		answersPage("GET", datastore.OwnershipAuditEntry{}))
-	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints, methods("POST"),
-		takesForm("POST", formField{Name: "format"}, formField{Name: "file", File: true}))
-	// Discovery-driven intake. Registered as exact patterns beside the
-	// fixed-header route above, which stays in service unchanged.
+	// Discovery-driven intake: the one way ownership comes in from a source.
 	// Every case in handleOwnershipIntake's dispatch switch needs an entry
 	// here; TestOwnershipIntakeDispatchCasesAreRouted holds the two in step.
 	// The rows an import could not use, as a worklist rather than only an export.

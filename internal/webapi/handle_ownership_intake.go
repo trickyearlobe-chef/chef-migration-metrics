@@ -25,8 +25,10 @@ import (
 // ---------------------------------------------------------------------------
 // Discovery-driven ownership intake — /api/v1/ownership/import/*
 //
-// The fixed-header import at /api/v1/ownership/import is a separate,
-// unchanged handler. See journeys/ownership-intake.md.
+// The one way ownership comes in from a source. A second, fixed-header import
+// used to sit at /api/v1/ownership/import: it required the file to already be
+// in CMM's shape, which no source has ever supplied, and it admitted operators
+// where this admits only administrators. See journeys/ownership-intake.md.
 // ---------------------------------------------------------------------------
 
 // intakeMaxUploadBytes is the in-memory threshold for a multipart upload, NOT

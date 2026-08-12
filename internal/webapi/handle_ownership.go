@@ -1033,8 +1033,6 @@ func (r *Router) handleOwnershipEndpoints(w http.ResponseWriter, req *http.Reque
 		r.handleOwnershipLookup(w, req)
 	case "/api/v1/ownership/audit-log":
 		r.handleOwnershipAuditLog(w, req)
-	case "/api/v1/ownership/import":
-		r.handleOwnershipImport(w, req)
 	default:
 		WriteNotFound(w, fmt.Sprintf("Unknown ownership endpoint: %s", req.URL.Path))
 	}

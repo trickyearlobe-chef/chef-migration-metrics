@@ -266,30 +266,20 @@ describe("OwnershipImportPage tabs", () => {
     vi.mocked(api.profileImportSource).mockResolvedValue(profile);
   });
 
-  // The fixed-header flow is the fast lane for files already in CMM's format.
-  // Adding the new one must not move it.
-  it("shows the fixed-format flow by default", () => {
+  // There is one way in, and it is the one that reads the source's own
+  // columns. The fixed-format tab it replaced took a file already in CMM's
+  // shape — which no export has ever arrived in.
+  it("opens on the mapping flow, and offers no fixed-format tab", () => {
     render(<OwnershipImportPage />, { wrapper: Wrapper });
-
-    expect(screen.getByText("Import Format")).toBeInTheDocument();
-    expect(
-      screen.getByText("owner,entity_type,entity_key,organisation,notes"),
-    ).toBeInTheDocument();
-  });
-
-  it("switches to the mapping flow", async () => {
-    const user = userEvent.setup();
-    render(<OwnershipImportPage />, { wrapper: Wrapper });
-
-    await user.click(screen.getByRole("button", { name: "File or database" }));
 
     expect(
       screen.getByText("1. Choose where the owners come from"),
     ).toBeInTheDocument();
     expect(screen.queryByText("Import Format")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Fixed format" })).toBeNull();
   });
 
-  it("keeps the role gate on both flows", () => {
+  it("keeps the role gate on the flow", () => {
     mockUseAuth.mockReturnValue({ user: { role: "viewer", username: "v" } });
     render(<OwnershipImportPage />, { wrapper: Wrapper });
 

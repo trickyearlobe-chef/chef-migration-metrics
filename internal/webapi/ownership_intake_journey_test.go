@@ -281,12 +281,23 @@ func TestJourney_CanRunItAgainOnASchedule(t *testing.T) {
 }
 
 // "Importing is an administrator's act, not an operator's."
+//
+// Every door, not one of them. This asserted the commit endpoint alone and was
+// green while a second import route accepted the same operator — the rule read
+// as proven because the test that proved it only knew about one way in.
 func TestJourney_ImportingIsAnAdministratorsAct(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import/commit", nil)
-	journeyRouter().ServeHTTP(w, withOperatorSession(req))
-	if w.Code != http.StatusForbidden {
-		t.Errorf("an operator can commit an import (answered %d)", w.Code)
+	for _, path := range []string{
+		"/api/v1/ownership/import",
+		"/api/v1/ownership/import/commit",
+	} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		journeyRouter().ServeHTTP(w, withOperatorSession(req))
+		// Gone is as good as forbidden: the requirement is that an operator
+		// cannot import, not that every route exists to refuse them.
+		if w.Code != http.StatusForbidden && w.Code != http.StatusNotFound {
+			t.Errorf("an operator can import ownership through %s (answered %d)", path, w.Code)
+		}
 	}
 }
 

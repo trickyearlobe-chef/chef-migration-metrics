@@ -227,7 +227,6 @@ var apiDocs = map[string]string{
 	"POST /api/v1/ownership/duplicates/dismiss":                          "Say two people who look alike are genuinely different.",
 	"POST /api/v1/ownership/duplicates/rescan":                           "Look for duplicated people again. Walks the whole catalogue, so it runs in the background.",
 	"POST /api/v1/ownership/duplicates/restore":                          "Undo that judgement, so a pair is offered again.",
-	"POST /api/v1/ownership/import":                                      "Load who owns what from a file.",
 	"POST /api/v1/ownership/import/clear":                                "Remove what previous imports brought in. Hand-made owners and assignments survive.",
 	"POST /api/v1/ownership/import/commit":                               "Run an import for real.",
 	"POST /api/v1/ownership/import/mappings":                             "Save an import so it can be run again or scheduled.",
@@ -315,7 +314,6 @@ var apiRoles = map[string]RouteRole{
 	"POST /api/v1/ownership/duplicates/dismiss":            RoleAdmin,
 	"POST /api/v1/ownership/duplicates/rescan":             RoleAdmin,
 	"POST /api/v1/ownership/duplicates/restore":            RoleAdmin,
-	"POST /api/v1/ownership/import":                        RoleOperator,
 	"POST /api/v1/ownership/import/clear":                  RoleAdmin,
 	"POST /api/v1/ownership/import/commit":                 RoleAdmin,
 	"POST /api/v1/ownership/import/mappings":               RoleAdmin,
@@ -393,7 +391,6 @@ var bodylessWrites = map[string]bool{
 // why this list is what says an address here must name its fields at all.
 var uploadWrites = map[string]bool{
 	"POST /api/v1/ownership/aliases/import": true,
-	"POST /api/v1/ownership/import":         true,
 	"POST /api/v1/ownership/import/commit":  true,
 	"POST /api/v1/ownership/import/preview": true,
 	"POST /api/v1/ownership/import/profile": true,
@@ -437,7 +434,6 @@ var unpaginatedDespiteReaching = map[string]bool{
 	"/api/v1/ownership/import/commit":     true,
 	"/api/v1/ownership/import/clear":      true,
 	// handleOwnershipEndpoints, likewise.
-	"/api/v1/ownership/import":   true,
 	"/api/v1/ownership/lookup":   true,
 	"/api/v1/ownership/reassign": true,
 	// Subtrees whose paging address is a sibling.
