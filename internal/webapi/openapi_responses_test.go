@@ -176,7 +176,7 @@ func TestResponses_NoFieldIsSentThatTheDescriptionDoesNotMention(t *testing.T) {
 // finished and the number not struck down, which is how a ratchet stops
 // ratcheting.
 func TestResponses_TheUndescribedAnswersOnlyGetFewer(t *testing.T) {
-	const undescribed = 160
+	const undescribed = 156
 
 	count := 0
 	doc := testRouterForDescription(t).openAPIDocument()

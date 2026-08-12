@@ -766,6 +766,64 @@
     },
     "type": "object"
   },
+  "GET /api/v1/admin/credentials": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "created_by": {
+              "type": "string"
+            },
+            "credential_type": {
+              "type": "string"
+            },
+            "last_rotated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "updated_by": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
   "GET /api/v1/auth/info": {
     "properties": {
       "local_enabled": {
@@ -4240,6 +4298,86 @@
     },
     "type": "object"
   },
+  "GET /api/v1/owners": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "assignment_counts": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "contact_channel": {
+              "type": "string"
+            },
+            "contact_email": {
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "owner_type": {
+              "type": "string"
+            },
+            "readiness": {
+              "properties": {
+                "blocked": {
+                  "type": "integer"
+                },
+                "ready": {
+                  "type": "integer"
+                },
+                "stale": {
+                  "type": "integer"
+                },
+                "target_chef_version": {
+                  "type": "string"
+                },
+                "total_nodes": {
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
   "GET /api/v1/owners/{name}/assignments": {
     "properties": {
       "data": {
@@ -4357,6 +4495,128 @@
           }
         },
         "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/remediation/priority": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "affected_node_count": {
+              "type": "integer"
+            },
+            "affected_role_count": {
+              "type": "integer"
+            },
+            "auto_correctable_count": {
+              "type": "integer"
+            },
+            "complexity_label": {
+              "type": "string"
+            },
+            "complexity_score": {
+              "type": "integer"
+            },
+            "cookbook_name": {
+              "type": "string"
+            },
+            "cookbook_version": {
+              "type": "string"
+            },
+            "deprecation_count": {
+              "type": "integer"
+            },
+            "error_count": {
+              "type": "integer"
+            },
+            "manual_fix_count": {
+              "type": "integer"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "priority_score": {
+              "type": "integer"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "version_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "target_chef_version": {
+        "type": "string"
+      },
+      "total_auto_correctable": {
+        "type": "integer"
+      },
+      "total_cookbooks": {
+        "type": "integer"
+      },
+      "total_deprecations": {
+        "type": "integer"
+      },
+      "total_errors": {
+        "type": "integer"
+      },
+      "total_manual_fix": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/remediation/summary": {
+    "properties": {
+      "blocked_nodes_by_complexity": {
+        "type": "integer"
+      },
+      "blocked_nodes_by_readiness": {
+        "type": "integer"
+      },
+      "manual_fixes": {
+        "type": "integer"
+      },
+      "quick_wins": {
+        "type": "integer"
+      },
+      "target_chef_version": {
+        "type": "string"
+      },
+      "total_auto_correctable": {
+        "type": "integer"
+      },
+      "total_cookbooks_evaluated": {
+        "type": "integer"
+      },
+      "total_manual_fix": {
+        "type": "integer"
+      },
+      "total_needing_remediation": {
+        "type": "integer"
       }
     },
     "type": "object"

@@ -926,10 +926,12 @@ func (r *Router) registerRoutes() {
 	// Remediation endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/remediation/priority", r.handleRemediationPriority, paginated(),
+		answers("GET", remediationPriorityResponse{}),
 		takesQuery("GET", queryParam{Name: "complexity_label"}, queryParam{Name: "target_chef_version"},
 			queryParam{Name: "organisation"}, queryParam{Name: "owner"},
 			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary,
+		answers("GET", remediationSummaryResponse{}),
 		takesQuery("GET", queryParam{Name: "complexity_label"}, queryParam{Name: "target_chef_version"},
 			queryParam{Name: "organisation"}, queryParam{Name: "owner"},
 			queryParam{Name: "unowned"}))
@@ -1033,7 +1035,8 @@ func (r *Router) registerRoutes() {
 	// Ownership endpoints (viewer for reads, operator/admin for writes)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/owners", r.handleOwners, methods("GET", "POST"),
-		takes("POST", createOwnerRequest{}), paginated())
+		takes("POST", createOwnerRequest{}), paginated(),
+		answersPage("GET", ownerResp{}))
 	r.protect("/api/v1/owners/", r.handleOwners,
 		sub("{name}", "GET", "PUT", "DELETE"), sub("{name}/assignments", "GET", "POST"),
 		sub("{name}/assignments/{id}", "DELETE"),
@@ -1127,7 +1130,8 @@ func (r *Router) registerRoutes() {
 	// Admin endpoints (admin role required)
 	// -----------------------------------------------------------------
 	r.adminOnly("/api/v1/admin/credentials", r.handleCredentials, methods("GET", "POST"),
-		takes("POST", createCredentialRequest{}), paginated())
+		takes("POST", createCredentialRequest{}), paginated(),
+		answersPage("GET", credentialResponse{}))
 	r.adminOnly("/api/v1/admin/credentials/", r.handleCredentials,
 		sub("{name}", "PUT", "DELETE"), sub("{name}/test", "POST"),
 		subTakes("{name}", "PUT", rotateCredentialRequest{}))

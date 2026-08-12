@@ -216,6 +216,32 @@ func requireAdminRole(w http.ResponseWriter, req *http.Request) bool {
 // GET/POST /api/v1/owners
 // ---------------------------------------------------------------------------
 
+// ownerReadinessSummary is how ready one owner's machines are. Named apart
+// from the dashboard's summary of the same idea because the two carry
+// different fields, and one type serving both would describe neither.
+type ownerReadinessSummary struct {
+	TargetChefVersion string `json:"target_chef_version"`
+	TotalNodes        int    `json:"total_nodes"`
+	Ready             int    `json:"ready"`
+	Blocked           int    `json:"blocked"`
+	Stale             int    `json:"stale"`
+}
+
+// ownerResp is one owner in the list, with how much they own and — where a
+// target version was asked about — how much of it is ready.
+type ownerResp struct {
+	Name             string                 `json:"name"`
+	DisplayName      string                 `json:"display_name,omitempty"`
+	ContactEmail     string                 `json:"contact_email,omitempty"`
+	ContactChannel   string                 `json:"contact_channel,omitempty"`
+	OwnerType        string                 `json:"owner_type"`
+	Metadata         json.RawMessage        `json:"metadata,omitempty"`
+	AssignmentCounts map[string]int         `json:"assignment_counts"`
+	Readiness        *ownerReadinessSummary `json:"readiness,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+}
+
 func (r *Router) handleOwners(w http.ResponseWriter, req *http.Request) {
 	// Exact match for collection endpoint.
 	if req.URL.Path != "/api/v1/owners" {
@@ -260,27 +286,6 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	type readinessSummary struct {
-		TargetChefVersion string `json:"target_chef_version"`
-		TotalNodes        int    `json:"total_nodes"`
-		Ready             int    `json:"ready"`
-		Blocked           int    `json:"blocked"`
-		Stale             int    `json:"stale"`
-	}
-
-	type ownerResp struct {
-		Name             string            `json:"name"`
-		DisplayName      string            `json:"display_name,omitempty"`
-		ContactEmail     string            `json:"contact_email,omitempty"`
-		ContactChannel   string            `json:"contact_channel,omitempty"`
-		OwnerType        string            `json:"owner_type"`
-		Metadata         json.RawMessage   `json:"metadata,omitempty"`
-		AssignmentCounts map[string]int    `json:"assignment_counts"`
-		Readiness        *readinessSummary `json:"readiness,omitempty"`
-		CreatedAt        time.Time         `json:"created_at"`
-		UpdatedAt        time.Time         `json:"updated_at"`
-	}
-
 	data := make([]ownerResp, 0, len(owners))
 	for _, o := range owners {
 		resp := ownerResp{
@@ -302,7 +307,7 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if targetVersion != "" && o.TotalNodes > 0 {
-			resp.Readiness = &readinessSummary{
+			resp.Readiness = &ownerReadinessSummary{
 				TargetChefVersion: targetVersion,
 				TotalNodes:        o.TotalNodes,
 				Ready:             o.ReadyNodes,
