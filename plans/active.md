@@ -42,6 +42,18 @@ built and tested, see `internal/webapi/credential_scope_test.go`.
   records how an entry got in.
 - Streamable HTTP against SSE. The client entry assumes the former.
 
+**Breaking the API to fix one of these is allowed.** Nobody holds our description yet, so there
+is no external contract to break, and the owner has said so. The gate is the interface: its tests
+must stay green.
+
+**But "the UI tests are green" is not evidence that the UI still works.** Measured: 31 of the 45
+page test files mock the API module outright, and nothing anywhere drives a real request body
+into a real handler. So a change that makes handlers stricter about what they accept cannot be
+cleared by that suite — it would pass while the running application broke. What would be
+evidence is comparing what the interface actually sends against the types the handlers decode
+into, which is a piece of work in its own right and the first step of the unknown-field fix
+rather than an afterthought to it.
+
 **A red against an API this surface uses is fixed on the way past, not noted.** Exposing a call
 to an assistant is relying on it, and relying on something with a known defect against it while
 leaving the defect is how the defect becomes permanent. The reds most likely to be in scope, all
