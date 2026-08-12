@@ -10,41 +10,67 @@ rather than remembered, so where they and this file disagree, the reds are right
 
 ## NOW — parameters, bodies and response shapes in the description (chunk 4)
 
-**Start here; nothing from the branch's earlier work is needed.** The browsable page is built and
-merged into the branch. What it exposes is that the description is thin: measured 2026-08-12 on
-249 operations, **81 carry path parameters** (derived from `{name}` segments, cannot rot),
-**0 carry a request body** though 106 are writes, **0 carry a query parameter**, and every single
-one declares a bare `200: "The answer."`. A generated client from this has no inputs.
+**Request bodies and query parameters are done. Response schemas are what is left.**
+Measured on the served document: 245 operations, 81 with path parameters, **61 of the 86
+POST/PUT/PATCH writes carry a request body** (60 named types under `components/schemas`), and
+**23 reads describe their query parameters** — 21 taking `page`+`per_page`, 2 taking `per_page`
+alone. The remaining 25 writes read nothing from the body and say so. The `/api-docs` panel shows
+body fields, query parameters with their bounds, and a curl built from them. Every operation still
+declares a bare `200: "The answer."`.
 
 **The founding constraint.** The description is derived from what is served, never written beside
 it — a hand-maintained table is the trap that killed the 128 specifications. So the answer is
 reflection over real types, not a lookup map. `apiRoles` is the one exception and it survives only
 because a test probes the running service and fails on disagreement.
 
-**Scope, in order:**
+**Reuse the body machinery rather than reinventing it.** `takes()` / `subTakes()` name a type at
+the registration site next to `methods()` — one token, no field table — and `openapi_schema.go`
+reflects the shape off it. Tests in `openapi_bodies_test.go` read the handlers and hold the
+described and decoded sets in step both ways, so an undeclared body is a red build.
 
-1. **Lift the 22 anonymous `var body struct` declarations to named types**, then reflect them into
-   `requestBody`. They live in ownership (4), ownership identity (3), failure register (3), admin
-   users (3), ownership import (2), ownership aliases (2), credentials (2), git repos (1), auth
-   tokens (1), auth (1). Use `sg` — `var body struct { $$$ }` is a shape, not a regex — and
-   confirm call sites with LSP `findReferences`, because anonymous structs are invisible to text
-   search.
-2. **Query parameters from the shared machinery**, not per route: 24 routes call
-   `ParsePagination`, and there are 5 filter helpers. Describe those once and attach them where
-   the helper is used. The long tail is 69 direct `req.URL.Query()` reads — leave them until the
-   shared sets are done, and count what is left.
-3. **Response schemas** last, and the least mechanical: handlers write datastore types through
-   `WriteJSON` with nothing declaring which.
+**Carry forward:**
 
-**Never pull node-ingest structs into this.** Checked: none of the 22 is in the ingest path. The
-Chef attribute data underneath ingest is genuinely flexible — 112 `map[string]any` /
-`json.RawMessage` sites — and a named type there turns a real-world shape change into a decode
-failure. A body is a candidate only if this service decides its shape.
+- **Requiredness is not derivable and is deliberately not claimed** — handlers enforce it by hand,
+  which reflection cannot see, so the schemas stay silent rather than guess.
+- **Three decode idioms exist, not one**: JSON into a named type; `decodeAdminConfigBody` for the
+  16 settings sections (read as YAML — the **yaml tag** is the wire name); `io.ReadAll` +
+  `Unmarshal`. Any derivation over handlers must know all three or it silently covers two thirds.
 
-**The lift pays three times**, which is why it is worth doing properly: the description, a usable
-generated client, and shape-drift detection —
-`TestJourney_TheShapeCannotChangeUnderACaller` in `internal/webapi/api_integration_journey_test.go`
-is skipped today because nothing records what an answer looked like at a release.
+**Remaining scope, in order:**
+
+1. **Response schemas** — the last and least mechanical: handlers write datastore types through
+   `WriteJSON` with nothing declaring which. **Do not repeat the pagination mistake of deriving
+   from the handler**; the unit is the (method, address), and a live probe recording of what each
+   address actually answered is available (see below).
+2. **The long tail of query parameters.** Pagination is described; filters are not. 69 direct
+   `req.URL.Query()` reads remain, commonest keys `q` (7), `repo` (3), `entity_type` (3).
+3. **Multipart form fields.** Six addresses take a form, not JSON (`uploadWrites`). Described as
+   uploads, but the field names are `req.FormValue` string keys, so nothing reflects them.
+
+**How pagination was settled, because the same method applies to what is left.** The plan's idea —
+describe `ParsePagination` once, attach it where the helper is used — does not work. Three
+derivations were tried and all over-report: reachability from the registered handler gives 36
+patterns against 22; restricting to non-subtree routes still over-reports by seven, because
+`handleOwnershipIntake` and `handleOwnershipEndpoints` are each registered at several exact
+patterns and dispatch on the path inside; and looking for a `pagination` object in the answer
+misses one address that pages without any metadata. So it is declared per address with
+`paginated()` / `cappedNotPaged()`, **measured against a running instance**, and held by two
+static checks — nothing may claim pagination its handler cannot reach, and no handler that pages
+may go unclaimed.
+
+**A read-only probe of a running instance is the tool that settled it.** It walks every GET in the
+served description, fills path parameters from the nearest ancestor collection, and tests
+behaviour rather than guessing — asking twice, once with `per_page=1`. It records field names and
+types only, never values, so its output carries no data. That recording is also what step 3 and
+`TestJourney_TheShapeCannotChangeUnderACaller` need, and it does not exist in the repo yet —
+deciding where it lives is part of step 3.
+
+**Never pull node-ingest structs into this.** `POST /api/v1/ingest` sits in `undescribedBodies`
+with its reason served alongside it, so a reader sees why rather than assuming it was forgotten.
+
+`TestJourney_TheShapeCannotChangeUnderACaller` is **still skipped**: named types unblock it, but it
+is about *responses* and nothing yet records what an answer looked like at a release — it needs
+step 3.
 
 Renderer research, if the hand-rolled page is ever revisited: `plans/todo-documentation.md`.
 

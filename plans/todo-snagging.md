@@ -11,6 +11,25 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
+- **Two run-history addresses accept `page` and silently ignore it.** Found 2026-08-12 while
+  describing query parameters, by probing a running instance rather than by a test.
+
+  `GET /api/v1/nodes/runs/{organisation}/{node}` and
+  `GET /api/v1/run-events/nodes/{organisation}/{node}` both call `ParsePagination` and pass only
+  `params.Limit()` to `ListConvergeRunsForNode`, whose signature takes a limit and no offset
+  (`internal/datastore/converge_runs.go:143`). So `per_page` works, `page` does nothing, and
+  asking for page 2 returns page 1 again. Neither returns any pagination metadata, so a caller
+  cannot tell from an answer that it was bounded at all.
+
+  Worse than an error: a client walking pages reads the same rows repeatedly and the far end
+  sees duplicates, not a failure. Described honestly for now — those two declare `per_page`
+  alone, via `cappedNotPaged()` — so nothing tells a caller to walk pages that repeat.
+
+  **Fix:** give `ListConvergeRunsForNode` an offset, have both handlers pass it, and switch the
+  two declarations to `paginated()`. `cappedNotPaged` then has no users and should go with them.
+  Not reproducible on the dev database, which holds no converge runs — needs rows, or a store
+  test asserting the offset reaches the query.
+
 - **Viewers can read the logs, from the interface and from the API.** Reported by the owner
   2026-08-12. Not caused by API credentials — a credential carries its account's level, so the
   level itself is wrong.
