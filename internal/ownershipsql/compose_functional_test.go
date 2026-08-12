@@ -402,3 +402,59 @@ func portOf(u *url.URL) string {
 	}
 	return "5432"
 }
+
+// A real refusal from a real server, checked for the password in every spelling.
+//
+// Today's drivers happen not to quote the credential back in a login failure,
+// but that is a property of this version of them and not a promise. This fails
+// the day one starts, which is the only warning anybody would get before it was
+// in a support bundle.
+func TestFunctional_MSSQL_ARealRefusalCarriesNoPassword(t *testing.T) {
+	password := nastyPassword(t)
+	visible := visibleConnection(t, "CMM_TEST_MSSQL_VISIBLE_URL")
+
+	// Wrong on purpose, but still awkward enough that its escaped spellings
+	// differ from what was typed — which is the case that gets missed.
+	wrong := password + "-definitely-wrong"
+
+	_, err := ListTables(context.Background(), Config{
+		Driver:     DriverSQLServer,
+		Connection: visible,
+		Password:   wrong,
+	})
+	if err == nil {
+		t.Fatal("the wrong password connected, so there is no refusal to inspect")
+	}
+	for spelling, form := range spellingsOf(wrong) {
+		if strings.TrimSpace(form) == "" {
+			continue
+		}
+		if strings.Contains(err.Error(), form) {
+			t.Errorf("the %s spelling of the password came back in a refusal: %v", spelling, err)
+		}
+	}
+}
+
+// The same for a connection the driver refuses before it dials anything, which
+// is a different code path and the one that quotes the string it was handed.
+func TestFunctional_MSSQL_ARefusedConnectionStringCarriesNoPassword(t *testing.T) {
+	password := nastyPassword(t)
+
+	// A URL the driver will not parse, with the password already in it.
+	_, err := ListTables(context.Background(), Config{
+		Driver:     DriverSQLServer,
+		Connection: `sqlserver://EXAMPLECORP\svc:` + PasswordMarker + `@localhost:1433?database=cmdb&bad=%zz`,
+		Password:   password,
+	})
+	if err == nil {
+		t.Skip("this connection is accepted, so there is no parse refusal to inspect")
+	}
+	for spelling, form := range spellingsOf(password) {
+		if strings.TrimSpace(form) == "" {
+			continue
+		}
+		if strings.Contains(err.Error(), form) {
+			t.Errorf("the %s spelling of the password came back in a parse refusal: %v", spelling, err)
+		}
+	}
+}

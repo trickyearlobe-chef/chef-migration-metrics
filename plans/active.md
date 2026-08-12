@@ -8,7 +8,32 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — pick from the reds
+## NOW — finish the connection journey, in dependency order
+
+Agreed 2026-08-13: build the rest of `journeys/ownership-connection.md`. The composer is done
+and measured; everything left is what the administrator can see. Order below is dependency, not
+preference. Detail and the measurements behind it: `plans/todo-ownership.md`.
+
+- **A. The password never comes back in a message.** Backend only, no dependencies, and the one
+  that fails dangerously rather than annoyingly. Every spelling, including escaped — that is the
+  case that gets missed. Their logs go to a Splunk many people read.
+- **B. Testing a connection is its own act,** separate from listing tables, reporting which of
+  the five things failed in the words of whatever refused. Depends on A, because the refusal is
+  the thing most likely to quote the password back.
+- **C. The connection is readable configuration; only the password is a secret.** Config store
+  and credential shape. Everything on a screen depends on this.
+- **D. Endpoints** take a connection and a password, return the composed connection masked, and
+  test one. Re-run `make frontend-fields` — bodies change.
+- **E. The screen.** Show the composed connection masked, say how to mark the password, propose
+  a starting connection per database, derive the database from the scheme rather than asking,
+  drop the TLS control (carrying its SQL Server mapping into the proposed connection), and
+  correct the two help texts that describe the old model.
+
+Snagging found on the running instance 2026-08-13: with **A database** selected the delimiter
+help text is still shown, though its input is correctly hidden. File-only guidance under a
+database source.
+
+## Then — the other reds
 
 `make journey` has six. Two in `journeys/own-password.md` — nobody can change their own
 password, and nothing tells them the rules before telling them they got it wrong. One in

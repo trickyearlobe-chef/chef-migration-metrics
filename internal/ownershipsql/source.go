@@ -136,6 +136,9 @@ type sqlSource struct {
 	row     ownershipimport.Row
 	number  int
 	err     error
+	// password is kept only to take it back out of anything the driver says
+	// while rows are being read.
+	password string
 }
 
 // Open connects, runs the query and returns a source positioned before the
@@ -144,7 +147,12 @@ type sqlSource struct {
 // The connection is verified before the query runs, so a bad host or a refused
 // login is reported as such rather than as an empty result — an unreadable
 // source and an empty one read the same on screen and mean opposite things.
-func Open(ctx context.Context, cfg Config) (ownershipimport.RowSource, error) {
+func Open(ctx context.Context, cfg Config) (src ownershipimport.RowSource, err error) {
+	// Every way out of here is redacted, rather than each error being tidied
+	// where it is made. A path added later that forgets to do it by hand is
+	// exactly how a password reaches a log, and this cannot be forgotten.
+	defer func() { err = redactErr(err, cfg.Password) }()
+
 	if !IsSupportedDriver(cfg.Driver) {
 		return nil, fmt.Errorf("ownershipsql: unsupported driver %q", cfg.Driver)
 	}
@@ -191,7 +199,7 @@ func Open(ctx context.Context, cfg Config) (ownershipimport.RowSource, error) {
 		return nil, fmt.Errorf("ownershipsql: reading the result columns: %w", err)
 	}
 
-	s := &sqlSource{db: db, rows: rows, columns: columns}
+	s := &sqlSource{db: db, rows: rows, columns: columns, password: cfg.Password}
 	s.scan = make([]any, len(columns))
 	s.ptrs = make([]any, len(columns))
 	for i := range s.scan {
@@ -227,15 +235,15 @@ func (s *sqlSource) Next() bool {
 
 func (s *sqlSource) Row() ownershipimport.Row { return s.row }
 
-func (s *sqlSource) Err() error { return s.err }
+func (s *sqlSource) Err() error { return redactErr(s.err, s.password) }
 
 func (s *sqlSource) Close() error {
 	rowsErr := s.rows.Close()
 	dbErr := s.db.Close()
 	if rowsErr != nil {
-		return rowsErr
+		return redactErr(rowsErr, s.password)
 	}
-	return dbErr
+	return redactErr(dbErr, s.password)
 }
 
 // asText renders one cell as the string the mapper works in. NULL becomes the
@@ -306,7 +314,9 @@ func listTablesQuery(driver string) string {
 
 // ListTables returns the tables and views the connection can see, so an
 // administrator can choose one instead of writing a query blind.
-func ListTables(ctx context.Context, cfg Config) ([]Table, error) {
+func ListTables(ctx context.Context, cfg Config) (tables []Table, err error) {
+	defer func() { err = redactErr(err, cfg.Password) }()
+
 	if !IsSupportedDriver(cfg.Driver) {
 		return nil, fmt.Errorf("ownershipsql: unsupported driver %q", cfg.Driver)
 	}

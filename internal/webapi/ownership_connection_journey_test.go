@@ -273,12 +273,35 @@ func TestJourney_IAmToldWhenTheAccountIsNotTheDatabasesToCheck(t *testing.T) {
 
 // "except for my password, which must never come back to me in a message."
 func TestJourney_NoMessageEverCarriesThePasswordBack(t *testing.T) {
-	t.Skip("TODO, and it is the one on this list that fails dangerously rather than " +
-		"annoyingly. The thing that reads the string and the server both routinely quote " +
-		"what they were handed, and neither knows which part of it was a secret — so " +
-		"passing their words through unfiltered puts the password on a screen, in a support " +
-		"bundle and in logs the whole organisation can read. It has to be taken out wherever " +
-		"and however it appears, including escaped, which is the case that will be missed.")
+	const password = `pa%ss;wo rd#7Q!`
+
+	// Whatever refused me, quoting the whole connection back — which is what
+	// both the string reader and the server actually do.
+	quoted := `unable to open connection ` +
+		`"sqlserver://EXAMPLECORP%5Csvc:pa%25ss;wo%20rd%237Q!@dbhost:1433?database=cmdb": refused`
+
+	// Baseline: the escaped spelling really is in there, and it does not look
+	// like the password that was stored. That is the case that gets missed.
+	if strings.Contains(quoted, password) {
+		t.Fatal("the fixture proves nothing: the message carries the password as typed, " +
+			"so it is not testing the escaped spelling")
+	}
+
+	cleaned := ownershipsql.RedactPassword(quoted, password)
+	if strings.Contains(cleaned, "pa%25ss") {
+		t.Errorf("the escaped password came back in a message: %s", cleaned)
+	}
+	if strings.Contains(cleaned, password) {
+		t.Errorf("the password came back in a message: %s", cleaned)
+	}
+
+	// And the message is still worth reading afterwards — a refusal tidied
+	// into nothing is the other failure this journey names.
+	for _, keep := range []string{"dbhost:1433", "database=cmdb", "EXAMPLECORP"} {
+		if !strings.Contains(cleaned, keep) {
+			t.Errorf("redaction took away something I need (%q): %s", keep, cleaned)
+		}
+	}
 }
 
 // "Nothing proves a proposed connection is a good starting point."
