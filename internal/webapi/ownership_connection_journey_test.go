@@ -6,6 +6,7 @@
 package webapi
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -245,19 +246,84 @@ func TestJourney_AConnectionIsProposedAndICanOverrideIt(t *testing.T) {
 // "To test it before going any further. Asking for the list of tables is not a
 // connection test."
 func TestJourney_ICanTestTheConnectionBeforeBrowsingIt(t *testing.T) {
-	t.Skip("TODO: a stored credential can be tested, but that checks the shape of what was " +
-		"stored rather than whether the server answers, and the import screen does not " +
-		"offer it. Listing tables is the first thing that really connects, which is exactly " +
-		"the conflation the journey rejects.")
+	// Testing is its own act now: it dials the server, runs no query and reads
+	// no rows, so when it fails the failure is about connecting and nothing
+	// else. Proved against running servers by
+	// TestFunctional_MSSQL_TheConnectionTestSaysWhichOfTheFiveItWas and its
+	// PostgreSQL twin, and by TestFunctional_MSSQL_TestingAConnectionIsNotListingTables.
+	//
+	// Asserted here without a server: a connection that cannot be composed is
+	// answered as a connection test rather than as an error from browsing.
+	result := ownershipsql.TestConnection(context.Background(), ownershipsql.Config{
+		Driver:     ownershipsql.DriverSQLServer,
+		Connection: `sqlserver://svc@dbhost.example.com:1433?database=Staging`,
+		Password:   "s3cr3t",
+	})
+	if result.Succeeded() {
+		t.Fatal("a connection with nowhere to put the password reported success")
+	}
+	if result.Outcome != ownershipsql.OutcomeMalformed {
+		t.Errorf("outcome = %q, want %q", result.Outcome, ownershipsql.OutcomeMalformed)
+	}
+	if result.Detail == "" {
+		t.Error("the test says it failed and not why, which is what asking for the table " +
+			"list already did")
+	}
+
+	t.Skip("Testing a connection is built and measured; the import screen does not offer " +
+		"it. Browsing tables is still the first thing that really connects there, which is " +
+		"the conflation this requirement rejects. Remove this skip when the screen has a " +
+		"test of its own.")
 }
 
 // "A failure that tells me which of the five it was, in the words of whatever
 // refused me."
 func TestJourney_AFailedConnectionSaysWhichOfTheFiveThingsFailed(t *testing.T) {
-	t.Skip("TODO: depends on the test above existing at all. The requirement is that the " +
-		"refusal is passed through rather than tidied into 'could not connect' — a wrong " +
-		"account, a closed network, a wrong database name, a malformed string and an account " +
-		"the database does not check for itself are five different people to go and talk to.")
+	// Each of the five is a different person to go and talk to, so each is a
+	// distinct answer rather than a shade of "could not connect". Which words
+	// mean which was MEASURED against running servers, and is re-measured by
+	// the functional suites — text matching that is only remembered goes stale
+	// and then names the wrong team.
+	for _, outcome := range []ownershipsql.Outcome{
+		ownershipsql.OutcomeMalformed,
+		ownershipsql.OutcomeUnreachable,
+		ownershipsql.OutcomeRefused,
+		ownershipsql.OutcomeNoDatabase,
+		ownershipsql.OutcomeUntrustedDomain,
+	} {
+		if outcome == "" {
+			t.Error("an outcome with no name cannot send anybody anywhere")
+		}
+	}
+
+	// A refusal nothing recognises says so, rather than being filed under
+	// whichever outcome happens to be the fallback.
+	if ownershipsql.OutcomeUnknown == ownershipsql.OutcomeRefused {
+		t.Error("an unrecognised failure is reported as a refused login, which names a team " +
+			"on no evidence")
+	}
+
+	// And the words of whatever refused are passed through rather than tidied
+	// away — with the password taken out.
+	result := ownershipsql.TestConnection(context.Background(), ownershipsql.Config{
+		Driver:     ownershipsql.DriverSQLServer,
+		Connection: `sqlserver://svc:` + ownershipsql.PasswordMarker + `@127.0.0.1:1?database=Staging`,
+		Password:   "s3cr3t",
+	})
+	if result.Succeeded() {
+		t.Skip("something is listening on port 1, so this proves nothing")
+	}
+	if result.Outcome != ownershipsql.OutcomeUnreachable {
+		t.Errorf("nothing listening reported as %q, want %q\n  detail: %s",
+			result.Outcome, ownershipsql.OutcomeUnreachable, result.Detail)
+	}
+	if result.Detail == "" {
+		t.Error("the refusal was tidied into nothing, which throws away the only thing in " +
+			"it worth having")
+	}
+	if strings.Contains(result.Detail, "s3cr3t") {
+		t.Errorf("the password came back in the refusal: %s", result.Detail)
+	}
 }
 
 // "To be told when the account is not the database's to check."
