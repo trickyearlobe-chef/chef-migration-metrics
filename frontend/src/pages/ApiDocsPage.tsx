@@ -538,7 +538,11 @@ function OperationPanel({
       // fields of a settings section with thirty of them cannot be reached at
       // all. The height allows for the padding of the scrolling region this
       // sits in.
-      className="w-full shrink-0 space-y-4 rounded-md border border-gray-200 bg-white p-4 xl:sticky xl:top-0 xl:max-h-[calc(100vh-3rem)] xl:self-start xl:overflow-y-auto">
+      // The extra room at the foot is there to be seen: scrolled to the end,
+      // text flush against the edge reads as more text below it, and the
+      // reader keeps trying to scroll. It only applies where the panel
+      // scrolls — in flow it is the card's own padding and needs no help.
+      className="w-full shrink-0 space-y-4 rounded-md border border-gray-200 bg-white p-4 xl:sticky xl:top-0 xl:max-h-[calc(100vh-3rem)] xl:self-start xl:overflow-y-auto xl:pb-8">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
