@@ -695,10 +695,11 @@ describe("ApiDocsPage", () => {
     // This call takes no path or query parameters and does take a body. A
     // bare "Parameters: none" above a table of fields reads as a
     // contradiction to anybody who has not been told the word means the
-    // address and the query string only.
-    expect(within(panel).getByRole("heading", { name: /address and query/i }))
+    // address and the query string only — so both sections say where their
+    // parameters go, and the pair reads as one sentence.
+    expect(within(panel).getByRole("heading", { name: /uri parameters/i }))
       .toBeInTheDocument();
-    expect(within(panel).getByText(/what it takes is in the body below/i))
+    expect(within(panel).getByRole("heading", { name: /body parameters/i }))
       .toBeInTheDocument();
   });
 

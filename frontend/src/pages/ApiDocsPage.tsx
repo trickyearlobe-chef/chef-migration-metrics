@@ -446,7 +446,7 @@ function RequestBodySection({ entry, schemas }: { entry: Entry; schemas: Schemas
     return (
       <div>
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Request body
+          Body parameters
         </h3>
         <p className="mt-1 text-sm text-gray-500">
           None — this call reads nothing from the body. What it acts on is in
@@ -461,7 +461,7 @@ function RequestBodySection({ entry, schemas }: { entry: Entry; schemas: Schemas
   return (
     <div>
       <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-        Request body
+        Body parameters
       </h3>
       {body.description && (
         <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -592,19 +592,20 @@ function OperationPanel({
 
       <div>
         {/*
-          Named for where these go rather than for what OpenAPI calls them. A
-          section headed "Parameters" saying "none", directly above a table of
-          body fields, reads as a contradiction unless the reader already knows
-          the word covers the address and the query string only — and the
-          people this page is for are the ones who do not.
+          Named for where these go rather than for what OpenAPI calls them, and
+          paired with "Body parameters" below. A section headed "Parameters"
+          saying "none", directly above a table of body fields, reads as a
+          contradiction unless the reader already knows the word covers the
+          address and the query string only — and the people this page is for
+          are the ones who do not.
         */}
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Address and query
+          URI parameters
         </h3>
         {params.length === 0 ? (
           <p className="mt-1 text-sm text-gray-500">
-            Nothing in the address, and nothing accepted in the query string.
-            {isWrite && " What it takes is in the body below."}
+            None — nothing in the address, and nothing accepted in the query
+            string.
           </p>
         ) : (
           <table className="mt-1.5 w-full text-left text-sm">
