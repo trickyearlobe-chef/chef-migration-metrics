@@ -690,13 +690,16 @@ Recorded 2026-08-12 (`feature/assistant-credential`).
 
 ## From the API description work (measured 2026-08-12)
 
-- [ ] **A body with a field the service does not understand is accepted and silently
-  dropped.** Every call that reads a JSON body decodes without rejecting unknown fields, and
-  the settings sections read YAML the same way — 37 decode sites, none strict. So a caller who
-  misspells a field, or sends one from an older version, is told it worked. Rejecting them is
-  a breaking change for anything currently sending extra fields, including our own frontend,
-  so it is recorded rather than done.
-  Held by `TestJourney_SomethingItCannotUnderstandIsRefused` (`make journey`).
+- [ ] **Saving the Analysis Tools settings wipes the Test Kitchen settings.** Two screens
+  write the same stored section. The Test Kitchen one reads what is there and puts its part
+  back; the Analysis Tools one replaces the whole section with what it was sent, and that
+  screen has never sent the Test Kitchen part. So an operator changing a timeout loses the
+  driver, the images, the credential references and the rate limits, and is told the save
+  succeeded. Found by comparing what the frontend sends against what the handlers read — the
+  opposite direction from the unknown-field work, which was about fields nothing reads.
+  The fix is a decision, not an edit: merge what was not sent, or make the screen send the
+  section whole. Merging silently is how a setting becomes impossible to clear.
+  Held by `TestDebt_SavingTheAnalysisToolsScreenKeepsTheTestKitchenSettings` (`make debt`).
 
 - [ ] **A described body can advertise fields the service never reads.** Where a handler
   decodes straight into a stored or settings type, reflection describes the whole type — so
