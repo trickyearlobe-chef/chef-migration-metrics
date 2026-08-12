@@ -41,11 +41,15 @@ admins only.** Bundled, not a CDN; lazy-loaded; supply-chain checked before anyt
 **Try-it-out stays off** — the page is served to a signed-in person, so a "try" button fires real
 calls as them, and the destructive ones are one click from a document people open to browse.
 
-**Decide first, because it changes the work:** the document itself is `r.protect` — any
-authenticated session, viewers included. An operator-only tab over a viewer-readable document
-hides clutter but does not stop a viewer enumerating the surface. Either is defensible; leaving
-the document open matters if an assistant holding a viewer's credential is meant to work at all.
-Ask the owner rather than inferring from the tab's role.
+**Settled, and deliberately not a security boundary.** The page is reachable by any authenticated
+person, and so is the document at `GET /api/v1/openapi.json` — that stays as it is. Only the *tab*
+is limited to operators and admins, to keep it out of a viewer's way. A viewer who types the
+address still gets the page, and that is the intended behaviour, not a hole.
+
+Do not "fix" the mismatch by guarding the route or the document. This is the case the
+check-before-hardening rule exists for: the reasoning from neighbouring restricted tabs would be
+wrong here, and closing the document would stop an assistant holding a viewer's credential from
+working at all.
 
 Sized as a small chunk, and it does not block the surface above.
 
