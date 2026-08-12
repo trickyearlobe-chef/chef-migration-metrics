@@ -124,6 +124,9 @@ func Compose(driver, connection, password string) (Composed, error) {
 	}
 
 	form := DetectForm(trimmed)
+	if err := schemeAgreesWithDriver(form, driver, trimmed); err != nil {
+		return Composed{}, err
+	}
 	prepared, err := prepareVisibleParts(form, trimmed)
 	if err != nil {
 		return Composed{}, err
@@ -140,6 +143,62 @@ func Compose(driver, connection, password string) (Composed, error) {
 		return strings.ReplaceAll(prepared, PasswordMarker, escape(secret))
 	}
 	return Composed{DSN: build(password), Masked: build(PasswordMask), Form: form}, nil
+}
+
+// ---------------------------------------------------------------------------
+// The scheme names the database, and nothing used to check it
+// ---------------------------------------------------------------------------
+
+// DriverNamedByScheme reports which database a URL scheme names, so a screen
+// can derive the database from the connection instead of asking twice.
+//
+// A URL-shaped connection already says which database it is for. Asking again
+// alongside it is not merely redundant — the two can disagree, and until this
+// existed nothing noticed.
+func DriverNamedByScheme(scheme string) (string, bool) {
+	switch strings.ToLower(scheme) {
+	case "sqlserver":
+		return DriverSQLServer, true
+	case "postgres", "postgresql":
+		return DriverPostgres, true
+	}
+	return "", false
+}
+
+// schemeAgreesWithDriver refuses a connection whose scheme names a different
+// database from the one chosen, and one whose scheme names nothing either
+// driver understands.
+//
+// Measured, and this is why it is worth refusing rather than passing on: given
+// a "postgres://" connection the SQL Server driver does not complain about the
+// scheme at all. It quietly falls back to reading the string as keyword pairs,
+// finds no account in it, and the server answers "Login failed for user ''" —
+// which reads as a broken credential. libpq handed a "sqlserver://" connection
+// gets as far as "SSL is not enabled on the server", which reads as a TLS
+// problem. Both send somebody to entirely the wrong person, and neither
+// mentions the database being the wrong kind.
+func schemeAgreesWithDriver(form Form, driver, connection string) error {
+	if form != FormURL {
+		// The keyword spellings carry no scheme, so there is nothing to check
+		// and the database has to be said some other way.
+		return nil
+	}
+	scheme, _, isURL := splitConnectionScheme(connection)
+	if !isURL {
+		return nil
+	}
+	named, known := DriverNamedByScheme(scheme)
+	if !known {
+		return fmt.Errorf(
+			"ownershipsql: %q is not a database this reads; the connection should begin "+
+				"sqlserver:// or postgres://", scheme+"://")
+	}
+	if named != driver {
+		return fmt.Errorf(
+			"ownershipsql: this connection begins %s://, which is %s, but %s was chosen",
+			scheme, named, driver)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

@@ -88,6 +88,18 @@ Remaining:
   - Its worked example is a URL with the password inline (`sqlserver://user:pass@host…`), which
     is precisely what the new model says not to write.
 
+  **The database dropdown is redundant for a URL connection, and worse than redundant.** The
+  scheme already names the database, so a screen can derive it — `DriverNamedByScheme`. Measured
+  2026-08-13, and the reason this is not merely tidying: when the choice and the scheme disagree,
+  neither driver says so. Given a `postgres://` connection the SQL Server driver does not object
+  to the scheme at all; it falls back to reading the string as keyword pairs, finds no account,
+  and the server answers `Login failed for user ''`, which reads as a broken credential. libpq
+  handed a `sqlserver://` connection reaches `SSL is not enabled on the server`, which reads as a
+  TLS problem. Both send somebody to the wrong team. The composer now refuses a mismatch, and an
+  unknown scheme with it, because passing either on is silent mis-reading rather than tolerance.
+  A keyword-shaped connection carries no scheme, so something must still say which database —
+  the dropdown cannot go away entirely, only stop being asked when the connection already answers.
+
   **The TLS control should go when this ships, and its knowledge must not go with it.** Its own
   stated reason is that the connection is a stored credential, so changing a TLS setting meant
   retyping the whole thing including the password — and that reason disappears entirely once the

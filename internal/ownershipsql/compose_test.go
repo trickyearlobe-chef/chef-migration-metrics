@@ -436,3 +436,79 @@ func TestComposeRefusesAnUnsupportedDriver(t *testing.T) {
 		t.Fatal("an unsupported driver was accepted")
 	}
 }
+
+// The scheme names the database, so choosing a different one is a mistake
+// somebody should be told about rather than sent to the wrong team over.
+//
+// The baseline is the whole point: measured, neither driver complains about a
+// foreign scheme. Given a "postgres://" connection the SQL Server driver reads
+// the string as keyword pairs instead, finds no account, and the server says
+// "Login failed for user ”" — a broken credential, as far as anyone reading it
+// can tell. So this refusal has to be ours; it cannot be delegated.
+func TestAConnectionWhoseSchemeNamesAnotherDatabaseIsRefused(t *testing.T) {
+	cases := []struct{ driver, connection string }{
+		{DriverSQLServer, "postgres://svc:" + PasswordMarker + "@dbhost:5432/cmdb"},
+		{DriverSQLServer, "postgresql://svc:" + PasswordMarker + "@dbhost:5432/cmdb"},
+		{DriverPostgres, "sqlserver://svc:" + PasswordMarker + "@dbhost:1433?database=cmdb"},
+	}
+	for _, c := range cases {
+		t.Run(c.driver+"/"+c.connection, func(t *testing.T) {
+			_, err := Compose(c.driver, c.connection, "pw")
+			if err == nil {
+				t.Fatal("a connection naming a different database was composed anyway, so " +
+					"the failure will arrive as a broken credential instead")
+			}
+			if !strings.Contains(err.Error(), c.driver) {
+				t.Errorf("the refusal does not say what was chosen: %v", err)
+			}
+		})
+	}
+}
+
+// A scheme neither driver understands is refused too, for the same reason: it
+// is not passed through, it is silently mis-read.
+func TestAConnectionWithAnUnknownSchemeIsRefused(t *testing.T) {
+	for _, driver := range []string{DriverSQLServer, DriverPostgres} {
+		_, err := Compose(driver, "mysql://svc:"+PasswordMarker+"@dbhost:3306/cmdb", "pw")
+		if err == nil {
+			t.Errorf("%s: a mysql:// connection was composed", driver)
+		}
+	}
+}
+
+// The matching scheme still composes, so the check above cannot be passing by
+// refusing everything.
+func TestAConnectionWhoseSchemeAgreesIsComposed(t *testing.T) {
+	cases := []struct{ driver, connection string }{
+		{DriverSQLServer, "sqlserver://svc:" + PasswordMarker + "@dbhost:1433?database=cmdb"},
+		{DriverPostgres, "postgres://svc:" + PasswordMarker + "@dbhost:5432/cmdb"},
+		{DriverPostgres, "postgresql://svc:" + PasswordMarker + "@dbhost:5432/cmdb"},
+		// Keyword shapes carry no scheme, so nothing is checked and both pass.
+		{DriverSQLServer, "server=dbhost;database=cmdb;user id=svc;password=" + PasswordMarker},
+		{DriverPostgres, "host=dbhost dbname=cmdb user=svc password=" + PasswordMarker},
+	}
+	for _, c := range cases {
+		if _, err := Compose(c.driver, c.connection, "pw"); err != nil {
+			t.Errorf("%s: a connection that agrees was refused: %v", c.driver, err)
+		}
+	}
+}
+
+// What a screen needs to stop asking twice.
+func TestDriverNamedByScheme(t *testing.T) {
+	cases := map[string]string{
+		"sqlserver":  DriverSQLServer,
+		"postgres":   DriverPostgres,
+		"postgresql": DriverPostgres,
+		"POSTGRES":   DriverPostgres,
+	}
+	for scheme, want := range cases {
+		got, known := DriverNamedByScheme(scheme)
+		if !known || got != want {
+			t.Errorf("DriverNamedByScheme(%q) = %q,%v; want %q,true", scheme, got, known, want)
+		}
+	}
+	if _, known := DriverNamedByScheme("mysql"); known {
+		t.Error("mysql is named as a database this reads")
+	}
+}
