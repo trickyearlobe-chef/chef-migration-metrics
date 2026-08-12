@@ -62,6 +62,60 @@ func TestBinDir_TheNamedDirectoryIsPreferredToPATH(t *testing.T) {
 	}
 }
 
+// The directory is read when a tool is resolved, not when the resolver is
+// built.
+//
+// It used to be a field, filled in once at startup — which was reasonable when
+// configuration came from a file that could not change while the process ran.
+// It comes from the database now and an operator changes it on a screen, so a
+// resolver that answers with the directory it was born with sends every scan to
+// the old place until somebody restarts the service.
+func TestBinDir_TheDirectoryIsReadAtResolveTimeNotAtBuildTime(t *testing.T) {
+	first := binDirWithTool(t, "go")
+	second := binDirWithTool(t, "go")
+
+	current := first
+	r := NewResolver(WithBinDirFunc(func() string { return current }))
+
+	// The baseline: it honours the directory at all. Without this, a resolver
+	// that had stopped reading the accessor entirely would still pass the
+	// change below by way of always answering from PATH.
+	path, err := r.ResolvePath("go")
+	if err != nil {
+		t.Fatalf("a tool in the configured directory was not found: %v", err)
+	}
+	if filepath.Dir(path) != first {
+		t.Fatalf("resolved %q, not the configured directory %q — this test cannot tell a live "+
+			"read from a stale one until the directory is honoured at all", path, first)
+	}
+
+	current = second
+
+	path, err = r.ResolvePath("go")
+	if err != nil {
+		t.Fatalf("after the directory changed, the tool was not found: %v", err)
+	}
+	if filepath.Dir(path) != second {
+		t.Errorf("resolved %q, still under the old directory %q — an operator who corrected "+
+			"where the Chef tools are was told it was saved, and every scan kept running the "+
+			"binary from the place they had just changed", path, first)
+	}
+}
+
+// With no accessor set, the static directory still decides. Tests and defaults
+// rely on it, and a live accessor is an addition rather than a replacement.
+func TestBinDir_WithoutAnAccessorTheStaticDirectoryStillDecides(t *testing.T) {
+	dir := binDirWithTool(t, "go")
+
+	path, err := NewResolver(WithBinDir(dir)).ResolvePath("go")
+	if err != nil {
+		t.Fatalf("the static directory stopped working: %v", err)
+	}
+	if filepath.Dir(path) != dir {
+		t.Errorf("resolved %q rather than %q", path, dir)
+	}
+}
+
 // A directory that does not have the tool is not a dead end. The setting says
 // where the tools are when PATH does not have them; where PATH does, it still
 // works.

@@ -72,7 +72,23 @@ type Resolver struct {
 	// binDir is where the Chef tools are, when they are not somewhere a shell
 	// would find them. Empty means PATH alone, which is the ordinary case:
 	// Chef Workstation puts them there. See WithBinDir.
+	//
+	// A fallback for tests and defaults. binDirFunc wins when it is set.
 	binDir string
+
+	// binDirFunc reads the configured directory each time a tool is resolved,
+	// so changing it on the settings screen takes effect on the next scan.
+	// Nil means binDir alone. See WithBinDirFunc.
+	binDirFunc func() string
+}
+
+// currentBinDir is the directory to look in now: the live accessor when there
+// is one, the static value otherwise.
+func (r *Resolver) currentBinDir() string {
+	if r.binDirFunc != nil {
+		return strings.TrimSpace(r.binDirFunc())
+	}
+	return r.binDir
 }
 
 // Option configures a Resolver.
@@ -99,6 +115,18 @@ func WithBinDir(dir string) Option {
 	return func(r *Resolver) { r.binDir = strings.TrimSpace(dir) }
 }
 
+// WithBinDirFunc reads the directory each time a tool is resolved, rather than
+// keeping the one that was set when the resolver was built.
+//
+// Configuration lives in the database and is edited on a screen, so the value
+// changes while the process runs. Holding the one read at startup meant an
+// operator could correct where the Chef tools are, be told it was saved, and
+// have every scan go on running the binary from the old place until somebody
+// restarted the service.
+func WithBinDirFunc(fn func() string) Option {
+	return func(r *Resolver) { r.binDirFunc = fn }
+}
+
 // NewResolver creates a Resolver that resolves tools from PATH.
 func NewResolver(opts ...Option) *Resolver {
 	r := &Resolver{
@@ -123,11 +151,16 @@ func NewResolver(opts ...Option) *Resolver {
 // whose directory holds only some of them — otherwise a single wrong setting
 // switches scanning off, and the message says nothing about the setting.
 func (r *Resolver) ResolvePath(name string) (string, error) {
-	if r.binDir != "" {
+	// Read once per call, not per branch: the accessor reaches live
+	// configuration, and a value that changed midway through would report a
+	// directory that was never the one looked in.
+	binDir := r.currentBinDir()
+
+	if binDir != "" {
 		// Runnable, not merely present. A stray file of the right name would
 		// otherwise report the tool as found, and every scan would fail later
 		// somewhere that never mentions this directory.
-		candidate := filepath.Join(r.binDir, name)
+		candidate := filepath.Join(binDir, name)
 		if info, err := os.Stat(candidate); err == nil &&
 			info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
 			return candidate, nil
@@ -138,8 +171,8 @@ func (r *Resolver) ResolvePath(name string) (string, error) {
 	if err == nil {
 		return path, nil
 	}
-	if r.binDir != "" {
-		return "", fmt.Errorf("embedded: %q is not in %s and not in PATH", name, r.binDir)
+	if binDir != "" {
+		return "", fmt.Errorf("embedded: %q is not in %s and not in PATH", name, binDir)
 	}
 	return "", fmt.Errorf("embedded: %q not found in PATH", name)
 }

@@ -61,15 +61,19 @@ func TestBinDir_TheSavedPathIsKeptAndAnsweredBack(t *testing.T) {
 	}
 }
 
-// Changing where the tools are needs a restart, and the screen has to say so.
+// Changing where the tools are applies straight away, and must not send
+// anybody off to restart the service.
 //
-// The path is resolved once, at startup, and handed to the scanner. Reporting
-// the change as applied would leave an operator watching for scans that cannot
-// start until somebody restarts the service — told it worked, again.
-func TestBinDir_ChangingItSaysARestartIsNeeded(t *testing.T) {
-	// The baseline first: this section normally reports no restart, so without
-	// it a handler that always said "restart" would pass and tell every
-	// operator to restart for a timeout change.
+// It used to be read once at startup and handed to the scanner as a resolved
+// string, which is what a file-based configuration allowed. It comes from the
+// database now, and both executors work out where their binary is when they
+// run — so the next scan uses the corrected directory and there is nothing to
+// restart for.
+func TestBinDir_ChangingItAppliesWithoutARestart(t *testing.T) {
+	// The baseline first: a save that changes nothing resolved at startup
+	// reports no restart. Without it, a handler that had stopped reporting
+	// restarts altogether would pass this and take the auth and server screens'
+	// notices down with it unnoticed.
 	store := newTestConfigStore(t)
 	router := newTestRouterForAdminConfig(nil, store, nil)
 	w := httptest.NewRecorder()
@@ -91,9 +95,10 @@ func TestBinDir_ChangingItSaysARestartIsNeeded(t *testing.T) {
 		"/api/v1/admin/config/analysis-tools", strings.NewReader(binDirBody)))
 	assertStatus(t, w, http.StatusOK)
 
-	if !binDirRestartRequired(t, w) {
-		t.Error("moving where the Chef tools are reported as applied, but the path is read " +
-			"once at startup — so nothing changes until somebody restarts, and nothing said so")
+	if binDirRestartRequired(t, w) {
+		t.Error("moving where the Chef tools are still asks for a restart, but the path is " +
+			"resolved per run now — so the operator is sent to restart a service for a change " +
+			"that had already taken effect")
 	}
 }
 

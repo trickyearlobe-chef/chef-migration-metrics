@@ -1196,12 +1196,39 @@ func NewCookstyleExecutor(path string) CookstyleExecutor {
 	return &defaultCookstyleExecutor{path: path}
 }
 
+// NewCookstyleExecutorFunc returns a CookstyleExecutor that works out where the
+// binary is each time it runs.
+//
+// Where the Chef tools are is configuration, and configuration is edited on a
+// screen while the process runs. An executor holding the path resolved at
+// startup goes on running the binary from the old directory after an operator
+// has corrected the setting and been told the change was saved.
+func NewCookstyleExecutorFunc(resolve func() (string, error)) CookstyleExecutor {
+	return &defaultCookstyleExecutor{resolve: resolve}
+}
+
 type defaultCookstyleExecutor struct {
+	// path is used when there is no resolver: callers that already hold a
+	// resolved path, and tests.
 	path string
+
+	// resolve finds the binary at the moment of the run. It wins over path.
+	resolve func() (string, error)
 }
 
 func (e *defaultCookstyleExecutor) Run(ctx context.Context, dir string, args ...string) (string, string, int, error) {
-	return executeCommand(ctx, e.path, dir, args...)
+	path := e.path
+	if e.resolve != nil {
+		// Resolved per run, so a directory that was wrong for a while fails
+		// those runs and no more: the next one picks up the corrected setting
+		// without the service being restarted.
+		resolved, err := e.resolve()
+		if err != nil {
+			return "", "", 0, fmt.Errorf("cookstyle: %w", err)
+		}
+		path = resolved
+	}
+	return executeCommand(ctx, path, dir, args...)
 }
 
 // executeCommand runs an external command and returns stdout, stderr, exit

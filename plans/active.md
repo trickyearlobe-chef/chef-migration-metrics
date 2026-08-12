@@ -15,13 +15,19 @@ password, and nothing tells them the rules before telling them they got it wrong
 has one, the settings-shape item that was already there. Nothing is left from the assistant
 surface or the strict-body work.
 
-**Outstanding on the branch: a visual pass over four screens.** Everything about them is
-verified server-side, including against real PostgreSQL — what is not is rendering and
-clicking. Enable the Claude in Chrome extension, or install `chrome-devtools-mcp` (the
-remote-debugging port is already on), then look at: Analysis Tools (the Chef tools directory
-box now does something and should ask for a restart), Test Kitchen (proxmox, 1 image, 32
-platform mappings — still there after saving Analysis Tools), reclassifying a cop, and saving
-Server settings unchanged.
+**Where the Chef tools are must apply without a restart.** Saving that directory reports
+`restart_required`, because the path is resolved once at startup and the resolved string is
+handed to the scanner and the kitchen executor. Configuration is supposed to apply live.
+
+- Scope: `internal/embedded` (the directory read through an accessor, not a field),
+  `internal/analysis` and `internal/nodekitchen` (each executor resolves its binary when it
+  runs, not when it is built), `cmd/chef-migration-metrics/main.go` (wiring), and the
+  analysis-tools handler, which stops claiming a restart.
+- Acceptance: changing the directory changes which binary the next scan runs, with no restart;
+  the handler reports no restart for it; `make ci` green.
+- **The limit worth knowing before starting:** a tool missing at boot means its subsystem is
+  never wired at all, so a directory fixed afterwards still needs a restart. Making that live
+  too is a separate change to startup gating, not this one.
 
 **What the interface sends is measured, not read.** `make frontend-fields` re-records it with
 the TypeScript compiler; `TestFrontend_EverythingTheInterfaceSendsIsAFieldWeRead` holds it

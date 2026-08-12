@@ -97,16 +97,6 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 	// Test Kitchen is not validated here: this call no longer carries it, and a
 	// caller that sends it is refused rather than quietly ignored.
 
-	// Where the Chef tools are, as it is now — read before anything is stored,
-	// because the holder is reloaded further down and would then be answering
-	// with the value that has just arrived.
-	var binDirWas string
-	if r.configHolder != nil {
-		if current := r.configHolder.Get(); current != nil {
-			binDirWas = current.AnalysisTools.EmbeddedBinDir
-		}
-	}
-
 	// Store, reload, and apply — inlined (not storeAdminConfigSection) so we
 	// can capture the rescore verdicts_changed count for the response.
 	//
@@ -191,15 +181,13 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		}
 	}
 
-	// Where the Chef tools are is read once, at startup, and the resolved path
-	// is handed to the scanner — so moving it takes a restart. Saying the
-	// change was applied would leave an operator waiting for scans that cannot
-	// start, which is the same "told it worked" this setting spent its whole
-	// life doing while it reached nothing at all.
+	// Where the Chef tools are applies on the next run: both executors resolve
+	// their binary when they run, reading this setting through the config
+	// holder. Nothing here is resolved at startup any more, so there is nothing
+	// to restart for — and telling an operator to restart for a change that has
+	// already taken effect teaches them to distrust the notice on the screens
+	// that do need one.
 	toolPathMoved := ApplyResult{Reload: ReloadSubsystem}
-	if r.configHolder != nil && binDirWas != input.EmbeddedBinDir {
-		toolPathMoved = ApplyResult{Reload: ReloadProcess}
-	}
 
 	reload := worstGranularity([]ApplyResult{kitchenRes, toolPathMoved})
 	WriteJSON(w, http.StatusOK, putConfigResponse{

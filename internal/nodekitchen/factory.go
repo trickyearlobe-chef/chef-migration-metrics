@@ -142,12 +142,26 @@ func (a *ScopedLoggerAdapter) Error(msg string) { a.Error_(msg) }
 // kitchen binary. It sanitises the environment to prevent Bundler
 // interference from cookbook Gemfiles.
 type DefaultExecutor struct {
-	Path string // absolute path to the kitchen binary
+	Path string // absolute path to the kitchen binary; used when PathFn is nil
+
+	// PathFn finds the binary at the moment of the run, so an operator who
+	// corrects where the Chef tools are does not have to restart the service
+	// for the next run to use it. It wins over Path.
+	PathFn func() (string, error)
 }
 
 // Run executes the kitchen binary with the given arguments.
 func (e *DefaultExecutor) Run(ctx context.Context, dir string, extraEnv []string, args ...string) (string, string, int, error) {
-	cmd := exec.CommandContext(ctx, e.Path, args...)
+	path := e.Path
+	if e.PathFn != nil {
+		resolved, err := e.PathFn()
+		if err != nil {
+			return "", "", 0, fmt.Errorf("kitchen: %w", err)
+		}
+		path = resolved
+	}
+
+	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
 	cmd.Env = append(sanitiseKitchenEnv(os.Environ()), extraEnv...)
 
