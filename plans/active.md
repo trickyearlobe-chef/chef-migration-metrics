@@ -12,21 +12,23 @@ rather than remembered, so where they and this file disagree, the reds are right
 
 `make journey` has two, both in `journeys/own-password.md`: nobody can change their own
 password, and nothing tells them the rules before telling them they got it wrong. `make debt`
-has two. Neither list has anything left from the assistant surface.
+has one, the settings-shape item that was already there. Nothing is left from the assistant
+surface or the strict-body work.
 
-**Saving the Analysis Tools settings wipes the Test Kitchen settings.** Found by comparing what
-the interface sends against what the handlers read. Two screens write the same stored section;
-one of them replaces the whole thing with what it was sent, and it has never sent the Test
-Kitchen part. An operator changing a timeout loses the driver, the images, the credential
-references and the rate limits, and is told the save worked. Held by
-`TestDebt_SavingTheAnalysisToolsScreenKeepsTheTestKitchenSettings`. The fix is a decision —
-merge what was not sent, or make the screen send the section whole — and merging silently is
-how a setting becomes impossible to clear. This is the most serious thing on either list.
+**Outstanding on the branch: a visual pass over four screens.** Everything about them is
+verified server-side, including against real PostgreSQL — what is not is rendering and
+clicking. Enable the Claude in Chrome extension, or install `chrome-devtools-mcp` (the
+remote-debugging port is already on), then look at: Analysis Tools (the Chef tools directory
+box now does something and should ask for a restart), Test Kitchen (proxmox, 1 image, 32
+platform mappings — still there after saving Analysis Tools), reclassifying a cop, and saving
+Server settings unchanged.
 
-**The comparison itself is worth keeping.** What the interface really sends was resolved with
-the TypeScript compiler rather than read, and diffed against the served description. That is
-how all three unknown-field breakages were found before they broke anything, and how the
-wipe above was found at all. Worth re-running after any change to a request body.
+**What the interface sends is measured, not read.** `make frontend-fields` re-records it with
+the TypeScript compiler; `TestFrontend_EverythingTheInterfaceSendsIsAFieldWeRead` holds it
+against the served description. That is how three live defects were found before they broke
+anything, and how the settings wipe was found at all. Re-run it after changing any request
+body — deliberately not part of `make ci`, because regenerating there would make the check
+agree with whatever the interface currently does.
 
 ## Settled here, kept because the reasoning still binds
 
