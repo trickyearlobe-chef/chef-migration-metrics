@@ -117,6 +117,14 @@ every entry is also a measurement of how wrong the signal is. Detail and the sha
 
 **Next free migration number: 0069.**
 
+**The local instance is running detached, not from a terminal.** It was restarted as
+`nohup ./build/chef-migration-metrics --config deploy/pkg/config.yml &` after a `make build`, so
+it survives a closed session; `make run` in a terminal does the same thing and blocks. It binds
+`*:443` as the user and takes fifteen to twenty seconds before it answers — a check straight
+after starting it will fail and mean nothing. Its configuration comes from the database, not
+from the file: the file supplies only what unlocks the database. To rebuild: `make build`, kill
+the running process, start it again.
+
 **There is no down-migration runner** — only `MigrateUp` — so a schema rollback is `psql` by hand
 or a restore. Take a `pg_dump` before any deploy. Two migrations leave a residue an older binary
 reads: **0059** (`owner_aliases` back-filled from `owners.contact_email`) and **0063** (git repo
