@@ -72,6 +72,36 @@ Remaining:
   connection per database, and taking the password out of error messages. The reds and skips in
   the suite name them one at a time.
 
+  **The position of the password is marked, not guessed** — `PASSWORD_GOES_HERE`, refused by name
+  when absent, because putting it somewhere nobody asked for sends a connection the administrator
+  did not write. The spelling was measured: `${password}` is expanded to nothing by every shell
+  and cost a wrong test run, and `[password]` is a glob character class that resolved to a
+  filename in the working directory. The screen must show how to write it; nothing does yet.
+
+  **Two things on the import screen become wrong the moment this ships, and are right today.**
+  Both are part of this item rather than separate defects — changing either before the visible
+  connection exists would make the screen describe something that is not there.
+
+  - It tells the administrator the connection is held as a credential, typed in under Admin →
+    Credentials as type Generic, and never entered on the import screen. That stops being true
+    when the connection is visible and only the password is a secret.
+  - Its worked example is a URL with the password inline (`sqlserver://user:pass@host…`), which
+    is precisely what the new model says not to write.
+
+  **The TLS control should go when this ships, and its knowledge must not go with it.** Its own
+  stated reason is that the connection is a stored credential, so changing a TLS setting meant
+  retyping the whole thing including the password — and that reason disappears entirely once the
+  connection is visible and the password is separate. It is also an override that silently wins
+  over what the connection already says, which is the one thing this journey forbids.
+  - PostgreSQL: a straight deletion. The mode is one `sslmode=` the administrator can now type.
+  - SQL Server: not a straight deletion. Four friendly modes map onto *pairs* of driver options
+    (`encrypt` plus `TrustServerCertificate`), and that mapping was measured against a real
+    server because `encrypt=false` and saying nothing parse identically and then behave
+    differently. Deleting the control without moving that mapping into the proposed starting
+    connection and the on-screen help throws away something expensive to establish.
+  - It is an API change, so `make frontend-fields` must be re-run, and saved imports carrying a
+    stored TLS mode need a decision rather than a silent drop.
+
   **Measured 2026-08-12, and it contradicts the obvious assumption.** `sql.Open` was probed
   directly for both drivers. SQL Server given a URL-form DSN parses eagerly and returns
   `unable to parse connection string: invalid URL format` — the exact error the customer hit,
