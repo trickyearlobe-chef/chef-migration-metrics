@@ -58,13 +58,19 @@ Remaining:
   `plans/active.md` for the ordered list.
 
 - [ ] **The connection is visible; only the password is secret.** Requirement and reasoning:
-  `journeys/ownership-connection.md`, suite `internal/webapi/ownership_connection_journey_test.go`
-  (all skips — nothing is built). Settled with the product owner 2026-08-12: one connection
-  string the administrator can read and edit, with **only the password substituted into it**,
-  because the password is the only value they can never see and therefore never check. Nothing
-  visible is rewritten behind them. A starting example is proposed per kind of database and is
-  freely overridable. The connection can be tested before browsing tables, and both the string
-  reader and the server report in their own words.
+  `journeys/ownership-connection.md`, suite `internal/webapi/ownership_connection_journey_test.go`.
+  Settled with the product owner 2026-08-12: one connection string the administrator can read and
+  edit, with **only the password substituted into it**, because the password is the only value
+  they can never see and therefore never check. Nothing visible is rewritten behind them. A
+  starting example is proposed per kind of database and is freely overridable. The connection can
+  be tested before browsing tables, and both the string reader and the server report in their own
+  words.
+
+  What is left is everything the administrator can see: holding the connection and its password
+  apart in the config store, endpoints that take them, a screen that shows the composed
+  connection masked, a connection test separate from listing tables, a proposed starting
+  connection per database, and taking the password out of error messages. The reds and skips in
+  the suite name them one at a time.
 
   **Measured 2026-08-12, and it contradicts the obvious assumption.** `sql.Open` was probed
   directly for both drivers. SQL Server given a URL-form DSN parses eagerly and returns
@@ -74,10 +80,26 @@ Remaining:
   at Open, accepting `"not a url at all"` without complaint. So: pass driver errors through, but
   they cannot be the validation, and the "must name a database" rule stays ours.
 
-  The escaping rule differs by form — percent-encoding for URL-shaped, brace-quoting for
-  keyword-shaped — so applying one to the other produces a string that reads correctly and is
-  refused. **Measure both against the SQL Server container** (`make mssql-up`, `seed-mssql`,
-  `test-mssql`); do not settle it from documentation, which is how it was got wrong before.
+  **The escaping rules, measured against running servers 2026-08-12 — and the rule written here
+  before was wrong.** It said brace-quoting for keyword-shaped strings. Braces mean nothing to
+  SQL Server's keyword parser: they arrive as part of the password and the server answers "login
+  failed", which reads as a bad account and sends the search to the wrong people. Do not
+  re-derive these; they are held by tests that connect (`make test-mssql`, and the PostgreSQL
+  ones under `CMM_TEST_DATABASE_URL`).
+
+  - URL-shaped, either database: percent-encode. A colon must be escaped in the account and need
+    not be in the password.
+  - SQL Server keyword-shaped (`k=v;k=v`): wrap in double quotes, doubling any inside. A raw
+    semicolon ends the value early and leading and trailing spaces are trimmed away.
+  - SQL Server `odbc:` prefixed: braces, doubling any closing brace. A third shape the same
+    driver reads, which is why the rule cannot be chosen by database alone.
+  - PostgreSQL keyword-shaped (`k=v k=v`): wrap in single quotes, backslash-escaping backslashes
+    and single quotes.
+
+  **A composed connection must not be escaped twice.** Found by a test that connected directly
+  and was refused through `ListTables`: the second pass turns every `%` into `%25`, and it
+  reports as a refused login rather than as a mangled string — our own code producing this
+  journey's failure. The password is composed in last, after any TLS override.
 
   **Errors must have the password taken out of them.** Both the string reader and the server
   routinely quote what they were handed, and neither knows which part was secret; this estate
@@ -87,7 +109,9 @@ Remaining:
   password that was stored.
 
   Highest value first: **showing the composed string with the password masked**. It answers in
-  one glance the question that has cost days, and is cheap next to the rest.
+  one glance the question that has cost days. The composing and the masking exist and are
+  measured; what does not exist is anything that shows them, which is the half the requirement
+  is actually about.
 
 - [ ] **SUPERSEDED — hold a database connection as its parts rather than as a string to be parsed** —
   replaced by the item above, which keeps one visible string and injects only the password.

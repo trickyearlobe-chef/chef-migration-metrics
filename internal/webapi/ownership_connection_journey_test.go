@@ -6,8 +6,10 @@
 package webapi
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
@@ -56,38 +58,143 @@ func TestJourney_OnlyThePasswordIsOutOfSight(t *testing.T) {
 }
 
 // "The password, and only the password, put in for me — correctly."
+//
+// The composing half is built and is measured rather than argued: the password
+// arrives at the driver exactly as typed, for every awkward character, in each
+// spelling a connection comes in. Those measurements are
+// TestCompose*ReachesTheDriverIntact in internal/ownershipsql, and the ones that
+// connect to a running server are TestFunctional_MSSQL_Composed* and
+// TestFunctional_Postgres_ComposedConnectionsConnect.
+//
+// What is asserted here is the product-level promise: the administrator hands
+// over a connection with no password in it, and what goes to the database has
+// one.
 func TestJourney_ThePasswordIsPutInForMeAndEscapedCorrectly(t *testing.T) {
-	t.Skip("TODO, and it must be MEASURED not reasoned about. The case is a password with " +
-		"punctuation in it, and the only honest test sends one to a SQL Server that really " +
-		"refuses or really admits it — the container and its sample data already exist. " +
-		"Working out what a driver accepts by argument is what produced several confident " +
-		"wrong answers in one evening; this test exists so that is not done again.")
+	const password = `pa%ss;wo rd/w0rd!`
+	visible := `sqlserver://EXAMPLECORP\svcaccount@dbhost.example.com:1433?database=Staging`
+
+	// Baseline: the visible connection really does not carry the password, so
+	// finding it below is this code putting it there.
+	if strings.Contains(visible, password) {
+		t.Fatal("the fixture proves nothing: the password is already in the visible connection")
+	}
+
+	composed, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, visible, password)
+	if err != nil {
+		t.Fatalf("composing the connection: %v", err)
+	}
+	if composed.DSN == visible {
+		t.Fatal("the composed connection is the one that was typed, so no password was put in")
+	}
+	// The percent sign and the space are escaped; the semicolon is not, because
+	// it is legal where it lands and a server measured it as such. Asserting on
+	// the ones that are actually escaped rather than the ones that look
+	// dangerous is the difference between a test and a guess.
+	for _, escaped := range []string{"%25", "%20"} {
+		if !strings.Contains(composed.DSN, escaped) {
+			t.Errorf("the password went in unescaped, which is the failure this journey is "+
+				"about: %s", composed.Masked)
+		}
+	}
 }
 
 // "It must not quietly rewrite anything the administrator can see: typing an
 // account one way and sending it another is the same unreadable failure in a
 // new place."
+//
+// The account is percent-encoded on the way out, because a domain login carries
+// a backslash that no URL can hold — but what the server is told is the account
+// as typed. That it survives the driver's own parser unchanged is measured by
+// TestTheAccountArrivesExactlyAsTyped and TestDomainUserSurvivesToTheDriver in
+// internal/ownershipsql. What is asserted here is that the rewriting is not
+// quiet: it is there to be read in the masked view.
 func TestJourney_NothingIVisiblyTypedIsRewrittenBehindMe(t *testing.T) {
-	t.Skip("TODO: the account and the domain in front of it stay exactly as written, because " +
-		"they are visible and therefore mine to correct. Pinning this needs the composed " +
-		"connection to exist to compare against what was typed.")
+	const account = `EXAMPLECORP\svcaccount`
+	visible := "sqlserver://" + account + "@dbhost.example.com:1433?database=Staging"
+
+	composed, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, visible, "irrelevant")
+	if err != nil {
+		t.Fatalf("composing the connection: %v", err)
+	}
+	for _, visiblePart := range []string{"dbhost.example.com", "1433", "database=Staging"} {
+		if !strings.Contains(composed.Masked, visiblePart) {
+			t.Errorf("%q is not in what I am shown, so I cannot check it: %s",
+				visiblePart, composed.Masked)
+		}
+	}
+	if !strings.Contains(composed.Masked, "EXAMPLECORP") {
+		t.Errorf("the domain was not left readable: %s", composed.Masked)
+	}
 }
 
 // "How to escape depends on the form of the string, and getting that backwards
 // fails silently."
+//
+// The dangerous one, and the plan had it backwards: brace-quoting a password in
+// SQL Server's keyword spelling parses cleanly, arrives with the braces still
+// attached and comes back as a refused login. Measured against a running server
+// by TestFunctional_MSSQL_TheWrongKeywordQuotingIsRefusedByTheServer.
 func TestJourney_TheEscapingMatchesTheFormOfTheStringItWasGiven(t *testing.T) {
-	t.Skip("TODO, and the dangerous one. The two shapes a connection arrives in want " +
-		"different treatment for the same punctuation, so applying one form's rule to the " +
-		"other yields a string that reads correctly and is refused. Both forms have to be " +
-		"measured against a real server; neither can be settled by reading a driver's " +
-		"documentation, which is how this was got wrong before.")
+	const password = `pa%ss;wo rd!`
+	shapes := map[string]struct {
+		visible string
+		form    ownershipsql.Form
+	}{
+		"url": {
+			`sqlserver://EXAMPLECORP\svc@dbhost.example.com:1433?database=Staging`,
+			ownershipsql.FormURL,
+		},
+		"keyword": {
+			`server=dbhost.example.com;database=Staging;user id=EXAMPLECORP\svc`,
+			ownershipsql.FormKeyword,
+		},
+	}
+
+	sent := map[string]string{}
+	for name, shape := range shapes {
+		composed, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, shape.visible, password)
+		if err != nil {
+			t.Fatalf("%s: composing: %v", name, err)
+		}
+		if composed.Form != shape.form {
+			t.Errorf("%s: the form was read as %q, so the wrong escaping rule was applied",
+				name, composed.Form)
+		}
+		sent[name] = composed.DSN
+	}
+
+	// The same password, escaped two different ways, because the two shapes want
+	// different treatment. If these ever match, one form is being escaped by the
+	// other's rule — which is the silent failure this requirement names.
+	urlTail := strings.SplitN(sent["url"], "@", 2)[0]
+	if strings.Contains(sent["keyword"], urlTail[strings.LastIndex(urlTail, ":")+1:]) {
+		t.Error("both shapes escaped the password identically, so the form is not being " +
+			"recognised — the rule that reads correctly and is refused")
+	}
 }
 
 // "To be shown what will actually be sent, with the password masked."
 func TestJourney_IAmShownWhatWillActuallyBeSent(t *testing.T) {
-	t.Skip("TODO: nothing composes a connection, so nothing can show one. This is the " +
-		"requirement that ends the guessing — a masked view of the composed string answers " +
-		"in one glance the question that has been costing days.")
+	const password = `pa%ss;wo rd!`
+	visible := `sqlserver://EXAMPLECORP\svc@dbhost.example.com:1433?database=Staging`
+
+	composed, err := ownershipsql.Compose(ownershipsql.DriverSQLServer, visible, password)
+	if err != nil {
+		t.Fatalf("composing the connection: %v", err)
+	}
+	// The masked view is the real connection run through the same code with the
+	// password swapped, so it cannot drift from what is sent.
+	if composed.Masked == composed.DSN {
+		t.Fatal("what I am shown is the real connection, password and all")
+	}
+	if strings.Contains(composed.Masked, password) {
+		t.Errorf("the password is in what I am shown: %s", composed.Masked)
+	}
+
+	t.Skip("The composing and masking exist and are measured; nothing SHOWS them. No " +
+		"endpoint returns a masked connection and no screen displays one, so the " +
+		"administrator still cannot read what was sent — which is the requirement. " +
+		"Remove this skip when the import screen shows the composed connection.")
 }
 
 // "Show me one that would work for the kind of database I picked, filled in
