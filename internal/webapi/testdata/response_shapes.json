@@ -15,6 +15,9 @@
           "cookstyle_timeout_minutes": {
             "type": "integer"
           },
+          "embedded_bin_dir": {
+            "type": "string"
+          },
           "test_kitchen": {
             "properties": {
               "chef_license_key_credential": {

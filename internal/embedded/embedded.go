@@ -14,7 +14,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -66,6 +68,11 @@ type Resolver struct {
 
 	// validationTimeout bounds each startup validation command.
 	validationTimeout time.Duration
+
+	// binDir is where the Chef tools are, when they are not somewhere a shell
+	// would find them. Empty means PATH alone, which is the ordinary case:
+	// Chef Workstation puts them there. See WithBinDir.
+	binDir string
 }
 
 // Option configures a Resolver.
@@ -80,6 +87,16 @@ func WithExecutor(e CommandExecutor) Option {
 // startup validation command.
 func WithValidationTimeout(d time.Duration) Option {
 	return func(r *Resolver) { r.validationTimeout = d }
+}
+
+// WithBinDir names the directory holding the Chef tools, for deployments where
+// they are not on PATH — a service started without the profile that sets it, or
+// a Chef Workstation installed somewhere unusual. Empty means PATH alone.
+//
+// Only cookstyle and kitchen. Git is resolved from PATH regardless: it is not
+// a Chef tool and this setting is about where Chef Workstation put its own.
+func WithBinDir(dir string) Option {
+	return func(r *Resolver) { r.binDir = strings.TrimSpace(dir) }
 }
 
 // NewResolver creates a Resolver that resolves tools from PATH.
@@ -98,14 +115,33 @@ func NewResolver(opts ...Option) *Resolver {
 // Path resolution
 // ---------------------------------------------------------------------------
 
-// ResolvePath returns the absolute path to the named binary via PATH lookup
-// (exec.LookPath). Returns ("", error) if the binary cannot be found.
+// ResolvePath returns the absolute path to the named binary: the configured
+// directory first, then PATH.
+//
+// The directory is a preference rather than a replacement. A deployment that
+// set one and then had the tools appear on PATH keeps working, and so does one
+// whose directory holds only some of them — otherwise a single wrong setting
+// switches scanning off, and the message says nothing about the setting.
 func (r *Resolver) ResolvePath(name string) (string, error) {
-	path, err := exec.LookPath(name)
-	if err != nil {
-		return "", fmt.Errorf("embedded: %q not found in PATH", name)
+	if r.binDir != "" {
+		// Runnable, not merely present. A stray file of the right name would
+		// otherwise report the tool as found, and every scan would fail later
+		// somewhere that never mentions this directory.
+		candidate := filepath.Join(r.binDir, name)
+		if info, err := os.Stat(candidate); err == nil &&
+			info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return candidate, nil
+		}
 	}
-	return path, nil
+
+	path, err := exec.LookPath(name)
+	if err == nil {
+		return path, nil
+	}
+	if r.binDir != "" {
+		return "", fmt.Errorf("embedded: %q is not in %s and not in PATH", name, r.binDir)
+	}
+	return "", fmt.Errorf("embedded: %q not found in PATH", name)
 }
 
 // ---------------------------------------------------------------------------

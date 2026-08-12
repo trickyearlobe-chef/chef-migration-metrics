@@ -1083,7 +1083,12 @@ func (app *serverApp) backfillRoleSummary(ctx context.Context) {
 // ---------------------------------------------------------------------------
 
 func (app *serverApp) setupCollector(ctx context.Context) error {
-	toolResolver := embedded.NewResolver()
+	// Where the Chef tools are, when they are not on PATH. Read once here
+	// rather than through a live accessor: the path is resolved now and handed
+	// to the scanner, so moving it takes a restart. The settings screen says so
+	// when this value changes — see putAdminConfigAnalysisTools.
+	toolResolver := embedded.NewResolver(
+		embedded.WithBinDir(app.cfg.AnalysisTools.EmbeddedBinDir))
 	toolResult := toolResolver.ValidateAll(ctx)
 
 	if toolResult.Git.Available {

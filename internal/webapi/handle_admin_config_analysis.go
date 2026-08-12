@@ -95,6 +95,16 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		return
 	}
 
+	// Where the Chef tools are, as it is now — read before anything is stored,
+	// because the holder is reloaded further down and would then be answering
+	// with the value that has just arrived.
+	var binDirWas string
+	if r.configHolder != nil {
+		if current := r.configHolder.Get(); current != nil {
+			binDirWas = current.AnalysisTools.EmbeddedBinDir
+		}
+	}
+
 	// Store, reload, and apply — inlined (not storeAdminConfigSection) so we
 	// can capture the rescore verdicts_changed count for the response.
 	partial := &config.Config{AnalysisTools: input}
@@ -166,7 +176,17 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		}
 	}
 
-	reload := worstGranularity([]ApplyResult{kitchenRes, {Reload: ReloadSubsystem}})
+	// Where the Chef tools are is read once, at startup, and the resolved path
+	// is handed to the scanner — so moving it takes a restart. Saying the
+	// change was applied would leave an operator waiting for scans that cannot
+	// start, which is the same "told it worked" this setting spent its whole
+	// life doing while it reached nothing at all.
+	toolPathMoved := ApplyResult{Reload: ReloadSubsystem}
+	if r.configHolder != nil && binDirWas != input.EmbeddedBinDir {
+		toolPathMoved = ApplyResult{Reload: ReloadProcess}
+	}
+
+	reload := worstGranularity([]ApplyResult{kitchenRes, toolPathMoved})
 	WriteJSON(w, http.StatusOK, putConfigResponse{
 		Value:           value,
 		RestartRequired: reload == ReloadProcess,
