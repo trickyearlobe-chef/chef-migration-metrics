@@ -29,6 +29,7 @@ import { GitRepoDetailPage } from "./pages/GitRepoDetailPage";
 import { GitRepoRemediationPage } from "./pages/GitRepoRemediationPage";
 import { RemediationPage } from "./pages/RemediationPage";
 import { LogsPage } from "./pages/LogsPage";
+import { AccountPage } from "./pages/AccountPage";
 import { OwnersPage } from "./pages/OwnersPage";
 import { OwnerDetailPage } from "./pages/OwnerDetailPage";
 import { OwnershipAuditLogPage } from "./pages/OwnershipAuditLogPage";
@@ -242,6 +243,10 @@ export function App() {
                   admin-only routes below for the guards. */}
               <Route path="/ownership/:name" element={<OwnerDetailPage />} />
               <Route path="/logs" element={<LogsPage />} />
+              {/* Somebody's own record. Not under /admin: making a credential
+                  for a tool you are holding is your own act, at your own level
+                  of access, and every signed-in person can do it. */}
+              <Route path="/account" element={<AccountPage />} />
 
               {/* Admin-only routes */}
               <Route
