@@ -216,3 +216,8 @@ test-results/
 events.db
 events.db-shm
 events.db-wal
+
+# API probe output. Shapes only, no values — but it is a large generated
+# capture from whatever instance you pointed at, not source.
+tools/api-probe/*.json
+probe-out.json

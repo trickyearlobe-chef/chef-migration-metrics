@@ -141,3 +141,6 @@ elasticsearch/
 # =============================================================================
 docker-compose.override.yml
 docker-compose.override.yaml
+
+# Developer tooling — never part of an image.
+tools/
