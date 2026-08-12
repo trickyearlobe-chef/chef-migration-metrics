@@ -45,6 +45,7 @@ set centrally.
 | [Asking my assistant why this is failing](agent-access.md) | Can the AI in my editor read what this knows? |
 | [Building against this from the outside](api-integration.md) | Can I write a program against it, and is it documented? |
 | [Getting in, never locked out](service-access.md) | Who may use it, and can I always get back in? |
+| [Changing my own password](own-password.md) | Can I change it without asking somebody? |
 | [Changing it without downtime](service-configuration.md) | Can I change a setting from the screen? |
 | [Credentials that stay secret](service-secrets.md) | Where are the passwords, and who can read them? |
 | [Keeping the data flowing](service-collection.md) | Is it still collecting, and would I know? |
