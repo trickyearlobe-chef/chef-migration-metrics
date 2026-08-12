@@ -1,0 +1,310 @@
+{
+ "PATCH /api/v1/failure-register/{p}": [
+  "diagnosis",
+  "evidence",
+  "holder_ref",
+  "holder_type",
+  "plan",
+  "target_date"
+ ],
+ "PATCH /api/v1/saved-filters/{p}": [
+  "filters",
+  "name",
+  "shared"
+ ],
+ "POST /api/v1/admin/backups/{p}/restore": [
+  "confirm"
+ ],
+ "POST /api/v1/admin/config/server/generate-csr": [
+  "common_name",
+  "country",
+  "dns_sans",
+  "ip_sans",
+  "key_algorithm",
+  "organization",
+  "organizational_unit"
+ ],
+ "POST /api/v1/admin/credentials": [
+  "credential_type",
+  "name",
+  "value"
+ ],
+ "POST /api/v1/admin/performance/explain": [
+  "analyze",
+  "catalog_key",
+  "run_twice",
+  "sql"
+ ],
+ "POST /api/v1/admin/users": [
+  "display_name",
+  "email",
+  "password",
+  "role",
+  "username"
+ ],
+ "POST /api/v1/auth/login": [
+  "password",
+  "username"
+ ],
+ "POST /api/v1/auth/me/tokens": [
+  "can_write",
+  "name"
+ ],
+ "POST /api/v1/cookbooks/{p}/committers/assign": [
+  "committers"
+ ],
+ "POST /api/v1/cookstyle/custom-cops": [
+  "classification",
+  "cop_name",
+  "description",
+  "enabled",
+  "file_glob",
+  "pattern",
+  "pattern_type",
+  "removed_in",
+  "target_chef_version_min"
+ ],
+ "POST /api/v1/failure-register": [
+  "cookbook_name",
+  "diagnosis",
+  "evidence",
+  "holder_ref",
+  "holder_type",
+  "plan",
+  "reason",
+  "subject_name",
+  "subject_type",
+  "target_date",
+  "verdict"
+ ],
+ "POST /api/v1/failure-register/{p}/resolve": [
+  "note"
+ ],
+ "POST /api/v1/git-repos/{p}/committers/assign": [
+  "committers"
+ ],
+ "POST /api/v1/git-repos/{p}/exclude": [
+  "excluded_by",
+  "reason"
+ ],
+ "POST /api/v1/kitchen/batches": [
+  "dry_run",
+  "filters",
+  "max_count",
+  "name"
+ ],
+ "POST /api/v1/kitchen/git/exclusions": [
+  "git_repo_name",
+  "git_repo_url",
+  "platform_name",
+  "reason",
+  "suite_name"
+ ],
+ "POST /api/v1/kitchen/git/run": [
+  "git_repo_name",
+  "instance_name",
+  "target_chef_version"
+ ],
+ "POST /api/v1/kitchen/git/run-all": [
+  "git_repo_name",
+  "target_chef_version"
+ ],
+ "POST /api/v1/kitchen/node-run": [
+  "cookbook_source",
+  "node_name",
+  "organisation_name",
+  "target_chef_version"
+ ],
+ "POST /api/v1/owners": [
+  "contact_channel",
+  "contact_email",
+  "display_name",
+  "metadata",
+  "name",
+  "owner_type"
+ ],
+ "POST /api/v1/owners/{p}/assignments": [
+  "assignments"
+ ],
+ "POST /api/v1/ownership/aliases": [
+  "alias_type",
+  "alias_value",
+  "owner_name",
+  "source"
+ ],
+ "POST /api/v1/ownership/duplicates/dismiss": [
+  "owner_a",
+  "owner_b",
+  "reason"
+ ],
+ "POST /api/v1/ownership/duplicates/restore": [
+  "owner_a",
+  "owner_b"
+ ],
+ "POST /api/v1/ownership/import/mappings": [
+  "create_owners",
+  "db_credential",
+  "db_driver",
+  "db_query",
+  "delimiter",
+  "field_map",
+  "filter_column",
+  "filter_value",
+  "name",
+  "schedule",
+  "schedule_enabled",
+  "source_kind"
+ ],
+ "POST /api/v1/ownership/merge": [
+  "from_owner",
+  "into_owner"
+ ],
+ "POST /api/v1/ownership/reassign": [
+  "delete_source_owner",
+  "entity_type",
+  "from_owner",
+  "organisation",
+  "to_owner"
+ ],
+ "POST /api/v1/saved-filters": [
+  "filters",
+  "name",
+  "shared",
+  "view"
+ ],
+ "PUT /api/v1/admin/config/analysis-tools": [
+  "cookstyle_addon_cop_paths",
+  "cookstyle_enabled",
+  "cookstyle_timeout_minutes",
+  "embedded_bin_dir"
+ ],
+ "PUT /api/v1/admin/config/auth": [
+  "lockout_attempts",
+  "min_password_length",
+  "providers",
+  "session_expiry"
+ ],
+ "PUT /api/v1/admin/config/backup": [
+  "dir",
+  "enabled",
+  "max_generations",
+  "pg_dump_path",
+  "pg_restore_path",
+  "schedule"
+ ],
+ "PUT /api/v1/admin/config/collection": [
+  "delete_server_cookbooks_after_scan",
+  "schedule",
+  "skip_server_cookbook_download",
+  "stale_cookbook_threshold_days",
+  "stale_node_critical_days",
+  "stale_node_threshold_days",
+  "stale_node_warning_hours"
+ ],
+ "PUT /api/v1/admin/config/concurrency": [
+  "cookbook_download",
+  "cookstyle_scan",
+  "git_pull",
+  "node_page_fetching",
+  "organisation_collection",
+  "readiness_evaluation",
+  "role_fetching"
+ ],
+ "PUT /api/v1/admin/config/exports": [
+  "async_threshold",
+  "max_rows",
+  "output_directory",
+  "retention_hours"
+ ],
+ "PUT /api/v1/admin/config/ingest": [
+  "enabled",
+  "failures_only",
+  "max_body_bytes",
+  "max_records_per_body",
+  "retention_days",
+  "show_run_events"
+ ],
+ "PUT /api/v1/admin/config/logging": [
+  "level",
+  "retention_days"
+ ],
+ "PUT /api/v1/admin/config/readiness": [
+  "install_path_linux",
+  "install_path_windows",
+  "install_size_mb_linux",
+  "install_size_mb_windows",
+  "min_remaining_free_percent",
+  "review_blocks_readiness",
+  "tk_blocks_readiness"
+ ],
+ "PUT /api/v1/admin/config/server": [
+  "graceful_shutdown_seconds",
+  "listen_address",
+  "port",
+  "tls",
+  "trusted_proxy",
+  "websocket"
+ ],
+ "PUT /api/v1/admin/config/test-kitchen": [
+  "chef_license_key_credential",
+  "driver",
+  "driver_secrets",
+  "driver_settings",
+  "enabled",
+  "image_field_name",
+  "images",
+  "platform_map",
+  "setup_scripts",
+  "start_rate_max_per_window",
+  "start_rate_window_minutes",
+  "timeout_minutes"
+ ],
+ "PUT /api/v1/admin/credentials/{p}": [
+  "value"
+ ],
+ "PUT /api/v1/admin/users/{p}": [
+  "display_name",
+  "email",
+  "locked",
+  "role"
+ ],
+ "PUT /api/v1/admin/users/{p}/password": [
+  "password"
+ ],
+ "PUT /api/v1/cookstyle/cops/{p}/classification": [
+  "classification",
+  "reason"
+ ],
+ "PUT /api/v1/cookstyle/custom-cops/{p}": [
+  "classification",
+  "cop_name",
+  "created_at",
+  "description",
+  "enabled",
+  "file_glob",
+  "id",
+  "pattern",
+  "pattern_type",
+  "removed_in",
+  "target_chef_version_min",
+  "updated_at"
+ ],
+ "PUT /api/v1/cookstyle/scan-scope": [
+  "excluded",
+  "pattern",
+  "reason"
+ ],
+ "PUT /api/v1/kitchen/batches/{p}": [
+  "dry_run",
+  "filters",
+  "max_count",
+  "name"
+ ],
+ "PUT /api/v1/owners/{p}": [
+  "contact_channel",
+  "contact_email",
+  "display_name",
+  "metadata",
+  "owner_type"
+ ]
+}
