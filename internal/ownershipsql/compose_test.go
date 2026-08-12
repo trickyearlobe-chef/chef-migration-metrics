@@ -252,30 +252,52 @@ func spellingsOf(password string) map[string]string {
 }
 
 // Nothing the administrator can see is rewritten behind them: the account and
-// the domain in front of it arrive at the server exactly as typed.
+// whatever stands in front of it arrive at the server exactly as typed.
+//
+// The prefix before a backslash is not always a domain. On a Windows box the
+// machine's own hostname doubles as one, and "." means the same thing — an
+// account local to that machine rather than to a directory. None of that
+// changes what has to happen here: the whole account is the administrator's to
+// write, and it must arrive as written whatever it means.
 func TestTheAccountArrivesExactlyAsTyped(t *testing.T) {
 	accounts := []string{
 		`svcaccount`,
 		`EXAMPLECORP\svcaccount`,
+		`WINBOX\svclocal`,    // the machine's hostname standing in for a domain
+		`.\svclocal`,         // the same thing written the short way
+		`WORKGROUP\svclocal`, // a workgroup rather than a domain
 		`svc.account`,
 		`svc-account@example.com`,
+		`svcaccount@corp.example.com`, // the UPN spelling of a domain account
 		`spaced account`,
+		`WINBOX\spaced account`,
 	}
+	spellings := map[string]func(string) string{
+		"url": func(a string) string {
+			return "sqlserver://" + a + "@dbhost.example.com:1433?database=Staging"
+		},
+		"keyword": func(a string) string {
+			return "server=dbhost.example.com;database=Staging;user id=" + a
+		},
+	}
+
 	for _, account := range accounts {
-		t.Run(account, func(t *testing.T) {
-			visible := "sqlserver://" + account + "@dbhost.example.com:1433?database=Staging"
-			composed, err := Compose(DriverSQLServer, visible, "irrelevant")
-			if err != nil {
-				t.Fatalf("composing: %v", err)
-			}
-			cfg, err := msdsn.Parse(composed.DSN)
-			if err != nil {
-				t.Fatalf("unparsable: %v", err)
-			}
-			if cfg.User != account {
-				t.Errorf("the account was rewritten\n  typed:   %q\n  arrives: %q", account, cfg.User)
-			}
-		})
+		for spelling, visibleFor := range spellings {
+			t.Run(spelling+"/"+account, func(t *testing.T) {
+				composed, err := Compose(DriverSQLServer, visibleFor(account), "irrelevant")
+				if err != nil {
+					t.Fatalf("composing: %v", err)
+				}
+				cfg, err := msdsn.Parse(composed.DSN)
+				if err != nil {
+					t.Fatalf("unparsable: %v", err)
+				}
+				if cfg.User != account {
+					t.Errorf("the account was rewritten\n  typed:   %q\n  arrives: %q",
+						account, cfg.User)
+				}
+			})
+		}
 	}
 }
 

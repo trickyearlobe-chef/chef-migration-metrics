@@ -192,6 +192,97 @@ func TestFunctional_MSSQL_AVisibleConnectionAndItsPasswordReadRows(t *testing.T)
 	}
 }
 
+// The account reaches the server exactly as typed — proved by the server
+// itself, which quotes it back when it refuses the login.
+//
+// This closes a gap the parser tests cannot: they show the driver reads the
+// account back out of the string unchanged, not that the string reaching the
+// server carries it. A refusal naming the account is the only evidence of the
+// second thing available without an account that actually works.
+func TestFunctional_MSSQL_TheServerQuotesTheAccountBackAsTyped(t *testing.T) {
+	visible := visibleConnection(t, "CMM_TEST_MSSQL_VISIBLE_URL")
+	host := strings.SplitN(strings.TrimPrefix(visible, "sqlserver://"), "@", 2)
+	if len(host) != 2 {
+		t.Fatalf("cannot read the host out of %q", visible)
+	}
+	ctx := context.Background()
+
+	// Accounts SQL Server authenticates itself. A backslash means something
+	// else entirely — see the test below.
+	accounts := []string{
+		`nosuchuser`,
+		`svcaccount@corp.example.com`,
+		`spaced account`,
+	}
+	for _, account := range accounts {
+		t.Run(account, func(t *testing.T) {
+			composed, err := Compose(DriverSQLServer,
+				"sqlserver://"+account+"@"+host[1], "definitely-not-the-password")
+			if err != nil {
+				t.Fatalf("composing: %v", err)
+			}
+			err = canConnect(ctx, DriverSQLServer, composed.DSN)
+			if err == nil {
+				t.Fatal("this account connected, so the refusal cannot be read")
+			}
+			if !strings.Contains(err.Error(), "Login failed for user") {
+				t.Fatalf("refused for a reason that says nothing about the account: %v", err)
+			}
+			if !strings.Contains(err.Error(), account) {
+				t.Errorf("the server was told a different account from the one typed\n"+
+					"  typed:  %q\n  server: %v", account, err)
+			}
+		})
+	}
+}
+
+// A backslash in the account is not a SQL login at all.
+//
+// Measured, and it is worth knowing before anybody tries to test one: whatever
+// stands before the backslash — a domain, a workgroup, the machine's own
+// hostname, or "." — the driver switches to integrated authentication and the
+// password stops being a SQL password. A server that is not in that domain
+// refuses with "the login is from an untrusted domain", and unlike every other
+// refusal it does NOT name the account back.
+//
+// So an account of this shape cannot be proven to work anywhere we have. The
+// container is Linux and joined to nothing, and SQL Server will not create a
+// password login whose name contains a backslash — "not a valid name because it
+// contains invalid characters". The customer's own connection is this shape, so
+// what happens when their firewall opens is a path nothing here has exercised.
+func TestFunctional_MSSQL_ABackslashAccountAsksForIntegratedAuthentication(t *testing.T) {
+	visible := visibleConnection(t, "CMM_TEST_MSSQL_VISIBLE_URL")
+	host := strings.SplitN(strings.TrimPrefix(visible, "sqlserver://"), "@", 2)
+	if len(host) != 2 {
+		t.Fatalf("cannot read the host out of %q", visible)
+	}
+	ctx := context.Background()
+
+	// A real domain, a workgroup, and the two spellings of "this machine".
+	for _, account := range []string{
+		`EXAMPLECORP\svcaccount`,
+		`WORKGROUP\svclocal`,
+		`WINBOX\svclocal`,
+		`.\svclocal`,
+	} {
+		t.Run(account, func(t *testing.T) {
+			composed, err := Compose(DriverSQLServer,
+				"sqlserver://"+account+"@"+host[1], "definitely-not-the-password")
+			if err != nil {
+				t.Fatalf("composing: %v", err)
+			}
+			err = canConnect(ctx, DriverSQLServer, composed.DSN)
+			if err == nil {
+				t.Fatal("a backslash account connected; this expectation should be re-measured")
+			}
+			if !strings.Contains(err.Error(), "Integrated authentication") {
+				t.Errorf("a backslash account no longer routes to integrated authentication, "+
+					"which changes what the customer's connection will do: %v", err)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // PostgreSQL
 //

@@ -96,6 +96,24 @@ Remaining:
   - PostgreSQL keyword-shaped (`k=v k=v`): wrap in single quotes, backslash-escaping backslashes
     and single quotes.
 
+  **A backslash in the account is not a SQL login, and this is the customer's shape.** Measured
+  2026-08-13: whatever stands before the backslash — a domain, a workgroup, a Windows machine's
+  own hostname, or `.` — the driver switches to integrated (NTLM) authentication and the password
+  stops being a SQL password. A server not in that domain refuses with "the login is from an
+  untrusted domain", and unlike every other refusal it does **not** name the account back, so the
+  account cannot be checked from the message.
+
+  This cannot be proven anywhere we have. The container is Linux and joined to nothing, and SQL
+  Server refuses to create a password login whose name contains a backslash ("not a valid name
+  because it contains invalid characters"). So when their firewall opens, their connection takes
+  a path nothing here has exercised — and "untrusted domain" locally is not the failure they will
+  see. That is a fifth thing a failure can mean, on top of the four the journey names.
+
+  What *is* held: the account arrives exactly as typed, for every prefix shape and in both
+  spellings (`TestTheAccountArrivesExactlyAsTyped`), and a real server quotes it back unchanged
+  for the shapes it authenticates itself
+  (`TestFunctional_MSSQL_TheServerQuotesTheAccountBackAsTyped`).
+
   **A composed connection must not be escaped twice.** Found by a test that connected directly
   and was refused through `ListTables`: the second pass turns every `%` into `%25`, and it
   reports as a refused login rather than as a mangled string — our own code producing this
