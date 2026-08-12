@@ -331,3 +331,117 @@ var apiRoles = map[string]RouteRole{
 	"PUT /api/v1/owners/{name}":                            RoleOperator,
 	"PUT /api/v1/ownership/import/mappings/{id}":           RoleAdmin,
 }
+
+// Writes that genuinely read nothing from the request body, keyed by
+// "METHOD path".
+//
+// Running a scan, cancelling a run, restarting the service: what to do is in
+// the address, so there is nothing to send. Saying so is not the same as saying
+// nothing — an undescribed body and a body that does not exist look identical
+// to a caller, and the first sends them hunting through our source while the
+// second is the answer.
+//
+// This is a list about absence, so it cannot be derived — but it is held from
+// both sides. An entry for something nothing serves goes red, an address that
+// reads a body and is listed here goes red, and a write that is neither listed
+// nor described goes red. See openapi_bodies_test.go.
+var bodylessWrites = map[string]bool{
+	"POST /api/v1/admin/backups":                      true,
+	"POST /api/v1/admin/credentials/{name}/test":      true,
+	"POST /api/v1/admin/hypervisor/test-connection":   true,
+	"POST /api/v1/admin/performance/vacuum":           true,
+	"POST /api/v1/admin/platform-display-names/reset": true,
+	"POST /api/v1/admin/rescan-all-cookstyle":         true,
+	"POST /api/v1/admin/restart":                      true,
+	"POST /api/v1/admin/saml/generate-keypair":        true,
+	"POST /api/v1/auth/logout":                        true,
+	"POST /api/v1/cookbooks/{name}/rescan":            true,
+	"POST /api/v1/cookbooks/{name}/reset-git":         true,
+	"POST /api/v1/git-repos/{name}/rescan":            true,
+	"POST /api/v1/git-repos/{name}/reset":             true,
+	"POST /api/v1/hypervisor/cleanup":                 true,
+	"POST /api/v1/hypervisor/vms/{id}/destroy":        true,
+	"POST /api/v1/kitchen/analysis/trigger":           true,
+	"POST /api/v1/kitchen/batches/{id}/cancel":        true,
+	"POST /api/v1/kitchen/batches/{id}/run":           true,
+	"POST /api/v1/kitchen/orphan-sweep":               true,
+	"POST /api/v1/kitchen/queue/{id}/cancel":          true,
+	"POST /api/v1/kitchen/queue/{id}/retry":           true,
+	"POST /api/v1/ownership/duplicates/rescan":        true,
+	"POST /api/v1/ownership/import/clear":             true,
+	"POST /api/v1/ownership/import/mappings/{id}/run": true,
+
+	// What to extract and in what format are asked for in the address, not
+	// sent as a document.
+	"POST /api/v1/exports": true,
+}
+
+// Writes that take a file or form fields rather than a JSON document, keyed by
+// "METHOD path".
+//
+// Importing owners means uploading the spreadsheet somebody exported, and
+// asking a system of record what tables it holds means sending the connection
+// details as form fields. Both are real input, so neither belongs in
+// bodylessWrites — a caller told "this takes nothing" would send nothing and
+// get a refusal with no idea why.
+//
+// The individual field names are not described yet. They are read as string
+// keys rather than decoded into a type, so nothing can reflect them — the same
+// problem as query parameters, and the same answer when that is built.
+var uploadWrites = map[string]bool{
+	"POST /api/v1/ownership/aliases/import": true,
+	"POST /api/v1/ownership/import":         true,
+	"POST /api/v1/ownership/import/commit":  true,
+	"POST /api/v1/ownership/import/preview": true,
+	"POST /api/v1/ownership/import/profile": true,
+	"POST /api/v1/ownership/import/tables":  true,
+}
+
+// Bodies this service reads but deliberately does not describe, keyed by
+// "METHOD path", with the reason — which is served, so a caller reads why
+// rather than assuming we forgot.
+//
+// The reason is always the same one: this service does not decide the shape.
+// Naming a type for data that arrives from somewhere else turns a change at
+// the far end into a decode failure here, and the whole point of the ingest
+// path is that it keeps working when the sender adds a field.
+var undescribedBodies = map[string]string{
+	"POST /api/v1/ingest": "Node telemetry, as the sender emits it. Deliberately not " +
+		"described: this service does not decide this shape, and pinning it would turn a " +
+		"change at the sending end into a rejected delivery.",
+}
+
+// Routes whose handler can reach ParsePagination but which do not paginate.
+//
+// Every one of these is a handler registered at several addresses, or a subtree
+// serving many, where some other address under the same function is the one
+// that pages. Reachability cannot tell them apart, so each was measured against
+// a running instance with tools/api-probe/probe.py and recorded here rather
+// than guessed. Re-run it rather than reasoning about this list.
+//
+// This is a record of measurements, not a design decision, and it is held from
+// both sides: an entry for something nothing serves goes red, and a route that
+// pages without either declaring it or appearing here goes red. See
+// openapi_query_test.go.
+var unpaginatedDespiteReaching = map[string]bool{
+	// Dispatches on the path across a dozen addresses; the ones that page
+	// declare it themselves.
+	"/api/v1/ownership/import/mappings/":  true,
+	"/api/v1/ownership/import/rejections": true,
+	"/api/v1/ownership/import/tables":     true,
+	"/api/v1/ownership/import/profile":    true,
+	"/api/v1/ownership/import/preview":    true,
+	"/api/v1/ownership/import/commit":     true,
+	"/api/v1/ownership/import/clear":      true,
+	// handleOwnershipEndpoints, likewise.
+	"/api/v1/ownership/import":   true,
+	"/api/v1/ownership/lookup":   true,
+	"/api/v1/ownership/reassign": true,
+	// Subtrees whose paging address is a sibling.
+	"/api/v1/cookbooks/":         true,
+	"/api/v1/admin/credentials/": true,
+	"/api/v1/admin/users/":       true,
+	"/api/v1/owners/":            true,
+	"/api/v1/failure-register/":  true,
+	"/api/v1/nodes/":             true,
+}

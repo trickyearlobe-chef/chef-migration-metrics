@@ -40,6 +40,13 @@ type Route struct {
 	// Empty for an ordinary route. Declared where the dispatch happens, because
 	// nothing else can see them.
 	SubPaths []SubPath
+	// Bodies names the Go types each method decodes its request body into,
+	// keyed by method. The *shape* is never written here — only which types —
+	// so the fields and their names on the wire are reflected out of the types
+	// the handler really uses and cannot drift from them. See takes.
+	Bodies map[string][]any
+	// Paginated records which methods accept page and per_page. See paginated.
+	Paginated map[string]bool
 }
 
 // RouteOption declares something about a route that the registration itself
@@ -65,6 +72,14 @@ type SubPath struct {
 	Suffix string
 	// Methods are the HTTP methods the handler answers at this address.
 	Methods []string
+	// Bodies names the Go types each method decodes its request body into,
+	// keyed by method. See takes.
+	Bodies map[string][]any
+	// Paginated records which methods accept page and per_page. See paginated.
+	Paginated map[string]bool
+	// Capped records which methods accept per_page but ignore page. See
+	// subCappedNotPaged.
+	Capped map[string]bool
 }
 
 // IsSubtree reports whether the pattern matches everything beneath it.
@@ -141,5 +156,135 @@ func sub(suffix string, ms ...string) RouteOption {
 	}
 	return func(rt *Route) {
 		rt.SubPaths = append(rt.SubPaths, SubPath{Suffix: suffix, Methods: ms})
+	}
+}
+
+// takes declares which type a method on this address decodes its request body
+// into. A zero value of the type is enough — nothing is read from it but its
+// shape.
+//
+// More than one may be named, for the one address that reads a single body into
+// several types: the settings for the server itself carry certificates and ACME
+// credentials that are routed to encrypted storage rather than into the
+// settings section. A caller has to be told about all of them, so the
+// description is every named type at once.
+//
+// This is the one thing about a body that is written down, and it is one token
+// per address rather than a table of fields. Everything a caller needs to know
+// — which fields exist, what they are called on the wire, what they hold — is
+// reflected off the type in openapi_schema.go, so a field added to a handler
+// appears in the description in the same commit and a renamed one cannot leave
+// a stale name behind.
+//
+// TestBodies_EveryDecodedRequestBodyIsDescribed reads the handlers and fails
+// when one decodes a body no address declares, so this cannot quietly fall
+// behind the way a hand-kept list would.
+func takes(method string, vs ...any) RouteOption {
+	return func(rt *Route) {
+		if rt.Bodies == nil {
+			rt.Bodies = map[string][]any{}
+		}
+		rt.Bodies[method] = vs
+	}
+}
+
+// subTakes is takes for one address under a subtree.
+//
+// It panics when the suffix has not been declared with sub first, because the
+// alternative is a body silently attached to nothing — an address that reads as
+// taking no input while the handler refuses every call that sends none. The
+// panic happens as the router is built, so every test that builds one catches
+// it.
+func subTakes(suffix, method string, vs ...any) RouteOption {
+	return func(rt *Route) {
+		for i := range rt.SubPaths {
+			if rt.SubPaths[i].Suffix != suffix {
+				continue
+			}
+			if rt.SubPaths[i].Bodies == nil {
+				rt.SubPaths[i].Bodies = map[string][]any{}
+			}
+			rt.SubPaths[i].Bodies[method] = vs
+			return
+		}
+		panic("subTakes(" + suffix + ", " + method + ") on " + rt.Pattern +
+			": no such sub-path is declared, so the body would describe nothing. " +
+			"Declare it with sub() first, and keep sub() before subTakes().")
+	}
+}
+
+// paginated declares that reading this address accepts page and per_page.
+//
+// Measured against a running instance with tools/api-probe/probe.py, not
+// derived and not guessed. Three derivations were tried and every one
+// over-reports, because the handler a
+// route is registered with is not the unit that pages: a subtree handler serves
+// many addresses and only some of them page, and two handlers here are
+// registered at several exact patterns and dispatch on the path inside. A
+// wrongly attached page parameter is a caller asking for fifty rows, being
+// ignored, and believing the whole estate was fifty rows.
+//
+// What the parameters themselves say — the default, the minimum, the clamp — is
+// read off the constants ParsePagination actually applies, so this cannot
+// disagree with the service about the numbers. Only *which addresses* is
+// written down, and two tests in openapi_query_test.go hold that honest from
+// both sides.
+func paginated() RouteOption {
+	return func(rt *Route) {
+		if rt.Paginated == nil {
+			rt.Paginated = map[string]bool{}
+		}
+		rt.Paginated[http.MethodGet] = true
+	}
+}
+
+// subPaginated is paginated for one address under a subtree. Panics when the
+// suffix has not been declared with sub first — see subTakes for why.
+func subPaginated(suffix string) RouteOption {
+	return func(rt *Route) {
+		for i := range rt.SubPaths {
+			if rt.SubPaths[i].Suffix != suffix {
+				continue
+			}
+			if rt.SubPaths[i].Paginated == nil {
+				rt.SubPaths[i].Paginated = map[string]bool{}
+			}
+			rt.SubPaths[i].Paginated[http.MethodGet] = true
+			return
+		}
+		panic("subPaginated(" + suffix + ") on " + rt.Pattern +
+			": no such sub-path is declared, so the parameters would describe nothing. " +
+			"Declare it with sub() first, and keep sub() before subPaginated().")
+	}
+}
+
+// subCappedNotPaged declares that reading one address under a subtree honours
+// per_page but ignores page.
+//
+// This is not a description choice, it is a defect being described accurately.
+// Both addresses that carry it read their runs through a store call that takes
+// a limit and no offset, so asking for the second page returns the first one
+// again. Describing them as paginated would tell a caller to walk pages that
+// silently repeat — worse than an error, because it looks like duplicate data
+// at the far end rather than like a failure.
+//
+// Recorded in plans/todo-snagging.md. When the store learns an offset these
+// become subPaginated() and this loses its last user, along with Capped.
+// There is deliberately no route-level version: both addresses are sub-paths,
+// and an option nothing calls is a shape somebody later fills in by accident.
+func subCappedNotPaged(suffix string) RouteOption {
+	return func(rt *Route) {
+		for i := range rt.SubPaths {
+			if rt.SubPaths[i].Suffix != suffix {
+				continue
+			}
+			if rt.SubPaths[i].Capped == nil {
+				rt.SubPaths[i].Capped = map[string]bool{}
+			}
+			rt.SubPaths[i].Capped[http.MethodGet] = true
+			return
+		}
+		panic("subCappedNotPaged(" + suffix + ") on " + rt.Pattern +
+			": no such sub-path is declared. Declare it with sub() first.")
 	}
 }
