@@ -30,6 +30,7 @@ import { GitRepoRemediationPage } from "./pages/GitRepoRemediationPage";
 import { RemediationPage } from "./pages/RemediationPage";
 import { LogsPage } from "./pages/LogsPage";
 import { AccountPage } from "./pages/AccountPage";
+import { ApiDocsPage } from "./pages/ApiDocsPage";
 import { OwnersPage } from "./pages/OwnersPage";
 import { OwnerDetailPage } from "./pages/OwnerDetailPage";
 import { OwnershipAuditLogPage } from "./pages/OwnershipAuditLogPage";
@@ -247,6 +248,11 @@ export function App() {
                   for a tool you are holding is your own act, at your own level
                   of access, and every signed-in person can do it. */}
               <Route path="/account" element={<AccountPage />} />
+              {/* Any authenticated person may read the description — an
+                  assistant holding a viewer's credential has to. Only the
+                  navigation tab is limited, to keep it out of a viewer's way,
+                  so reaching this by address is intended and not a hole. */}
+              <Route path="/api-docs" element={<ApiDocsPage />} />
 
               {/* Admin-only routes */}
               <Route

@@ -47,3 +47,22 @@ export interface CreatedApiToken {
   secret: string;
   notice: string;
 }
+
+// The served OpenAPI document, as this service actually emits it. Deliberately
+// narrow: there are no tags, no components and no parameter detail today, so a
+// type promising them would make the page render empty sections that look like
+// missing data rather than absent data.
+export interface ApiOperation {
+  operationId?: string;
+  summary?: string;
+  description?: string;
+  // The access this operation needs, folded in by the generator from both the
+  // route table and the checks handlers make themselves.
+  "x-required-role"?: string;
+}
+
+export interface OpenApiDocument {
+  openapi?: string;
+  info?: { title?: string; version?: string; description?: string };
+  paths?: Record<string, Record<string, ApiOperation | undefined>>;
+}

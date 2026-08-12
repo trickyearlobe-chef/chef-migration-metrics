@@ -54,3 +54,41 @@ issued from one's own record, carrying that person's level of access, read-only 
 account with a second permissions model. Whether that survives an unattended job is open, and
 [building against this from the outside](../journeys/api-integration.md) says not to settle it
 by building it.
+
+---
+
+## Renderer research for the API document page (measured 2026-08-12)
+
+Kept so a change of mind does not re-run the measurement. Dry-run installs
+(`npm install --dry-run --ignore-scripts --no-save`) against the Harness proxy, from a
+frontend tree of 371 packages. Nothing was installed.
+
+| Package | Version measured | New transitive packages |
+|---|---|---|
+| `swagger-ui-react` | 5.32.13 | **+167** (+45% on the tree) |
+| `rapidoc` | 9.3.8 | **+112** |
+| `redoc` | 2.5.3 | **+97** |
+
+**Chosen: hand-rolled React, zero new dependencies.** The document has no tags, no
+components and `parameters: null` on every operation, so the detail a real renderer exists
+to display is not there to display — the cost buys layout, not information.
+
+If we circle back:
+
+- **`redoc`** is the cheapest real renderer and has no try-it-out by default, which matches
+  the decision already taken. Pulls mobx and styled-components.
+- **`rapidoc`** is a web component, so it drops in without React bindings, but costs more
+  than redoc and its theming is attribute-driven.
+- **`swagger-ui-react`** is the familiar look and the most expensive. Try-it-out is on by
+  default and must be switched off explicitly — the wrong default for a page served to a
+  signed-in person.
+- Any of them only pays off **after** the generator emits parameters, request bodies and
+  response schemas. Until then they render the same three fields the hand-rolled page does.
+- Re-measure before adopting: the counts move, and the Harness proxy quarantines very
+  recent versions, so pin a slightly older release.
+
+**The generator gap this exposed.** Every operation carries a summary and `x-required-role`,
+and nothing else: `parameters` is null and the only response is a generic 200. That is thin
+for the client generators the agent-access journey names as the reason for having a
+description at all. Enriching the generator is the prerequisite for both a better page and a
+usable generated client.

@@ -7,6 +7,7 @@ import type {
   AuthInfoResponse,
   ApiToken,
   CreatedApiToken,
+  OpenApiDocument,
 } from "../types";
 import { apiFetch, buildUrl } from "./client";
 
@@ -54,4 +55,11 @@ export function destroyMyApiToken(id: string): Promise<void> {
   return apiFetch<void>(buildUrl(`/auth/me/tokens/${encodeURIComponent(id)}`), {
     method: "DELETE",
   });
+}
+
+// The service's own description of every address it serves. Open to any
+// authenticated person on purpose: an assistant holding a viewer's credential
+// has to read this to work at all.
+export function fetchApiDocument(): Promise<OpenApiDocument> {
+  return apiFetch<OpenApiDocument>(buildUrl("/openapi.json"));
 }
