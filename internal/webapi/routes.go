@@ -50,6 +50,9 @@ type Route struct {
 	// Answers names the Go type each method writes back, keyed by method. See
 	// answers.
 	Answers map[string]Answer
+	// Forms names the fields each method reads from a form submission, keyed
+	// by method. See takesForm.
+	Forms map[string][]formField
 }
 
 // Answer is what one method on one address writes back: a zero value of the
@@ -233,6 +236,36 @@ func subTakes(suffix, method string, vs ...any) RouteOption {
 		panic("subTakes(" + suffix + ", " + method + ") on " + rt.Pattern +
 			": no such sub-path is declared, so the body would describe nothing. " +
 			"Declare it with sub() first, and keep sub() before subTakes().")
+	}
+}
+
+// formField is one field of a form submission: its name on the wire, and
+// whether it carries a file rather than a value.
+//
+// Nothing else is written down. What a field means is not recorded here for the
+// same reason a body's fields are not — a sentence beside the code is the thing
+// that rots — and unlike a body there is no type to reflect, because a form
+// field is a string key the handler reads by hand. So the names are declared
+// and then held against the handlers: nothing may be described that no handler
+// reads, and no address that reads form fields may describe none.
+type formField struct {
+	Name string
+	File bool
+}
+
+// takesForm declares the fields a method on this address reads from a form.
+//
+// The six addresses that take one were described as "sent as a form, the fields
+// are not described yet", which tells a caller only that the description is
+// incomplete. The fields are read by hand out of the request, and are read at
+// different addresses by one handler that dispatches on the path — so, as with
+// pagination, the unit is the (method, address) and not the function.
+func takesForm(method string, fields ...formField) RouteOption {
+	return func(rt *Route) {
+		if rt.Forms == nil {
+			rt.Forms = map[string][]formField{}
+		}
+		rt.Forms[method] = fields
 	}
 }
 

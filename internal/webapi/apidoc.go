@@ -385,9 +385,11 @@ var bodylessWrites = map[string]bool{
 // bodylessWrites — a caller told "this takes nothing" would send nothing and
 // get a refusal with no idea why.
 //
-// The individual field names are not described yet. They are read as string
-// keys rather than decoded into a type, so nothing can reflect them — the same
-// problem as query parameters, and the same answer when that is built.
+// The fields themselves are declared at the registration site with takesForm.
+// They are read as string keys rather than decoded into a type, so nothing can
+// reflect them and the names have to be written down — which is why two tests
+// in openapi_forms_test.go hold them against the handlers from both sides, and
+// why this list is what says an address here must name its fields at all.
 var uploadWrites = map[string]bool{
 	"POST /api/v1/ownership/aliases/import": true,
 	"POST /api/v1/ownership/import":         true,

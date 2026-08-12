@@ -88,6 +88,9 @@ func describedInput(schemas *schemaRegistry, method string, addr address,
 	if bodies, ok := addr.bodies[method]; ok && len(bodies) > 0 {
 		return jsonRequestBody(schemas, bodies)
 	}
+	if fields, ok := addr.forms[method]; ok && len(fields) > 0 {
+		return formRequestBody(fields)
+	}
 	if uploadWrites[key] {
 		return map[string]any{
 			"required":    true,
@@ -133,6 +136,32 @@ func describeAnswer(schemas *schemaRegistry, op map[string]any, answer Answer) {
 	}
 }
 
+// formRequestBody describes a form submission, field by field.
+//
+// A file is a string of format binary, which is how OpenAPI says "upload"; a
+// generated client turns that into a file part rather than a text one. Which
+// fields are required is left unsaid, as it is for a JSON body: the handlers
+// enforce it by hand, and several of these addresses accept either a file or a
+// database connection, so no single field is required on its own.
+func formRequestBody(fields []formField) map[string]any {
+	props := map[string]any{}
+	for _, field := range fields {
+		schema := map[string]any{"type": "string"}
+		if field.File {
+			schema["format"] = "binary"
+		}
+		props[field.Name] = schema
+	}
+	return map[string]any{
+		"required": true,
+		"content": map[string]any{
+			"multipart/form-data": map[string]any{
+				"schema": map[string]any{"type": "object", "properties": props},
+			},
+		},
+	}
+}
+
 // jsonRequestBody describes a JSON document, reflected off the type the handler
 // really decodes into.
 //
@@ -167,6 +196,7 @@ type address struct {
 	paginated map[string]bool
 	capped    map[string]bool
 	answers   map[string]Answer
+	forms     map[string][]formField
 }
 
 // describableAddresses turns a recorded route into the addresses a caller can
@@ -183,7 +213,7 @@ func describableAddresses(rt Route) []address {
 	}
 	if !rt.IsSubtree() {
 		return []address{{path: rt.Pattern, methods: rt.Methods, bodies: rt.Bodies,
-			paginated: rt.Paginated, answers: rt.Answers}}
+			paginated: rt.Paginated, answers: rt.Answers, forms: rt.Forms}}
 	}
 	out := make([]address, 0, len(rt.SubPaths))
 	for _, sp := range rt.SubPaths {

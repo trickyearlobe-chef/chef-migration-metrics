@@ -963,17 +963,39 @@ func (r *Router) registerRoutes() {
 		takes("POST", reassignOwnershipRequest{}))
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints, paginated())
-	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints, methods("POST"))
+	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints, methods("POST"),
+		takesForm("POST", formField{Name: "format"}, formField{Name: "file", File: true}))
 	// Discovery-driven intake. Registered as exact patterns beside the
 	// fixed-header route above, which stays in service unchanged.
 	// Every case in handleOwnershipIntake's dispatch switch needs an entry
 	// here; TestOwnershipIntakeDispatchCasesAreRouted holds the two in step.
 	// The rows an import could not use, as a worklist rather than only an export.
 	r.protect("/api/v1/ownership/import/rejections", r.handleOwnershipIntake, paginated())
-	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake, methods("POST"))
-	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake, methods("POST"))
-	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake, methods("POST"))
-	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake, methods("POST"))
+	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake, methods("POST"),
+		takesForm("POST", formField{Name: "db_driver"}, formField{Name: "db_credential"},
+			formField{Name: "db_tls_mode"}))
+	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake, methods("POST"),
+		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
+			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
+			formField{Name: "db_driver"}, formField{Name: "db_credential"},
+			formField{Name: "db_tls_mode"},
+			formField{Name: "db_query"}))
+	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake, methods("POST"),
+		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
+			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
+			formField{Name: "db_driver"}, formField{Name: "db_credential"},
+			formField{Name: "db_tls_mode"},
+			formField{Name: "db_query"},
+			formField{Name: "field_map"}, formField{Name: "filter_column"},
+			formField{Name: "filter_value"}, formField{Name: "create_owners"}))
+	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake, methods("POST"),
+		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
+			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
+			formField{Name: "db_driver"}, formField{Name: "db_credential"},
+			formField{Name: "db_tls_mode"},
+			formField{Name: "db_query"},
+			formField{Name: "field_map"}, formField{Name: "filter_column"},
+			formField{Name: "filter_value"}, formField{Name: "create_owners"}))
 	r.protect("/api/v1/ownership/import/mappings", r.handleOwnershipIntake,
 		methods("GET", "POST"), takes("POST", importMappingRequest{}), paginated())
 	r.protect("/api/v1/ownership/import/mappings/", r.handleOwnershipIntake,
@@ -985,7 +1007,9 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases,
 		sub("{id}", "GET", "POST", "DELETE"),
 		subTakes("{id}", "POST", createOwnerAliasRequest{}))
-	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport, methods("POST"))
+	r.protect("/api/v1/ownership/aliases/import", r.handleOwnershipAliasesImport,
+		methods("POST"),
+		takesForm("POST", formField{Name: "format"}, formField{Name: "file", File: true}))
 	r.protect("/api/v1/ownership/aliases/suggest", r.handleOwnershipAliasSuggest)
 	// Identity management: recognising a duplicate person, and folding one
 	// into another so the correction survives the next ingest.
