@@ -12,8 +12,6 @@ journeys/estate-progress.md
 journeys/human-verdict.md
 journeys/named-cohorts.md
 journeys/node-readiness.md
-journeys/ownership-attribution.md
-journeys/ownership-identity.md
 journeys/remediation-priority.md
 journeys/role-impact.md
 journeys/run-history.md

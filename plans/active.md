@@ -24,11 +24,17 @@ from it.** The paging tests hold the machinery and the machinery is right; the o
 does not use it was never held. A green suite is evidence about what it covers and nothing
 else.
 
-**Next is ownership, and it starts with a suite rather than code.**
-`journeys/ownership-identity.md` and `journeys/ownership-attribution.md` have **no suite at
-all**, so there is no list of what they require and no way to tell how much is already built.
-Writing them is the first task; `journeys/ownership-intake.md` is 16 green and 4 skips and is
-not where the work is. Backlog: `plans/todo-ownership.md`.
+**Ownership is now enumerated.** `journeys/ownership-identity.md` and
+`journeys/ownership-attribution.md` have suites, so what they require is a list that recomputes
+itself. Identity came out entirely built — every requirement green, and the four skips are the
+three things the journey itself says nothing can prove plus the one gap: nothing links a
+signed-in person to an owner record, so the sign-in name is an anchor by decision rather than by
+property. Attribution has one red.
+
+**The red: a row in a list does not say who owns it.** Ownership reaches the detail page, the
+totals and the export; the list carries an owner *filter* and no owner *column*. So the screen
+work is dispatched from cannot answer "who owns this, and if nobody, say so" — the journey's
+second requirement. Backlog: `plans/todo-ownership.md`.
 
 **Do not plan against the 92% repo-ownership figure.** About half are assigned to one person as
 a stand-in for unknown; genuine coverage is nearer 45%, and it has not been re-measured.
