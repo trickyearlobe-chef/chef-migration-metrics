@@ -127,6 +127,13 @@ type Router struct {
 	// Nil when authentication is not configured.
 	sessions *auth.SessionManager
 
+	// credentials issues and validates the credentials a person makes for a
+	// tool they are holding. Nil where they are not wired, in which case the
+	// endpoints under /api/v1/auth/me/tokens answer "not implemented" rather
+	// than not existing — an assistant working from the description needs to
+	// tell "switched off here" from "I guessed the address".
+	credentials *auth.CredentialManager
+
 	// authMiddleware provides RequireAuth and RequireAdmin HTTP middleware.
 	// Nil when authentication is not configured.
 	authMiddleware *auth.Middleware
@@ -396,6 +403,16 @@ func WithAuth(
 		r.sessions = sessions
 		r.authMiddleware = mw
 		r.authStore = store
+	}
+}
+
+// WithCredentialManager wires the credentials a person makes for a tool they
+// are holding. Separate from WithAuth because a deployment can have sessions
+// without them — and because a nil one is a legitimate state that the routes
+// report honestly rather than by not existing.
+func WithCredentialManager(c *auth.CredentialManager) RouterOption {
+	return func(r *Router) {
+		r.credentials = c
 	}
 }
 
@@ -705,6 +722,18 @@ func (r *Router) registerRoutes() {
 		r.public("/api/v1/auth/logout", r.handleNotImplemented, methods("POST"))
 		r.public("/api/v1/auth/me", r.handleNotImplemented)
 	}
+	// A credential from my own record, without raising a ticket. Under
+	// /auth/me because that is whose record it comes from: there is no address
+	// here for anybody else's, not for an administrator either.
+	//
+	// Registered whatever this deployment has wired, so that a deployment
+	// without credentials answers "not available here" rather than "no such
+	// address". An assistant working from the description has to be able to
+	// tell a feature that is off from an address it guessed wrong — one makes
+	// it ask a person, the other makes it invent.
+	r.protect("/api/v1/auth/me/tokens", r.handleMyTokens, methods("GET", "POST"))
+	r.protect("/api/v1/auth/me/tokens/", r.handleMyTokenByID, sub("{id}", "DELETE"))
+
 	// SAML endpoints — wired when a SAML provider is configured.
 	if r.samlHandler != nil {
 		r.public("/api/v1/auth/saml/metadata", r.samlHandler.HandleMetadata)

@@ -379,6 +379,18 @@ func (r *Router) handleAdminDeleteUser(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
+	// Sessions cascade off the deleted row. Credentials are keyed by username
+	// and do not, so if this is skipped an account that has gone still has
+	// working ways in — which is the opposite of what deleting it meant.
+	if r.credentials != nil {
+		if n, credErr := r.credentials.DestroyAllFor(req.Context(), username); credErr != nil {
+			r.logf("ERROR", "admin/users: deleted user %q but could not destroy their "+
+				"credentials — they still authenticate: %v", username, credErr)
+		} else if n > 0 {
+			r.logf("INFO", "admin/users: destroyed %d credential(s) belonging to %q", n, username)
+		}
+	}
+
 	r.logf("INFO", "admin/users: deleted user %q by %s", username, adminUsername(req))
 
 	w.WriteHeader(http.StatusNoContent)

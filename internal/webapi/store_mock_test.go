@@ -1738,10 +1738,10 @@ func newTestRouterWithMock(store *mockStore) *Router {
 
 // newTestRouterWithMockAndConfig is like newTestRouterWithMock but accepts a
 // custom *config.Config (e.g. to set TargetChefVersion).
-func newTestRouterWithMockAndConfig(store *mockStore, cfg *config.Config) *Router {
+func newTestRouterWithMockAndConfig(store *mockStore, cfg *config.Config, opts ...RouterOption) *Router {
 	hub := NewEventHub()
 	go hub.Run()
-	return NewRouter(store, cfg, hub)
+	return NewRouter(store, cfg, hub, opts...)
 }
 
 // ---------------------------------------------------------------------------

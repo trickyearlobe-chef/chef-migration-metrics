@@ -104,7 +104,7 @@ func (r *Router) public(pattern string, handler http.HandlerFunc, opts ...RouteO
 func (r *Router) protect(pattern string, handler http.HandlerFunc, opts ...RouteOption) {
 	guarded := http.Handler(handler)
 	if r.authMiddleware != nil {
-		guarded = r.authMiddleware.Authenticated(handler)
+		guarded = r.authMiddleware.RequireAuth(enforceCredentialScope(handler))
 	}
 	r.handle(pattern, RoleAuthenticated, guarded, opts...)
 }
@@ -113,7 +113,8 @@ func (r *Router) protect(pattern string, handler http.HandlerFunc, opts ...Route
 func (r *Router) adminOnly(pattern string, handler http.HandlerFunc, opts ...RouteOption) {
 	guarded := http.Handler(handler)
 	if r.authMiddleware != nil {
-		guarded = r.authMiddleware.AdminOnly(handler)
+		guarded = r.authMiddleware.RequireAuth(
+			r.authMiddleware.RequireAdmin(enforceCredentialScope(handler)))
 	}
 	r.handle(pattern, RoleAdmin, guarded, opts...)
 }
@@ -123,7 +124,8 @@ func (r *Router) adminOnly(pattern string, handler http.HandlerFunc, opts ...Rou
 func (r *Router) operatorOnly(pattern string, handler http.HandlerFunc, opts ...RouteOption) {
 	guarded := http.Handler(handler)
 	if r.authMiddleware != nil {
-		guarded = r.authMiddleware.OperatorOnly(handler)
+		guarded = r.authMiddleware.RequireAuth(
+			r.authMiddleware.RequireOperator(enforceCredentialScope(handler)))
 	}
 	r.handle(pattern, RoleOperator, guarded, opts...)
 }

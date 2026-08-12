@@ -253,6 +253,11 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 		HolderType:   body.HolderType,
 		HolderRef:    body.HolderRef,
 		RaisedBy:     adminUsername(req),
+		// Read from the session, never from the body. A tool can say it is
+		// anything, so the only trustworthy statement about what made this
+		// entry is the one the service settled when the caller signed in.
+		RaisedOrigin:     entryOrigin(req),
+		RaisedOriginName: entryOriginName(req),
 	})
 	if err != nil {
 		r.logf("ERROR", "failure-register: recording a verdict about %s: %v", body.SubjectName, err)
