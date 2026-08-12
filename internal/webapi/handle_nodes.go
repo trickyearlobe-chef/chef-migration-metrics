@@ -392,16 +392,38 @@ func (r *Router) handleNodeDetail(w http.ResponseWriter, req *http.Request) {
 		ownership = owners[snapshot.NodeName]
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"node":                       snapshot,
-		"ownership":                  ownership,
-		"organisation_name":          org.Name,
-		"readiness":                  readiness,
-		"platform_display_name":      pdn,
-		"install_path":               r.installPathForNode(snapshot.Platform),
-		"min_remaining_free_percent": rc.MinRemainingFreePercent,
-		"total_disk_mb":              diskVerdict.TotalMB,
+	WriteJSON(w, http.StatusOK, nodeDetailResponse{
+		Node:                    snapshot,
+		Ownership:               ownership,
+		OrganisationName:        org.Name,
+		Readiness:               readiness,
+		PlatformDisplayName:     pdn,
+		InstallPath:             r.installPathForNode(snapshot.Platform),
+		MinRemainingFreePercent: rc.MinRemainingFreePercent,
+		TotalDiskMB:             diskVerdict.TotalMB,
 	})
+}
+
+// nodeDetailResponse is everything held about one machine.
+//
+// The disk figures come with it because the page draws them, and the install
+// path because what counts as "enough room" depends on where the agent goes.
+// A caller that wants none of it can ignore them; a caller that needs them
+// would otherwise have to read the readiness configuration to work them out.
+type nodeDetailResponse struct {
+	Node             datastore.NodeSnapshot    `json:"node"`
+	Ownership        entityOwners              `json:"ownership"`
+	OrganisationName string                    `json:"organisation_name"`
+	Readiness        []datastore.NodeReadiness `json:"readiness"`
+	// Null where nothing maps this platform to a friendlier name — which is
+	// not the same as a blank name, and a caller has to be able to tell.
+	PlatformDisplayName *string `json:"platform_display_name"`
+	InstallPath         string  `json:"install_path"`
+	// The threshold applied, and the size of the mount it was applied to.
+	// TotalDiskMB is null when the machine reported no usable filesystem
+	// data — not zero, which would read as a disk with nothing on it.
+	MinRemainingFreePercent int  `json:"min_remaining_free_percent"`
+	TotalDiskMB             *int `json:"total_disk_mb"`
 }
 
 // handleNodesByVersion handles GET /api/v1/nodes/by-version/:chef_version —
@@ -453,11 +475,34 @@ func (r *Router) handleNodesByVersion(w http.ResponseWriter, req *http.Request) 
 	// Apply owner filter if active.
 	matched = applyOwnerFilter(req.Context(), r, matched, of)
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"chef_version": chefVersion,
-		"total":        len(matched),
-		"data":         matched,
+	WriteJSON(w, http.StatusOK, nodesByVersionResponse{
+		ChefVersion: chefVersion,
+		Total:       len(matched),
+		Data:        matched,
 	})
+}
+
+// nodesByVersionResponse is every machine running one Chef version. Not
+// paginated: the answer is the whole set, and the count comes with it so a
+// caller can see at once whether it got what it asked for.
+type nodesByVersionResponse struct {
+	ChefVersion string                   `json:"chef_version"`
+	Total       int                      `json:"total"`
+	Data        []datastore.NodeSnapshot `json:"data"`
+}
+
+// nodeWithOrg is one machine with the organisation it belongs to, which the
+// snapshot alone does not say plainly enough to key on.
+type nodeWithOrg struct {
+	OrganisationName string                 `json:"organisation_name"`
+	Node             datastore.NodeSnapshot `json:"node"`
+}
+
+// nodesByCookbookResponse is every machine using one cookbook.
+type nodesByCookbookResponse struct {
+	CookbookName string        `json:"cookbook_name"`
+	Total        int           `json:"total"`
+	Data         []nodeWithOrg `json:"data"`
 }
 
 // handleNodesByCookbook handles GET /api/v1/nodes/by-cookbook/:cookbook_name —
@@ -511,11 +556,6 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	type nodeWithOrg struct {
-		OrganisationName string                 `json:"organisation_name"`
-		Node             datastore.NodeSnapshot `json:"node"`
-	}
-
 	var matched []nodeWithOrg
 	for _, n := range allNodes {
 		if nodeUsesCookbook(n, cookbookName) {
@@ -537,10 +577,10 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 		matched = filterByOwnershipKey(matched, ownedKeys, of, func(n nodeWithOrg) string { return n.Node.NodeName })
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"cookbook_name": cookbookName,
-		"total":         len(matched),
-		"data":          matched,
+	WriteJSON(w, http.StatusOK, nodesByCookbookResponse{
+		CookbookName: cookbookName,
+		Total:        len(matched),
+		Data:         matched,
 	})
 }
 
@@ -758,6 +798,45 @@ func nodeUsesCookbook(n datastore.NodeSnapshot, cookbookName string) bool {
 	return ok
 }
 
+// The dependency graph one machine sits at the top of: what it runs, what
+// that pulls in, and how compatible each of those is.
+//
+// graphEdge is shared with the role graph — an edge is an edge — while the
+// vertices are not: this one carries versions and Test Kitchen results that a
+// role graph has nothing to say about.
+type graphEdge struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Type string `json:"type"`
+}
+
+type nodeGraphNode struct {
+	ID                  string `json:"id"`
+	Type                string `json:"type"`
+	Name                string `json:"name"`
+	Version             string `json:"version,omitempty"`
+	CompatibilityStatus string `json:"compatibility_status,omitempty"`
+	TKStatus            string `json:"tk_status,omitempty"`
+	ComplexityLabel     string `json:"complexity_label,omitempty"`
+	ComplexityScore     int    `json:"complexity_score,omitempty"`
+	Source              string `json:"source,omitempty"`
+}
+
+// nodeGraphMetadata is the counts across the whole graph, so a caller does not
+// have to walk the vertices to find out how much is blocking.
+type nodeGraphMetadata struct {
+	TotalRoles            int `json:"total_roles"`
+	TotalCookbooks        int `json:"total_cookbooks"`
+	IncompatibleCookbooks int `json:"incompatible_cookbooks"`
+	TKFailedCookbooks     int `json:"tk_failed_cookbooks"`
+}
+
+type nodeDependencyGraphResponse struct {
+	Nodes    []nodeGraphNode   `json:"nodes"`
+	Edges    []graphEdge       `json:"edges"`
+	Metadata nodeGraphMetadata `json:"metadata"`
+}
+
 // handleNodeDependencyGraph handles GET /api/v1/nodes/:org/:name/dependency-graph
 // Returns the node's dependency tree (run_list → roles → cookbooks) with
 // per-cookbook CookStyle and TK status.
@@ -851,25 +930,7 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
-	// Graph node/edge types.
-	type graphNode struct {
-		ID                  string `json:"id"`
-		Type                string `json:"type"`
-		Name                string `json:"name"`
-		Version             string `json:"version,omitempty"`
-		CompatibilityStatus string `json:"compatibility_status,omitempty"`
-		TKStatus            string `json:"tk_status,omitempty"`
-		ComplexityLabel     string `json:"complexity_label,omitempty"`
-		ComplexityScore     int    `json:"complexity_score,omitempty"`
-		Source              string `json:"source,omitempty"`
-	}
-	type graphEdge struct {
-		From string `json:"from"`
-		To   string `json:"to"`
-		Type string `json:"type"`
-	}
-
-	nodeMap := make(map[string]graphNode)
+	nodeMap := make(map[string]nodeGraphNode)
 	var edges []graphEdge
 	visited := make(map[string]bool)
 
@@ -878,7 +939,7 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 	walkRole = func(role, parentID string) {
 		roleID := "role:" + role
 		if _, ok := nodeMap[roleID]; !ok {
-			nodeMap[roleID] = graphNode{ID: roleID, Type: "role", Name: role}
+			nodeMap[roleID] = nodeGraphNode{ID: roleID, Type: "role", Name: role}
 		}
 		edges = append(edges, graphEdge{From: parentID, To: roleID, Type: "includes_role"})
 
@@ -892,7 +953,7 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 			edgeType := "includes_" + d.DependencyType
 
 			if _, ok := nodeMap[targetID]; !ok {
-				nodeMap[targetID] = graphNode{
+				nodeMap[targetID] = nodeGraphNode{
 					ID:   targetID,
 					Type: d.DependencyType,
 					Name: d.DependencyName,
@@ -912,7 +973,7 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 	// Process run_list entries.
 	for _, entry := range runList {
 		entryID := "run_list_entry:" + entry
-		nodeMap[entryID] = graphNode{ID: entryID, Type: "run_list_entry", Name: entry}
+		nodeMap[entryID] = nodeGraphNode{ID: entryID, Type: "run_list_entry", Name: entry}
 
 		// Parse run_list entry format: "role[name]" or "recipe[cookbook::recipe]"
 		if strings.HasPrefix(entry, "role[") && strings.HasSuffix(entry, "]") {
@@ -927,7 +988,7 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 			}
 			cbID := "cookbook:" + cbName
 			if _, ok := nodeMap[cbID]; !ok {
-				nodeMap[cbID] = graphNode{ID: cbID, Type: "cookbook", Name: cbName}
+				nodeMap[cbID] = nodeGraphNode{ID: cbID, Type: "cookbook", Name: cbName}
 			}
 			edges = append(edges, graphEdge{From: entryID, To: cbID, Type: "includes_cookbook"})
 		}
@@ -992,7 +1053,7 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 	}
 
 	// Convert to sorted slices.
-	nodes := make([]graphNode, 0, len(nodeMap))
+	nodes := make([]nodeGraphNode, 0, len(nodeMap))
 	for _, n := range nodeMap {
 		nodes = append(nodes, n)
 	}
@@ -1027,14 +1088,14 @@ func (r *Router) handleNodeDependencyGraph(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"nodes": nodes,
-		"edges": edges,
-		"metadata": map[string]any{
-			"total_roles":            roleCount,
-			"total_cookbooks":        cookbookCount,
-			"incompatible_cookbooks": incompatibleCount,
-			"tk_failed_cookbooks":    tkFailedCount,
+	WriteJSON(w, http.StatusOK, nodeDependencyGraphResponse{
+		Nodes: nodes,
+		Edges: edges,
+		Metadata: nodeGraphMetadata{
+			TotalRoles:            roleCount,
+			TotalCookbooks:        cookbookCount,
+			IncompatibleCookbooks: incompatibleCount,
+			TKFailedCookbooks:     tkFailedCount,
 		},
 	})
 }

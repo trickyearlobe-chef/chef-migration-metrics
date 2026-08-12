@@ -116,6 +116,23 @@ func (reg *schemaRegistry) schemaFor(t reflect.Type) map[string]any {
 	return map[string]any{"$ref": schemaRefPrefix + name}
 }
 
+// pageOf describes the standard paginated envelope carrying a list of elem.
+//
+// The envelope is read off PaginatedResponse rather than written out here, so
+// the metadata a caller is promised beside the rows is the metadata the service
+// really sends, down to the field names. Only data is substituted, because the
+// envelope carries it as `any` and reflection can learn nothing from that —
+// which row type it holds is the one thing the address has to declare.
+func (reg *schemaRegistry) pageOf(elem reflect.Type) map[string]any {
+	envelope := reg.structSchema(reflect.TypeOf(PaginatedResponse{}))
+	props, _ := envelope["properties"].(map[string]any)
+	if props == nil {
+		return envelope
+	}
+	props["data"] = map[string]any{"type": "array", "items": reg.schemaFor(elem)}
+	return envelope
+}
+
 // inlineSchema describes anything that is not a named struct.
 func (reg *schemaRegistry) inlineSchema(t reflect.Type) map[string]any {
 	switch t.Kind() {

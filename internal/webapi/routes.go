@@ -47,6 +47,26 @@ type Route struct {
 	Bodies map[string][]any
 	// Paginated records which methods accept page and per_page. See paginated.
 	Paginated map[string]bool
+	// Answers names the Go type each method writes back, keyed by method. See
+	// answers.
+	Answers map[string]Answer
+}
+
+// Answer is what one method on one address writes back: a zero value of the
+// type the handler encodes, and whether it arrives wrapped in the standard
+// paginated envelope.
+//
+// Only the type is written down. The fields, their names on the wire and what
+// they hold are reflected off it, so a field added to the answer appears in the
+// description in the same commit.
+type Answer struct {
+	// Value is a zero value of the encoded type. Nothing is read from it but
+	// its shape.
+	Value any
+	// Page says the value is the row type of a paginated envelope rather than
+	// the whole answer — data carries a list of it, with the pagination
+	// metadata beside it.
+	Page bool
 }
 
 // RouteOption declares something about a route that the registration itself
@@ -80,6 +100,9 @@ type SubPath struct {
 	// Capped records which methods accept per_page but ignore page. See
 	// subCappedNotPaged.
 	Capped map[string]bool
+	// Answers names the Go type each method writes back, keyed by method. See
+	// answers.
+	Answers map[string]Answer
 }
 
 // IsSubtree reports whether the pattern matches everything beneath it.
@@ -210,6 +233,74 @@ func subTakes(suffix, method string, vs ...any) RouteOption {
 		panic("subTakes(" + suffix + ", " + method + ") on " + rt.Pattern +
 			": no such sub-path is declared, so the body would describe nothing. " +
 			"Declare it with sub() first, and keep sub() before subTakes().")
+	}
+}
+
+// answers declares which type a method on this address writes back. A zero
+// value of the type is enough — nothing is read from it but its shape.
+//
+// The counterpart to takes(), and written down for the same reason and in the
+// same place: one token at the registration site, with the fields reflected off
+// the type in openapi_schema.go, so an answer that gains a field says so in the
+// same commit and a renamed one cannot leave a stale name behind.
+//
+// Which type an address really writes is measured rather than derived. Deriving
+// it from the handler is the mistake pagination already made three times: a
+// subtree handler serves many addresses and writes a different shape at each,
+// and two handlers here are registered at several exact patterns and dispatch
+// on the path inside — so the handler is not the unit, the (method, address)
+// is. tools/api-probe/probe.py asks a running instance what each address really
+// answered and reports every disagreement with the description.
+func answers(method string, v any) RouteOption {
+	return func(rt *Route) {
+		if rt.Answers == nil {
+			rt.Answers = map[string]Answer{}
+		}
+		rt.Answers[method] = Answer{Value: v}
+	}
+}
+
+// answersPage declares that a method answers with the standard paginated
+// envelope, carrying a list of v.
+//
+// The envelope itself is not written out here — it is reflected off
+// PaginatedResponse, so the pagination metadata a caller is promised is the
+// metadata the service really sends. Only the row type is declared.
+func answersPage(method string, elem any) RouteOption {
+	return func(rt *Route) {
+		if rt.Answers == nil {
+			rt.Answers = map[string]Answer{}
+		}
+		rt.Answers[method] = Answer{Value: elem, Page: true}
+	}
+}
+
+// subAnswers is answers for one address under a subtree. Panics when the suffix
+// has not been declared with sub first — see subTakes for why.
+func subAnswers(suffix, method string, v any) RouteOption {
+	return subAnswer(suffix, method, Answer{Value: v}, "subAnswers")
+}
+
+// subAnswersPage is answersPage for one address under a subtree.
+func subAnswersPage(suffix, method string, elem any) RouteOption {
+	return subAnswer(suffix, method, Answer{Value: elem, Page: true}, "subAnswersPage")
+}
+
+func subAnswer(suffix, method string, answer Answer, called string) RouteOption {
+	return func(rt *Route) {
+		for i := range rt.SubPaths {
+			if rt.SubPaths[i].Suffix != suffix {
+				continue
+			}
+			if rt.SubPaths[i].Answers == nil {
+				rt.SubPaths[i].Answers = map[string]Answer{}
+			}
+			rt.SubPaths[i].Answers[method] = answer
+			return
+		}
+		panic(called + "(" + suffix + ", " + method + ") on " + rt.Pattern +
+			": no such sub-path is declared, so the answer would describe nothing. " +
+			"Declare it with sub() first, and keep sub() before " + called + ".")
 	}
 }
 

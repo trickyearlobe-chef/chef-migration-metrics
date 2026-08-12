@@ -52,6 +52,9 @@ func (r *Router) openAPIDocument() map[string]any {
 				if body := describedInput(schemas, method, addr, method+" "+addr.path); body != nil {
 					op["requestBody"] = body
 				}
+				if answer, ok := addr.answers[method]; ok {
+					describeAnswer(schemas, op, answer)
+				}
 				item[strings.ToLower(method)] = op
 			}
 		}
@@ -108,6 +111,28 @@ func describedInput(schemas *schemaRegistry, method string, addr address,
 	return nil
 }
 
+// describeAnswer says what comes back, reflected off the type the handler
+// really encodes.
+//
+// It replaces the content of the 200 rather than adding a second one: an
+// operation says one thing about what it answers with, and the description of
+// that answer stays where an undescribed one already was, so a reader sees the
+// same shape of document either way.
+func describeAnswer(schemas *schemaRegistry, op map[string]any, answer Answer) {
+	schema := schemas.schemaFor(reflect.TypeOf(answer.Value))
+	if answer.Page {
+		schema = schemas.pageOf(reflect.TypeOf(answer.Value))
+	}
+	responses, _ := op["responses"].(map[string]any)
+	ok, _ := responses["200"].(map[string]any)
+	if ok == nil {
+		return
+	}
+	ok["content"] = map[string]any{
+		"application/json": map[string]any{"schema": schema},
+	}
+}
+
 // jsonRequestBody describes a JSON document, reflected off the type the handler
 // really decodes into.
 //
@@ -141,6 +166,7 @@ type address struct {
 	bodies    map[string][]any
 	paginated map[string]bool
 	capped    map[string]bool
+	answers   map[string]Answer
 }
 
 // describableAddresses turns a recorded route into the addresses a caller can
@@ -157,13 +183,13 @@ func describableAddresses(rt Route) []address {
 	}
 	if !rt.IsSubtree() {
 		return []address{{path: rt.Pattern, methods: rt.Methods, bodies: rt.Bodies,
-			paginated: rt.Paginated}}
+			paginated: rt.Paginated, answers: rt.Answers}}
 	}
 	out := make([]address, 0, len(rt.SubPaths))
 	for _, sp := range rt.SubPaths {
 		out = append(out, address{
 			path: rt.Pattern + sp.Suffix, methods: sp.Methods, bodies: sp.Bodies,
-			paginated: sp.Paginated, capped: sp.Capped})
+			paginated: sp.Paginated, capped: sp.Capped, answers: sp.Answers})
 	}
 	return out
 }

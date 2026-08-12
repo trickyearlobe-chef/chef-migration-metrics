@@ -13,6 +13,41 @@ import (
 // Dashboard — cookbook download status endpoint
 // ---------------------------------------------------------------------------
 
+// cookbookDownloadStatusResponse is what could not be fetched from the Chef
+// servers, which is the difference between "this cookbook is compatible" and
+// "we never got to look at it".
+// failedCookbook is one cookbook version that could not be fetched, with what
+// went wrong.
+type failedCookbook struct {
+	OrganisationName string `json:"organisation_name"`
+	Name             string `json:"name"`
+	Version          string `json:"version"`
+	DownloadError    string `json:"download_error"`
+	IsActive         bool   `json:"is_active"`
+}
+
+type downloadStatusCounts struct {
+	OK      int `json:"ok"`
+	Failed  int `json:"failed"`
+	Pending int `json:"pending"`
+}
+
+type downloadStatusPercentages struct {
+	OKPercent      float64 `json:"ok_percent"`
+	FailedPercent  float64 `json:"failed_percent"`
+	PendingPercent float64 `json:"pending_percent"`
+}
+
+type cookbookDownloadStatusResponse struct {
+	TotalCookbooks      int                       `json:"total_cookbooks"`
+	StatusCounts        downloadStatusCounts      `json:"status_counts"`
+	StatusPercentages   downloadStatusPercentages `json:"status_percentages"`
+	FailedCookbooks     []failedCookbook          `json:"failed_cookbooks"`
+	FailedCookbookCount int                       `json:"failed_cookbook_count"`
+	HasFailures         bool                      `json:"has_failures"`
+	FailureMessage      string                    `json:"failure_message"`
+}
+
 // handleDashboardCookbookDownloadStatus handles
 // GET /api/v1/dashboard/cookbook-download-status.
 // Returns a summary of cookbook download statuses across all organisations,
@@ -37,14 +72,6 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 		"pending": 0,
 	}
 	totalCookbooks := 0
-
-	type failedCookbook struct {
-		OrganisationName string `json:"organisation_name"`
-		Name             string `json:"name"`
-		Version          string `json:"version"`
-		DownloadError    string `json:"download_error"`
-		IsActive         bool   `json:"is_active"`
-	}
 
 	var failedList []failedCookbook
 
@@ -106,22 +133,22 @@ func (r *Router) handleDashboardCookbookDownloadStatus(w http.ResponseWriter, re
 		failedList = []failedCookbook{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"total_cookbooks": totalCookbooks,
-		"status_counts": map[string]any{
-			"ok":      statusCounts["ok"],
-			"failed":  statusCounts["failed"],
-			"pending": statusCounts["pending"],
+	WriteJSON(w, http.StatusOK, cookbookDownloadStatusResponse{
+		TotalCookbooks: totalCookbooks,
+		StatusCounts: downloadStatusCounts{
+			OK:      statusCounts["ok"],
+			Failed:  statusCounts["failed"],
+			Pending: statusCounts["pending"],
 		},
-		"status_percentages": map[string]any{
-			"ok_percent":      okPercent,
-			"failed_percent":  failedPercent,
-			"pending_percent": pendingPercent,
+		StatusPercentages: downloadStatusPercentages{
+			OKPercent:      okPercent,
+			FailedPercent:  failedPercent,
+			PendingPercent: pendingPercent,
 		},
-		"failed_cookbooks":      failedList,
-		"failed_cookbook_count": len(failedList),
-		"has_failures":          len(failedList) > 0,
-		"failure_message":       cookbookDownloadFailureMessage(len(failedList)),
+		FailedCookbooks:     failedList,
+		FailedCookbookCount: len(failedList),
+		HasFailures:         len(failedList) > 0,
+		FailureMessage:      cookbookDownloadFailureMessage(len(failedList)),
 	})
 }
 

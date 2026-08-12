@@ -14,6 +14,16 @@ import (
 // Dashboard — trend endpoints (complexity, stale)
 // ---------------------------------------------------------------------------
 
+// complexityTrendResponse and staleTrendResponse are how much work is left,
+// and how much of what we hold has gone out of date, over time.
+type complexityTrendResponse struct {
+	Data []complexityTrendPoint `json:"data"`
+}
+
+type staleTrendResponse struct {
+	Data []staleTrendPoint `json:"data"`
+}
+
 // handleDashboardComplexityTrend handles
 // GET /api/v1/dashboard/complexity/trend.
 // Returns aggregate cookbook complexity scores over time by examining
@@ -139,7 +149,7 @@ func (r *Router) handleDashboardComplexityTrend(w http.ResponseWriter, req *http
 		points = []complexityTrendPoint{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": points})
+	WriteJSON(w, http.StatusOK, complexityTrendResponse{Data: points})
 }
 
 // handleDashboardStaleTrend handles GET /api/v1/dashboard/stale/trend.
@@ -246,5 +256,5 @@ func (r *Router) handleDashboardStaleTrend(w http.ResponseWriter, req *http.Requ
 		points = []staleTrendPoint{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": points})
+	WriteJSON(w, http.StatusOK, staleTrendResponse{Data: points})
 }

@@ -12,6 +12,26 @@ import (
 // Dashboard — readiness endpoints
 // ---------------------------------------------------------------------------
 
+// readinessSummary is how many machines are ready for one target version,
+// and how many are not, with the reason split out.
+type readinessSummary struct {
+	TargetChefVersion string  `json:"target_chef_version"`
+	TotalNodes        int     `json:"total_nodes"`
+	ReadyNodes        int     `json:"ready_nodes"`
+	NeedsReviewNodes  int     `json:"needs_review_nodes"`
+	BlockedNodes      int     `json:"blocked_nodes"`
+	ReadyPercent      float64 `json:"ready_percent"`
+}
+
+type readinessResponse struct {
+	Data []readinessSummary `json:"data"`
+}
+
+// readinessTrendResponse is the same, over time.
+type readinessTrendResponse struct {
+	Data []readinessTrendPoint `json:"data"`
+}
+
 // handleDashboardReadiness handles GET /api/v1/dashboard/readiness.
 // Returns an aggregate readiness summary across all organisations and
 // target Chef versions.
@@ -43,15 +63,6 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 	}
 
 	targetVersions := r.liveConfig().TargetChefVersionList()
-
-	type readinessSummary struct {
-		TargetChefVersion string  `json:"target_chef_version"`
-		TotalNodes        int     `json:"total_nodes"`
-		ReadyNodes        int     `json:"ready_nodes"`
-		NeedsReviewNodes  int     `json:"needs_review_nodes"`
-		BlockedNodes      int     `json:"blocked_nodes"`
-		ReadyPercent      float64 `json:"ready_percent"`
-	}
 
 	// When owner filtering is active, collect allowed node names and count
 	// readiness by inspecting per-node readiness records. Otherwise, use
@@ -115,7 +126,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		if summaries == nil {
 			summaries = []readinessSummary{}
 		}
-		WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
+		WriteJSON(w, http.StatusOK, readinessResponse{Data: summaries})
 		return
 	}
 
@@ -152,7 +163,7 @@ func (r *Router) handleDashboardReadiness(w http.ResponseWriter, req *http.Reque
 		summaries = []readinessSummary{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
+	WriteJSON(w, http.StatusOK, readinessResponse{Data: summaries})
 }
 
 // handleDashboardReadinessTrend handles GET /api/v1/dashboard/readiness/trend.
@@ -381,5 +392,5 @@ func (r *Router) handleDashboardReadinessTrend(w http.ResponseWriter, req *http.
 		points = []readinessTrendPoint{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": points})
+	WriteJSON(w, http.StatusOK, readinessTrendResponse{Data: points})
 }

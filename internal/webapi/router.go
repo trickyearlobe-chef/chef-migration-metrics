@@ -688,7 +688,7 @@ func (r *Router) registerRoutes() {
 	r.protect(openAPIPath, r.handleOpenAPI)
 
 	r.public("/api/v1/health", r.handleHealth)
-	r.public("/api/v1/version", r.handleVersion)
+	r.public("/api/v1/version", r.handleVersion, answers("GET", versionResponse{}))
 	// Event ingest sink — INTENTIONALLY UNAUTHENTICATED (MVP tech debt). Passive
 	// receiver for Chef run telemetry; gated at runtime by ingest.enabled.
 	r.public("/api/v1/ingest", r.handleIngest, methods("POST"))
@@ -754,61 +754,88 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Dashboard endpoints (viewer — any authenticated user)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/dashboard/version-distribution", r.handleDashboardVersionDistribution)
-	r.protect("/api/v1/dashboard/version-distribution/trend", r.handleDashboardVersionDistributionTrend)
-	r.protect("/api/v1/dashboard/readiness", r.handleDashboardReadiness)
-	r.protect("/api/v1/dashboard/readiness/trend", r.handleDashboardReadinessTrend)
-	r.protect("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend)
-	r.protect("/api/v1/dashboard/cookstyle/recompute-trend", r.handleDashboardCookstyleRecomputeTrend)
-	r.protect("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend)
-	r.protect("/api/v1/dashboard/deployment/trend", r.handleDashboardDeploymentTrend)
-	r.protect("/api/v1/dashboard/deployment/status", r.handleDashboardDeploymentStatus)
-	r.protect("/api/v1/dashboard/platform-distribution", r.handleDashboardPlatformDistribution)
-	r.protect("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility)
-	r.protect("/api/v1/dashboard/git-repo-compatibility", r.handleDashboardGitRepoCompatibility)
-	r.protect("/api/v1/dashboard/test-kitchen-compatibility", r.handleDashboardTestKitchenCompatibility)
-	r.protect("/api/v1/dashboard/cookbook-download-status", r.handleDashboardCookbookDownloadStatus)
+	r.protect("/api/v1/dashboard/version-distribution", r.handleDashboardVersionDistribution,
+		answers("GET", versionDistributionResponse{}))
+	r.protect("/api/v1/dashboard/version-distribution/trend", r.handleDashboardVersionDistributionTrend,
+		answers("GET", versionDistTrendResponse{}))
+	r.protect("/api/v1/dashboard/readiness", r.handleDashboardReadiness,
+		answers("GET", readinessResponse{}))
+	r.protect("/api/v1/dashboard/readiness/trend", r.handleDashboardReadinessTrend,
+		answers("GET", readinessTrendResponse{}))
+	r.protect("/api/v1/dashboard/complexity/trend", r.handleDashboardComplexityTrend,
+		answers("GET", complexityTrendResponse{}))
+	r.protect("/api/v1/dashboard/cookstyle/recompute-trend", r.handleDashboardCookstyleRecomputeTrend,
+		answers("GET", cookstyleRecomputeTrendResponse{}))
+	r.protect("/api/v1/dashboard/stale/trend", r.handleDashboardStaleTrend,
+		answers("GET", staleTrendResponse{}))
+	r.protect("/api/v1/dashboard/deployment/trend", r.handleDashboardDeploymentTrend,
+		answers("GET", deploymentTrendResponse{}))
+	r.protect("/api/v1/dashboard/deployment/status", r.handleDashboardDeploymentStatus,
+		answers("GET", deploymentStatusResponse{}))
+	r.protect("/api/v1/dashboard/platform-distribution", r.handleDashboardPlatformDistribution,
+		answers("GET", platformDistributionResponse{}))
+	r.protect("/api/v1/dashboard/cookbook-compatibility", r.handleDashboardCookbookCompatibility,
+		answers("GET", cookbookCompatibilityResponse{}))
+	r.protect("/api/v1/dashboard/git-repo-compatibility", r.handleDashboardGitRepoCompatibility,
+		answers("GET", gitRepoCompatibilityResponse{}))
+	r.protect("/api/v1/dashboard/test-kitchen-compatibility", r.handleDashboardTestKitchenCompatibility,
+		answers("GET", testKitchenCompatibilityResponse{}))
+	r.protect("/api/v1/dashboard/cookbook-download-status", r.handleDashboardCookbookDownloadStatus,
+		answers("GET", cookbookDownloadStatusResponse{}))
 
 	// -----------------------------------------------------------------
 	// Node endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/nodes", r.handleNodes, paginated())
+	r.protect("/api/v1/nodes", r.handleNodes, paginated(),
+		answersPage("GET", nodeResp{}))
 	r.protect("/api/v1/nodes/by-version/", r.handleNodesByVersion,
-		sub("{chef_version}"))
+		sub("{chef_version}"), subAnswers("{chef_version}", "GET", nodesByVersionResponse{}))
 	r.protect("/api/v1/nodes/by-cookbook/", r.handleNodesByCookbook,
-		sub("{cookbook_name}"))
+		sub("{cookbook_name}"),
+		subAnswers("{cookbook_name}", "GET", nodesByCookbookResponse{}))
 	r.protect("/api/v1/nodes/disks/", r.handleNodeDisks,
-		sub("{organisation}/{name}"))
+		sub("{organisation}/{name}"),
+		subAnswers("{organisation}/{name}", "GET", diskResponse{}))
 	// Capped, not paged: the store call behind this takes a limit and no
 	// offset, so page does nothing. See cappedNotPaged.
 	r.protect("/api/v1/nodes/runs/", r.handleNodeRuns,
-		sub("{organisation}/{name}"), subCappedNotPaged("{organisation}/{name}"))
+		sub("{organisation}/{name}"), subCappedNotPaged("{organisation}/{name}"),
+		subAnswers("{organisation}/{name}", "GET", nodeRunsResponse{}))
 	// Node detail: /api/v1/nodes/:organisation/:name — uses a prefix
 	// pattern and the handler extracts path segments.
 	r.protect("/api/v1/nodes/", r.handleNodeDetail,
-		sub("{organisation}/{name}"), sub("{organisation}/{name}/dependency-graph"))
+		sub("{organisation}/{name}"), sub("{organisation}/{name}/dependency-graph"),
+		subAnswers("{organisation}/{name}", "GET", nodeDetailResponse{}),
+		subAnswers("{organisation}/{name}/dependency-graph", "GET", nodeDependencyGraphResponse{}))
 
 	// -----------------------------------------------------------------
 	// Cookbook endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/cookbooks", r.handleCookbooks, paginated())
+	r.protect("/api/v1/cookbooks", r.handleCookbooks, paginated(),
+		answersPage("GET", cookbookResp{}))
 	r.protect("/api/v1/cookbooks/", r.handleCookbookDetail,
 		sub("{name}"), sub("{name}/rescan", "POST"), sub("{name}/reset-git", "POST"),
 		sub("{name}/platform-coverage"), sub("{name}/committers"),
 		sub("{name}/committers/assign", "POST"), sub("{name}/{version}/remediation"),
-		subTakes("{name}/committers/assign", "POST", assignCommittersRequest{}))
+		subTakes("{name}/committers/assign", "POST", assignCommittersRequest{}),
+		subAnswers("{name}", "GET", cookbookDetailResponse{}),
+		subAnswers("{name}/platform-coverage", "GET", coverageAPIResponse{}))
 
 	// -----------------------------------------------------------------
 	// Role endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/roles", r.handleRoles, paginated())
+	r.protect("/api/v1/roles", r.handleRoles, paginated(),
+		answers("GET", roleListResponse{}))
 	r.protect("/api/v1/roles/", r.handleRoleDetail,
-		sub("{name}"), sub("{name}/dependency-graph"))
+		sub("{name}"), sub("{name}/dependency-graph"),
+		subAnswers("{name}", "GET", datastore.RoleDetail{}),
+		subAnswers("{name}/dependency-graph", "GET", roleDependencyGraphResponse{}))
 
 	// -----------------------------------------------------------------
 	// Git repo endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/git-repos", r.handleGitRepos, paginated())
+	r.protect("/api/v1/git-repos", r.handleGitRepos, paginated(),
+		answersPage("GET", gitRepoResp{}))
 	r.protect("/api/v1/git-repos/", r.handleGitRepoDetail,
 		sub("excluded"), sub("{name}"), sub("{name}/exclude", "POST", "DELETE"),
 		sub("{name}/rescan", "POST"), sub("{name}/reset", "POST"), sub("{name}/committers"),
@@ -816,20 +843,27 @@ func (r *Router) registerRoutes() {
 		sub("{name}/files/content"), sub("{name}/{version}/remediation"),
 		subTakes("{name}/exclude", "POST", excludeGitRepoRequest{}),
 		subTakes("{name}/committers/assign", "POST", assignCommittersRequest{}),
-		subPaginated("{name}/committers"))
+		subPaginated("{name}/committers"),
+		subAnswers("excluded", "GET", []datastore.GitRepo{}),
+		subAnswers("{name}", "GET", gitRepoDetailResponse{}),
+		subAnswers("{name}/files", "GET", []fileEntry{}),
+		subAnswers("{name}/files/content", "GET", fileContentResponse{}))
 
 	// -----------------------------------------------------------------
 	// Run events endpoints (viewer) — ingest telemetry over converge_runs.
 	// Two tabs (nodes rollup / flat runs) + per-node detail. See
 	// journeys/run-history.md and handle_run_events.go.
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/run-events/nodes", r.handleRunEventNodes, paginated())
+	r.protect("/api/v1/run-events/nodes", r.handleRunEventNodes, paginated(),
+		answersPage("GET", datastore.ConvergeRunListItem{}))
 	// Measured, not assumed: this one honours per_page and returns no
 	// pagination metadata at all, so a caller cannot tell from an answer that
 	// it was bounded. Describing it is the only thing that says so today.
 	r.protect("/api/v1/run-events/nodes/", r.handleRunEventNodeDetail,
-		sub("{organisation}/{name}"), subCappedNotPaged("{organisation}/{name}"))
-	r.protect("/api/v1/run-events/runs", r.handleRunEventRuns, paginated())
+		sub("{organisation}/{name}"), subCappedNotPaged("{organisation}/{name}"),
+		subAnswers("{organisation}/{name}", "GET", nodeRunEventsResponse{}))
+	r.protect("/api/v1/run-events/runs", r.handleRunEventRuns, paginated(),
+		answersPage("GET", datastore.ConvergeRunListItem{}))
 
 	// Viewer-readable UI feature flags (so the frontend can hide gated surfaces).
 	r.protect("/api/v1/features", r.handleFeatures)
@@ -867,9 +901,10 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Organisation endpoints (viewer)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/organisations", r.handleOrganisations)
+	r.protect("/api/v1/organisations", r.handleOrganisations,
+		answers("GET", organisationListResponse{}))
 	r.protect("/api/v1/organisations/", r.handleOrganisationDetail,
-		sub("{name}"))
+		sub("{name}"), subAnswers("{name}", "GET", datastore.Organisation{}))
 
 	// -----------------------------------------------------------------
 	// Filter option endpoints (viewer)
@@ -969,39 +1004,53 @@ func (r *Router) registerRoutes() {
 		sub("{name}", "PUT", "DELETE"), sub("{name}/test", "POST"),
 		subTakes("{name}", "PUT", rotateCredentialRequest{}))
 	r.adminOnly("/api/v1/admin/config/organisations", r.handleAdminConfigOrganisations,
-		methods("GET", "PUT"), takes("PUT", []config.Organisation{}))
+		methods("GET", "PUT"), takes("PUT", []config.Organisation{}),
+		answers("GET", []config.Organisation{}))
 	r.adminOnly("/api/v1/admin/config/collection", r.handleAdminConfigCollection,
-		methods("GET", "PUT"), takes("PUT", config.CollectionConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.CollectionConfig{}),
+		answers("GET", config.CollectionConfig{}))
 	r.adminOnly("/api/v1/admin/config/target-versions", r.handleAdminConfigTargetVersions,
-		methods("GET", "PUT"), takes("PUT", []string{}))
+		methods("GET", "PUT"), takes("PUT", []string{}),
+		answers("GET", []string{}))
 	r.adminOnly("/api/v1/admin/config/git-urls", r.handleAdminConfigGitURLs,
-		methods("GET", "PUT"), takes("PUT", []string{}))
+		methods("GET", "PUT"), takes("PUT", []string{}),
+		answers("GET", []string{}))
 	r.adminOnly("/api/v1/admin/config/concurrency", r.handleAdminConfigConcurrency,
-		methods("GET", "PUT"), takes("PUT", config.ConcurrencyConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.ConcurrencyConfig{}),
+		answers("GET", config.ConcurrencyConfig{}))
 	r.adminOnly("/api/v1/admin/config/logging", r.handleAdminConfigLogging,
-		methods("GET", "PUT"), takes("PUT", config.LoggingConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.LoggingConfig{}),
+		answers("GET", config.LoggingConfig{}))
 	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools,
-		methods("GET", "PUT"), takes("PUT", config.AnalysisToolsConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.AnalysisToolsConfig{}),
+		answers("GET", analysisToolsResponse{}))
 	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen,
-		methods("GET", "PUT", "DELETE"), takes("PUT", config.TestKitchenConfig{}))
+		methods("GET", "PUT", "DELETE"), takes("PUT", config.TestKitchenConfig{}),
+		answers("GET", config.TestKitchenConfig{}))
 	// One body, read into three types: the settings section itself, plus the
 	// certificate and ACME credentials that are routed to encrypted storage
 	// rather than into the section. A caller has to be told about all three.
 	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer,
 		methods("GET", "PUT"), takes("PUT", config.ServerConfig{},
-			dbCertKeySubmission{}, acmeRoute53CredSubmission{}))
+			dbCertKeySubmission{}, acmeRoute53CredSubmission{}),
+		answers("GET", serverConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/server/generate-csr", r.handleAdminConfigServerGenerateCSR,
 		methods("POST"), takes("POST", generateCSRRequest{}))
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth,
-		methods("GET", "PUT"), takes("PUT", config.AuthConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.AuthConfig{}),
+		answers("GET", config.AuthConfig{}))
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports,
-		methods("GET", "PUT"), takes("PUT", config.ExportsConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.ExportsConfig{}),
+		answers("GET", config.ExportsConfig{}))
 	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness,
-		methods("GET", "PUT"), takes("PUT", config.ReadinessConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.ReadinessConfig{}),
+		answers("GET", config.ReadinessConfig{}))
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup,
-		methods("GET", "PUT"), takes("PUT", config.BackupConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.BackupConfig{}),
+		answers("GET", config.BackupConfig{}))
 	r.adminOnly("/api/v1/admin/config/ingest", r.handleAdminConfigIngest,
-		methods("GET", "PUT"), takes("PUT", config.IngestConfig{}))
+		methods("GET", "PUT"), takes("PUT", config.IngestConfig{}),
+		answers("GET", config.IngestConfig{}))
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair, methods("POST"))
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
 	r.adminOnly("/api/v1/admin/saml/endpoints", r.handleSAMLEndpoints)
@@ -1194,14 +1243,21 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// versionResponse is what the version call answers with. Named rather than
+// assembled inline so the description can be reflected off it — see answers().
+type versionResponse struct {
+	Version       string `json:"version"`
+	SchemaVersion int    `json:"schema_version"`
+}
+
 func (r *Router) handleVersion(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed, "Version endpoint requires GET.")
 		return
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"version":        r.version,
-		"schema_version": r.schemaVersion,
+	WriteJSON(w, http.StatusOK, versionResponse{
+		Version:       r.version,
+		SchemaVersion: r.schemaVersion,
 	})
 }
 

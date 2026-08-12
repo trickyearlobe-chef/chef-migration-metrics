@@ -12,9 +12,12 @@ that are ignored. What it settles:
   * which addresses honour per_page, tested behaviourally by asking twice —
     once plainly, once with per_page=1 — rather than by looking for a
     "pagination" key, which misses an address that pages without any metadata;
-  * what shape each readable address answers with, which is the recording
-    needed before anything can fail when a field changes meaning under a
-    caller.
+  * what shape each readable address answers with, and whether that agrees
+    with what the description claims it answers with. Which type an address
+    writes cannot be derived from its handler for the same reason pagination
+    could not: a subtree handler serves many addresses and writes a different
+    shape at each. So it is declared per address with answers(), and this is
+    what says whether the declaration is true.
 
 VALUES ARE NEVER RECORDED. Every leaf collapses to its JSON type before it
 reaches the output, so what this writes is a shape catalogue with no data in
@@ -201,11 +204,57 @@ def fill(path):
     return out, missing
 
 
+def described_answer(item, doc):
+    """The schema this operation says it answers with, resolved."""
+    media = (
+        item.get("get", {})
+        .get("responses", {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+    )
+    return resolve(media.get("schema"), doc)
+
+
+def resolve(schema, doc, depth=0):
+    """Follow a $ref into components/schemas."""
+    if not isinstance(schema, dict) or depth > 8:
+        return schema if isinstance(schema, dict) else None
+    ref = schema.get("$ref")
+    if not ref:
+        return schema
+    name = ref.split("/")[-1]
+    return resolve(doc.get("components", {}).get("schemas", {}).get(name), doc, depth + 1)
+
+
+def compare(observed, schema, doc):
+    """Field names an answer carries that its description does not, and the
+    other way round.
+
+    Names only. An absent field proves little on its own — an empty one is
+    omitted rather than sent — so the two directions are reported separately
+    and only the first is a fault on its face.
+    """
+    if not isinstance(observed, dict) or observed.get("type") != "object":
+        return [], []
+    if not isinstance(schema, dict):
+        return [], []
+    if schema.get("type") == "array":
+        return [], []
+    props = schema.get("properties")
+    if props is None:
+        return [], []  # additionalProperties: anything may turn up
+    sent = set(observed.get("properties", {}))
+    named = set(props)
+    return sorted(sent - named), sorted(named - sent)
+
+
 def main():
     status, _, raw = get("/api/v1/openapi.json")
     if status != 200:
         sys.exit(f"cannot read the description: HTTP {status}")
-    paths = json.loads(raw).get("paths", {})
+    doc = json.loads(raw)
+    paths = doc.get("paths", {})
 
     results = {}
     for path, item in sorted(paths.items()):
@@ -242,6 +291,14 @@ def main():
         entry["shape"] = shape_of(body)
         entry["echoes_pagination"] = isinstance(body, dict) and "pagination" in body
 
+        # Does the description agree with what came back?
+        schema = described_answer(item, doc)
+        entry["described"] = schema is not None
+        if schema is not None:
+            undescribed, unsent = compare(entry["shape"], schema, doc)
+            entry["sends_undescribed"] = undescribed
+            entry["described_but_not_sent"] = unsent
+
         # Behavioural: does per_page actually do anything here?
         base_rows = rows_of(body)
         entry["rows"] = len(base_rows) if base_rows is not None else None
@@ -274,6 +331,19 @@ def main():
             and r.get("honours_per_page") is True
             and not r.get("echoes_pagination")
         ),
+        "answers_undescribed": where(
+            lambda r: r.get("outcome") == "ok" and not r.get("described")
+        ),
+        "sends_undescribed_fields": sorted(
+            f"{k}: {', '.join(r['sends_undescribed'])}"
+            for k, r in results.items()
+            if r.get("sends_undescribed")
+        ),
+        "described_but_not_sent": sorted(
+            f"{k}: {', '.join(r['described_but_not_sent'])}"
+            for k, r in results.items()
+            if r.get("described_but_not_sent")
+        ),
         "unprobed": where(lambda r: r.get("outcome") == "unprobed"),
         "not_ok": sorted(
             f"{k} [{r.get('status')}] {r.get('message','')}"
@@ -290,6 +360,11 @@ def main():
     print(f"undetermined (too few rows)= {len(summary['undetermined'])}")
     print(f"honours but does NOT echo  = {len(summary['disagreement'])}")
     print(f"unprobed={len(summary['unprobed'])} not-ok={len(summary['not_ok'])}")
+    print(f"answered but undescribed  = {len(summary['answers_undescribed'])}")
+    print(f"sends fields not described= {len(summary['sends_undescribed_fields'])}")
+    print(f"described but not sent    = {len(summary['described_but_not_sent'])}")
+    for line in summary["sends_undescribed_fields"]:
+        print("  ! " + line)
     print(f"written to {OUT}")
 
 
