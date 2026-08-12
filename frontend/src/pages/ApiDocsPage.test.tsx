@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  within,
+  fireEvent,
+  cleanup,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../api";
 import { ApiDocsPage } from "./ApiDocsPage";
@@ -48,6 +55,7 @@ const doc = {
 
 describe("ApiDocsPage", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.mocked(api.fetchApiDocument).mockResolvedValue(doc as never);
   });
 
@@ -249,6 +257,107 @@ describe("ApiDocsPage", () => {
     expect(writeText).toHaveBeenCalledWith(
       expect.stringContaining("$APITOKEN"),
     );
+  });
+
+  async function openPanel() {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await user.click(
+      screen.getByRole("button", { name: "GET /api/v1/cookbooks" }),
+    );
+    return user;
+  }
+
+  it("offers a way to resize the split once a panel is open", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    // Nothing to resize until there are two panes.
+    expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "GET /api/v1/cookbooks" }),
+    );
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+  });
+
+  it("remembers the width it was left at", async () => {
+    const user = await openPanel();
+    screen.getByRole("separator").focus();
+    await user.keyboard("{ArrowLeft}{ArrowLeft}");
+    const chosen = screen.getByRole("complementary").style.width;
+
+    cleanup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await user.click(
+      screen.getByRole("button", { name: "GET /api/v1/cookbooks" }),
+    );
+
+    expect(screen.getByRole("complementary").style.width).toBe(chosen);
+  });
+
+  it("ignores a stored width that is not usable", async () => {
+    // Hand-edited, corrupted, or left by an older build with different bounds.
+    window.localStorage.setItem("cmm.apiDocs.panelWidth", "not a number");
+    await openPanel();
+    const width = parseInt(
+      screen.getByRole("complementary").style.width,
+      10,
+    );
+    expect(width).toBeGreaterThanOrEqual(320);
+    expect(width).toBeLessThanOrEqual(900);
+  });
+
+  it("resizes by keyboard, not only by dragging", async () => {
+    const user = await openPanel();
+    const panel = screen.getByRole("complementary");
+    const before = panel.style.width;
+
+    screen.getByRole("separator").focus();
+    await user.keyboard("{ArrowLeft}");
+
+    // Left widens the panel: the divider moves left, so the right pane grows.
+    expect(panel.style.width).not.toBe(before);
+    expect(parseInt(panel.style.width, 10)).toBeGreaterThan(
+      parseInt(before, 10),
+    );
+  });
+
+  it("resizes by dragging the divider", async () => {
+    await openPanel();
+    const panel = screen.getByRole("complementary");
+    const before = parseInt(panel.style.width, 10);
+    const separator = screen.getByRole("separator");
+
+    fireEvent.pointerDown(separator, { clientX: 800 });
+    fireEvent.pointerMove(window, { clientX: 700 });
+    fireEvent.pointerUp(window, { clientX: 700 });
+
+    // Dragging left by 100 widens the right-hand pane by 100.
+    expect(parseInt(panel.style.width, 10)).toBe(before + 100);
+  });
+
+  it("will not let either pane be dragged away to nothing", async () => {
+    await openPanel();
+    const panel = screen.getByRole("complementary");
+    const separator = screen.getByRole("separator");
+
+    fireEvent.pointerDown(separator, { clientX: 800 });
+    fireEvent.pointerMove(window, { clientX: -5000 });
+    fireEvent.pointerUp(window, { clientX: -5000 });
+    const widest = parseInt(panel.style.width, 10);
+
+    fireEvent.pointerDown(separator, { clientX: 800 });
+    fireEvent.pointerMove(window, { clientX: 5000 });
+    fireEvent.pointerUp(window, { clientX: 5000 });
+    const narrowest = parseInt(panel.style.width, 10);
+
+    // Both ends are bounded, so the list can never be squeezed out of
+    // existence and the panel can never become an unreadable sliver.
+    expect(widest).toBeLessThanOrEqual(900);
+    expect(narrowest).toBeGreaterThanOrEqual(320);
   });
 
   it("reports a failure to load rather than an empty API", async () => {

@@ -1,7 +1,8 @@
 // Copyright 2025 Chef Migration Metrics Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchApiDocument } from "../api";
 import type { ApiOperation, OpenApiDocument } from "../types";
 import { ErrorAlert, LoadingSpinner } from "../components/Feedback";
@@ -36,6 +37,45 @@ const ROLE_STYLE: Record<string, string> = {
 };
 
 const READ_METHODS = ["get", "head", "options"];
+
+// Both ends are bounded so neither pane can be dragged away to nothing: the
+// list stays usable, and the panel never becomes a sliver that wraps every
+// line of the curl example.
+const PANEL_MIN_WIDTH = 320;
+const PANEL_MAX_WIDTH = 900;
+const PANEL_DEFAULT_WIDTH = 480;
+
+function clampWidth(w: number): number {
+  return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, Math.round(w)));
+}
+
+// Where the chosen width is kept. Browser-side only — it never reaches the
+// service, so there is nothing here to protect and nothing for git to see.
+const PANEL_WIDTH_KEY = "cmm.apiDocs.panelWidth";
+
+// Reading is defensive on both counts: storage can be unavailable outright
+// (private browsing, a locked-down profile), and what is in it can be junk
+// left by a hand edit or by an older build with different bounds. Either way
+// the default is the right answer, not an error.
+function storedPanelWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(PANEL_WIDTH_KEY);
+    if (raw === null) return PANEL_DEFAULT_WIDTH;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? clampWidth(parsed) : PANEL_DEFAULT_WIDTH;
+  } catch {
+    return PANEL_DEFAULT_WIDTH;
+  }
+}
+
+function rememberPanelWidth(width: number): void {
+  try {
+    window.localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+  } catch {
+    // Not being able to remember a pane width is not worth telling anybody
+    // about, and definitely not worth failing the page over.
+  }
+}
 
 interface Entry {
   path: string;
@@ -92,9 +132,11 @@ function curlFor(entry: Entry, origin: string): string {
 
 function OperationPanel({
   entry,
+  width,
   onClose,
 }: {
   entry: Entry;
+  width: number;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -112,7 +154,9 @@ function OperationPanel({
   }
 
   return (
-    <aside className="w-full shrink-0 space-y-4 rounded-md border border-gray-200 bg-white p-4 xl:sticky xl:top-0 xl:w-[30rem] xl:self-start">
+    <aside
+      style={{ width }}
+      className="w-full shrink-0 space-y-4 rounded-md border border-gray-200 bg-white p-4 xl:sticky xl:top-0 xl:self-start">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -243,6 +287,63 @@ export function ApiDocsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+
+  // How wide the detail pane is, in pixels, remembered across visits. This is
+  // the first thing in this app to use browser storage, so it is namespaced
+  // and it degrades to the default rather than throwing.
+  const [panelWidth, setPanelWidth] = useState(storedPanelWidth);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  // Dragging left widens the right-hand pane, so the delta is subtracted.
+  // Measured as a delta from where the drag began rather than from the
+  // container's edge, which keeps it correct inside any layout.
+  const onSeparatorPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      dragRef.current = { startX: e.clientX, startWidth: panelWidth };
+    },
+    [panelWidth],
+  );
+
+  useEffect(() => {
+    rememberPanelWidth(panelWidth);
+  }, [panelWidth]);
+
+  useEffect(() => {
+    function move(e: PointerEvent) {
+      const drag = dragRef.current;
+      if (!drag) return;
+      setPanelWidth(clampWidth(drag.startWidth - (e.clientX - drag.startX)));
+    }
+    function up() {
+      dragRef.current = null;
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, []);
+
+  // Keyboard is not a courtesy here: a pointer drag is unusable for anybody
+  // who cannot make fine movements, and this is the only way to reach the
+  // wide view of a long path.
+  const onSeparatorKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 100 : 20;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      setPanelWidth((w) => clampWidth(w + step));
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      setPanelWidth((w) => clampWidth(w - step));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setPanelWidth(PANEL_MAX_WIDTH);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setPanelWidth(PANEL_MIN_WIDTH);
+    }
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -412,10 +513,26 @@ export function ApiDocsPage() {
           </div>
 
           {selectedEntry && (
-            <OperationPanel
-              entry={selectedEntry}
-              onClose={() => setSelected(null)}
-            />
+            <>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize the detail pane"
+                aria-valuenow={panelWidth}
+                aria-valuemin={PANEL_MIN_WIDTH}
+                aria-valuemax={PANEL_MAX_WIDTH}
+                tabIndex={0}
+                onPointerDown={onSeparatorPointerDown}
+                onKeyDown={onSeparatorKeyDown}
+                title="Drag, or focus and use the arrow keys"
+                className="hidden w-1.5 shrink-0 cursor-col-resize self-stretch rounded bg-gray-200 hover:bg-blue-400 focus:bg-blue-500 focus:outline-none xl:block"
+              />
+              <OperationPanel
+                entry={selectedEntry}
+                width={panelWidth}
+                onClose={() => setSelected(null)}
+              />
+            </>
           )}
         </div>
       )}
