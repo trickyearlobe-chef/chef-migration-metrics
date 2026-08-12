@@ -160,6 +160,20 @@ const doc = {
   },
 };
 
+// Every address sits under a group that starts closed, so a test that wants to
+// see one opens its group first. Written once here rather than at twenty call
+// sites, and named for what the reader is doing rather than for the mechanism.
+// Opening a group is never the interaction under test, so it clicks directly.
+function openTheGroupFor(path: string): void {
+  const group = path.replace(/^\/api\/v\d+\//, "").split("/")[0];
+  const heading = screen.getByRole("button", {
+    name: new RegExp(`^${group} \\(`, "i"),
+  });
+  if (heading.getAttribute("aria-expanded") === "false") {
+    fireEvent.click(heading);
+  }
+}
+
 describe("ApiDocsPage", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -178,7 +192,8 @@ describe("ApiDocsPage", () => {
 
   it("lists every address with its method and summary", async () => {
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/failure-register");
 
     // One row per operation, so a path answering GET and POST appears twice.
     // That is the point: the two need different access and do different things.
@@ -191,7 +206,11 @@ describe("ApiDocsPage", () => {
 
   it("shows the access each operation needs", async () => {
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/admin/users"));
+    await waitFor(() => screen.getByRole("button", { name: /^admin \(/i }));
+    openTheGroupFor("/api/v1/admin/users");
+    openTheGroupFor("/api/v1/cookbooks");
+    openTheGroupFor("/api/v1/failure-register");
+    openTheGroupFor("/api/v1/cookstyle/cops/{cop_name}/cookbooks");
 
     // Asked by the badge's own label rather than by text: "admin" is also a
     // group name, and matching on the word alone would pass on the heading.
@@ -205,19 +224,21 @@ describe("ApiDocsPage", () => {
 
   it("groups addresses so 195 of them can be found", async () => {
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
     expect(
-      screen.getByRole("heading", { name: /^cookbooks$/i }),
+      screen.getByRole("heading", { name: /^cookbooks \(/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /^admin$/i }),
+      screen.getByRole("heading", { name: /^admin \(/i }),
     ).toBeInTheDocument();
   });
 
   it("filters by path", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/cookbooks");
+    openTheGroupFor("/api/v1/failure-register");
 
     await user.type(screen.getByRole("searchbox"), "failure");
 
@@ -228,7 +249,9 @@ describe("ApiDocsPage", () => {
   it("filters by what an operation is for, not only its address", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/admin/users");
+    openTheGroupFor("/api/v1/cookbooks");
 
     // Somebody looking for where to sign in does not know the address; that is
     // the whole reason they opened this page.
@@ -241,7 +264,7 @@ describe("ApiDocsPage", () => {
   it("says so when a search matches nothing", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
 
     await user.type(screen.getByRole("searchbox"), "nothing matches this");
     expect(screen.getByText(/no addresses match/i)).toBeInTheDocument();
@@ -249,7 +272,7 @@ describe("ApiDocsPage", () => {
 
   it("offers the raw document, because that is what tooling consumes", async () => {
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
 
     const link = screen.getByRole("link", { name: /openapi\.json/i });
     expect(link).toHaveAttribute("href", "/api/v1/openapi.json");
@@ -258,8 +281,9 @@ describe("ApiDocsPage", () => {
   it("opens a detail panel for the operation that was clicked", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/admin/users"));
+    await waitFor(() => screen.getByRole("button", { name: /^admin \(/i }));
 
+    openTheGroupFor("/api/v1/admin/users");
     await user.click(screen.getByRole("button", { name: /get \/api\/v1\/admin\/users/i }));
 
     const panel = screen.getByRole("complementary");
@@ -272,8 +296,9 @@ describe("ApiDocsPage", () => {
   it("gives a runnable curl with the token passed as a variable", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+    await waitFor(() => screen.getByRole("button", { name: /^failure-register \(/i }));
 
+    openTheGroupFor("/api/v1/failure-register");
     await user.click(
       screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
     );
@@ -290,8 +315,9 @@ describe("ApiDocsPage", () => {
   it("does not send a body on a read", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
 
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
     const curl = screen.getByTestId("curl-example").textContent ?? "";
     expect(curl).not.toContain("-d ");
@@ -327,8 +353,9 @@ describe("ApiDocsPage", () => {
       },
     });
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
 
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
 
     const panel = screen.getByRole("complementary");
@@ -361,7 +388,8 @@ describe("ApiDocsPage", () => {
     } as never);
 
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks/{name}"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(
       screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }),
     );
@@ -377,8 +405,9 @@ describe("ApiDocsPage", () => {
   it("shows a write's fields, so somebody can build the call without our source", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+    await waitFor(() => screen.getByRole("button", { name: /^failure-register \(/i }));
 
+    openTheGroupFor("/api/v1/failure-register");
     await user.click(
       screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
     );
@@ -394,8 +423,9 @@ describe("ApiDocsPage", () => {
   it("follows a reference rather than showing a caller our internal type name", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+    await waitFor(() => screen.getByRole("button", { name: /^failure-register \(/i }));
 
+    openTheGroupFor("/api/v1/failure-register");
     await user.click(
       screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
     );
@@ -410,8 +440,9 @@ describe("ApiDocsPage", () => {
   it("puts the fields into the curl, so the example is runnable", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+    await waitFor(() => screen.getByRole("button", { name: /^failure-register \(/i }));
 
+    openTheGroupFor("/api/v1/failure-register");
     await user.click(
       screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
     );
@@ -438,8 +469,9 @@ describe("ApiDocsPage", () => {
       },
     });
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks/{name}/rescan"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
 
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(
       screen.getByRole("button", { name: /post \/api\/v1\/cookbooks/i }),
     );
@@ -459,7 +491,8 @@ describe("ApiDocsPage", () => {
       configurable: true,
     });
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
     await user.click(screen.getByRole("button", { name: /copy/i }));
 
@@ -471,7 +504,8 @@ describe("ApiDocsPage", () => {
   async function openPanel() {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(
       screen.getByRole("button", { name: "GET /api/v1/cookbooks" }),
     );
@@ -481,10 +515,11 @@ describe("ApiDocsPage", () => {
   it("offers a way to resize the split once a panel is open", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
     // Nothing to resize until there are two panes.
     expect(screen.queryByRole("separator")).not.toBeInTheDocument();
 
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(
       screen.getByRole("button", { name: "GET /api/v1/cookbooks" }),
     );
@@ -499,7 +534,8 @@ describe("ApiDocsPage", () => {
 
     cleanup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(
       screen.getByRole("button", { name: "GET /api/v1/cookbooks" }),
     );
@@ -585,8 +621,9 @@ describe("ApiDocsPage", () => {
   it("shows what a call answers with, so a client has something to decode into", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
 
+    openTheGroupFor("/api/v1/cookbooks");
     await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
 
     const panel = screen.getByRole("complementary");
@@ -602,8 +639,9 @@ describe("ApiDocsPage", () => {
   it("says plainly when nothing describes the answer, rather than showing nothing", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/admin/users"));
+    await waitFor(() => screen.getByRole("button", { name: /^admin \(/i }));
 
+    openTheGroupFor("/api/v1/admin/users");
     await user.click(screen.getByRole("button", { name: /get \/api\/v1\/admin\/users/i }));
 
     const panel = screen.getByRole("complementary");
@@ -616,8 +654,9 @@ describe("ApiDocsPage", () => {
   it("says when an answer comes back in one of several shapes", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/cookstyle/cops/{cop_name}/cookbooks"));
+    await waitFor(() => screen.getByRole("button", { name: /^cookstyle \(/i }));
 
+    openTheGroupFor("/api/v1/cookstyle/cops");
     await user.click(
       screen.getByRole("button", { name: /get \/api\/v1\/cookstyle\/cops/i }),
     );
@@ -634,8 +673,9 @@ describe("ApiDocsPage", () => {
   it("describes a body that is a list, rather than calling it undescribed", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getAllByText("/api/v1/admin/config/git-urls"));
+    await waitFor(() => screen.getByRole("button", { name: /^admin \(/i }));
 
+    openTheGroupFor("/api/v1/admin/config/git-urls");
     await user.click(
       screen.getByRole("button", { name: /put \/api\/v1\/admin\/config\/git-urls/i }),
     );
@@ -651,8 +691,9 @@ describe("ApiDocsPage", () => {
   it("shows what is inside a list, not just that it is a list", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getAllByText("/api/v1/admin/config/git-urls"));
+    await waitFor(() => screen.getByRole("button", { name: /^admin \(/i }));
 
+    openTheGroupFor("/api/v1/admin/config/git-urls");
     await user.click(
       screen.getByRole("button", { name: /get \/api\/v1\/admin\/config\/git-urls/i }),
     );
@@ -666,8 +707,9 @@ describe("ApiDocsPage", () => {
   it("keeps the detail panel reachable when it is taller than the window", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getByText("/api/v1/admin/users"));
+    await waitFor(() => screen.getByRole("button", { name: /^admin \(/i }));
 
+    openTheGroupFor("/api/v1/admin/users");
     await user.click(screen.getByRole("button", { name: /get \/api\/v1\/admin\/users/i }));
 
     // Asserted on the mechanism rather than the effect: there is no layout in
@@ -685,8 +727,9 @@ describe("ApiDocsPage", () => {
   it("says where the parameters go, so 'none' does not contradict the body below", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
-    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+    await waitFor(() => screen.getByRole("button", { name: /^failure-register \(/i }));
 
+    openTheGroupFor("/api/v1/failure-register");
     await user.click(
       screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
     );
@@ -701,6 +744,46 @@ describe("ApiDocsPage", () => {
       .toBeInTheDocument();
     expect(within(panel).getByRole("heading", { name: /body parameters/i }))
       .toBeInTheDocument();
+  });
+
+
+  it("opens as an index of areas rather than a wall of addresses", async () => {
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+
+    // The groups are there; what is under them is not, until asked for. 245
+    // addresses in one scroll is the thing being fixed.
+    expect(screen.queryByText("/api/v1/cookbooks")).not.toBeInTheDocument();
+    // The count is on the group, so the index still says how much is in there.
+    expect(screen.getByRole("button", { name: /^cookbooks \(1\)/i })).toBeInTheDocument();
+  });
+
+  it("opens and closes a group", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+
+    const heading = screen.getByRole("button", { name: /^cookbooks \(/i });
+    expect(heading).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(heading);
+    expect(heading).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("/api/v1/cookbooks")).toBeInTheDocument();
+
+    await user.click(heading);
+    expect(screen.queryByText("/api/v1/cookbooks")).not.toBeInTheDocument();
+  });
+
+  it("shows what a search found without making somebody open groups to see it", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
+    openTheGroupFor("/api/v1/admin/users");
+
+    await user.type(screen.getByRole("searchbox"), "local accounts");
+
+    // A search that hides its own results is worse than no search at all.
+    expect(screen.getByText("/api/v1/admin/users")).toBeInTheDocument();
   });
 
 });

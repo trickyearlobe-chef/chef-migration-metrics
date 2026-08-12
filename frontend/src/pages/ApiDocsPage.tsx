@@ -675,6 +675,10 @@ export function ApiDocsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  // Which groups the reader has opened. Closed is the starting state: there
+  // are two hundred and forty-five addresses, and a page that opens as all of
+  // them is one nobody reads to the end. A search overrides this — see below.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
 
   // How wide the detail pane is, in pixels, remembered across visits. This is
   // the first thing in this app to use browser storage, so it is namespaced
@@ -837,15 +841,42 @@ export function ApiDocsPage() {
               </p>
             )}
 
-            {grouped.map(([group, groupEntries]) => (
+            {grouped.map(([group, groupEntries]) => {
+              // A search opens what it matched. A filter that hides its own
+              // results behind a click is worse than no filter: the reader
+              // types, sees nothing, and concludes the address is not there.
+              const isOpen = query.trim() !== "" || opened.has(group);
+              return (
               <section
                 key={group}
                 className="overflow-hidden rounded-md border border-gray-200 bg-white"
               >
-                <h3 className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  {group}
+                <h3>
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    aria-controls={`group-${group}`}
+                    onClick={() =>
+                      setOpened((open) => {
+                        const next = new Set(open);
+                        if (next.has(group)) next.delete(group);
+                        else next.add(group);
+                        return next;
+                      })
+                    }
+                    className="flex w-full items-center gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 hover:bg-gray-100"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`text-gray-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    >
+                      &#9656;
+                    </span>
+                    {group} ({groupEntries.length})
+                  </button>
                 </h3>
-                <ul className="divide-y divide-gray-100">
+                {isOpen && (
+                <ul id={`group-${group}`} className="divide-y divide-gray-100">
                   {groupEntries.map((e) => {
                     const key = `${e.method} ${e.path}`;
                     return (
@@ -896,8 +927,10 @@ export function ApiDocsPage() {
                     );
                   })}
                 </ul>
+                )}
               </section>
-            ))}
+              );
+            })}
           </div>
 
           {selectedEntry && (
