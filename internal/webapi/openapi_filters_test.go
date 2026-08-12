@@ -117,14 +117,24 @@ func queryKeysIn(fn *ast.FuncDecl) map[string]bool {
 }
 
 // queryKeyFromCall reads the key out of a Get or Has on a request's query, or
-// out of the queryStringSlice helper that reads a repeated parameter.
+// out of one of the three helpers that read a parameter with a default, a
+// repeated parameter, or a parameter off already-extracted values.
+//
+// The helpers are not optional to know about. A first pass at this test knew
+// only about Get and missed twenty parameters that are really read — the list
+// views' filters go through queryString, and the biggest single set goes
+// through a function taking url.Values rather than the request.
 func queryKeyFromCall(call *ast.CallExpr, values map[string]bool) (string, bool) {
 	if len(call.Args) == 0 {
 		return "", false
 	}
-	if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "queryStringSlice" &&
-		len(call.Args) == 2 {
-		return stringLiteral(call.Args[1])
+	if ident, ok := call.Fun.(*ast.Ident); ok {
+		switch {
+		case ident.Name == "queryStringSlice" && len(call.Args) == 2,
+			ident.Name == "queryString" && len(call.Args) == 3,
+			ident.Name == "valueOr" && len(call.Args) == 3:
+			return stringLiteral(call.Args[1])
+		}
 	}
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || (sel.Sel.Name != "Get" && sel.Sel.Name != "Has") || len(call.Args) != 1 {
@@ -212,7 +222,7 @@ func TestFilters_NothingIsDescribedThatNoHandlerReads(t *testing.T) {
 // a list is a second thing to keep true, and the count is recomputed every run.
 // pagination is excluded — it is declared separately and described already.
 func TestFilters_TheUndescribedFiltersOnlyGetFewer(t *testing.T) {
-	const undescribed = 20
+	const undescribed = 15
 
 	declared := declaredQueryParams(t)
 	var missing []string

@@ -4240,6 +4240,71 @@
     },
     "type": "object"
   },
+  "GET /api/v1/owners/{name}/assignments": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "assignment_source": {
+              "type": "string"
+            },
+            "auto_rule_name": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "entity_key": {
+              "type": "string"
+            },
+            "entity_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "owner_name": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
   "GET /api/v1/ownership/audit-log": {
     "properties": {
       "data": {

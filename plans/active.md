@@ -8,69 +8,50 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — parameters, bodies and response shapes in the description (chunk 4)
+## NOW — what a call answers with, and what it takes (chunk 4)
 
-**Request bodies and query parameters are done. Response schemas are what is left.**
-Measured on the served document: 245 operations, 81 with path parameters, **61 of the 86
-POST/PUT/PATCH writes carry a request body** (60 named types under `components/schemas`), and
-**23 reads describe their query parameters** — 21 taking `page`+`per_page`, 2 taking `per_page`
-alone. The remaining 25 writes read nothing from the body and say so. The `/api-docs` panel shows
-body fields, query parameters with their bounds, and a curl built from them. Every operation still
-declares a bare `200: "The answer."`.
+**The mechanism is built and partly applied. What is left is applying it to the rest.**
+An address declares the type it writes back with `answers()` / `answersPage()` beside `takes()`,
+and the shape is reflected off that type. `takesQuery()` declares the filters; `takesForm()`
+declares the fields of the six form submissions. The `/api-docs` panel shows the answer's fields,
+descending into a page's rows.
 
-**The founding constraint.** The description is derived from what is served, never written beside
-it — a hand-maintained table is the trap that killed the 128 specifications. So the answer is
-reflection over real types, not a lookup map. `apiRoles` is the one exception and it survives only
-because a test probes the running service and fails on disagreement.
+**Two counts are the backlog, and both are recomputed rather than remembered.** A ratchet in
+`openapi_responses_test.go` holds the operations that answer undescribed, and one in
+`openapi_filters_test.go` holds the filters described nowhere. Both fail in either direction, so
+finishing work means striking the number down. Run them for today's figures rather than quoting
+any written here.
 
-**Reuse the body machinery rather than reinventing it.** `takes()` / `subTakes()` name a type at
-the registration site next to `methods()` — one token, no field table — and `openapi_schema.go`
-reflects the shape off it. Tests in `openapi_bodies_test.go` read the handlers and hold the
-described and decoded sets in step both ways, so an undeclared body is a red build.
+**Declare only what has been measured.** `tools/api-probe/probe.py` reads every GET on a running
+instance and reports any address sending a field the description does not name. It caught one
+wrong declaration the moment it was written. Re-run it after declaring anything, against
+`https://127.0.0.1` with a token in `CMM_API_TOKEN`.
+
+**The unit is the (method, address), never the handler.** One handler serves many addresses and
+answers a different shape at each, and two are registered at several exact patterns and dispatch
+on the path inside. Reachability from the handler is an upper bound and nothing more — that is
+what made three attempts at deriving pagination wrong. The addresses left undescribed are mostly
+these: each needs its own dispatch read before it can be declared.
+
+**Where the recording lives, decided:** `internal/webapi/testdata/response_shapes.json`, derived
+from the Go types and compared on every build, re-recorded deliberately with `-update`. The live
+probe's own output is deliberately *not* kept in git: it is read off a running service, and an
+object's keys there can be data — a map keyed by organisation or version would put customer names
+into the repository.
 
 **Carry forward:**
 
-- **Requiredness is not derivable and is deliberately not claimed** — handlers enforce it by hand,
-  which reflection cannot see, so the schemas stay silent rather than guess.
+- **Requiredness of a body's fields is not derivable and is not claimed.** Handlers enforce it by
+  hand. A query parameter is different: four addresses refuse a plain GET, the probe measures
+  which, and those are declared required.
 - **Three decode idioms exist, not one**: JSON into a named type; `decodeAdminConfigBody` for the
   16 settings sections (read as YAML — the **yaml tag** is the wire name); `io.ReadAll` +
   `Unmarshal`. Any derivation over handlers must know all three or it silently covers two thirds.
-
-**Remaining scope, in order:**
-
-1. **Response schemas** — the last and least mechanical: handlers write datastore types through
-   `WriteJSON` with nothing declaring which. **Do not repeat the pagination mistake of deriving
-   from the handler**; the unit is the (method, address), and a live probe recording of what each
-   address actually answered is available (see below).
-2. **The long tail of query parameters.** Pagination is described; filters are not. 69 direct
-   `req.URL.Query()` reads remain, commonest keys `q` (7), `repo` (3), `entity_type` (3).
-3. **Multipart form fields.** Six addresses take a form, not JSON (`uploadWrites`). Described as
-   uploads, but the field names are `req.FormValue` string keys, so nothing reflects them.
-
-**How pagination was settled, because the same method applies to what is left.** The plan's idea —
-describe `ParsePagination` once, attach it where the helper is used — does not work. Three
-derivations were tried and all over-report: reachability from the registered handler gives 36
-patterns against 22; restricting to non-subtree routes still over-reports by seven, because
-`handleOwnershipIntake` and `handleOwnershipEndpoints` are each registered at several exact
-patterns and dispatch on the path inside; and looking for a `pagination` object in the answer
-misses one address that pages without any metadata. So it is declared per address with
-`paginated()` / `cappedNotPaged()`, **measured against a running instance**, and held by two
-static checks — nothing may claim pagination its handler cannot reach, and no handler that pages
-may go unclaimed.
-
-**A read-only probe of a running instance is the tool that settled it.** It walks every GET in the
-served description, fills path parameters from the nearest ancestor collection, and tests
-behaviour rather than guessing — asking twice, once with `per_page=1`. It records field names and
-types only, never values, so its output carries no data. That recording is also what step 3 and
-`TestJourney_TheShapeCannotChangeUnderACaller` need, and it does not exist in the repo yet —
-deciding where it lives is part of step 3.
-
-**Never pull node-ingest structs into this.** `POST /api/v1/ingest` sits in `undescribedBodies`
-with its reason served alongside it, so a reader sees why rather than assuming it was forgotten.
-
-`TestJourney_TheShapeCannotChangeUnderACaller` is **still skipped**: named types unblock it, but it
-is about *responses* and nothing yet records what an answer looked like at a release — it needs
-step 3.
+- **An anonymous map cannot be described.** Roughly half the write sites assemble one inline, and
+  each has to be lifted to a named type before its address can declare anything. That lift is the
+  bulk of the remaining work, and it is mechanical.
+- **Never pull node-ingest structs into this.** `POST /api/v1/ingest` sits in `undescribedBodies`
+  with its reason served alongside it.
 
 Renderer research, if the hand-rolled page is ever revisited: `plans/todo-documentation.md`.
 

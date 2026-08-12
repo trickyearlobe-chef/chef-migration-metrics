@@ -743,13 +743,15 @@ func (r *Router) registerRoutes() {
 	// SAML endpoints — wired when a SAML provider is configured.
 	if r.samlHandler != nil {
 		r.public("/api/v1/auth/saml/metadata", r.samlHandler.HandleMetadata)
-		r.public("/api/v1/auth/saml/login", r.samlHandler.HandleLogin)
+		r.public("/api/v1/auth/saml/login", r.samlHandler.HandleLogin,
+			takesQuery("GET", queryParam{Name: "returnTo"}))
 		r.public("/api/v1/auth/saml/acs", r.samlHandler.HandleACS)
 		r.public("/api/v1/auth/saml/slo", r.samlHandler.HandleSLO)
 	} else {
 		r.public("/api/v1/auth/saml/acs", r.handleNotImplemented)
 		r.public("/api/v1/auth/saml/metadata", r.handleNotImplemented)
-		r.public("/api/v1/auth/saml/login", r.handleNotImplemented)
+		r.public("/api/v1/auth/saml/login", r.handleNotImplemented,
+			takesQuery("GET", queryParam{Name: "returnTo"}))
 		r.public("/api/v1/auth/saml/slo", r.handleNotImplemented)
 	}
 
@@ -826,7 +828,9 @@ func (r *Router) registerRoutes() {
 		subAnswers("{cookbook_name}", "GET", nodesByCookbookResponse{}))
 	r.protect("/api/v1/nodes/disks/", r.handleNodeDisks,
 		sub("{organisation}/{name}"),
-		subAnswers("{organisation}/{name}", "GET", diskResponse{}))
+		subAnswers("{organisation}/{name}", "GET", diskResponse{}),
+		subTakesQuery("{organisation}/{name}", "GET",
+			queryParam{Name: "show_all"}))
 	// Capped, not paged: the store call behind this takes a limit and no
 	// offset, so page does nothing. See cappedNotPaged.
 	r.protect("/api/v1/nodes/runs/", r.handleNodeRuns,
@@ -844,7 +848,8 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/cookbooks", r.handleCookbooks, paginated(),
 		answersPage("GET", cookbookResp{}),
-		takesQuery("GET", queryParam{Name: "active"}, queryParam{Name: "compatibility"},
+		takesQuery("GET", queryParam{Name: "target_chef_version"},
+			queryParam{Name: "active"}, queryParam{Name: "compatibility"},
 			queryParam{Name: "cookstyle_status"}, queryParam{Name: "download_status"},
 			queryParam{Name: "name"}, queryParam{Name: "organisation"},
 			queryParam{Name: "owner"}, queryParam{Name: "tk_status"},
@@ -862,7 +867,8 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/roles", r.handleRoles, paginated(),
 		answers("GET", roleListResponse{}),
-		takesQuery("GET", queryParam{Name: "organisation"}))
+		takesQuery("GET", queryParam{Name: "name"}, queryParam{Name: "compatibility_status"}, queryParam{Name: "tk_status"}, queryParam{Name: "target_chef_version"},
+			queryParam{Name: "organisation"}))
 	r.protect("/api/v1/roles/", r.handleRoleDetail,
 		sub("{name}"), sub("{name}/dependency-graph"),
 		subAnswers("{name}", "GET", datastore.RoleDetail{}),
@@ -873,7 +879,8 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/git-repos", r.handleGitRepos, paginated(),
 		answersPage("GET", gitRepoResp{}),
-		takesQuery("GET", queryParam{Name: "has_test_suite"}, queryParam{Name: "owner"},
+		takesQuery("GET", queryParam{Name: "clone_status"}, queryParam{Name: "human_verdict"}, queryParam{Name: "name"}, queryParam{Name: "compatibility"}, queryParam{Name: "cookstyle_status"}, queryParam{Name: "tk_status"}, queryParam{Name: "target_chef_version"},
+			queryParam{Name: "has_test_suite"}, queryParam{Name: "owner"},
 			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/git-repos/", r.handleGitRepoDetail,
 		sub("excluded"), sub("{name}"), sub("{name}/exclude", "POST", "DELETE"),
@@ -886,7 +893,10 @@ func (r *Router) registerRoutes() {
 		subAnswers("excluded", "GET", []datastore.GitRepo{}),
 		subAnswers("{name}", "GET", gitRepoDetailResponse{}),
 		subAnswers("{name}/files", "GET", []fileEntry{}),
-		subAnswers("{name}/files/content", "GET", fileContentResponse{}))
+		subAnswers("{name}/files/content", "GET", fileContentResponse{}),
+		subTakesQuery("{name}/files", "GET", queryParam{Name: "path"}),
+		subTakesQuery("{name}/files/content", "GET",
+			queryParam{Name: "path", Required: true}))
 
 	// -----------------------------------------------------------------
 	// Run events endpoints (viewer) — ingest telemetry over converge_runs.
@@ -895,7 +905,8 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/run-events/nodes", r.handleRunEventNodes, paginated(),
 		answersPage("GET", datastore.ConvergeRunListItem{}),
-		takesQuery("GET", queryParam{Name: "since"}, queryParam{Name: "until"}))
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "status"}, queryParam{Name: "node"}, queryParam{Name: "chef_version"}, queryParam{Name: "cookbook"}, queryParam{Name: "failure_message"},
+			queryParam{Name: "since"}, queryParam{Name: "until"}))
 	// Measured, not assumed: this one honours per_page and returns no
 	// pagination metadata at all, so a caller cannot tell from an answer that
 	// it was bounded. Describing it is the only thing that says so today.
@@ -904,7 +915,8 @@ func (r *Router) registerRoutes() {
 		subAnswers("{organisation}/{name}", "GET", nodeRunEventsResponse{}))
 	r.protect("/api/v1/run-events/runs", r.handleRunEventRuns, paginated(),
 		answersPage("GET", datastore.ConvergeRunListItem{}),
-		takesQuery("GET", queryParam{Name: "since"}, queryParam{Name: "until"}))
+		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "status"}, queryParam{Name: "node"}, queryParam{Name: "chef_version"}, queryParam{Name: "cookbook"}, queryParam{Name: "failure_message"},
+			queryParam{Name: "since"}, queryParam{Name: "until"}))
 
 	// Viewer-readable UI feature flags (so the frontend can hide gated surfaces).
 	r.protect("/api/v1/features", r.handleFeatures,
@@ -914,25 +926,33 @@ func (r *Router) registerRoutes() {
 	// Remediation endpoints (viewer)
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/remediation/priority", r.handleRemediationPriority, paginated(),
-		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+		takesQuery("GET", queryParam{Name: "complexity_label"}, queryParam{Name: "target_chef_version"},
+			queryParam{Name: "organisation"}, queryParam{Name: "owner"},
 			queryParam{Name: "unowned"}))
 	r.protect("/api/v1/remediation/summary", r.handleRemediationSummary,
-		takesQuery("GET", queryParam{Name: "organisation"}, queryParam{Name: "owner"},
+		takesQuery("GET", queryParam{Name: "complexity_label"}, queryParam{Name: "target_chef_version"},
+			queryParam{Name: "organisation"}, queryParam{Name: "owner"},
 			queryParam{Name: "unowned"}))
 
 	// -----------------------------------------------------------------
 	// Cookstyle cop analysis & classification
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/cookstyle/cops", r.handleCookstyleCops, paginated(),
-		answers("GET", copAggregationResponse{}))
+		answers("GET", copAggregationResponse{}),
+		takesQuery("GET", queryParam{Name: "target_chef_version"},
+			queryParam{Name: "source"}, queryParam{Name: "classification"},
+			queryParam{Name: "triggered_only"}))
 	r.protect("/api/v1/cookstyle/cop-drift", r.handleCookstyleCopDrift,
-		answers("GET", analysis.CopDriftReport{}))
+		answers("GET", analysis.CopDriftReport{}),
+		takesQuery("GET", queryParam{Name: "target_chef_version"}))
 	r.protect("/api/v1/cookstyle/cops/", r.handleCookstyleCopSubroute,
 		sub("{cop_name}/cookbooks"), sub("{cop_name}/classification", "GET", "PUT"),
 		subPaginated("{cop_name}/cookbooks"),
 		subTakes("{cop_name}/classification", "PUT", classificationPutRequest{}),
 		subAnswers("{cop_name}/cookbooks", "GET",
-			copCookbookGroupResponse{}, copCookbookResponse{}))
+			copCookbookGroupResponse{}, copCookbookResponse{}),
+		subTakesQuery("{cop_name}/cookbooks", "GET",
+			queryParam{Name: "target_chef_version"}, queryParam{Name: "source"}))
 	r.protect("/api/v1/cookstyle/scan-scope", r.handleCookstyleScanScope,
 		methods("GET", "PUT", "DELETE"), takes("PUT", scanScopePutRequest{}),
 		answers("GET", scanScopeListResponse{}))
@@ -1019,7 +1039,8 @@ func (r *Router) registerRoutes() {
 		sub("{name}/assignments/{id}", "DELETE"),
 		subTakes("{name}", "PUT", updateOwnerRequest{}),
 		subTakes("{name}/assignments", "POST", createAssignmentsRequest{}),
-		subPaginated("{name}/assignments"))
+		subPaginated("{name}/assignments"),
+		subAnswersPage("{name}/assignments", "GET", datastore.OwnershipAssignment{}))
 	r.protect("/api/v1/ownership/reassign", r.handleOwnershipEndpoints, methods("POST"),
 		takes("POST", reassignOwnershipRequest{}))
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
@@ -1190,7 +1211,8 @@ func (r *Router) registerRoutes() {
 		sub("{id}/destroy", "DELETE", "POST"))
 	r.operatorOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup, methods("POST"))
 	r.adminOnly("/api/v1/admin/hypervisor/test-connection", r.handleHypervisorTestConnection, methods("POST"))
-	r.operatorOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep, methods("POST"))
+	r.operatorOnly("/api/v1/kitchen/orphan-sweep", r.handleOrphanSweep, methods("POST"),
+		takesQuery("POST", queryParam{Name: "dry_run"}))
 
 	// -----------------------------------------------------------------
 	// Node Kitchen endpoints (operator for triggers)
@@ -1244,7 +1266,8 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	r.protect("/api/v1/saved-filters", r.handleSavedFilters, methods("GET", "POST"),
 		takes("POST", savedFilterCreateRequest{}),
-		answers("GET", []datastore.SavedFilter{}))
+		answers("GET", []datastore.SavedFilter{}),
+		takesQuery("GET", queryParam{Name: "view"}))
 	r.protect("/api/v1/saved-filters/", r.handleSavedFilter,
 		sub("{id}", "PATCH", "DELETE"),
 		subTakes("{id}", "PATCH", savedFilterUpdateRequest{}))
@@ -1267,7 +1290,9 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/restart", r.handleAdminRestart, methods("POST"))
 	r.adminOnly("/api/v1/admin/status", r.handleAdminStatus)
 	r.adminOnly("/api/v1/admin/system-health", r.handleAdminSystemHealth)
-	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle)
+	r.adminOnly("/api/v1/admin/diagnostic-bundle", r.handleDiagnosticBundle,
+		takesQuery("GET", queryParam{Name: "include_depth_stats"},
+			queryParam{Name: "include_identifiers"}, queryParam{Name: "log_days"}))
 	r.adminOnly("/api/v1/admin/backups", r.handleAdminBackups, methods("GET", "POST"))
 	r.adminOnly("/api/v1/admin/backups/", r.handleAdminBackups,
 		sub("{id}", "GET", "DELETE"), sub("{id}/restore", "POST"),
