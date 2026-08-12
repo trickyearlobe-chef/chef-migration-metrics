@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -72,6 +73,7 @@ const (
 	KeyCollection                 = "collection"
 	KeyConcurrency                = "concurrency"
 	KeyAnalysisTools              = "analysis_tools"
+	KeyTestKitchen                = "analysis_tools.test_kitchen"
 	KeyReadiness                  = "readiness"
 	KeyExports                    = "exports"
 	KeyElasticsearch              = "elasticsearch"
@@ -143,6 +145,36 @@ type ServerListenSection struct {
 	Port          int    `yaml:"port" json:"port"`
 }
 
+// AnalysisToolsSection is the shape of the `analysis_tools` section: the
+// analysis tool settings WITHOUT Test Kitchen, which keeps a section of its own.
+//
+// They were one section, and two screens wrote it. The Test Kitchen screen read
+// what was there and put its part back; the Analysis Tools screen replaced the
+// whole thing with what it was sent, and had never sent the Test Kitchen part —
+// so changing a CookStyle timeout lost the driver, the images, the credential
+// references and the rate limits, and reported a successful save.
+//
+// Kept apart rather than merged on write, because merging makes "not sent" and
+// "cleared" the same thing and a setting can then never be cleared.
+type AnalysisToolsSection struct {
+	EmbeddedBinDir            string   `yaml:"embedded_bin_dir" json:"embedded_bin_dir"`
+	CookstyleEnabled          *bool    `yaml:"cookstyle_enabled" json:"cookstyle_enabled"`
+	CookstyleTimeoutMinutes   int      `yaml:"cookstyle_timeout_minutes" json:"cookstyle_timeout_minutes"`
+	CookstyleAddonCopPaths    []string `yaml:"cookstyle_addon_cop_paths" json:"cookstyle_addon_cop_paths"`
+	TestKitchenTimeoutMinutes int      `yaml:"test_kitchen_timeout_minutes" json:"test_kitchen_timeout_minutes"`
+}
+
+// analysisToolsSectionOf is the analysis tool settings without Test Kitchen.
+func analysisToolsSectionOf(a config.AnalysisToolsConfig) AnalysisToolsSection {
+	return AnalysisToolsSection{
+		EmbeddedBinDir:            a.EmbeddedBinDir,
+		CookstyleEnabled:          a.CookstyleEnabled,
+		CookstyleTimeoutMinutes:   a.CookstyleTimeoutMinutes,
+		CookstyleAddonCopPaths:    a.CookstyleAddonCopPaths,
+		TestKitchenTimeoutMinutes: a.TestKitchenTimeoutMinutes,
+	}
+}
+
 // AllConfigKeys returns the complete list of known config section keys in
 // the order they should be processed. This is useful for YAML auto-migration
 // to ensure all sections are captured.
@@ -154,6 +186,10 @@ func AllConfigKeys() []string {
 		KeyCollection,
 		KeyConcurrency,
 		KeyAnalysisTools,
+		// After the analysis tools, always: a store written before the split
+		// still carries Test Kitchen nested inside that section, and this is
+		// what puts the record of its own on top of the old copy.
+		KeyTestKitchen,
 		KeyReadiness,
 		KeyExports,
 		KeyElasticsearch,
@@ -233,13 +269,63 @@ func AssembleConfigRaw(values map[string]json.RawMessage) (*config.Config, error
 // We use yaml.Unmarshal because the config structs have `yaml` struct tags
 // (e.g. `yaml:"chef_server_url"`) rather than `json` tags. Since JSON is
 // valid YAML, the stored JSON values unmarshal correctly via the YAML decoder.
+// Applied in the order AllConfigKeys gives, not the order a map happens to
+// hand back. Two keys can write the same field — a store written before Test
+// Kitchen was split out still carries it nested inside the analysis tools
+// section — and which one lands has to be settled here rather than by whichever
+// order the map iterated this time.
 func assembleFields(cfg *config.Config, values map[string]json.RawMessage) error {
-	for key, raw := range values {
+	applied := make(map[string]bool, len(values))
+	for _, key := range assemblyOrder() {
+		raw, ok := values[key]
+		if !ok {
+			continue
+		}
+		applied[key] = true
 		if err := assembleOneField(cfg, key, raw); err != nil {
 			return fmt.Errorf("key %q: %w", key, err)
 		}
 	}
+
+	// Anything the order does not name, in a settled order of its own. Nothing
+	// should reach here, and a key that does would otherwise be dropped
+	// silently — which is how a setting stops being read without anybody
+	// noticing.
+	rest := make([]string, 0)
+	for key := range values {
+		if !applied[key] {
+			rest = append(rest, key)
+		}
+	}
+	sort.Strings(rest)
+	for _, key := range rest {
+		if err := assembleOneField(cfg, key, values[key]); err != nil {
+			return fmt.Errorf("key %q: %w", key, err)
+		}
+	}
 	return nil
+}
+
+// assemblyOrder is the order stored sections are applied in.
+//
+// AllConfigKeys is what this service WRITES. Reading has to cope with what an
+// older one wrote too, and two of those keys write a field another key also
+// writes — so which lands is settled here rather than by whichever order a map
+// iterated this time:
+//
+//   - the pre-single-target list of versions, which must come after the scalar
+//     it falls back to, because it steps aside when that one is set;
+//   - Test Kitchen, which a store written before the split still carries
+//     nested inside the analysis tools section.
+func assemblyOrder() []string {
+	order := make([]string, 0, len(AllConfigKeys())+1)
+	for _, key := range AllConfigKeys() {
+		order = append(order, key)
+		if key == KeyTargetChefVersion {
+			order = append(order, KeyTargetChefVersionsLegacy)
+		}
+	}
+	return order
 }
 
 // assembleOneField unmarshals a single config key's JSON value into the
@@ -270,7 +356,12 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 	case KeyConcurrency:
 		return yamlUnmarshalInto(&cfg.Concurrency, raw, key)
 	case KeyAnalysisTools:
+		// The whole struct on purpose, Test Kitchen included. A store written
+		// before the split has it nested here, and reading it is what keeps an
+		// upgrade from losing the settings before anything moves them.
 		return yamlUnmarshalInto(&cfg.AnalysisTools, raw, key)
+	case KeyTestKitchen:
+		return yamlUnmarshalInto(&cfg.AnalysisTools.TestKitchen, raw, key)
 	case KeyReadiness:
 		return yamlUnmarshalInto(&cfg.Readiness, raw, key)
 	case KeyExports:
@@ -352,7 +443,8 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 		KeyGitBaseURLs:       cfg.GitBaseURLs,
 		KeyCollection:        cfg.Collection,
 		KeyConcurrency:       cfg.Concurrency,
-		KeyAnalysisTools:     cfg.AnalysisTools,
+		KeyAnalysisTools:     analysisToolsSectionOf(cfg.AnalysisTools),
+		KeyTestKitchen:       cfg.AnalysisTools.TestKitchen,
 		KeyReadiness:         cfg.Readiness,
 		KeyExports:           cfg.Exports,
 		KeyElasticsearch:     cfg.Elasticsearch,

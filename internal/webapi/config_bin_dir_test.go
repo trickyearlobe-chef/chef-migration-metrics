@@ -25,8 +25,7 @@ import (
 const binDirBody = `{
 	"embedded_bin_dir": "/opt/chef-workstation/embedded/bin",
 	"cookstyle_timeout_minutes": 10,
-	"test_kitchen_timeout_minutes": 0,
-	"test_kitchen": {"timeout_minutes": 30, "driver": "vcenter"}
+	"test_kitchen_timeout_minutes": 0
 }`
 
 // The path an operator saves is the path that comes back, and the path that is

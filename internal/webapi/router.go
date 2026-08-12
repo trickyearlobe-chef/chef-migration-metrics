@@ -1168,7 +1168,7 @@ func (r *Router) registerRoutes() {
 		answers("GET", config.LoggingConfig{}),
 		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools,
-		methods("GET", "PUT"), takes("PUT", config.AnalysisToolsConfig{}),
+		methods("GET", "PUT"), takes("PUT", configstore.AnalysisToolsSection{}),
 		answers("GET", analysisToolsResponse{}),
 		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen,

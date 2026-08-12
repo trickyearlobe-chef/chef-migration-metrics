@@ -798,6 +798,18 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 		csLog.Error(fmt.Sprintf("legacy data migration failed: %v", err))
 		return err
 	}
+	// Test Kitchen used to live nested inside the analysis tools section, which
+	// both settings screens wrote. Reading the old shape still works, so an
+	// upgrade loses nothing — but the first save of the Analysis Tools screen
+	// would overwrite the nested copy with no record of its own to fall back
+	// to. This lifts it out once. Not a schema change: two rows instead of one.
+	if moved, err := configstore.MoveTestKitchenToItsOwnSection(ctx, app.cfgStore); err != nil {
+		csLog.Error(fmt.Sprintf("moving Test Kitchen to its own config section failed: %v", err))
+		return err
+	} else if moved {
+		csLog.Info("Test Kitchen settings moved into a config section of their own")
+	}
+
 	if migrateResult.Skipped {
 		csLog.Info(fmt.Sprintf("legacy data migration skipped: %s", migrateResult.SkipReason))
 	} else {
