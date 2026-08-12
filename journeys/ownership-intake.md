@@ -63,7 +63,15 @@ To be able to run it again on a schedule once I trust it, and to see whether the
 getting better or worse. **That decision turns on having watched it run once, including how long
 it took** — a job that takes forty minutes is a different proposition from one that takes four.
 
-Not to type a password into an import screen. The connection is a stored credential.
+**To load the whole thing in one go.** Their source runs to about a hundred and thirty thousand
+records and it is one list. Splitting it — by hand, or by writing filters that between them are
+supposed to cover everything exactly once — is a job with no way to check it was done right, and
+it has to be redone every time the source is refreshed. A cap I have to work around is a cap
+that will eventually be worked around wrongly.
+
+Not to type a password into an import screen. The password is a stored credential; the rest of
+the connection I need to be able to see — [connecting to a database that is not
+mine](ownership-connection.md).
 
 ## The decisions behind it
 
@@ -151,8 +159,8 @@ as a file import, and has been reasoned about rather than watched. Treat the fir
 commit as unproven.
 
 **Nothing proves a finished run says how long it took**, which is the fact the decision to
-schedule turns on. That gap is [held red on
-purpose](internal/webapi/ownership_import_unproven_test.go#TestUnproven_ARunSaysHowLongItTook)
+schedule turns on. That gap is [held on purpose in this journey's own
+suite](internal/webapi/ownership_intake_journey_test.go#TestJourney_ARunSaysHowLongItTook)
 rather than described here and forgotten: it fails until somebody closes it.
 
 **Nothing proves I can try the row filter before committing, from a database source.** The

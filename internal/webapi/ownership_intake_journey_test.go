@@ -280,6 +280,20 @@ func TestJourney_CanRunItAgainOnASchedule(t *testing.T) {
 	}
 }
 
+// "To load the whole thing in one go. Their source runs to about a hundred and
+// thirty thousand records and it is one list."
+//
+// A cap below what the customer actually holds is a cap somebody works around,
+// and the workaround is filters that are meant to cover everything exactly once
+// with no way to check that they did.
+func TestJourney_TheWholeSourceLoadsInOneGo(t *testing.T) {
+	const theirs = 130000
+	if intakeMaxRows < theirs {
+		t.Errorf("an import stops at %d rows and the source holds about %d, so it cannot be "+
+			"loaded without being split", intakeMaxRows, theirs)
+	}
+}
+
 // "Importing is an administrator's act, not an operator's."
 //
 // Every door, not one of them. This asserted the commit endpoint alone and was

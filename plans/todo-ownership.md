@@ -57,7 +57,41 @@ Remaining:
   profile/preview/run endpoints taking a database as an alternative source, and the UI. See
   `plans/active.md` for the ordered list.
 
-- [ ] **Hold a database connection as its parts rather than as a string to be parsed** —
+- [ ] **The connection is visible; only the password is secret.** Requirement and reasoning:
+  `journeys/ownership-connection.md`, suite `internal/webapi/ownership_connection_journey_test.go`
+  (all skips — nothing is built). Settled with the product owner 2026-08-12: one connection
+  string the administrator can read and edit, with **only the password substituted into it**,
+  because the password is the only value they can never see and therefore never check. Nothing
+  visible is rewritten behind them. A starting example is proposed per kind of database and is
+  freely overridable. The connection can be tested before browsing tables, and both the string
+  reader and the server report in their own words.
+
+  **Measured 2026-08-12, and it contradicts the obvious assumption.** `sql.Open` was probed
+  directly for both drivers. SQL Server given a URL-form DSN parses eagerly and returns
+  `unable to parse connection string: invalid URL format` — the exact error the customer hit,
+  and it is the driver's, not ours. But the same driver accepts literal nonsense when the string
+  is not URL-shaped, because it falls back to keyword parsing; and lib/pq validates **nothing**
+  at Open, accepting `"not a url at all"` without complaint. So: pass driver errors through, but
+  they cannot be the validation, and the "must name a database" rule stays ours.
+
+  The escaping rule differs by form — percent-encoding for URL-shaped, brace-quoting for
+  keyword-shaped — so applying one to the other produces a string that reads correctly and is
+  refused. **Measure both against the SQL Server container** (`make mssql-up`, `seed-mssql`,
+  `test-mssql`); do not settle it from documentation, which is how it was got wrong before.
+
+  **Errors must have the password taken out of them.** Both the string reader and the server
+  routinely quote what they were handed, and neither knows which part was secret; this estate
+  ships its logs to a Splunk many people can read, and screenshots and support bundles carry the
+  same text. Redact wherever and however it appears, **including escaped** — the escaped form is
+  the case that will be missed, because the password in the message no longer looks like the
+  password that was stored.
+
+  Highest value first: **showing the composed string with the password masked**. It answers in
+  one glance the question that has cost days, and is cheap next to the rest.
+
+- [ ] **SUPERSEDED — hold a database connection as its parts rather than as a string to be parsed** —
+  replaced by the item above, which keeps one visible string and injects only the password.
+  `plans/database-connection-as-parts.md` is kept for its reasoning, not as work to do. Original:
   host, database, user, password and a list of vendor options, with the connection string
   constructed when connecting. See `plans/database-connection-as-parts.md`. This absorbs the
   question of deriving the driver from the connection string: it stops being a question.
@@ -110,6 +144,16 @@ Remaining:
   and report it as "profiled the first N rows" rather than as a row count, plus a
   statement timeout on the connection. A true count, if wanted, is a separate cheap
   `COUNT(*)` rather than a side effect of reading everything.
+- [ ] **Raise the import cap to 250,000 rows.** Requirement: `journeys/ownership-intake.md`
+  ("To load the whole thing in one go"), held red by
+  `TestJourney_TheWholeSourceLoadsInOneGo`. The cap is 100,000 today and the customer's source
+  holds about 130,000 in one list; splitting it needs filters that between them must cover
+  everything exactly once, with no way to check they did. **The cap itself is one constant. The
+  problem is the commit path** — see the synchronous-request note below: ~500 rows/second means
+  130k is around four minutes of a held-open request and 250k around eight, past most default
+  proxy timeouts, and a timeout mid-commit leaves a partial import and no report. Raising the
+  number without batching or a resumable commit ships a cap that fails later instead of sooner.
+
 - [ ] **Reuse a saved mapping from the UI.** The mapping CRUD endpoints ship and the
   UI can save one, but cannot yet load one back — a repeat import still re-maps by hand.
 - [ ] **Download the match report as CSV.** The report is on screen only.
