@@ -180,30 +180,34 @@ func (r *Router) handleGetFailureEntry(w http.ResponseWriter, req *http.Request,
 // Journey 4 — record a failure nobody predicted
 // ---------------------------------------------------------------------------
 
+// recordVerdictRequest is a person's verdict on whether something actually
+// works, which outranks both the static check and the test machines.
+type recordVerdictRequest struct {
+	SubjectName  string `json:"subject_name"`
+	SubjectType  string `json:"subject_type"`
+	CookbookName string `json:"cookbook_name"`
+	Verdict      string `json:"verdict"`
+	Reason       string `json:"reason"`
+	Evidence     string `json:"evidence"`
+	Diagnosis    string `json:"diagnosis"`
+	Plan         string `json:"plan"`
+	TargetDate   string `json:"target_date"`
+	HolderType   string `json:"holder_type"`
+	HolderRef    string `json:"holder_ref"`
+
+	// Accepted only so it can be refused. A verdict is about the thing,
+	// not one of its versions: several are in use at once and the failure
+	// is discussed version-agnostically. Silently ignoring it would let a
+	// caller believe it had recorded something narrower than it had.
+	CookbookVersion string `json:"cookbook_version"`
+}
+
 func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Request) {
 	if !requireOperatorOrAdmin(w, req) {
 		return
 	}
 
-	var body struct {
-		SubjectName  string `json:"subject_name"`
-		SubjectType  string `json:"subject_type"`
-		CookbookName string `json:"cookbook_name"`
-		Verdict      string `json:"verdict"`
-		Reason       string `json:"reason"`
-		Evidence     string `json:"evidence"`
-		Diagnosis    string `json:"diagnosis"`
-		Plan         string `json:"plan"`
-		TargetDate   string `json:"target_date"`
-		HolderType   string `json:"holder_type"`
-		HolderRef    string `json:"holder_ref"`
-
-		// Accepted only so it can be refused. A verdict is about the thing,
-		// not one of its versions: several are in use at once and the failure
-		// is discussed version-agnostically. Silently ignoring it would let a
-		// caller believe it had recorded something narrower than it had.
-		CookbookVersion string `json:"cookbook_version"`
-	}
+	var body recordVerdictRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -276,23 +280,28 @@ func (r *Router) handleRecordFailureVerdict(w http.ResponseWriter, req *http.Req
 	WriteJSON(w, http.StatusCreated, entry)
 }
 
+// reviseFailureEntryRequest revises an entry. Every field is a pointer because
+// absent means "leave this as it was" — a caller revising the plan must not
+// have to resend the diagnosis, and sending an empty one must not blank it.
+type reviseFailureEntryRequest struct {
+	Diagnosis  *string `json:"diagnosis"`
+	Plan       *string `json:"plan"`
+	Evidence   *string `json:"evidence"`
+	TargetDate *string `json:"target_date"`
+	HolderType *string `json:"holder_type"`
+	HolderRef  *string `json:"holder_ref"`
+
+	// Accepted only so they can be refused — see below.
+	Verdict *string `json:"verdict"`
+	Reason  *string `json:"reason"`
+}
+
 func (r *Router) handleReviseFailureEntry(w http.ResponseWriter, req *http.Request, id string) {
 	if !requireOperatorOrAdmin(w, req) {
 		return
 	}
 
-	var body struct {
-		Diagnosis  *string `json:"diagnosis"`
-		Plan       *string `json:"plan"`
-		Evidence   *string `json:"evidence"`
-		TargetDate *string `json:"target_date"`
-		HolderType *string `json:"holder_type"`
-		HolderRef  *string `json:"holder_ref"`
-
-		// Accepted only so they can be refused — see below.
-		Verdict *string `json:"verdict"`
-		Reason  *string `json:"reason"`
-	}
+	var body reviseFailureEntryRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -341,6 +350,11 @@ func (r *Router) handleReviseFailureEntry(w http.ResponseWriter, req *http.Reque
 	WriteJSON(w, http.StatusOK, entry)
 }
 
+// resolveFailureEntryRequest closes an entry, with a note saying how.
+type resolveFailureEntryRequest struct {
+	Note string `json:"note"`
+}
+
 func (r *Router) handleResolveFailureEntry(w http.ResponseWriter, req *http.Request, id string) {
 	if !requireOperatorOrAdmin(w, req) {
 		return
@@ -350,9 +364,7 @@ func (r *Router) handleResolveFailureEntry(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	var body struct {
-		Note string `json:"note"`
-	}
+	var body resolveFailureEntryRequest
 	// An empty body is legitimate: the note is optional.
 	_ = json.NewDecoder(req.Body).Decode(&body)
 

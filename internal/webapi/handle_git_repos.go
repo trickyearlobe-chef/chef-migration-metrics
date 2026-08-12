@@ -735,6 +735,13 @@ func (r *Router) handleListExcludedGitRepos(w http.ResponseWriter, req *http.Req
 // ---------------------------------------------------------------------------
 
 // handleGitRepoExclude marks a git repo as excluded from kitchen testing.
+// excludeGitRepoRequest takes a repository out of scanning, with the reason
+// recorded so a later reader can weigh it.
+type excludeGitRepoRequest struct {
+	Reason     string `json:"reason"`
+	ExcludedBy string `json:"excluded_by"`
+}
+
 func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, name string) {
 	// Leaving a repository out of scanning moves every verdict it feeds, so it
 	// is held to the same role as excluding one from test runs, which is admin.
@@ -748,10 +755,7 @@ func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, 
 		return
 	}
 
-	var body struct {
-		Reason     string `json:"reason"`
-		ExcludedBy string `json:"excluded_by"`
-	}
+	var body excludeGitRepoRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
 		return

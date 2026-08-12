@@ -10,6 +10,12 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 )
 
+// loginRequest is what a caller sends to sign in.
+type loginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 // handleLogin handles POST /api/v1/auth/login. It authenticates a local user
 // and returns a session token with user information.
 func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
@@ -25,10 +31,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Parse request body.
-	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var body loginRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return

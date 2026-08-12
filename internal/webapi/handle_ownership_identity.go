@@ -23,6 +23,13 @@ import (
 // and the next ingest undoes the correction.
 // ---------------------------------------------------------------------------
 
+// mergeOwnersRequest folds one person into another, so the correction
+// survives the next ingest.
+type mergeOwnersRequest struct {
+	FromOwner string `json:"from_owner"`
+	IntoOwner string `json:"into_owner"`
+}
+
 func (r *Router) handleOwnershipMerge(w http.ResponseWriter, req *http.Request) {
 	if !requireMethod(w, req, http.MethodPost) {
 		return
@@ -33,10 +40,7 @@ func (r *Router) handleOwnershipMerge(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	var body struct {
-		FromOwner string `json:"from_owner"`
-		IntoOwner string `json:"into_owner"`
-	}
+	var body mergeOwnersRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -133,6 +137,14 @@ func (r *Router) handleOwnershipDuplicatesRescan(w http.ResponseWriter, req *htt
 // nothing else, so a pair somebody has already rejected returns on every scan
 // and the list can never be worked down to nothing — which is the only state
 // that makes it worth opening.
+// dismissDuplicateRequest records that two people who look alike are not the
+// same person, so the pair stops being offered.
+type dismissDuplicateRequest struct {
+	OwnerA string `json:"owner_a"`
+	OwnerB string `json:"owner_b"`
+	Reason string `json:"reason"`
+}
+
 func (r *Router) handleOwnershipDuplicatesDismiss(w http.ResponseWriter, req *http.Request) {
 	if !requireMethod(w, req, http.MethodPost) {
 		return
@@ -141,11 +153,7 @@ func (r *Router) handleOwnershipDuplicatesDismiss(w http.ResponseWriter, req *ht
 		return
 	}
 
-	var body struct {
-		OwnerA string `json:"owner_a"`
-		OwnerB string `json:"owner_b"`
-		Reason string `json:"reason"`
-	}
+	var body dismissDuplicateRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -200,6 +208,12 @@ func (r *Router) handleOwnershipDuplicatesDismissed(w http.ResponseWriter, req *
 	WriteJSON(w, http.StatusOK, map[string]any{"data": dismissals})
 }
 
+// restoreDuplicateRequest puts a dismissed pair back on the list.
+type restoreDuplicateRequest struct {
+	OwnerA string `json:"owner_a"`
+	OwnerB string `json:"owner_b"`
+}
+
 func (r *Router) handleOwnershipDuplicatesRestore(w http.ResponseWriter, req *http.Request) {
 	if !requireMethod(w, req, http.MethodPost) {
 		return
@@ -208,10 +222,7 @@ func (r *Router) handleOwnershipDuplicatesRestore(w http.ResponseWriter, req *ht
 		return
 	}
 
-	var body struct {
-		OwnerA string `json:"owner_a"`
-		OwnerB string `json:"owner_b"`
-	}
+	var body restoreDuplicateRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return

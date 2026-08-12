@@ -77,6 +77,15 @@ func (r *Router) handleAdminListUsers(w http.ResponseWriter, req *http.Request) 
 // POST /api/v1/admin/users — create a new local user
 // ---------------------------------------------------------------------------
 
+// createUserRequest makes a local account.
+type createUserRequest struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	Role        string `json:"role"`
+}
+
 func (r *Router) handleAdminCreateUser(w http.ResponseWriter, req *http.Request) {
 	if !requireMethod(w, req, http.MethodPost) {
 		return
@@ -88,13 +97,7 @@ func (r *Router) handleAdminCreateUser(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	var body struct {
-		Username    string `json:"username"`
-		DisplayName string `json:"display_name"`
-		Email       string `json:"email"`
-		Password    string `json:"password"`
-		Role        string `json:"role"`
-	}
+	var body createUserRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -173,6 +176,16 @@ func (r *Router) handleAdminCreateUser(w http.ResponseWriter, req *http.Request)
 // PUT /api/v1/admin/users/:username — update an existing user
 // ---------------------------------------------------------------------------
 
+// updateUserRequest changes an account. Every field is a pointer because
+// absent means "leave this alone" — changing somebody's role must not require
+// resending their display name, and must not blank it.
+type updateUserRequest struct {
+	DisplayName *string `json:"display_name"`
+	Email       *string `json:"email"`
+	Role        *string `json:"role"`
+	Locked      *bool   `json:"locked"`
+}
+
 func (r *Router) handleAdminUpdateUser(w http.ResponseWriter, req *http.Request) {
 	if !requireMethod(w, req, http.MethodPut) {
 		return
@@ -197,12 +210,7 @@ func (r *Router) handleAdminUpdateUser(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	var body struct {
-		DisplayName *string `json:"display_name"`
-		Email       *string `json:"email"`
-		Role        *string `json:"role"`
-		Locked      *bool   `json:"locked"`
-	}
+	var body updateUserRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -264,6 +272,11 @@ func (r *Router) handleAdminUpdateUser(w http.ResponseWriter, req *http.Request)
 // PUT /api/v1/admin/users/:username/password — reset a user's password
 // ---------------------------------------------------------------------------
 
+// resetPasswordRequest sets a new password on an account.
+type resetPasswordRequest struct {
+	Password string `json:"password"`
+}
+
 func (r *Router) handleAdminResetPassword(w http.ResponseWriter, req *http.Request) {
 	if !requireMethod(w, req, http.MethodPut) {
 		return
@@ -286,9 +299,7 @@ func (r *Router) handleAdminResetPassword(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	var body struct {
-		Password string `json:"password"`
-	}
+	var body resetPasswordRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return

@@ -317,19 +317,22 @@ func (r *Router) handleListOwners(w http.ResponseWriter, req *http.Request) {
 	WritePaginated(w, data, pg, total)
 }
 
+// createOwnerRequest makes an owner — a person or a team.
+type createOwnerRequest struct {
+	Name           string          `json:"name"`
+	DisplayName    string          `json:"display_name"`
+	ContactEmail   string          `json:"contact_email"`
+	ContactChannel string          `json:"contact_channel"`
+	OwnerType      string          `json:"owner_type"`
+	Metadata       json.RawMessage `json:"metadata"`
+}
+
 func (r *Router) handleCreateOwner(w http.ResponseWriter, req *http.Request) {
 	if !requireOperatorOrAdmin(w, req) {
 		return
 	}
 
-	var body struct {
-		Name           string          `json:"name"`
-		DisplayName    string          `json:"display_name"`
-		ContactEmail   string          `json:"contact_email"`
-		ContactChannel string          `json:"contact_channel"`
-		OwnerType      string          `json:"owner_type"`
-		Metadata       json.RawMessage `json:"metadata"`
-	}
+	var body createOwnerRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -518,18 +521,22 @@ func (r *Router) handleGetOwner(w http.ResponseWriter, req *http.Request, name s
 // PUT /api/v1/owners/:name
 // ---------------------------------------------------------------------------
 
+// updateOwnerRequest changes an owner. Pointers throughout because absent
+// means "leave this alone" rather than "blank it".
+type updateOwnerRequest struct {
+	DisplayName    *string          `json:"display_name"`
+	ContactEmail   *string          `json:"contact_email"`
+	ContactChannel *string          `json:"contact_channel"`
+	OwnerType      *string          `json:"owner_type"`
+	Metadata       *json.RawMessage `json:"metadata"`
+}
+
 func (r *Router) handleUpdateOwner(w http.ResponseWriter, req *http.Request, name string) {
 	if !requireOperatorOrAdmin(w, req) {
 		return
 	}
 
-	var body struct {
-		DisplayName    *string          `json:"display_name"`
-		ContactEmail   *string          `json:"contact_email"`
-		ContactChannel *string          `json:"contact_channel"`
-		OwnerType      *string          `json:"owner_type"`
-		Metadata       *json.RawMessage `json:"metadata"`
-	}
+	var body updateOwnerRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -639,6 +646,20 @@ func (r *Router) handleListAssignments(w http.ResponseWriter, req *http.Request,
 // POST /api/v1/owners/:name/assignments
 // ---------------------------------------------------------------------------
 
+// assignmentRequest puts one thing under an owner.
+type assignmentRequest struct {
+	EntityType   string `json:"entity_type"`
+	EntityKey    string `json:"entity_key"`
+	Organisation string `json:"organisation"`
+	Notes        string `json:"notes"`
+}
+
+// createAssignmentsRequest puts several things under one owner at once. Which
+// owner is in the address.
+type createAssignmentsRequest struct {
+	Assignments []assignmentRequest `json:"assignments"`
+}
+
 func (r *Router) handleCreateAssignments(w http.ResponseWriter, req *http.Request, ownerName string) {
 	if !requireOperatorOrAdmin(w, req) {
 		return
@@ -655,14 +676,7 @@ func (r *Router) handleCreateAssignments(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	var body struct {
-		Assignments []struct {
-			EntityType   string `json:"entity_type"`
-			EntityKey    string `json:"entity_key"`
-			Organisation string `json:"organisation"`
-			Notes        string `json:"notes"`
-		} `json:"assignments"`
-	}
+	var body createAssignmentsRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -791,6 +805,16 @@ func (r *Router) handleDeleteAssignment(w http.ResponseWriter, req *http.Request
 // POST /api/v1/ownership/reassign
 // ---------------------------------------------------------------------------
 
+// reassignOwnershipRequest moves what one owner holds to another, optionally
+// removing the one it came from.
+type reassignOwnershipRequest struct {
+	FromOwner         string `json:"from_owner"`
+	ToOwner           string `json:"to_owner"`
+	EntityType        string `json:"entity_type"`
+	Organisation      string `json:"organisation"`
+	DeleteSourceOwner bool   `json:"delete_source_owner"`
+}
+
 func (r *Router) handleOwnershipReassign(w http.ResponseWriter, req *http.Request) {
 	if !requireMethod(w, req, http.MethodPost) {
 		return
@@ -799,13 +823,7 @@ func (r *Router) handleOwnershipReassign(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	var body struct {
-		FromOwner         string `json:"from_owner"`
-		ToOwner           string `json:"to_owner"`
-		EntityType        string `json:"entity_type"`
-		Organisation      string `json:"organisation"`
-		DeleteSourceOwner bool   `json:"delete_source_owner"`
-	}
+	var body reassignOwnershipRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return

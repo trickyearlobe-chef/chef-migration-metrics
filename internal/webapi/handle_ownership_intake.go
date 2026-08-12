@@ -829,28 +829,32 @@ func (r *Router) deleteIntakeMapping(w http.ResponseWriter, req *http.Request, i
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// importMappingRequest is a saved import: where the rows come from, how their
+// columns map onto what we hold, and when to run it again.
+type importMappingRequest struct {
+	Name       string          `json:"name"`
+	SourceKind string          `json:"source_kind"`
+	Delimiter  string          `json:"delimiter"`
+	FieldMap   json.RawMessage `json:"field_map"`
+
+	DBDriver     string `json:"db_driver"`
+	DBCredential string `json:"db_credential"`
+	DBQuery      string `json:"db_query"`
+
+	FilterColumn string `json:"filter_column"`
+	FilterValue  string `json:"filter_value"`
+
+	// Pointer so "not supplied" is distinguishable from "off". The default
+	// is on, matching the interactive import: a first import against an
+	// empty catalogue is impossible if unknown people are rejected.
+	CreateOwners *bool `json:"create_owners"`
+
+	Schedule        string `json:"schedule"`
+	ScheduleEnabled bool   `json:"schedule_enabled"`
+}
+
 func decodeMappingBody(w http.ResponseWriter, req *http.Request) (mappingRequestBody, bool) {
-	var raw struct {
-		Name       string          `json:"name"`
-		SourceKind string          `json:"source_kind"`
-		Delimiter  string          `json:"delimiter"`
-		FieldMap   json.RawMessage `json:"field_map"`
-
-		DBDriver     string `json:"db_driver"`
-		DBCredential string `json:"db_credential"`
-		DBQuery      string `json:"db_query"`
-
-		FilterColumn string `json:"filter_column"`
-		FilterValue  string `json:"filter_value"`
-
-		// Pointer so "not supplied" is distinguishable from "off". The default
-		// is on, matching the interactive import: a first import against an
-		// empty catalogue is impossible if unknown people are rejected.
-		CreateOwners *bool `json:"create_owners"`
-
-		Schedule        string `json:"schedule"`
-		ScheduleEnabled bool   `json:"schedule_enabled"`
-	}
+	var raw importMappingRequest
 	if err := json.NewDecoder(req.Body).Decode(&raw); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return mappingRequestBody{}, false

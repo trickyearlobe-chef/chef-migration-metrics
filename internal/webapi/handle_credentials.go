@@ -138,12 +138,16 @@ func (r *Router) handleListCredentials(w http.ResponseWriter, req *http.Request)
 // POST /api/v1/admin/credentials — create a new credential
 // ---------------------------------------------------------------------------
 
+// createCredentialRequest stores a secret. The value is write-only: no
+// response ever sends it back.
+type createCredentialRequest struct {
+	Name           string `json:"name"`
+	CredentialType string `json:"credential_type"`
+	Value          string `json:"value"`
+}
+
 func (r *Router) handleCreateCredential(w http.ResponseWriter, req *http.Request) {
-	var body struct {
-		Name           string `json:"name"`
-		CredentialType string `json:"credential_type"`
-		Value          string `json:"value"`
-	}
+	var body createCredentialRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -201,6 +205,12 @@ func (r *Router) handleCreateCredential(w http.ResponseWriter, req *http.Request
 // PUT /api/v1/admin/credentials/:name — rotate a credential's value
 // ---------------------------------------------------------------------------
 
+// rotateCredentialRequest replaces a stored secret's value. Which one is in
+// the address.
+type rotateCredentialRequest struct {
+	Value string `json:"value"`
+}
+
 func (r *Router) handleUpdateCredential(w http.ResponseWriter, req *http.Request) {
 	name := pathParam(req, "/api/v1/admin/credentials/")
 	if name == "" {
@@ -208,9 +218,7 @@ func (r *Router) handleUpdateCredential(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	var body struct {
-		Value string `json:"value"`
-	}
+	var body rotateCredentialRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return

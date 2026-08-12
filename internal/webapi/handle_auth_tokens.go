@@ -98,16 +98,19 @@ func (r *Router) listMyTokens(w http.ResponseWriter, req *http.Request, username
 	WriteJSON(w, http.StatusOK, map[string]any{"tokens": tokens})
 }
 
+// createTokenRequest makes a credential for a tool.
+type createTokenRequest struct {
+	Name string `json:"name"`
+	// CanWrite is chosen here, by whoever is about to hand this to a tool,
+	// because only they know what for. Absent means read-only: a caller
+	// that never heard of the field cannot get a writing credential.
+	CanWrite bool `json:"can_write"`
+}
+
 // createMyToken mints one and returns the secret. This is the only response
 // that will ever contain it.
 func (r *Router) createMyToken(w http.ResponseWriter, req *http.Request, username string) {
-	var body struct {
-		Name string `json:"name"`
-		// CanWrite is chosen here, by whoever is about to hand this to a tool,
-		// because only they know what for. Absent means read-only: a caller
-		// that never heard of the field cannot get a writing credential.
-		CanWrite bool `json:"can_write"`
-	}
+	var body createTokenRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Could not read the request: "+err.Error())
 		return

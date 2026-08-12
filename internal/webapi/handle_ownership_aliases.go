@@ -54,17 +54,21 @@ func (r *Router) handleListOwnerAliases(w http.ResponseWriter, req *http.Request
 	WriteJSON(w, http.StatusOK, map[string]any{"aliases": aliases})
 }
 
+// createOwnerAliasRequest records another name a person is known by, so the
+// next import recognises them.
+type createOwnerAliasRequest struct {
+	OwnerName  string `json:"owner_name"`
+	AliasType  string `json:"alias_type"`
+	AliasValue string `json:"alias_value"`
+	Source     string `json:"source"`
+}
+
 func (r *Router) handleCreateOwnerAlias(w http.ResponseWriter, req *http.Request) {
 	if !requireOperatorOrAdmin(w, req) {
 		return
 	}
 
-	var body struct {
-		OwnerName  string `json:"owner_name"`
-		AliasType  string `json:"alias_type"`
-		AliasValue string `json:"alias_value"`
-		Source     string `json:"source"`
-	}
+	var body createOwnerAliasRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
