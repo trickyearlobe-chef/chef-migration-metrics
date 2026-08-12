@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -184,10 +185,41 @@ func TestJourney_FailureIsMachineReadable(t *testing.T) {
 // "Answers that keep their shape... I would rather be told an upgrade will
 // break me than find out that way."
 func TestJourney_TheShapeCannotChangeUnderACaller(t *testing.T) {
-	t.Skip("nothing records what an answer looked like at a release, so nothing can fail when " +
-		"a field changes meaning. Generating the description from the code stops it going " +
-		"stale but says nothing about it changing — a caller finds out weeks later, in another " +
-		"system's numbers. Closing this needs the shape recorded and compared, not just described")
+	// What an answer looked like is recorded, and compared on every build —
+	// see openapi_shape_record_test.go, which is in the gating suite rather
+	// than in this one, because a guard that only runs when somebody asks for
+	// the journey list is not a guard.
+	raw, err := os.ReadFile(shapeRecordPath)
+	if err != nil {
+		t.Fatalf("nothing records what an answer looked like, so nothing fails when a field "+
+			"changes meaning and the first anybody hears of it is another system's numbers "+
+			"being wrong: %v", err)
+	}
+	var recorded map[string]any
+	if err := json.Unmarshal(raw, &recorded); err != nil {
+		t.Fatalf("the recording cannot be read, so nothing is being compared against it: %v", err)
+	}
+	if len(recorded) == 0 {
+		t.Fatal("the recording is empty, so every shape can change without anything failing")
+	}
+
+	// The recording is of this build, not of some build. One that has drifted
+	// from what is served is worse than none: it passes, and it is describing
+	// something nobody is running.
+	current := recordedShapes(t)
+	for op, was := range recorded {
+		now, still := current[op]
+		if !still {
+			t.Errorf("%s is recorded but no longer describes an answer at all", op)
+			continue
+		}
+		before, _ := json.Marshal(was)
+		after, _ := json.Marshal(now)
+		if string(before) != string(after) {
+			t.Errorf("%s answers with a shape the recording does not match, so an upgrade "+
+				"changed it under whoever built against it", op)
+		}
+	}
 }
 
 // "Whether it survives contact with an unattended job is the open question."
