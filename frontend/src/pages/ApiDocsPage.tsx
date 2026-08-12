@@ -532,7 +532,13 @@ function OperationPanel({
   return (
     <aside
       style={{ width }}
-      className="w-full shrink-0 space-y-4 rounded-md border border-gray-200 bg-white p-4 xl:sticky xl:top-0 xl:self-start">
+      // Bounded and scrolling itself, not just pinned. A sticky panel taller
+      // than the window hangs its overflow below the fold, and the page's
+      // scroll moves the list beside it rather than the panel — so the last
+      // fields of a settings section with thirty of them cannot be reached at
+      // all. The height allows for the padding of the scrolling region this
+      // sits in.
+      className="w-full shrink-0 space-y-4 rounded-md border border-gray-200 bg-white p-4 xl:sticky xl:top-0 xl:max-h-[calc(100vh-3rem)] xl:self-start xl:overflow-y-auto">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

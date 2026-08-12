@@ -662,4 +662,23 @@ describe("ApiDocsPage", () => {
     expect(within(response).getByText("tk_status")).toBeInTheDocument();
   });
 
+
+  it("keeps the detail panel reachable when it is taller than the window", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/admin/users"));
+
+    await user.click(screen.getByRole("button", { name: /get \/api\/v1\/admin\/users/i }));
+
+    // Asserted on the mechanism rather than the effect: there is no layout in
+    // this environment, so nothing here can measure that the last row is
+    // reachable. What can be checked is that the panel is bounded and scrolls
+    // itself — without both, a panel pinned to the top of a scrolling page
+    // hangs its overflow below the fold with no way to get to it, which is
+    // exactly what a settings section with thirty fields does.
+    const panel = screen.getByRole("complementary");
+    expect(panel.className).toMatch(/overflow-y-auto/);
+    expect(panel.className).toMatch(/max-h-/);
+  });
+
 });
