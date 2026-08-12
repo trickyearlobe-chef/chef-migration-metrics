@@ -29,6 +29,25 @@ const doc = {
         operationId: "getCookbooks",
         summary: "Every cookbook with its verdict.",
         "x-required-role": "authenticated",
+        responses: {
+          "200": {
+            description: "The answer.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: "#/components/schemas/webapi.cookbookResp" },
+                    },
+                    pagination: { type: "object", properties: { page: { type: "integer" } } },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
     "/api/v1/failure-register": {
@@ -73,6 +92,10 @@ const doc = {
       "webapi.holder": {
         type: "object",
         properties: { holder_ref: { type: "string" } },
+      },
+      "webapi.cookbookResp": {
+        type: "object",
+        properties: { name: { type: "string" }, tk_status: { type: "string" } },
       },
     },
   },
@@ -499,4 +522,35 @@ describe("ApiDocsPage", () => {
     // different and wrong statement.
     expect(screen.queryByText(/no addresses match/i)).not.toBeInTheDocument();
   });
+
+  it("shows what a call answers with, so a client has something to decode into", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+
+    await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
+
+    const panel = screen.getByRole("complementary");
+    const response = within(panel).getByTestId("response-shape");
+    // The envelope, and the rows inside it. A caller that is only shown "data"
+    // and "pagination" has been told the shape of the wrapper and nothing
+    // about what it wraps, which is the part they came for.
+    expect(within(response).getByText("data")).toBeInTheDocument();
+    expect(within(response).getByText("pagination")).toBeInTheDocument();
+    expect(within(response).getByText("tk_status")).toBeInTheDocument();
+  });
+
+  it("says plainly when nothing describes the answer, rather than showing nothing", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/admin/users"));
+
+    await user.click(screen.getByRole("button", { name: /get \/api\/v1\/admin\/users/i }));
+
+    const panel = screen.getByRole("complementary");
+    // An empty section reads as "answers nothing", which is a different claim
+    // and a wrong one.
+    expect(within(panel).getByText(/not described yet/i)).toBeInTheDocument();
+  });
+
 });

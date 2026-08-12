@@ -89,10 +89,20 @@ export interface ApiRequestBody {
   content?: Record<string, { schema?: ApiSchema }>;
 }
 
+// ApiResponse is one outcome of a call. Only the successful one carries a
+// schema today; a failure is the same error document everywhere, described in
+// prose on the page rather than repeated on every operation.
+export interface ApiResponse {
+  description?: string;
+  content?: Record<string, { schema?: ApiSchema }>;
+}
+
 export interface ApiOperation {
   operationId?: string;
   parameters?: ApiParameter[];
   requestBody?: ApiRequestBody;
+  // Keyed by status code as a string, which is how OpenAPI writes it.
+  responses?: Record<string, ApiResponse>;
   summary?: string;
   description?: string;
   // The access this operation needs, folded in by the generator from both the

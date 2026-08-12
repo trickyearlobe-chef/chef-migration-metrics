@@ -297,6 +297,13 @@ function FieldRows({
   );
 }
 
+// responseSchema is what an operation says it answers with, or undefined where
+// it says nothing. Undescribed and "answers nothing" are different claims, and
+// the panel below is careful to make only the first one.
+function responseSchema(entry: Entry): ApiSchema | undefined {
+  return entry.op.responses?.["200"]?.content?.["application/json"]?.schema;
+}
+
 // RequestBodySection says one of four things, and the difference between them
 // matters more than any of them individually: here are the fields, this is a
 // file upload, this takes a body we deliberately do not describe, or this
@@ -349,6 +356,48 @@ function RequestBodySection({ entry, schemas }: { entry: Entry; schemas: Schemas
             Takes a body, but its fields are not described.
           </p>
         )
+      )}
+    </div>
+  );
+}
+
+// ResponseSection is what comes back. A caller generating a client needs a
+// model to decode into, and the alternative to being told is reading the
+// browser's network tab and hard-coding whatever happened to be in the answer
+// that day — including the fields that were empty and absent.
+function ResponseSection({ entry, schemas }: { entry: Entry; schemas: Schemas }) {
+  const schema = responseSchema(entry);
+  const fields = fieldsOf(schema, schemas);
+  const resolved = resolve(schema, schemas);
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+        Response
+      </h3>
+      {fields.length > 0 ? (
+        <table data-testid="response-shape" className="mt-1.5 w-full text-left text-sm">
+          <thead>
+            <tr className="text-xs uppercase tracking-wider text-gray-400">
+              <th className="pb-1 font-medium">Field</th>
+              <th className="pb-1 font-medium">Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            <FieldRows fields={fields} schemas={schemas} />
+          </tbody>
+        </table>
+      ) : resolved?.type === "array" ? (
+        // A bare list, with no envelope around it. Saying so beats an empty
+        // table, which reads as an answer with no fields in it.
+        <p data-testid="response-shape" className="mt-1 text-sm text-gray-600">
+          A list of{" "}
+          <code className="font-mono">{typeLabel(resolved.items, schemas)}</code>.
+        </p>
+      ) : (
+        <p className="mt-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          The shape of this answer is not described yet.
+        </p>
       )}
     </div>
   );
@@ -471,9 +520,7 @@ function OperationPanel({
 
       {isWrite && <RequestBodySection entry={entry} schemas={schemas} />}
 
-      <p className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        The response shape is not described yet.
-      </p>
+      <ResponseSection entry={entry} schemas={schemas} />
 
       <div>
         <div className="flex items-center justify-between">
