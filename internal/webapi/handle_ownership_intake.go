@@ -53,7 +53,18 @@ const intakeMaxUploadBytes = 10 << 20
 // when 19,000 of its rows are wanted. Still a backstop rather than a target:
 // a bound that cannot be exceeded by accident is worth more than the few
 // imports it inconveniences.
-const intakeMaxRows = 100000
+//
+// Raised to 250,000 so the customer's source loads in one go — theirs is about
+// 130,000 and growing, and splitting it is the thing journeys/ownership-intake.md
+// says must not be necessary.
+//
+// This is one constant, and it is NOT the whole of that requirement. A commit
+// is a single synchronous request with nothing transactional about it, so at
+// this size it holds a connection open for minutes, past the default timeout of
+// most proxies — and a timeout part way through leaves rows imported, no record
+// of where it stopped, and nothing to resume. Raising the number makes the big
+// import possible; batching or a resumable commit is what would make it safe.
+const intakeMaxRows = 250000
 
 // intakeMaxReportRows bounds the per-row detail returned to the caller, not
 // the import.
