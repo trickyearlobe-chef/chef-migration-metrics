@@ -128,11 +128,15 @@ describe("AdminCopClassificationsSection", () => {
     await waitFor(() =>
       expect(api.setCopClassification).toHaveBeenCalledWith(
         "Chef/Deprecations/ResourceWithoutUnifiedTrue",
-        expect.objectContaining({
-          target_chef_version: "18.5.0",
-          classification: "blocker",
-        }),
+        expect.objectContaining({ classification: "blocker" }),
       ),
+    );
+    // A classification is ours, not a version's: the service stores one per cop
+    // and reads no version from this call. It used to be sent anyway and
+    // silently dropped; now it would be refused.
+    expect(api.setCopClassification).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ target_chef_version: expect.anything() }),
     );
   });
 

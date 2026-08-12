@@ -5,7 +5,6 @@ package webapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -117,8 +116,7 @@ func (r *Router) handleGitKitchenRun(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body gitKitchenRunRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 
@@ -244,8 +242,7 @@ func (r *Router) handleGitKitchenRunAll(w http.ResponseWriter, req *http.Request
 	}
 
 	var body gitKitchenRunAllRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

@@ -8,85 +8,52 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — the assistant surface, MVP (chunk 5)
+## NOW — pick from the reds
 
-**Shipped in v2.22.0: the description now carries what a call answers with, the filters it takes,
-and the fields of a form.** That was the prerequisite. This chunk is the thing it was for: an
-assistant in somebody's editor that can read what this service knows.
+`make journey` has two, both in `journeys/own-password.md`: nobody can change their own
+password, and nothing tells them the rules before telling them they got it wrong. `make debt`
+has one, the settings-shape item that was already there. Nothing is left from the assistant
+surface or the strict-body work.
 
-**Read `journeys/agent-access.md` first — it is the requirement, and it is not the integrator's.**
-An integrator wants all of it in a shape that has not moved; an assistant wants small answers it
-can think about, has to narrow before it fetches, and has to be able to tell what it can ask for
-without being told. Building the assistant surface by exposing the whole API is the obvious move
-and the wrong one.
+**Where the Chef tools are must apply without a restart.** Saving that directory reports
+`restart_required`, because the path is resolved once at startup and the resolved string is
+handed to the scanner and the kitchen executor. Configuration is supposed to apply live.
 
-**Built into the service, not beside it.** `TestJourney_TheAssistantSurfaceIsBuiltIn` is the red
-that starts this, and it already names the addresses it will accept: `/api/v1/mcp`, `/api/mcp`,
-`/api/v1/mcp/sse`. Deploying a second process next to this cannot happen inside the customer
-estate, so the endpoint is served by the same binary.
+- Scope: `internal/embedded` (the directory read through an accessor, not a field),
+  `internal/analysis` and `internal/nodekitchen` (each executor resolves its binary when it
+  runs, not when it is built), `cmd/chef-migration-metrics/main.go` (wiring), and the
+  analysis-tools handler, which stops claiming a restart.
+- Acceptance: changing the directory changes which binary the next scan runs, with no restart;
+  the handler reports no restart for it; `make ci` green.
+- **The limit worth knowing before starting:** a tool missing at boot means its subsystem is
+  never wired at all, so a directory fixed afterwards still needs a restart. Making that live
+  too is a separate change to startup gating, not this one.
 
-**A client is already pointed at it** — user-scoped, outside this repository, at
-`/api/v1/mcp` over Streamable HTTP with a bearer token read from `CMM_API_TOKEN`. It answers
-"MCP endpoint not found" today, which is the correct state: build the endpoint at that path and
-it connects. The token is a credential from an account's own record (`/api/v1/auth/me/tokens`),
-carries that account's level and no more, and can be read-only or writing — that machinery is
-built and tested, see `internal/webapi/credential_scope_test.go`.
+**What the interface sends is measured, not read.** `make frontend-fields` re-records it with
+the TypeScript compiler; `TestFrontend_EverythingTheInterfaceSendsIsAFieldWeRead` holds it
+against the served description. That is how three live defects were found before they broke
+anything, and how the settings wipe was found at all. Re-run it after changing any request
+body — deliberately not part of `make ci`, because regenerating there would make the check
+agree with whatever the interface currently does.
 
-**Open, and not ours to settle alone:**
+## Settled here, kept because the reasoning still binds
 
-- Which tools to expose, and whether they are generated from the description or chosen. The
-  journey argues for chosen: an assistant picking from 245 operations picks wrong, and the
-  journey says so from field reports of that exact failure on other tools built here.
-- Whether an assistant may write. The journey says the credential decides, most are read-only,
-  and a finding it wrote must never appear under a person's name unmarked — the register already
-  records how an entry got in.
-- Streamable HTTP against SSE. The client entry assumes the former.
+**Which tools an assistant is offered is chosen, not generated.** Eight, matching what
+`journeys/agent-access.md` says is needed to diagnose a failing cookbook. Generating one per
+operation is the obvious move and the wrong one — 249 of them, read flat. Held by
+`TestMCP_TheListIsShortEnoughToRead`, which fails if somebody starts generating them.
 
-**Breaking the API to fix one of these is allowed.** Nobody holds our description yet, so there
-is no external contract to break, and the owner has said so. The gate is the interface: its tests
-must stay green.
+**No tool queries anything.** Each names a request, dispatched through the same mux a browser
+reaches, so access, scope and bounds are inherited. A tool answering from anywhere else would
+show an assistant a different estate from the one on screen.
 
-**But "the UI tests are green" is not evidence that the UI still works.** Measured: 31 of the 45
-page test files mock the API module outright, and nothing anywhere drives a real request body
-into a real handler. So a change that makes handlers stricter about what they accept cannot be
-cleared by that suite — it would pass while the running application broke. What would be
-evidence is comparing what the interface actually sends against the types the handlers decode
-into, which is a piece of work in its own right and the first step of the unknown-field fix
-rather than an afterthought to it.
+**"The UI tests are green" still cannot clear a change that makes handlers stricter.** 31 of
+the 45 page test files mock the API module and nothing drives a real body into a real handler.
+The evidence is the comparison above, not the suite.
 
-**A red against an API this surface uses is fixed on the way past, not noted.** Exposing a call
-to an assistant is relying on it, and relying on something with a known defect against it while
-leaving the defect is how the defect becomes permanent. The reds most likely to be in scope, all
-of them measured rather than suspected:
-
-- `TestJourney_SomethingItCannotUnderstandIsRefused` — a body with a field the service does not
-  understand is accepted and silently dropped. An assistant sending a nearly-right body is the
-  case this was written for: it is told the call worked, and neither side can say what was acted
-  on. Expect this one first.
-- `TestJourney_NothingIsAdvertisedThatIsNeverRead` — a described body can list fields nothing
-  reads. An assistant builds its call from the description, so this is the journey's own "cannot
-  tell when it has used one wrongly", arriving by a different route.
-- The two ratchets below — an address whose answer is undescribed gives an assistant no model to
-  decode into, so exposing one means describing it first.
-- `TestDebt_EverySettingsSectionAnswersTheSameShape` (`make debt`) — only if the settings are
-  exposed at all.
-
-**Carry forward from the description work, because the same rules apply:**
-
-- **The unit is the (method, address), never the handler.** One handler serves many addresses and
-  answers a different shape at each. Reachability from the handler is an upper bound and nothing
-  more — three attempts at deriving pagination from it were all wrong.
-- **Measure against a running instance.** `tools/api-probe/probe.py` reads every GET and reports
-  any address sending a field the description does not name. Re-run it after declaring anything.
-- **Two ratchets are the API backlog**, recomputed rather than remembered:
-  `TestResponses_TheUndescribedAnswersOnlyGetFewer` and
-  `TestFilters_TheUndescribedFiltersOnlyGetFewer`. Run them for today's figures; do not quote a
-  number written here. The bulk of what is left is lifting anonymous maps to named types, which
-  is mechanical: an anonymous map cannot be described at all.
-- **Never pull node-ingest structs into this.** `POST /api/v1/ingest` sits in `undescribedBodies`
-  with its reason served alongside it.
-
-Renderer research, if the hand-rolled page is ever revisited: `plans/todo-documentation.md`.
+**A new red can pass while the thing it names is still true.** Assert the baseline first. Two
+tests here caught their own fixtures doing nothing — one had never stored the value it then
+checked was lost.
 
 ## The top open question is not ownership — it is whether the blocking list is true
 

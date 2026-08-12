@@ -127,7 +127,13 @@ type serverApp struct {
 	// Collector components.
 	coll        *collector.Collector
 	sched       *collector.Scheduler
-	kitchenPath string // path to kitchen binary, set during setupCollector
+	kitchenPath string // path to kitchen binary as resolved at startup, set during setupCollector
+
+	// toolResolver finds the Chef tools, reading where they are from live
+	// configuration each time. Set during setupCollector. Executors resolve
+	// through it per run so moving the directory needs no restart; kitchenPath
+	// above is the startup snapshot, and decides only what gets wired.
+	toolResolver *embedded.Resolver
 
 	// cookstylePropagator runs the scoped recompute closure after a cop
 	// reclassification or custom-cop change. Built in setupCollector (it reuses
@@ -798,6 +804,18 @@ func (app *serverApp) setupConfigStore(ctx context.Context) error {
 		csLog.Error(fmt.Sprintf("legacy data migration failed: %v", err))
 		return err
 	}
+	// Test Kitchen used to live nested inside the analysis tools section, which
+	// both settings screens wrote. Reading the old shape still works, so an
+	// upgrade loses nothing — but the first save of the Analysis Tools screen
+	// would overwrite the nested copy with no record of its own to fall back
+	// to. This lifts it out once. Not a schema change: two rows instead of one.
+	if moved, err := configstore.MoveTestKitchenToItsOwnSection(ctx, app.cfgStore); err != nil {
+		csLog.Error(fmt.Sprintf("moving Test Kitchen to its own config section failed: %v", err))
+		return err
+	} else if moved {
+		csLog.Info("Test Kitchen settings moved into a config section of their own")
+	}
+
 	if migrateResult.Skipped {
 		csLog.Info(fmt.Sprintf("legacy data migration skipped: %s", migrateResult.SkipReason))
 	} else {
@@ -1082,8 +1100,35 @@ func (app *serverApp) backfillRoleSummary(ctx context.Context) {
 // Phase: analysis pipeline and collector setup.
 // ---------------------------------------------------------------------------
 
+// kitchenPathNow finds the kitchen binary at the moment a run needs it, so an
+// operator who corrects where the Chef tools are does not have to restart the
+// service. It falls back to the path resolved at startup when there is no
+// resolver, which is the case in tests.
+func (app *serverApp) kitchenPathNow() (string, error) {
+	if app.toolResolver == nil {
+		return app.kitchenPath, nil
+	}
+	return app.toolResolver.ResolvePath("kitchen")
+}
+
 func (app *serverApp) setupCollector(ctx context.Context) error {
-	toolResolver := embedded.NewResolver()
+	// Where the Chef tools are, when they are not on PATH — read through the
+	// config holder every time a tool is resolved, so correcting it on the
+	// settings screen takes effect on the next scan rather than the next
+	// restart. The validation below is still a startup snapshot: it decides
+	// what gets wired and what the startup report says.
+	toolResolver := embedded.NewResolver(
+		embedded.WithBinDirFunc(func() string {
+			if app.configHolder == nil {
+				return app.cfg.AnalysisTools.EmbeddedBinDir
+			}
+			current := app.configHolder.Get()
+			if current == nil {
+				return app.cfg.AnalysisTools.EmbeddedBinDir
+			}
+			return current.AnalysisTools.EmbeddedBinDir
+		}))
+	app.toolResolver = toolResolver
 	toolResult := toolResolver.ValidateAll(ctx)
 
 	if toolResult.Git.Available {
@@ -1097,7 +1142,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 		// the cop-list universe. It is available whenever the binary is, even if
 		// scanning is disabled via config — the inventory is still meaningful.
 		app.copRegistry = analysis.NewCopRegistryProvider(
-			analysis.NewCookstyleExecutor(toolResult.Cookstyle.Path),
+			analysis.NewCookstyleExecutorFunc(func() (string, error) {
+				return toolResolver.ResolvePath("cookstyle")
+			}),
 			toolResult.Cookstyle.Version,
 		)
 	} else {
@@ -1125,6 +1172,9 @@ func (app *serverApp) setupCollector(ctx context.Context) error {
 			analysis.WithCookstyleAddonCopPathsFn(func() []string {
 				return app.configHolder.Get().AnalysisTools.CookstyleAddonCopPaths
 			}),
+			// Resolved per scan, so moving the tools directory needs no restart.
+			analysis.WithCookstyleExecutor(analysis.NewCookstyleExecutorFunc(
+				func() (string, error) { return toolResolver.ResolvePath("cookstyle") })),
 		)
 		collOpts = append(collOpts, collector.WithCookstyleScanner(csScanner))
 		app.startup.Info("CookStyle scanner enabled")
@@ -1681,7 +1731,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 					SSLVerify:     &sslVerify,
 				})
 			},
-			Executor:     &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
+			Executor:     &nodekitchen.DefaultExecutor{PathFn: app.kitchenPathNow},
 			CredResolver: &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
 			Logger:       nkLogger,
 			TKConfigFn: func() config.TestKitchenConfig {
@@ -1698,7 +1748,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		// Wire kitchen run queue (bounded concurrency worker pool).
 		queueScoped := logger.WithScope(logging.ScopeTestKitchenRun)
 		gitExecutor := kitchenqueue.NewGitKitchenExecutor(kitchenqueue.GitKitchenExecutorConfig{
-			KitchenExecutor: &nodekitchen.DefaultExecutor{Path: app.kitchenPath},
+			KitchenExecutor: &nodekitchen.DefaultExecutor{PathFn: app.kitchenPathNow},
 			CredResolver:    &nodekitchen.AnalysisCredentialAdapter{Resolver: app.credResolver},
 			Store:           app.db,
 			RepoDirFn: func(name, _ string) string {

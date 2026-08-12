@@ -690,14 +690,6 @@ Recorded 2026-08-12 (`feature/assistant-credential`).
 
 ## From the API description work (measured 2026-08-12)
 
-- [ ] **A body with a field the service does not understand is accepted and silently
-  dropped.** Every call that reads a JSON body decodes without rejecting unknown fields, and
-  the settings sections read YAML the same way — 37 decode sites, none strict. So a caller who
-  misspells a field, or sends one from an older version, is told it worked. Rejecting them is
-  a breaking change for anything currently sending extra fields, including our own frontend,
-  so it is recorded rather than done.
-  Held by `TestJourney_SomethingItCannotUnderstandIsRefused` (`make journey`).
-
 - [ ] **A described body can advertise fields the service never reads.** Where a handler
   decodes straight into a stored or settings type, reflection describes the whole type — so
   custom cop definitions are described as accepting an `id` and timestamps that the store

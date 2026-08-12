@@ -5,7 +5,6 @@ package webapi
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -186,8 +185,15 @@ type restoreRequest struct {
 }
 
 func (r *Router) handleBackupRestore(w http.ResponseWriter, req *http.Request, id string) {
+	// Two different failures, kept apart: a body this call cannot read at all,
+	// and a body it read that did not confirm. Folded together they were
+	// indistinguishable, so somebody who misspelt the field was told to confirm
+	// — which they had.
 	var body restoreRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Confirm != "RESTORE" {
+	if !decodeJSONBody(w, req, &body) {
+		return
+	}
+	if body.Confirm != "RESTORE" {
 		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
 			`Restore requires confirmation. Send {"confirm": "RESTORE"} in the request body.`)
 		return

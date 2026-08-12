@@ -399,8 +399,7 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 	repoName := cookbookName
 
 	var body assignCommittersRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, "Invalid or malformed JSON request body.")
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 

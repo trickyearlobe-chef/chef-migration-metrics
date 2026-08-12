@@ -14,7 +14,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -66,6 +68,27 @@ type Resolver struct {
 
 	// validationTimeout bounds each startup validation command.
 	validationTimeout time.Duration
+
+	// binDir is where the Chef tools are, when they are not somewhere a shell
+	// would find them. Empty means PATH alone, which is the ordinary case:
+	// Chef Workstation puts them there. See WithBinDir.
+	//
+	// A fallback for tests and defaults. binDirFunc wins when it is set.
+	binDir string
+
+	// binDirFunc reads the configured directory each time a tool is resolved,
+	// so changing it on the settings screen takes effect on the next scan.
+	// Nil means binDir alone. See WithBinDirFunc.
+	binDirFunc func() string
+}
+
+// currentBinDir is the directory to look in now: the live accessor when there
+// is one, the static value otherwise.
+func (r *Resolver) currentBinDir() string {
+	if r.binDirFunc != nil {
+		return strings.TrimSpace(r.binDirFunc())
+	}
+	return r.binDir
 }
 
 // Option configures a Resolver.
@@ -80,6 +103,28 @@ func WithExecutor(e CommandExecutor) Option {
 // startup validation command.
 func WithValidationTimeout(d time.Duration) Option {
 	return func(r *Resolver) { r.validationTimeout = d }
+}
+
+// WithBinDir names the directory holding the Chef tools, for deployments where
+// they are not on PATH — a service started without the profile that sets it, or
+// a Chef Workstation installed somewhere unusual. Empty means PATH alone.
+//
+// Only cookstyle and kitchen. Git is resolved from PATH regardless: it is not
+// a Chef tool and this setting is about where Chef Workstation put its own.
+func WithBinDir(dir string) Option {
+	return func(r *Resolver) { r.binDir = strings.TrimSpace(dir) }
+}
+
+// WithBinDirFunc reads the directory each time a tool is resolved, rather than
+// keeping the one that was set when the resolver was built.
+//
+// Configuration lives in the database and is edited on a screen, so the value
+// changes while the process runs. Holding the one read at startup meant an
+// operator could correct where the Chef tools are, be told it was saved, and
+// have every scan go on running the binary from the old place until somebody
+// restarted the service.
+func WithBinDirFunc(fn func() string) Option {
+	return func(r *Resolver) { r.binDirFunc = fn }
 }
 
 // NewResolver creates a Resolver that resolves tools from PATH.
@@ -98,14 +143,38 @@ func NewResolver(opts ...Option) *Resolver {
 // Path resolution
 // ---------------------------------------------------------------------------
 
-// ResolvePath returns the absolute path to the named binary via PATH lookup
-// (exec.LookPath). Returns ("", error) if the binary cannot be found.
+// ResolvePath returns the absolute path to the named binary: the configured
+// directory first, then PATH.
+//
+// The directory is a preference rather than a replacement. A deployment that
+// set one and then had the tools appear on PATH keeps working, and so does one
+// whose directory holds only some of them — otherwise a single wrong setting
+// switches scanning off, and the message says nothing about the setting.
 func (r *Resolver) ResolvePath(name string) (string, error) {
-	path, err := exec.LookPath(name)
-	if err != nil {
-		return "", fmt.Errorf("embedded: %q not found in PATH", name)
+	// Read once per call, not per branch: the accessor reaches live
+	// configuration, and a value that changed midway through would report a
+	// directory that was never the one looked in.
+	binDir := r.currentBinDir()
+
+	if binDir != "" {
+		// Runnable, not merely present. A stray file of the right name would
+		// otherwise report the tool as found, and every scan would fail later
+		// somewhere that never mentions this directory.
+		candidate := filepath.Join(binDir, name)
+		if info, err := os.Stat(candidate); err == nil &&
+			info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return candidate, nil
+		}
 	}
-	return path, nil
+
+	path, err := exec.LookPath(name)
+	if err == nil {
+		return path, nil
+	}
+	if binDir != "" {
+		return "", fmt.Errorf("embedded: %q is not in %s and not in PATH", name, binDir)
+	}
+	return "", fmt.Errorf("embedded: %q not found in PATH", name)
 }
 
 // ---------------------------------------------------------------------------

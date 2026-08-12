@@ -61,8 +61,7 @@ type createBatchRequest struct {
 // handleCreateKitchenBatch creates a new kitchen batch definition.
 func (r *Router) handleCreateKitchenBatch(w http.ResponseWriter, req *http.Request) {
 	var body createBatchRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.Name == "" {
@@ -320,8 +319,7 @@ func (r *Router) handleUpdateKitchenBatch(w http.ResponseWriter, req *http.Reque
 	}
 
 	var body createBatchRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
+	if !decodeJSONBody(w, req, &body) {
 		return
 	}
 	if body.Name == "" {

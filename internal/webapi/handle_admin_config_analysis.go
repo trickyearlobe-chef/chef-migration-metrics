@@ -51,8 +51,12 @@ type analysisToolsGetResponse struct {
 // fields stay reflected off the real settings and only the wrapper is written
 // down. If the two ever part company, probe.py reports the address as sending
 // something the description does not mention.
+//
+// The section rather than the whole analysis tools struct, because Test Kitchen
+// keeps a record of its own. Naming the whole struct here would advertise a
+// field this call neither answers with nor reads.
 type analysisToolsResponse struct {
-	Value config.AnalysisToolsConfig `json:"value"`
+	Value configstore.AnalysisToolsSection `json:"value"`
 }
 
 func (r *Router) getAdminConfigAnalysisTools(w http.ResponseWriter) {
@@ -75,7 +79,7 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	var input config.AnalysisToolsConfig
+	var input configstore.AnalysisToolsSection
 	if !decodeAdminConfigBody(w, req, &input) {
 		return
 	}
@@ -90,14 +94,25 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 			"analysis_tools.test_kitchen_timeout_minutes must be >= 0.")
 		return
 	}
-	if msg := validateAdminTKConfig(input.TestKitchen); msg != "" {
-		WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError, msg)
-		return
-	}
+	// Test Kitchen is not validated here: this call no longer carries it, and a
+	// caller that sends it is refused rather than quietly ignored.
 
 	// Store, reload, and apply — inlined (not storeAdminConfigSection) so we
 	// can capture the rescore verdicts_changed count for the response.
-	partial := &config.Config{AnalysisTools: input}
+	//
+	// Put back together with what Test Kitchen already has, so the prospective
+	// config this is validated against is the whole one. Validating one with
+	// Test Kitchen missing would refuse the save for something the caller
+	// neither sent nor could fix from this screen.
+	tools := config.AnalysisToolsConfig{
+		EmbeddedBinDir:            input.EmbeddedBinDir,
+		CookstyleEnabled:          input.CookstyleEnabled,
+		CookstyleTimeoutMinutes:   input.CookstyleTimeoutMinutes,
+		CookstyleAddonCopPaths:    input.CookstyleAddonCopPaths,
+		TestKitchenTimeoutMinutes: input.TestKitchenTimeoutMinutes,
+		TestKitchen:               r.liveConfig().AnalysisTools.TestKitchen,
+	}
+	partial := &config.Config{AnalysisTools: tools}
 	sections, err := configstore.ConfigToSections(partial)
 	if err != nil {
 		r.logf("ERROR", "admin/config/analysis_tools: serialise: %v", err)
@@ -166,7 +181,15 @@ func (r *Router) putAdminConfigAnalysisTools(w http.ResponseWriter, req *http.Re
 		}
 	}
 
-	reload := worstGranularity([]ApplyResult{kitchenRes, {Reload: ReloadSubsystem}})
+	// Where the Chef tools are applies on the next run: both executors resolve
+	// their binary when they run, reading this setting through the config
+	// holder. Nothing here is resolved at startup any more, so there is nothing
+	// to restart for — and telling an operator to restart for a change that has
+	// already taken effect teaches them to distrust the notice on the screens
+	// that do need one.
+	toolPathMoved := ApplyResult{Reload: ReloadSubsystem}
+
+	reload := worstGranularity([]ApplyResult{kitchenRes, toolPathMoved})
 	WriteJSON(w, http.StatusOK, putConfigResponse{
 		Value:           value,
 		RestartRequired: reload == ReloadProcess,
@@ -217,15 +240,17 @@ func (r *Router) putAdminConfigTestKitchen(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	analysisTools := r.liveConfig().AnalysisTools
-	analysisTools.TestKitchen = input
-	sections, err := configstore.ConfigToSections(&config.Config{AnalysisTools: analysisTools})
+	// Its own record. It used to be written back inside the analysis tools
+	// section, which the Analysis Tools screen replaces wholesale — so
+	// whichever of the two screens was saved last won, and that screen has
+	// never carried these settings.
+	value, err := configstore.SerializeValue(input)
 	if err != nil {
 		r.logf("ERROR", "admin/config/test-kitchen: serialise: %v", err)
-		WriteInternalError(w, "Failed to serialise analysis tools config.")
+		WriteInternalError(w, "Failed to serialise test kitchen config.")
 		return
 	}
-	if err := r.configStore.Set(req.Context(), configstore.KeyAnalysisTools, sections[configstore.KeyAnalysisTools], false, "admin"); err != nil {
+	if err := r.configStore.Set(req.Context(), configstore.KeyTestKitchen, value, false, "admin"); err != nil {
 		r.logf("ERROR", "admin/config/test-kitchen: store: %v", err)
 		WriteInternalError(w, "Failed to store test kitchen config.")
 		return
@@ -258,15 +283,15 @@ func (r *Router) deleteAdminConfigTestKitchen(w http.ResponseWriter, req *http.R
 		return
 	}
 
-	analysisTools := r.liveConfig().AnalysisTools
-	analysisTools.TestKitchen = config.TestKitchenConfig{}
-	sections, err := configstore.ConfigToSections(&config.Config{AnalysisTools: analysisTools})
+	// Cleared back to nothing in its own record, rather than by rewriting the
+	// analysis tools section around it.
+	empty, err := configstore.SerializeValue(config.TestKitchenConfig{})
 	if err != nil {
 		r.logf("ERROR", "admin/config/test-kitchen: serialise: %v", err)
-		WriteInternalError(w, "Failed to serialise analysis tools config.")
+		WriteInternalError(w, "Failed to serialise test kitchen config.")
 		return
 	}
-	if err := r.configStore.Set(req.Context(), configstore.KeyAnalysisTools, sections[configstore.KeyAnalysisTools], false, "admin"); err != nil {
+	if err := r.configStore.Set(req.Context(), configstore.KeyTestKitchen, empty, false, "admin"); err != nil {
 		r.logf("ERROR", "admin/config/test-kitchen: store: %v", err)
 		WriteInternalError(w, "Failed to store test kitchen config.")
 		return
@@ -282,7 +307,9 @@ func (r *Router) deleteAdminConfigTestKitchen(w http.ResponseWriter, req *http.R
 	if r.kitchenQueue != nil {
 		r.kitchenQueue.SetWorkerCount(r.liveConfig().AnalysisTools.TestKitchen.EffectiveMaxConcurrentVMs())
 	}
-	tkJSON, err := configstore.SerializeValue(analysisTools.TestKitchen)
+	// What is there now, read back rather than assumed: the reset above cleared
+	// the record and the defaults have since been applied over it.
+	tkJSON, err := configstore.SerializeValue(r.liveConfig().AnalysisTools.TestKitchen)
 	if err != nil {
 		r.logf("ERROR", "admin/config/test-kitchen: serialise response: %v", err)
 		WriteInternalError(w, "Failed to serialise response.")

@@ -48,6 +48,7 @@ set centrally.
 | [Getting in, never locked out](service-access.md) | Who may use it, and can I always get back in? |
 | [Changing my own password](own-password.md) | Can I change it without asking somebody? |
 | [Changing it without downtime](service-configuration.md) | Can I change a setting from the screen? |
+| [Finding the setting I came for](admin-navigation.md) | Where is it, and will I find it again? |
 | [Credentials that stay secret](service-secrets.md) | Where are the passwords, and who can read them? |
 | [Keeping the data flowing](service-collection.md) | Is it still collecting, and would I know? |
 | [Diagnosing a box I cannot reach](service-diagnosis.md) | What do I send support, and is it safe to send? |

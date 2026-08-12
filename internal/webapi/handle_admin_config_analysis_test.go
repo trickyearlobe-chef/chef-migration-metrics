@@ -15,10 +15,11 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 )
 
+// Test Kitchen is not in here: it keeps a record of its own, and this call
+// refuses a body carrying a field it does not read.
 const validAnalysisToolsBody = `{
 	"cookstyle_timeout_minutes": 10,
-	"test_kitchen_timeout_minutes": 0,
-	"test_kitchen": {"timeout_minutes": 30, "driver": "vcenter"}
+	"test_kitchen_timeout_minutes": 0
 }`
 
 const validTKBody = `{"timeout_minutes": 30, "driver": "vcenter"}`
@@ -139,7 +140,7 @@ func TestAdminConfigAnalysisTools_PUT_422_ZeroCookstyleTimeout(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 0, "test_kitchen": {"driver": "vcenter"}}`
+	body := `{"cookstyle_timeout_minutes": 0}`
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
 	r.ServeHTTP(w, req)
@@ -148,90 +149,64 @@ func TestAdminConfigAnalysisTools_PUT_422_ZeroCookstyleTimeout(t *testing.T) {
 	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
-func TestAdminConfigAnalysisTools_PUT_422_NegativeTKTimeout(t *testing.T) {
+func TestAdminConfigTestKitchen_PUT_422_NegativeTKTimeout(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"timeout_minutes": -1, "driver": "vcenter"}}`
+	body := `{"timeout_minutes": -1, "driver": "vcenter"}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusUnprocessableEntity)
 	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
-func TestAdminConfigAnalysisTools_PUT_422_NegativeStartRateWindow(t *testing.T) {
+func TestAdminConfigTestKitchen_PUT_422_NegativeStartRateWindow(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "start_rate_window_minutes": -1}}`
+	body := `{"driver": "vcenter", "start_rate_window_minutes": -1}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusUnprocessableEntity)
 	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
-func TestAdminConfigAnalysisTools_PUT_StartRateLimitRoundTrips(t *testing.T) {
+func TestAdminConfigTestKitchen_PUT_StartRateLimitRoundTrips(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "start_rate_window_minutes": 90, "start_rate_max_per_window": 25}}`
+	body := `{"driver": "vcenter", "start_rate_window_minutes": 90, "start_rate_max_per_window": 25}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusOK)
 }
 
-func TestAdminConfigAnalysisTools_PUT_422_UnknownDriver(t *testing.T) {
+func TestAdminConfigTestKitchen_PUT_422_PlatformMapMissingKitchenName(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "unknown-driver"}}`
+	body := `{"driver": "vcenter", "platform_map": [{"image": "ubuntu"}]}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusUnprocessableEntity)
 	assertErrorCode(t, w, ErrCodeValidationError)
 }
 
-func TestAdminConfigAnalysisTools_PUT_422_CustomDriverMissingImageField(t *testing.T) {
+func TestAdminConfigTestKitchen_PUT_422_PlatformMapDuplicateName(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "custom"}}`
+	body := `{"driver": "vcenter", "platform_map": [{"kitchen_name": "ubuntu-22.04", "image": "ubuntu"}, {"kitchen_name": "ubuntu-22.04", "image": "ubuntu2"}]}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusUnprocessableEntity)
-	assertErrorCode(t, w, ErrCodeValidationError)
-}
-
-func TestAdminConfigAnalysisTools_PUT_422_PlatformMapMissingKitchenName(t *testing.T) {
-	store := newTestConfigStore(t)
-	r := newTestRouterForAdminConfig(nil, store, nil)
-
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "platform_map": [{"image": "ubuntu"}]}}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
-	r.ServeHTTP(w, req)
-
-	assertStatus(t, w, http.StatusUnprocessableEntity)
-	assertErrorCode(t, w, ErrCodeValidationError)
-}
-
-func TestAdminConfigAnalysisTools_PUT_422_PlatformMapDuplicateName(t *testing.T) {
-	store := newTestConfigStore(t)
-	r := newTestRouterForAdminConfig(nil, store, nil)
-
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter", "platform_map": [{"kitchen_name": "ubuntu-22.04", "image": "ubuntu"}, {"kitchen_name": "ubuntu-22.04", "image": "ubuntu2"}]}}`
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusUnprocessableEntity)
@@ -258,9 +233,9 @@ func TestAdminConfigAnalysisTools_PUT_VerdictsChangedInResponse(t *testing.T) {
 	r := newTestRouterForAdminConfig(nil, store, nil)
 
 	// PUT triggers a rescore — the mock store has no results so verdicts_changed = 0
-	body := `{"cookstyle_timeout_minutes": 10, "test_kitchen": {"driver": "vcenter"}}`
+	body := `{"driver": "vcenter"}`
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/analysis-tools", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(body))
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusOK)
@@ -343,12 +318,18 @@ func TestAdminConfigTestKitchen_PUT_Success(t *testing.T) {
 		t.Errorf("driver = %v, want vcenter", got["driver"])
 	}
 
-	if _, err := store.Get(context.Background(), configstore.KeyAnalysisTools); err != nil {
-		t.Fatalf("KeyAnalysisTools not found in store: %v", err)
+	if _, err := store.Get(context.Background(), configstore.KeyTestKitchen); err != nil {
+		t.Fatalf("Test Kitchen has no record of its own in the store: %v", err)
 	}
 }
 
-func TestAdminConfigTestKitchen_PUT_MergesWithExistingAnalysisTools(t *testing.T) {
+// Test Kitchen writes its own record and leaves the analysis tools alone.
+//
+// This used to check the opposite: that saving Test Kitchen merged its part
+// back into the shared analysis tools record. That merge was the safe half of
+// an arrangement whose other half silently wiped these settings, so the two
+// are separate records now and neither writes the other's.
+func TestAdminConfigTestKitchen_PUT_LeavesTheAnalysisToolsRecordAlone(t *testing.T) {
 	store := newTestConfigStore(t)
 	cfg := testConfig()
 	cfg.AnalysisTools.CookstyleTimeoutMinutes = 20
@@ -357,19 +338,24 @@ func TestAdminConfigTestKitchen_PUT_MergesWithExistingAnalysisTools(t *testing.T
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/config/test-kitchen", strings.NewReader(validTKBody))
 	r.ServeHTTP(w, req)
-
 	assertStatus(t, w, http.StatusOK)
 
-	stored, err := store.Get(context.Background(), configstore.KeyAnalysisTools)
+	stored, err := store.Get(context.Background(), configstore.KeyTestKitchen)
 	if err != nil {
-		t.Fatalf("store.Get: %v", err)
+		t.Fatalf("Test Kitchen has no record of its own: %v", err)
 	}
 	var storedMap map[string]any
 	if err := json.Unmarshal(stored, &storedMap); err != nil {
 		t.Fatalf("unmarshal stored: %v", err)
 	}
-	if storedMap["cookstyle_timeout_minutes"] != float64(20) {
-		t.Errorf("stored cookstyle_timeout_minutes = %v, want 20 (merge not preserved)", storedMap["cookstyle_timeout_minutes"])
+	if storedMap["driver"] != "vcenter" {
+		t.Errorf("stored driver = %v, want vcenter", storedMap["driver"])
+	}
+
+	// And it did not write the other screen's record at all.
+	if _, err := store.Get(context.Background(), configstore.KeyAnalysisTools); err == nil {
+		t.Error("saving Test Kitchen also wrote the analysis tools record, so the two can " +
+			"still overwrite each other")
 	}
 }
 
@@ -454,21 +440,18 @@ func TestAdminConfigTestKitchen_DELETE_Success(t *testing.T) {
 	var got map[string]any
 	decodePutValue(t, w, &got)
 
-	// Verify KeyAnalysisTools entry still exists in store.
-	stored, err := store.Get(context.Background(), configstore.KeyAnalysisTools)
+	// The record is still there, cleared rather than removed: an absent record
+	// and a deliberately emptied one would otherwise read the same.
+	stored, err := store.Get(context.Background(), configstore.KeyTestKitchen)
 	if err != nil {
-		t.Fatalf("KeyAnalysisTools not in store after DELETE: %v", err)
+		t.Fatalf("the Test Kitchen record is gone after DELETE rather than cleared: %v", err)
 	}
-
-	// Verify TK driver is empty (config has been zeroed).
 	var storedMap map[string]any
 	if err := json.Unmarshal(stored, &storedMap); err != nil {
 		t.Fatalf("unmarshal stored: %v", err)
 	}
-	if tkSection, ok := storedMap["test_kitchen"].(map[string]any); ok {
-		if driver := tkSection["driver"]; driver != nil && driver != "" {
-			t.Errorf("driver after DELETE = %v, want empty", driver)
-		}
+	if driver := storedMap["driver"]; driver != nil && driver != "" {
+		t.Errorf("driver after DELETE = %v, want empty", driver)
 	}
 }
 

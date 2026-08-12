@@ -231,6 +231,14 @@ func TestAnEntryMadeAtAScreenIsNotMarkedAsAMachine(t *testing.T) {
 
 // "the service attaches that, never the caller." A body that tries to claim an
 // origin must not be believed.
+//
+// It is now refused outright rather than accepted and stripped, which is the
+// stronger of the two: a caller that tried to sign an entry as somebody else is
+// told so, instead of being told the call worked and never learning that half
+// of what it sent was dropped. So both halves are asserted here — the refusal,
+// and that an honest body still gets the service's own attribution — because
+// "nothing was recorded" on its own is also what a caller succeeding at
+// blanking the origin would look like.
 func TestACallerCannotClaimHowItGotIn(t *testing.T) {
 	var recorded datastore.RecordFailureVerdictParams
 	mock := &mockStore{
@@ -262,15 +270,33 @@ func TestACallerCannotClaimHowItGotIn(t *testing.T) {
 		WithCredentialManager(creds),
 	)
 
-	credentialRequest(t, router, secret, http.MethodPost, "/api/v1/failure-register", body)
+	w := credentialRequest(t, router, secret, http.MethodPost, "/api/v1/failure-register", body)
 
+	if w.Code < 400 {
+		t.Errorf("a caller claiming its own origin was accepted (%d) — even if the claim were "+
+			"then dropped, the caller is told the call worked and never learns that what it "+
+			"sent was not what was recorded", w.Code)
+	}
+	if recorded.RaisedOrigin != "" {
+		t.Errorf("a refused body still reached the register (origin %q)", recorded.RaisedOrigin)
+	}
+
+	// The other half. Without it, "nothing was recorded" reads as proof and is
+	// also exactly what a caller succeeding at blanking the origin looks like.
+	honest := `{"subject_name":"example-cookbook","subject_type":"git_repo",` +
+		`"cookbook_name":"example-cookbook","verdict":"broken","reason":"it fails"}`
+	if w := credentialRequest(t, router, secret, http.MethodPost,
+		"/api/v1/failure-register", honest); w.Code >= 400 {
+		t.Fatalf("an honest body was refused too (%d): %s — so the refusal above says "+
+			"nothing about the claim", w.Code, w.Body.String())
+	}
 	if recorded.RaisedOrigin != datastore.OriginCredential {
-		t.Errorf("a caller talked the service out of recording that a tool wrote this "+
-			"(origin %q) — an entry a caller can sign as a person's own judgement is worse "+
-			"than no attribution at all", recorded.RaisedOrigin)
+		t.Errorf("a tool's entry was not recorded as having come from one (origin %q) — an "+
+			"entry a caller can sign as a person's own judgement is worse than no "+
+			"attribution at all", recorded.RaisedOrigin)
 	}
 	if recorded.RaisedBy != "engineer" {
-		t.Errorf("a caller set who the entry is attributed to (%q)", recorded.RaisedBy)
+		t.Errorf("the entry is not attributed to the credential's own account (%q)", recorded.RaisedBy)
 	}
 }
 

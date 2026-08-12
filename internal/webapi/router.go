@@ -687,6 +687,14 @@ func (r *Router) registerRoutes() {
 	// unauthenticated inside a customer estate.
 	r.protect(openAPIPath, r.handleOpenAPI)
 
+	// The assistant surface. Served by this binary rather than beside it,
+	// because a second process deployed next to this one cannot happen inside
+	// a customer estate. Behind a session for the same reason the description
+	// is: it names what this deployment can be asked for. See mcp.go.
+	r.protect(mcpPath, r.handleMCP, methods("POST"),
+		takes("POST", jsonRPCMessage{}),
+		answers("POST", jsonRPCResponse{}))
+
 	r.public("/api/v1/health", r.handleHealth)
 	r.public("/api/v1/version", r.handleVersion, answers("GET", versionResponse{}))
 	// Event ingest sink — INTENTIONALLY UNAUTHENTICATED (MVP tech debt). Passive
@@ -1160,7 +1168,7 @@ func (r *Router) registerRoutes() {
 		answers("GET", config.LoggingConfig{}),
 		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools,
-		methods("GET", "PUT"), takes("PUT", config.AnalysisToolsConfig{}),
+		methods("GET", "PUT"), takes("PUT", configstore.AnalysisToolsSection{}),
 		answers("GET", analysisToolsResponse{}),
 		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen,

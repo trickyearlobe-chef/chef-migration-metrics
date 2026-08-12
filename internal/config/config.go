@@ -152,8 +152,17 @@ type ConcurrencyConfig struct {
 
 // AnalysisToolsConfig controls the analysis tool timeouts and toggles. The
 // cookstyle/kitchen binaries are resolved from PATH (provided by Chef
-// Workstation); they are not bundled.
+// Workstation) unless EmbeddedBinDir says otherwise; they are not bundled.
 type AnalysisToolsConfig struct {
+	// EmbeddedBinDir is where the Chef tools are, for deployments where they
+	// are not on PATH — a service started without the profile that sets it, or
+	// a Chef Workstation installed somewhere unusual. Empty means PATH alone,
+	// which is the ordinary case.
+	//
+	// Looked in first and then PATH, so setting it wrongly does not switch
+	// scanning off. Covers cookstyle and kitchen; git is always from PATH.
+	EmbeddedBinDir string `yaml:"embedded_bin_dir" json:"embedded_bin_dir"`
+
 	CookstyleEnabled        *bool `yaml:"cookstyle_enabled"`
 	CookstyleTimeoutMinutes int   `yaml:"cookstyle_timeout_minutes"`
 	// CookstyleAddonCopPaths lists operator-supplied RuboCop cop files (real .rb

@@ -235,6 +235,21 @@ debt: ## Tech-debt todo list: one test per item that can be held by one
 	@echo "$(YELLOW)Items that cannot be a test are prose in plans/todo-tech-debt.md,$(RESET)"
 	@echo "$(YELLOW)each saying why no test can hold it.$(RESET)"
 
+# What the web interface actually sends, per address, resolved with the
+# TypeScript compiler rather than read off the screen. Held against the served
+# description by TestFrontend_EverythingTheInterfaceSendsIsAFieldWeRead.
+#
+# Run this after changing anything a screen sends. Not part of `make ci`: the
+# recorded file is what CI checks, and regenerating it there would make the
+# check agree with whatever the interface currently does, which is the whole
+# thing it exists to catch.
+.PHONY: frontend-fields
+frontend-fields: ## Re-record what the web interface sends, per address
+	@cd frontend && node ../tools/frontend-fields/record.cjs \
+		> ../internal/webapi/testdata/frontend_request_fields.json
+	@echo "$(GREEN)Recorded what the interface sends:$(RESET) internal/webapi/testdata/frontend_request_fields.json"
+	@echo "$(YELLOW)Review the diff — a field that appeared is one a handler must read.$(RESET)"
+
 # journey-status is the session-start form: one line, because a wall of text at
 # the top of every session becomes wallpaper, and wallpaper is how the previous
 # convention got lost. The full list is `make journey`, run when choosing work.

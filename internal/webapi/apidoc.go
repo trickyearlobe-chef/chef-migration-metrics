@@ -207,6 +207,7 @@ var apiDocs = map[string]string{
 	"POST /api/v1/hypervisor/cleanup":                                    "Destroy test machines nothing is using any more.",
 	"POST /api/v1/hypervisor/vms/{id}/destroy":                           "Destroy one test machine.",
 	"POST /api/v1/ingest":                                                "Where Chef run telemetry is delivered. Unauthenticated by design; the sender is a Chef Automate data feed, not a person.",
+	"POST /api/v1/mcp":                                                   "The assistant surface: a short, chosen set of tools an AI assistant in an editor can use to read this estate, spoken as Model Context Protocol over Streamable HTTP.",
 	"POST /api/v1/kitchen/analysis/trigger":                              "Work out again what could be tested, now.",
 	"POST /api/v1/kitchen/batches":                                       "Group a selection of things to test into one job.",
 	"POST /api/v1/kitchen/batches/{id}/cancel":                           "Stop a batch. Machines already being built finish being built; cancelling cannot reach into a clone already in flight.",

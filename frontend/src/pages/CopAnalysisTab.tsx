@@ -185,7 +185,6 @@ export function CopAnalysisTab({ source }: { source: "server" | "git" }) {
     setReclassifySaving(true);
     try {
       await setCopClassification(reclassifyCop, {
-        target_chef_version: targetChefVersion,
         classification: reclassifyValue,
         reason: reclassifyReason,
       });

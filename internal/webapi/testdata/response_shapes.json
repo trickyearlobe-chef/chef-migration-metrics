@@ -15,157 +15,8 @@
           "cookstyle_timeout_minutes": {
             "type": "integer"
           },
-          "test_kitchen": {
-            "properties": {
-              "chef_license_key_credential": {
-                "type": "string"
-              },
-              "driver": {
-                "type": "string"
-              },
-              "driver_secrets": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              "driver_settings": {
-                "additionalProperties": {},
-                "type": "object"
-              },
-              "enabled": {
-                "type": "boolean"
-              },
-              "hypervisor_type": {
-                "type": "string"
-              },
-              "image_field_name": {
-                "type": "string"
-              },
-              "images": {
-                "items": {
-                  "properties": {
-                    "chef_client_path": {
-                      "type": "string"
-                    },
-                    "chef_download_urls": {
-                      "additionalProperties": {
-                        "type": "string"
-                      },
-                      "type": "object"
-                    },
-                    "driver_settings": {
-                      "additionalProperties": {},
-                      "type": "object"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "install_method": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "release_ip_on_destroy": {
-                      "type": "boolean"
-                    },
-                    "transport": {
-                      "properties": {
-                        "password_credential": {
-                          "type": "string"
-                        },
-                        "ssh_key_credential": {
-                          "type": "string"
-                        },
-                        "username": {
-                          "type": "string"
-                        }
-                      },
-                      "type": "object"
-                    }
-                  },
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "max_concurrent_vms": {
-                "type": "integer"
-              },
-              "orphan_sweep_age_minutes": {
-                "type": "integer"
-              },
-              "orphan_sweep_interval_minutes": {
-                "type": "integer"
-              },
-              "platform_map": {
-                "items": {
-                  "properties": {
-                    "image": {
-                      "type": "string"
-                    },
-                    "is_pattern": {
-                      "type": "boolean"
-                    },
-                    "kitchen_name": {
-                      "type": "string"
-                    },
-                    "skip": {
-                      "type": "boolean"
-                    },
-                    "transport": {
-                      "properties": {
-                        "password_credential": {
-                          "type": "string"
-                        },
-                        "ssh_key_credential": {
-                          "type": "string"
-                        },
-                        "username": {
-                          "type": "string"
-                        }
-                      },
-                      "type": "object"
-                    }
-                  },
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "setup_scripts": {
-                "properties": {
-                  "linux": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "windows": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                },
-                "type": "object"
-              },
-              "start_rate_max_per_window": {
-                "type": "integer"
-              },
-              "start_rate_window_minutes": {
-                "type": "integer"
-              },
-              "timeout_minutes": {
-                "type": "integer"
-              },
-              "vm_name_prefix": {
-                "type": "string"
-              },
-              "vm_ttl_hours": {
-                "type": "integer"
-              }
-            },
-            "type": "object"
+          "embedded_bin_dir": {
+            "type": "string"
           },
           "test_kitchen_timeout_minutes": {
             "type": "integer"
@@ -5193,6 +5044,27 @@
       "version": {
         "type": "string"
       }
+    },
+    "type": "object"
+  },
+  "POST /api/v1/mcp": {
+    "properties": {
+      "error": {
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "id": {},
+      "jsonrpc": {
+        "type": "string"
+      },
+      "result": {}
     },
     "type": "object"
   },

@@ -384,11 +384,17 @@ func isBodyDecodeCall(call *ast.CallExpr) bool {
 		sel.Sel.Name == "Decode" && len(call.Args) == 1 && decodesTheRequestBody(sel.X) {
 		return true
 	}
+	// decodeJSONBody(w, req, &x) / decodeOptionalJSONBody(w, req, &x) — the
+	// ordinary way a body is read, refusing anything the service does not
+	// understand. See request_body.go.
+	//
 	// decodeAdminConfigBody(w, req, &x) — the settings sections, read by the
 	// YAML decoder so that a caller may send either YAML or JSON.
-	if fn, ok := call.Fun.(*ast.Ident); ok &&
-		fn.Name == "decodeAdminConfigBody" && len(call.Args) == 3 {
-		return true
+	if fn, ok := call.Fun.(*ast.Ident); ok && len(call.Args) == 3 {
+		switch fn.Name {
+		case "decodeJSONBody", "decodeOptionalJSONBody", "decodeAdminConfigBody":
+			return true
+		}
 	}
 	// json.Unmarshal(body, &x) / yaml.Unmarshal(body, &x), where body was read
 	// off the request. Only counted inside a handler that reads the request
@@ -424,14 +430,39 @@ func readsWholeRequestBody(fn *ast.FuncDecl) bool {
 		if !ok || sel.Sel.Name != "ReadAll" {
 			return true
 		}
-		if arg, ok := call.Args[0].(*ast.SelectorExpr); ok && arg.Sel.Name == "Body" {
-			if ident, ok := arg.X.(*ast.Ident); ok && ident.Name == "req" {
-				found = true
-			}
+		if readsFromRequestBody(call.Args[0]) {
+			found = true
 		}
 		return true
 	})
 	return found
+}
+
+// readsFromRequestBody reports whether an expression is the request body, or a
+// bounded reader wrapped round it.
+//
+// The wrapped form matters: io.ReadAll(io.LimitReader(req.Body, n)) is the
+// careful way to read a body, and a detector that only recognised the bare one
+// would make every handler that bounds its read invisible here — so the body it
+// decodes could go undescribed, which is the one thing these tests exist to
+// catch.
+func readsFromRequestBody(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.SelectorExpr:
+		if e.Sel.Name != "Body" {
+			return false
+		}
+		ident, ok := e.X.(*ast.Ident)
+		return ok && ident.Name == "req"
+	case *ast.CallExpr:
+		// io.LimitReader(req.Body, n), http.MaxBytesReader(w, req.Body, n).
+		for _, arg := range e.Args {
+			if readsFromRequestBody(arg) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // renderTypeExpr writes a type expression the way goTypeName writes a
