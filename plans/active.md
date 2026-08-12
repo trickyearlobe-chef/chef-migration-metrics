@@ -34,10 +34,18 @@ assistant asks for it and is told it does not exist. Detail: `plans/todo-documen
 
 ## QUEUED NEXT — the description as a page an operator can read
 
-Render the OpenAPI document as a browsable tab for operators and admins. Bundled, not a CDN;
-lazy-loaded; supply-chain checked before anything is added. **Try-it-out stays off** — the page is
-served to a signed-in person, so a "try" button fires real calls as them, and the destructive ones
-are one click from a document people open to browse. Nothing in the journey asks for it.
+Nothing renders it today: the document is served at `GET /api/v1/openapi.json` and there is no
+page and no renderer dependency. Owner's spec, 2026-08-12: **a side tab, visible to operators and
+admins only.** Bundled, not a CDN; lazy-loaded; supply-chain checked before anything is added.
+
+**Try-it-out stays off** — the page is served to a signed-in person, so a "try" button fires real
+calls as them, and the destructive ones are one click from a document people open to browse.
+
+**Decide first, because it changes the work:** the document itself is `r.protect` — any
+authenticated session, viewers included. An operator-only tab over a viewer-readable document
+hides clutter but does not stop a viewer enumerating the surface. Either is defensible; leaving
+the document open matters if an assistant holding a viewer's credential is meant to work at all.
+Ask the owner rather than inferring from the tab's role.
 
 Sized as a small chunk, and it does not block the surface above.
 
