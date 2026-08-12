@@ -104,3 +104,11 @@ the shape contract.
 Do the lift with `sg` (`var body struct { $$$ }` is a shape, not a regex) and confirm call sites
 with LSP `findReferences` rather than grep — the structs are anonymous, so text search cannot tell
 one handler's body from another's.
+
+**Do not drag node-ingest structs into this.** Checked 2026-08-12: none of the 22 anonymous
+request bodies is in the ingest path — they are all ownership, failure register, admin users,
+credentials, git repos and auth, which have closed shapes decided here. Ingest is the opposite:
+112 `map[string]any` / `json.RawMessage` sites across the datastore and ingest packages, because
+the Chef attribute data underneath is genuinely flexible. Pinning a named type onto that would
+turn a real-world shape change into a decode failure. The rule for the lift is that a body is a
+candidate only if this service decides its shape.
