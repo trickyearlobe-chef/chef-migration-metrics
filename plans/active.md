@@ -10,24 +10,32 @@ rather than remembered, so where they and this file disagree, the reds are right
 
 ## NOW — pick from the reds
 
-`make journey` has two, both in `journeys/own-password.md`: nobody can change their own
-password, and nothing tells them the rules before telling them they got it wrong. `make debt`
-has one, the settings-shape item that was already there. Nothing is left from the assistant
-surface or the strict-body work.
+`make journey` has six. Two in `journeys/own-password.md` — nobody can change their own
+password, and nothing tells them the rules before telling them they got it wrong. One in
+`journeys/admin-navigation.md`, six addresses that land on a screen with a different name.
+Three in `journeys/agent-access.md`, all found by asking a running instance rather than by
+reading: the tool that answers about one cookbook in full cannot be asked for less, every
+answer carrying a scan carries the scanning tool's own output, and the findings arrive encoded
+so whether one can be corrected automatically is invisible without decoding them. `make debt`
+has one, the settings-shape item that was already there.
 
-**Where the Chef tools are must apply without a restart.** Saving that directory reports
-`restart_required`, because the path is resolved once at startup and the resolved string is
-handed to the scanner and the kitchen executor. Configuration is supposed to apply live.
+**That the assistant surface measured badly while its suite was green is the thing to take
+from it.** The paging tests hold the machinery and the machinery is right; the one tool that
+does not use it was never held. A green suite is evidence about what it covers and nothing
+else.
 
-- Scope: `internal/embedded` (the directory read through an accessor, not a field),
-  `internal/analysis` and `internal/nodekitchen` (each executor resolves its binary when it
-  runs, not when it is built), `cmd/chef-migration-metrics/main.go` (wiring), and the
-  analysis-tools handler, which stops claiming a restart.
-- Acceptance: changing the directory changes which binary the next scan runs, with no restart;
-  the handler reports no restart for it; `make ci` green.
-- **The limit worth knowing before starting:** a tool missing at boot means its subsystem is
-  never wired at all, so a directory fixed afterwards still needs a restart. Making that live
-  too is a separate change to startup gating, not this one.
+**Next is ownership, and it starts with a suite rather than code.**
+`journeys/ownership-identity.md` and `journeys/ownership-attribution.md` have **no suite at
+all**, so there is no list of what they require and no way to tell how much is already built.
+Writing them is the first task; `journeys/ownership-intake.md` is 16 green and 4 skips and is
+not where the work is. Backlog: `plans/todo-ownership.md`.
+
+**Do not plan against the 92% repo-ownership figure.** About half are assigned to one person as
+a stand-in for unknown; genuine coverage is nearer 45%, and it has not been re-measured.
+
+**Still needing a restart: a Chef tool that was missing at boot.** Its subsystem is never wired,
+so correcting the directory afterwards does not bring it back. Where the tools are is otherwise
+live. That is startup gating, and a change of its own.
 
 **What the interface sends is measured, not read.** `make frontend-fields` re-records it with
 the TypeScript compiler; `TestFrontend_EverythingTheInterfaceSendsIsAFieldWeRead` holds it
