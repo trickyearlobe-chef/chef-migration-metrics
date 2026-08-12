@@ -681,4 +681,25 @@ describe("ApiDocsPage", () => {
     expect(panel.className).toMatch(/max-h-/);
   });
 
+
+  it("says where the parameters go, so 'none' does not contradict the body below", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+
+    await user.click(
+      screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
+    );
+
+    const panel = screen.getByRole("complementary");
+    // This call takes no path or query parameters and does take a body. A
+    // bare "Parameters: none" above a table of fields reads as a
+    // contradiction to anybody who has not been told the word means the
+    // address and the query string only.
+    expect(within(panel).getByRole("heading", { name: /address and query/i }))
+      .toBeInTheDocument();
+    expect(within(panel).getByText(/what it takes is in the body below/i))
+      .toBeInTheDocument();
+  });
+
 });

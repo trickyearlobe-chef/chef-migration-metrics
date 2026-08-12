@@ -591,13 +591,20 @@ function OperationPanel({
       )}
 
       <div>
+        {/*
+          Named for where these go rather than for what OpenAPI calls them. A
+          section headed "Parameters" saying "none", directly above a table of
+          body fields, reads as a contradiction unless the reader already knows
+          the word covers the address and the query string only — and the
+          people this page is for are the ones who do not.
+        */}
         <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Parameters
+          Address and query
         </h3>
         {params.length === 0 ? (
           <p className="mt-1 text-sm text-gray-500">
-            None — nothing in the address, and nothing accepted in the query
-            string.
+            Nothing in the address, and nothing accepted in the query string.
+            {isWrite && " What it takes is in the body below."}
           </p>
         ) : (
           <table className="mt-1.5 w-full text-left text-sm">
