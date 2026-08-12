@@ -10,6 +10,12 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 )
 
+// loginRequest is what a caller sends to sign in.
+type loginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 // handleLogin handles POST /api/v1/auth/login. It authenticates a local user
 // and returns a session token with user information.
 func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
@@ -25,10 +31,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Parse request body.
-	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var body loginRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return
@@ -87,6 +90,24 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// meResponse is who the caller is, and at what level. Provider says where the
+// account came from, which is what tells an integration whether the level is
+// ours to change or the identity provider's.
+type meResponse struct {
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email,omitempty"`
+	Role        string `json:"role"`
+	Provider    string `json:"provider"`
+}
+
+// authInfoResponse is which ways in this deployment has. Public, because the
+// login page needs it before anybody has signed in.
+type authInfoResponse struct {
+	LocalEnabled bool `json:"local_enabled"`
+	SAMLEnabled  bool `json:"saml_enabled"`
+}
+
 // handleMe handles GET /api/v1/auth/me. It returns the authenticated user's
 // profile and role information extracted from the session context.
 func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
@@ -103,14 +124,6 @@ func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 	// Look up the full user record for display_name and email. For
 	// externally authenticated users (SAML) who may not have a
 	// local user row, fall back to the session information.
-	type meResponse struct {
-		Username    string `json:"username"`
-		DisplayName string `json:"display_name"`
-		Email       string `json:"email,omitempty"`
-		Role        string `json:"role"`
-		Provider    string `json:"provider"`
-	}
-
 	resp := meResponse{
 		Username: info.Username,
 		Role:     info.Role,
@@ -141,11 +154,6 @@ func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 func (r *Router) handleAuthInfo(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
-	}
-
-	type authInfoResponse struct {
-		LocalEnabled bool `json:"local_enabled"`
-		SAMLEnabled  bool `json:"saml_enabled"`
 	}
 
 	resp := authInfoResponse{

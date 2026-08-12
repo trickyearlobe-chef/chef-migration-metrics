@@ -11,6 +11,54 @@ item here got past a green suite, so a fix with no new test is a fix that will b
 
 ## Open
 
+- **Two run-history addresses accept `page` and silently ignore it.** Found 2026-08-12 while
+  describing query parameters, by probing a running instance rather than by a test.
+
+  `GET /api/v1/nodes/runs/{organisation}/{node}` and
+  `GET /api/v1/run-events/nodes/{organisation}/{node}` both call `ParsePagination` and pass only
+  `params.Limit()` to `ListConvergeRunsForNode`, whose signature takes a limit and no offset
+  (`internal/datastore/converge_runs.go:143`). So `per_page` works, `page` does nothing, and
+  asking for page 2 returns page 1 again. Neither returns any pagination metadata, so a caller
+  cannot tell from an answer that it was bounded at all.
+
+  Worse than an error: a client walking pages reads the same rows repeatedly and the far end
+  sees duplicates, not a failure. Described honestly for now — those two declare `per_page`
+  alone, via `cappedNotPaged()` — so nothing tells a caller to walk pages that repeat.
+
+  **Fix:** give `ListConvergeRunsForNode` an offset, have both handlers pass it, and switch the
+  two declarations to `paginated()`. `cappedNotPaged` then has no users and should go with them.
+  Not reproducible on the dev database, which holds no converge runs — needs rows, or a store
+  test asserting the offset reaches the query.
+
+- **Viewers can read the logs, from the interface and from the API.** Reported by the owner
+  2026-08-12. Not caused by API credentials — a credential carries its account's level, so the
+  level itself is wrong.
+
+  **Established @ ee8585dd.** All three log addresses use `r.protect` = any authenticated
+  session (`internal/webapi/router.go:846-848`). "Logs" is in the main nav array, and the
+  sidebar filters only on `isAdmin` (`frontend/src/components/AppLayout.tsx:109`) — so a viewer
+  sees the link and it works.
+
+  **Wanted:** logs and diagnostic bundles for operators and admins only, and absent from a
+  viewer's interface.
+
+  Alongside, same commit:
+  - **Diagnostic bundle is admin-only** (`router.go:1002`). Viewers correctly shut out;
+    operators shut out too, which is narrower than wanted. A widening, not a hardening.
+  - **Nobody can change their own password.** Only address is
+    `PUT /api/v1/admin/users/{username}/password`, `adminOnly` (`router.go:993`); nothing under
+    `/api/v1/auth/me`. Searched: route patterns containing "password" in `router.go` and
+    `routes.go`, the `apidoc.go` description map, `UpdateUserPassword` call sites. Recorded as
+    [changing my own password](../journeys/own-password.md) with a red suite.
+
+  **Two house rules bite first.** Who may see what is not in
+  [service diagnosis](../journeys/service-diagnosis.md) — edit that with the owner first. It has
+  no suite, so the suite comes before implementation and it leaves the ratchet in the same
+  change.
+
+  Test case for the check-the-UI-first rule: the nav link is live for viewers, so endpoint and
+  interface move together or somebody breaks mid-task.
+
 - **A repo stayed blocked by a file the exclusion list already excludes.** Reported by the
   product owner 2026-08-11: a repo read blocked on a `File.exists?` finding in
   `test/tk-libvirt/tk-libvirt.rb`, while the cop pages showed nothing blocking it. Saving any

@@ -54,3 +54,59 @@ issued from one's own record, carrying that person's level of access, read-only 
 account with a second permissions model. Whether that survives an unattended job is open, and
 [building against this from the outside](../journeys/api-integration.md) says not to settle it
 by building it.
+
+---
+
+## Renderer research for the API document page (measured 2026-08-12)
+
+Kept so a change of mind does not re-run the measurement. Dry-run installs
+(`npm install --dry-run --ignore-scripts --no-save`) against the Harness proxy, from a
+frontend tree of 371 packages. Nothing was installed.
+
+| Package | Version measured | New transitive packages |
+|---|---|---|
+| `swagger-ui-react` | 5.32.13 | **+167** (+45% on the tree) |
+| `rapidoc` | 9.3.8 | **+112** |
+| `redoc` | 2.5.3 | **+97** |
+
+**Chosen: hand-rolled React, zero new dependencies.** The document has no tags, no
+components and `parameters: null` on every operation, so the detail a real renderer exists
+to display is not there to display — the cost buys layout, not information.
+
+If we circle back:
+
+- **`redoc`** is the cheapest real renderer and has no try-it-out by default, which matches
+  the decision already taken. Pulls mobx and styled-components.
+- **`rapidoc`** is a web component, so it drops in without React bindings, but costs more
+  than redoc and its theming is attribute-driven.
+- **`swagger-ui-react`** is the familiar look and the most expensive. Try-it-out is on by
+  default and must be switched off explicitly — the wrong default for a page served to a
+  signed-in person.
+- Any of them only pays off **after** the generator emits parameters, request bodies and
+  response schemas. Until then they render the same three fields the hand-rolled page does.
+- Re-measure before adopting: the counts move, and the Harness proxy quarantines very
+  recent versions, so pin a slightly older release.
+
+**The generator gap this exposed, now partly closed.** Operations carry their path parameters,
+their filters, their request bodies and — where the address declares one — the shape of the
+answer. Two ratchets say how much is left rather than any sentence here: run
+`go test ./internal/webapi -run TestResponses_TheUndescribed` and `-run TestFilters_TheUndescribed`.
+A renderer only pays off once those reach zero; until then it renders gaps prettily.
+
+**Named types earn their keep beyond the description.** The request-body lift is done, and the
+same lift on the answers is what remains: roughly half the write sites still assemble an
+anonymous map, and an anonymous map cannot be described at all. A named type can be snapshotted
+and compared, which is what `internal/webapi/testdata/response_shapes.json` now does — recorded
+from the Go types, compared on every build, re-recorded deliberately with `-update`. Do the lift
+once; it pays the description, the generated client and the shape contract.
+Do the lift with `sg` (`var body struct { $$$ }` is a shape, not a regex) and confirm call sites
+with LSP `findReferences` rather than grep — the structs are anonymous, so text search cannot tell
+one handler's body from another's.
+
+**Do not drag node-ingest structs into this.** Checked 2026-08-12: none of the 22 anonymous
+request bodies is in the ingest path — they are all ownership, failure register, admin users,
+credentials, git repos and auth, which have closed shapes decided here. Ingest is the opposite:
+112 `map[string]any` / `json.RawMessage` sites across the datastore and ingest packages, because
+the Chef attribute data underneath is genuinely flexible. Pinning a named type onto that would
+turn a real-world shape change into a decode failure. The rule for the lift is that a body is a
+candidate only if this service decides its shape.

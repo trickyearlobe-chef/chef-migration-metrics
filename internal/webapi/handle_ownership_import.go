@@ -361,6 +361,20 @@ func (r *Router) handleCookbookCommitters(w http.ResponseWriter, req *http.Reque
 // POST /api/v1/cookbooks/:name/committers/assign — assign committers
 // ---------------------------------------------------------------------------
 
+// committerAssignment maps one email address that appears in a repository's
+// history onto the person who owns it.
+type committerAssignment struct {
+	AuthorEmail string `json:"author_email"`
+	OwnerName   string `json:"owner_name"`
+	DisplayName string `json:"display_name"`
+}
+
+// assignCommittersRequest assigns the people who commit to one cookbook. Which
+// cookbook is in the address.
+type assignCommittersRequest struct {
+	Committers []committerAssignment `json:"committers"`
+}
+
 func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http.Request, cookbookName string) {
 	if !requireMethod(w, req, http.MethodPost) {
 		return
@@ -384,13 +398,7 @@ func (r *Router) handleCookbookCommittersAssign(w http.ResponseWriter, req *http
 	}
 	repoName := cookbookName
 
-	var body struct {
-		Committers []struct {
-			AuthorEmail string `json:"author_email"`
-			OwnerName   string `json:"owner_name"`
-			DisplayName string `json:"display_name"`
-		} `json:"committers"`
-	}
+	var body assignCommittersRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, "Invalid or malformed JSON request body.")
 		return

@@ -43,6 +43,18 @@ type analysisToolsGetResponse struct {
 	Value json.RawMessage `json:"value"`
 }
 
+// analysisToolsResponse says what that wrapper carries.
+//
+// The section is written already serialised — the settings are read and written
+// as YAML, so their names on the wire come from yaml tags rather than json ones
+// — and a raw message describes nothing. This names the type inside it, so the
+// fields stay reflected off the real settings and only the wrapper is written
+// down. If the two ever part company, probe.py reports the address as sending
+// something the description does not mention.
+type analysisToolsResponse struct {
+	Value config.AnalysisToolsConfig `json:"value"`
+}
+
 func (r *Router) getAdminConfigAnalysisTools(w http.ResponseWriter) {
 	cfg := r.liveConfig()
 	sections, err := configstore.ConfigToSections(&config.Config{AnalysisTools: cfg.AnalysisTools})

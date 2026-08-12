@@ -11,6 +11,29 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 )
 
+// organisationResp is one organisation in the list.
+//
+// Declared here rather than inside the handler so an address can name it — a
+// type declared in a function body cannot be reached from the route table, so
+// the call would answer undescribed. See answers().
+type organisationResp struct {
+	Name                 string `json:"name"`
+	ChefServerURL        string `json:"chef_server_url"`
+	OrgName              string `json:"org_name"`
+	ClientName           string `json:"client_name"`
+	CredentialSource     string `json:"credential_source"`
+	Source               string `json:"source"`
+	NodeCount            int    `json:"node_count"`
+	LastCollectedAt      string `json:"last_collected_at,omitempty"`
+	LastCollectionStatus string `json:"last_collection_status,omitempty"`
+}
+
+// organisationListResponse is the whole answer to listing organisations. The
+// list is not paginated — there are a handful of these, not an estate of them.
+type organisationListResponse struct {
+	Data []organisationResp `json:"data"`
+}
+
 func (r *Router) handleOrganisations(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -21,20 +44,9 @@ func (r *Router) handleOrganisations(w http.ResponseWriter, req *http.Request) {
 		WriteInternalError(w, "Failed to list organisations.")
 		return
 	}
-	type orgResp struct {
-		Name                 string `json:"name"`
-		ChefServerURL        string `json:"chef_server_url"`
-		OrgName              string `json:"org_name"`
-		ClientName           string `json:"client_name"`
-		CredentialSource     string `json:"credential_source"`
-		Source               string `json:"source"`
-		NodeCount            int    `json:"node_count"`
-		LastCollectedAt      string `json:"last_collected_at,omitempty"`
-		LastCollectionStatus string `json:"last_collection_status,omitempty"`
-	}
-	result := make([]orgResp, 0, len(orgs))
+	result := make([]organisationResp, 0, len(orgs))
 	for _, org := range orgs {
-		item := orgResp{
+		item := organisationResp{
 			Name:             org.Name,
 			ChefServerURL:    org.ChefServerURL,
 			OrgName:          org.OrgName,
@@ -59,7 +71,7 @@ func (r *Router) handleOrganisations(w http.ResponseWriter, req *http.Request) {
 		}
 		result = append(result, item)
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+	WriteJSON(w, http.StatusOK, organisationListResponse{Data: result})
 }
 
 func (r *Router) handleOrganisationDetail(w http.ResponseWriter, req *http.Request) {

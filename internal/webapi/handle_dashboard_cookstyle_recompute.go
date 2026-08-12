@@ -33,6 +33,18 @@ type cookstyleRecomputeTrendPoint struct {
 	TotalComplexity int    `json:"total_complexity"`
 }
 
+// cookstyleRecomputeTrendResponse is the recomputed series, with the point it
+// becomes meaningful from.
+//
+// RecomputeAvailableFrom is null before any fingerprint history exists — the
+// whole series is still the frozen era, and a caller charting it needs to know
+// which part of the line is recomputed and which was recorded. Null rather
+// than absent, and never a blank string, so the two states stay apart.
+type cookstyleRecomputeTrendResponse struct {
+	Data                   []cookstyleRecomputeTrendPoint `json:"data"`
+	RecomputeAvailableFrom *string                        `json:"recompute_available_from"`
+}
+
 // handleDashboardCookstyleRecomputeTrend handles
 // GET /api/v1/dashboard/cookstyle/recompute-trend.
 //
@@ -123,13 +135,11 @@ func (r *Router) handleDashboardCookstyleRecomputeTrend(w http.ResponseWriter, r
 		}
 	}
 
-	resp := map[string]any{"data": points}
+	resp := cookstyleRecomputeTrendResponse{Data: points}
 	// recompute_available_from is null when no fingerprint history exists yet —
 	// the whole series is still in the frozen (pre-fingerprint) era.
 	if earliest != "" {
-		resp["recompute_available_from"] = earliest
-	} else {
-		resp["recompute_available_from"] = nil
+		resp.RecomputeAvailableFrom = &earliest
 	}
 	WriteJSON(w, http.StatusOK, resp)
 }

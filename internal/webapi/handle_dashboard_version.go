@@ -16,6 +16,18 @@ import (
 // Dashboard — version distribution endpoints
 // ---------------------------------------------------------------------------
 
+// versionDistributionResponse is how many machines run each Chef version, with
+// the total they are a proportion of.
+type versionDistributionResponse struct {
+	TotalNodes   int                `json:"total_nodes"`
+	Distribution []versionDistEntry `json:"distribution"`
+}
+
+// versionDistTrendResponse is the same breakdown over time.
+type versionDistTrendResponse struct {
+	Data []versionDistTrendPoint `json:"data"`
+}
+
 // handleDashboardVersionDistribution handles GET /api/v1/dashboard/version-distribution.
 // Returns a count of nodes grouped by their current Chef client version
 // across all organisations.
@@ -65,9 +77,9 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 				}
 				return result[i].Version < result[j].Version
 			})
-			WriteJSON(w, http.StatusOK, map[string]any{
-				"total_nodes":  totalNodes,
-				"distribution": result,
+			WriteJSON(w, http.StatusOK, versionDistributionResponse{
+				TotalNodes:   totalNodes,
+				Distribution: result,
 			})
 			return
 		}
@@ -95,9 +107,9 @@ func (r *Router) handleDashboardVersionDistribution(w http.ResponseWriter, req *
 		return result[i].Version < result[j].Version
 	})
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"total_nodes":  totalNodes,
-		"distribution": result,
+	WriteJSON(w, http.StatusOK, versionDistributionResponse{
+		TotalNodes:   totalNodes,
+		Distribution: result,
 	})
 }
 
@@ -140,9 +152,9 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 				}
 				return result[i].Version < result[j].Version
 			})
-			WriteJSON(w, http.StatusOK, map[string]any{
-				"total_nodes":  totalNodes,
-				"distribution": result,
+			WriteJSON(w, http.StatusOK, versionDistributionResponse{
+				TotalNodes:   totalNodes,
+				Distribution: result,
 			})
 			return
 		}
@@ -188,9 +200,9 @@ func (r *Router) handleDashboardVersionDistributionWithOwnerFilter(
 		return result[i].Version < result[j].Version
 	})
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"total_nodes":  totalNodes,
-		"distribution": result,
+	WriteJSON(w, http.StatusOK, versionDistributionResponse{
+		TotalNodes:   totalNodes,
+		Distribution: result,
 	})
 }
 
@@ -428,5 +440,5 @@ func (r *Router) handleDashboardVersionDistributionTrend(w http.ResponseWriter, 
 		points = []versionDistTrendPoint{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": points})
+	WriteJSON(w, http.StatusOK, versionDistTrendResponse{Data: points})
 }

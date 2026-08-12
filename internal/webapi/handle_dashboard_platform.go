@@ -95,6 +95,18 @@ func buildPlatformGroups(items []dashboardPlatformCount, totalNodes int) []dashb
 // Dashboard — platform distribution endpoints
 // ---------------------------------------------------------------------------
 
+// platformDistributionResponse is how many machines run each operating system.
+//
+// Both the flat list and the grouped one, because they answer different
+// questions — "how many on this exact version" and "how many on this family" —
+// and deriving one from the other needs the grouping rules this service
+// applies, which a caller does not have.
+type platformDistributionResponse struct {
+	TotalNodes   int                      `json:"total_nodes"`
+	Distribution []dashboardPlatformCount `json:"distribution"`
+	Groups       []dashboardPlatformGroup `json:"groups"`
+}
+
 // handleDashboardPlatformDistribution handles
 // GET /api/v1/dashboard/platform-distribution.
 // Returns a count of nodes grouped by their OS platform (combining platform
@@ -177,10 +189,10 @@ func (r *Router) handleDashboardPlatformDistribution(w http.ResponseWriter, req 
 	// Build grouped response.
 	groups := buildPlatformGroups(result, totalNodes)
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"total_nodes":  totalNodes,
-		"distribution": result,
-		"groups":       groups,
+	WriteJSON(w, http.StatusOK, platformDistributionResponse{
+		TotalNodes:   totalNodes,
+		Distribution: result,
+		Groups:       groups,
 	})
 }
 
@@ -267,10 +279,10 @@ func (r *Router) handleDashboardPlatformDistributionWithOwnerFilter(
 	// Build grouped response.
 	groups := buildPlatformGroups(result, totalNodes)
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"total_nodes":  totalNodes,
-		"distribution": result,
-		"groups":       groups,
+	WriteJSON(w, http.StatusOK, platformDistributionResponse{
+		TotalNodes:   totalNodes,
+		Distribution: result,
+		Groups:       groups,
 	})
 }
 

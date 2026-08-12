@@ -22,6 +22,27 @@ import (
 // that loaded all node snapshots.
 // ---------------------------------------------------------------------------
 
+// filterValuesResponse is what a filter can be set to: the values actually
+// present in what we hold, so a caller offering a choice offers one that
+// matches something. Always a list, empty when nothing matches, never null.
+type filterValuesResponse struct {
+	Data []string `json:"data"`
+}
+
+// platformFilterEntry is one operating system, with the friendlier name and
+// the family it belongs to where anything maps it. DisplayName is null rather
+// than blank where nothing does.
+type platformFilterEntry struct {
+	Value            string  `json:"value"`
+	DisplayName      *string `json:"display_name"`
+	GroupKey         string  `json:"group_key,omitempty"`
+	GroupDisplayName string  `json:"group_display_name,omitempty"`
+}
+
+type platformFilterResponse struct {
+	Data []platformFilterEntry `json:"data"`
+}
+
 // handleFilterEnvironments handles GET /api/v1/filters/environments.
 func (r *Router) handleFilterEnvironments(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
@@ -47,7 +68,7 @@ func (r *Router) handleFilterEnvironments(w http.ResponseWriter, req *http.Reque
 	if values == nil {
 		values = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: values})
 }
 
 // handleFilterRoles handles GET /api/v1/filters/roles.
@@ -75,7 +96,7 @@ func (r *Router) handleFilterRoles(w http.ResponseWriter, req *http.Request) {
 	if values == nil {
 		values = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: values})
 }
 
 // handleFilterTags handles GET /api/v1/filters/tags. Unlike roles, the tags
@@ -105,7 +126,7 @@ func (r *Router) handleFilterTags(w http.ResponseWriter, req *http.Request) {
 	if values == nil {
 		values = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: values})
 }
 
 // handleFilterPolicyNames handles GET /api/v1/filters/policy-names.
@@ -133,7 +154,7 @@ func (r *Router) handleFilterPolicyNames(w http.ResponseWriter, req *http.Reques
 	if values == nil {
 		values = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: values})
 }
 
 // handleFilterPolicyGroups handles GET /api/v1/filters/policy-groups.
@@ -161,7 +182,7 @@ func (r *Router) handleFilterPolicyGroups(w http.ResponseWriter, req *http.Reque
 	if values == nil {
 		values = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": values})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: values})
 }
 
 // handleFilterPlatforms handles GET /api/v1/filters/platforms.
@@ -198,13 +219,6 @@ func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request)
 
 	mappings, _ := r.loadPlatformDisplayNames(req.Context())
 
-	type platformFilterEntry struct {
-		Value            string  `json:"value"`
-		DisplayName      *string `json:"display_name"`
-		GroupKey         string  `json:"group_key,omitempty"`
-		GroupDisplayName string  `json:"group_display_name,omitempty"`
-	}
-
 	entries := make([]platformFilterEntry, 0, len(values))
 	for _, v := range values {
 		entry := platformFilterEntry{Value: v}
@@ -220,7 +234,7 @@ func (r *Router) handleFilterPlatforms(w http.ResponseWriter, req *http.Request)
 		entries = append(entries, entry)
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": entries})
+	WriteJSON(w, http.StatusOK, platformFilterResponse{Data: entries})
 }
 
 // handleFilterTargetChefVersions handles GET /api/v1/filters/target-chef-versions.
@@ -233,7 +247,7 @@ func (r *Router) handleFilterTargetChefVersions(w http.ResponseWriter, req *http
 	cfg := r.liveConfig()
 	versions := cfg.TargetChefVersionList()
 	sort.Strings(versions)
-	WriteJSON(w, http.StatusOK, map[string]any{"data": versions})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: versions})
 }
 
 // handleFilterComplexityLabels handles GET /api/v1/filters/complexity-labels.
@@ -251,7 +265,7 @@ func (r *Router) handleFilterComplexityLabels(w http.ResponseWriter, req *http.R
 		"complex",
 		"very_complex",
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": labels})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: labels})
 }
 
 // ---------------------------------------------------------------------------

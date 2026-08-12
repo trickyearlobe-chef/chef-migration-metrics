@@ -16,6 +16,27 @@ import (
 // will serve. Files larger than this return 413.
 const maxFileContentSize = 1 << 20
 
+// fileEntry is one entry in a repository directory listing. Size is absent for
+// a directory, which has none worth reporting.
+type fileEntry struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Size int64  `json:"size,omitempty"`
+}
+
+// fileContentResponse is one file out of a repository clone.
+//
+// Encoding says how to read content: "text" for anything that is text, or
+// "base64" for anything that is not. A caller that ignores it and treats a
+// binary file as text gets mojibake rather than an error, so it is always
+// sent rather than implied by the content.
+type fileContentResponse struct {
+	Path     string `json:"path"`
+	Encoding string `json:"encoding"`
+	Content  string `json:"content"`
+	Size     int    `json:"size"`
+}
+
 // handleGitRepoFileTree handles GET /api/v1/git-repos/:name/files?path=
 // Returns a directory listing as a JSON array of entries.
 func (r *Router) handleGitRepoFileTree(w http.ResponseWriter, req *http.Request, repoName string) {
@@ -54,12 +75,6 @@ func (r *Router) handleGitRepoFileTree(w http.ResponseWriter, req *http.Request,
 		r.logf("ERROR", "reading dir %s: %v", targetDir, err)
 		WriteInternalError(w, "Failed to read directory.")
 		return
-	}
-
-	type fileEntry struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
-		Size int64  `json:"size,omitempty"`
 	}
 
 	result := make([]fileEntry, 0, len(entries))
@@ -170,11 +185,11 @@ func (r *Router) handleGitRepoFileContent(w http.ResponseWriter, req *http.Reque
 		content = string(data)
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"path":     relPath,
-		"encoding": encoding,
-		"content":  content,
-		"size":     len(data),
+	WriteJSON(w, http.StatusOK, fileContentResponse{
+		Path:     relPath,
+		Encoding: encoding,
+		Content:  content,
+		Size:     len(data),
 	})
 }
 

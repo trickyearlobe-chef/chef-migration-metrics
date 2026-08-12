@@ -53,6 +53,29 @@ type cookbookRow struct {
 	Compatibility    string // "compatible", "incompatible", "untested"
 }
 
+// cookbookResp is one cookbook in the list. Declared at package level so the
+// route table can name it as the answer — see answers().
+type cookbookResp struct {
+	ID                string `json:"id"`
+	OrganisationID    string `json:"organisation_id,omitempty"`
+	OrganisationName  string `json:"organisation_name,omitempty"`
+	Name              string `json:"name"`
+	Version           string `json:"version"`
+	IsActive          bool   `json:"is_active"`
+	IsStaleCookbook   bool   `json:"is_stale_cookbook"`
+	DownloadStatus    string `json:"download_status"`
+	DownloadError     string `json:"download_error,omitempty"`
+	Compatibility     string `json:"compatibility"`
+	CookstyleStatus   string `json:"cookstyle_status"`
+	TargetChefVersion string `json:"target_chef_version,omitempty"`
+	// Always present, and never rewritten: "no_repo" is a different state
+	// from "nobody has tested this", and collapsing either into an absent
+	// field leaves a caller unable to tell them apart — or to tell them
+	// from a version of the API that has no such field. The screen renders
+	// a dash for both; that is the screen's job, not this one's.
+	TKStatus string `json:"tk_status"`
+}
+
 // handleCookbooks handles GET /api/v1/cookbooks — lists all server cookbooks
 // across all organisations. Each row is a specific cookbook version in a
 // specific organisation. Git repos have their own dedicated list page.
@@ -135,27 +158,6 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 		rows = pageRows
 	}
 
-	type cookbookResp struct {
-		ID                string `json:"id"`
-		OrganisationID    string `json:"organisation_id,omitempty"`
-		OrganisationName  string `json:"organisation_name,omitempty"`
-		Name              string `json:"name"`
-		Version           string `json:"version"`
-		IsActive          bool   `json:"is_active"`
-		IsStaleCookbook   bool   `json:"is_stale_cookbook"`
-		DownloadStatus    string `json:"download_status"`
-		DownloadError     string `json:"download_error,omitempty"`
-		Compatibility     string `json:"compatibility"`
-		CookstyleStatus   string `json:"cookstyle_status"`
-		TargetChefVersion string `json:"target_chef_version,omitempty"`
-		// Always present, and never rewritten: "no_repo" is a different state
-		// from "nobody has tested this", and collapsing either into an absent
-		// field leaves a caller unable to tell them apart — or to tell them
-		// from a version of the API that has no such field. The screen renders
-		// a dash for both; that is the screen's job, not this one's.
-		TKStatus string `json:"tk_status"`
-	}
-
 	result := make([]cookbookResp, 0, len(rows))
 	for _, cb := range rows {
 		resp := cookbookResp{
@@ -177,6 +179,28 @@ func (r *Router) handleCookbooks(w http.ResponseWriter, req *http.Request) {
 	}
 
 	WritePaginated(w, result, pg, total)
+}
+
+// Everything held about one cookbook: every version on every Chef server, and
+// every repository it was found in, each carrying what the static check said.
+//
+// Both lists, always — the same cookbook can be on a server and in a
+// repository, and which one a caller cares about is not ours to decide.
+type serverVersionDetail struct {
+	Cookbook  datastore.ServerCookbook                  `json:"cookbook"`
+	Cookstyle []datastore.ServerCookbookCookstyleResult `json:"cookstyle,omitempty"`
+}
+
+type gitRepoDetail struct {
+	GitRepo   datastore.GitRepo                  `json:"git_repo"`
+	Cookstyle []datastore.GitRepoCookstyleResult `json:"cookstyle,omitempty"`
+}
+
+type cookbookDetailResponse struct {
+	Name            string                `json:"name"`
+	Ownership       entityOwners          `json:"ownership"`
+	ServerCookbooks []serverVersionDetail `json:"server_cookbooks"`
+	GitRepos        []gitRepoDetail       `json:"git_repos"`
 }
 
 // handleCookbookDetail handles GET /api/v1/cookbooks/:name — returns all
@@ -258,17 +282,6 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Build version details for server cookbooks.
-	type serverVersionDetail struct {
-		Cookbook  datastore.ServerCookbook                  `json:"cookbook"`
-		Cookstyle []datastore.ServerCookbookCookstyleResult `json:"cookstyle,omitempty"`
-	}
-
-	type gitRepoDetail struct {
-		GitRepo   datastore.GitRepo                  `json:"git_repo"`
-		Cookstyle []datastore.GitRepoCookstyleResult `json:"cookstyle,omitempty"`
-	}
-
 	serverDetails := make([]serverVersionDetail, 0, len(serverCookbooks))
 	for _, sc := range serverCookbooks {
 		detail := serverVersionDetail{Cookbook: sc}
@@ -307,11 +320,11 @@ func (r *Router) handleCookbookDetail(w http.ResponseWriter, req *http.Request) 
 		ownership = owners[name]
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"name":             name,
-		"ownership":        ownership,
-		"server_cookbooks": serverDetails,
-		"git_repos":        gitDetails,
+	WriteJSON(w, http.StatusOK, cookbookDetailResponse{
+		Name:            name,
+		Ownership:       ownership,
+		ServerCookbooks: serverDetails,
+		GitRepos:        gitDetails,
 	})
 }
 

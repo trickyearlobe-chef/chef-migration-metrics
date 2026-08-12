@@ -18,6 +18,15 @@ import (
 // OrgName (chef slug), NOT its CMM display Name — so we resolve the URL org name
 // and query by org.OrgName. A node with no runs returns an empty list, not 404
 // (short-retention telemetry may simply not exist yet).
+// nodeRunsResponse is the recent converge runs for one machine.
+//
+// Capped rather than paged — the store call behind it takes a limit and no
+// offset — which is why the address describes per_page and no page. See
+// subCappedNotPaged.
+type nodeRunsResponse struct {
+	Data []datastore.ConvergeRunView `json:"data"`
+}
+
 func (r *Router) handleNodeRuns(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -59,5 +68,5 @@ func (r *Router) handleNodeRuns(w http.ResponseWriter, req *http.Request) {
 		runs = []datastore.ConvergeRunView{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": runs})
+	WriteJSON(w, http.StatusOK, nodeRunsResponse{Data: runs})
 }

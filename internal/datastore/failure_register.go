@@ -97,6 +97,21 @@ type FailureRegisterEntry struct {
 	RaisedAt  time.Time `json:"raised_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
+	// RaisedOrigin says what made this entry — OriginScreen or
+	// OriginCredential. RaisedBy says whose judgement it is; this says whether
+	// they typed it or a tool holding their credential wrote it, which is the
+	// difference between a finding somebody read and one produced under their
+	// name that they may never have seen.
+	//
+	// Attached by the service from the session, never taken from the request:
+	// a caller that could set this could sign anything as a person's own.
+	RaisedOrigin string `json:"raised_origin"`
+
+	// RaisedOriginName is the credential's name, when one made the entry.
+	// Empty for a screen. The name rather than the id, because this is read by
+	// somebody deciding how much weight to give the entry.
+	RaisedOriginName string `json:"raised_origin_name,omitempty"`
+
 	ResolvedBy     string     `json:"resolved_by,omitempty"`
 	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
 	ResolutionNote string     `json:"resolution_note,omitempty"`
@@ -120,6 +135,12 @@ type RecordFailureVerdictParams struct {
 	HolderType   string
 	HolderRef    string
 	RaisedBy     string
+
+	// RaisedOrigin and RaisedOriginName come from the session, not the body.
+	// Empty RaisedOrigin is stored as OriginScreen, which is what every entry
+	// was before credentials existed.
+	RaisedOrigin     string
+	RaisedOriginName string
 }
 
 // ReviseFailureEntryParams updates what is known and planned about an open
@@ -190,8 +211,21 @@ const failureEntryColumns = `
 	COALESCE(holder_type, ''), COALESCE(holder_ref, ''),
 	status, raised_by, raised_at, updated_at,
 	COALESCE(resolved_by, ''), resolved_at, COALESCE(resolution_note, ''),
-	superseded_by
+	superseded_by,
+	raised_origin, raised_origin_name
 `
+
+// What made an entry. A person at a screen, or a tool holding a credential
+// somebody made and named.
+const (
+	// OriginScreen is somebody typing it at the web interface. Also what every
+	// entry recorded before credentials existed is stored as, correctly: there
+	// was no other way in.
+	OriginScreen = "screen"
+	// OriginCredential is a tool writing through a credential. The credential's
+	// name is stored beside it so a later reader can see which one.
+	OriginCredential = "credential"
+)
 
 func scanFailureEntry(s interface{ Scan(...any) error }) (FailureRegisterEntry, error) {
 	var e FailureRegisterEntry
@@ -205,6 +239,7 @@ func scanFailureEntry(s interface{ Scan(...any) error }) (FailureRegisterEntry, 
 		&e.Status, &e.RaisedBy, &e.RaisedAt, &e.UpdatedAt,
 		&e.ResolvedBy, &resolvedAt, &e.ResolutionNote,
 		&supersededBy,
+		&e.RaisedOrigin, &e.RaisedOriginName,
 	)
 	if err != nil {
 		return FailureRegisterEntry{}, err
@@ -220,6 +255,19 @@ func scanFailureEntry(s interface{ Scan(...any) error }) (FailureRegisterEntry, 
 		e.SupersededBy = supersededBy.String
 	}
 	return e, nil
+}
+
+// raisedOrigin defaults an unset origin to the screen.
+//
+// A caller that does not set it is one written before credentials existed, and
+// every such caller is a screen. Defaulting rather than rejecting because the
+// alternative — a write path that fails when an origin is missing — turns a
+// field nobody sends into an outage.
+func raisedOrigin(origin string) string {
+	if origin == OriginCredential {
+		return OriginCredential
+	}
+	return OriginScreen
 }
 
 // validateVerdict rejects anything that is not one of the two sides.
@@ -337,14 +385,16 @@ func (db *DB) RecordFailureVerdict(ctx context.Context, p RecordFailureVerdictPa
 		row := tx.QueryRowContext(ctx, `
 			INSERT INTO failure_register_entries
 				(subject_name, subject_type, cookbook_name, verdict, reason, evidence,
-				 diagnosis, plan, target_date, holder_type, holder_ref, raised_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+				 diagnosis, plan, target_date, holder_type, holder_ref, raised_by,
+				 raised_origin, raised_origin_name)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 			RETURNING `+failureEntryColumns,
 			p.SubjectName, subjectType, p.CookbookName, p.Verdict, strings.TrimSpace(p.Reason),
 			nullStringPtr(p.Evidence), nullStringPtr(p.Diagnosis), nullStringPtr(p.Plan),
 			nullTimePtr(p.TargetDate),
 			nullStringPtr(holderType), nullStringPtr(holderRef),
 			p.RaisedBy,
+			raisedOrigin(p.RaisedOrigin), p.RaisedOriginName,
 		)
 		entry, err = scanFailureEntry(row)
 		if err != nil {

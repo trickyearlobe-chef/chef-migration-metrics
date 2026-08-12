@@ -114,6 +114,21 @@ func tlsSectionChanged(newSections, liveSections map[string]json.RawMessage) boo
 // GET/PUT /api/v1/admin/config/server
 // ---------------------------------------------------------------------------
 
+// serverConfigResponse is the server settings as a caller receives them.
+//
+// The settings themselves are embedded, so they stay reflected off the real
+// type. What is added here is what the handler attaches on the way out: the
+// metadata of the certificate actually installed, and the state of the last
+// ACME renewal. Neither is part of the settings, and neither carries a private
+// key.
+type serverConfigResponse struct {
+	config.ServerConfig
+	TLSCertificateInfo []apptls.CertMetadata `json:"tls_certificate_info,omitempty"`
+	// Whatever the renewer last recorded. The service does not decide this
+	// shape, so describing one would refuse a caller something real.
+	ACMEStatus json.RawMessage `json:"acme_status,omitempty"`
+}
+
 func (r *Router) handleAdminConfigServer(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case http.MethodGet:

@@ -1,0 +1,5493 @@
+{
+  "GET /api/v1/admin/config/analysis-tools": {
+    "properties": {
+      "value": {
+        "properties": {
+          "cookstyle_addon_cop_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "cookstyle_enabled": {
+            "type": "boolean"
+          },
+          "cookstyle_timeout_minutes": {
+            "type": "integer"
+          },
+          "test_kitchen": {
+            "properties": {
+              "chef_license_key_credential": {
+                "type": "string"
+              },
+              "driver": {
+                "type": "string"
+              },
+              "driver_secrets": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "driver_settings": {
+                "additionalProperties": {},
+                "type": "object"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "hypervisor_type": {
+                "type": "string"
+              },
+              "image_field_name": {
+                "type": "string"
+              },
+              "images": {
+                "items": {
+                  "properties": {
+                    "chef_client_path": {
+                      "type": "string"
+                    },
+                    "chef_download_urls": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "driver_settings": {
+                      "additionalProperties": {},
+                      "type": "object"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "install_method": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "release_ip_on_destroy": {
+                      "type": "boolean"
+                    },
+                    "transport": {
+                      "properties": {
+                        "password_credential": {
+                          "type": "string"
+                        },
+                        "ssh_key_credential": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "max_concurrent_vms": {
+                "type": "integer"
+              },
+              "orphan_sweep_age_minutes": {
+                "type": "integer"
+              },
+              "orphan_sweep_interval_minutes": {
+                "type": "integer"
+              },
+              "platform_map": {
+                "items": {
+                  "properties": {
+                    "image": {
+                      "type": "string"
+                    },
+                    "is_pattern": {
+                      "type": "boolean"
+                    },
+                    "kitchen_name": {
+                      "type": "string"
+                    },
+                    "skip": {
+                      "type": "boolean"
+                    },
+                    "transport": {
+                      "properties": {
+                        "password_credential": {
+                          "type": "string"
+                        },
+                        "ssh_key_credential": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "setup_scripts": {
+                "properties": {
+                  "linux": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "windows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "start_rate_max_per_window": {
+                "type": "integer"
+              },
+              "start_rate_window_minutes": {
+                "type": "integer"
+              },
+              "timeout_minutes": {
+                "type": "integer"
+              },
+              "vm_name_prefix": {
+                "type": "string"
+              },
+              "vm_ttl_hours": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "test_kitchen_timeout_minutes": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/auth": {
+    "properties": {
+      "lockout_attempts": {
+        "type": "integer"
+      },
+      "min_password_length": {
+        "type": "integer"
+      },
+      "providers": {
+        "items": {
+          "properties": {
+            "allow_idp_initiated": {
+              "type": "boolean"
+            },
+            "clock_skew_tolerance": {
+              "type": "string"
+            },
+            "debug_log_assertions": {
+              "type": "boolean"
+            },
+            "display_name_attr": {
+              "type": "string"
+            },
+            "email_attr": {
+              "type": "string"
+            },
+            "groups_attr": {
+              "type": "string"
+            },
+            "idp_metadata_path": {
+              "type": "string"
+            },
+            "idp_metadata_url": {
+              "type": "string"
+            },
+            "idp_metadata_xml": {
+              "type": "string"
+            },
+            "metadata_refresh_interval": {
+              "type": "string"
+            },
+            "role_attr": {
+              "type": "string"
+            },
+            "role_mapping": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "sign_requests": {
+              "type": "boolean"
+            },
+            "sp_base_url": {
+              "type": "string"
+            },
+            "sp_certificate_credential": {
+              "type": "string"
+            },
+            "sp_entity_id": {
+              "type": "string"
+            },
+            "sp_private_key_credential": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "username_attr": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "session_expiry": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/backup": {
+    "properties": {
+      "dir": {
+        "type": "string"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "max_generations": {
+        "type": "integer"
+      },
+      "pg_dump_path": {
+        "type": "string"
+      },
+      "pg_restore_path": {
+        "type": "string"
+      },
+      "schedule": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/collection": {
+    "properties": {
+      "delete_server_cookbooks_after_scan": {
+        "type": "boolean"
+      },
+      "schedule": {
+        "type": "string"
+      },
+      "skip_server_cookbook_download": {
+        "type": "boolean"
+      },
+      "stale_cookbook_threshold_days": {
+        "type": "integer"
+      },
+      "stale_node_critical_days": {
+        "type": "integer"
+      },
+      "stale_node_threshold_days": {
+        "type": "integer"
+      },
+      "stale_node_warning_hours": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/concurrency": {
+    "properties": {
+      "cookbook_download": {
+        "type": "integer"
+      },
+      "cookstyle_scan": {
+        "type": "integer"
+      },
+      "git_pull": {
+        "type": "integer"
+      },
+      "node_page_fetching": {
+        "type": "integer"
+      },
+      "organisation_collection": {
+        "type": "integer"
+      },
+      "readiness_evaluation": {
+        "type": "integer"
+      },
+      "role_fetching": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/exports": {
+    "properties": {
+      "async_threshold": {
+        "type": "integer"
+      },
+      "max_rows": {
+        "type": "integer"
+      },
+      "output_directory": {
+        "type": "string"
+      },
+      "retention_hours": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/git-urls": {
+    "items": {
+      "type": "string"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/admin/config/ingest": {
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "failures_only": {
+        "type": "boolean"
+      },
+      "max_body_bytes": {
+        "type": "integer"
+      },
+      "max_records_per_body": {
+        "type": "integer"
+      },
+      "retention_days": {
+        "type": "integer"
+      },
+      "show_run_events": {
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/logging": {
+    "properties": {
+      "level": {
+        "type": "string"
+      },
+      "retention_days": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/organisations": {
+    "items": {
+      "properties": {
+        "chef_server_url": {
+          "type": "string"
+        },
+        "client_key_credential": {
+          "type": "string"
+        },
+        "client_key_path": {
+          "type": "string"
+        },
+        "client_name": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "org_name": {
+          "type": "string"
+        },
+        "ssl_verify": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/admin/config/readiness": {
+    "properties": {
+      "install_path_linux": {
+        "type": "string"
+      },
+      "install_path_windows": {
+        "type": "string"
+      },
+      "install_size_mb_linux": {
+        "type": "integer"
+      },
+      "install_size_mb_windows": {
+        "type": "integer"
+      },
+      "min_free_disk_mb": {
+        "type": "integer"
+      },
+      "min_remaining_free_percent": {
+        "type": "integer"
+      },
+      "review_blocks_readiness": {
+        "type": "boolean"
+      },
+      "tk_blocks_readiness": {
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/server": {
+    "properties": {
+      "acme_status": {},
+      "graceful_shutdown_seconds": {
+        "type": "integer"
+      },
+      "listen_address": {
+        "type": "string"
+      },
+      "port": {
+        "type": "integer"
+      },
+      "tls": {
+        "properties": {
+          "acme": {
+            "properties": {
+              "agree_to_tos": {
+                "type": "boolean"
+              },
+              "ca_url": {
+                "type": "string"
+              },
+              "challenge": {
+                "type": "string"
+              },
+              "dns_provider": {
+                "type": "string"
+              },
+              "dns_provider_config": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "domains": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "email": {
+                "type": "string"
+              },
+              "hostname_interface": {
+                "type": "string"
+              },
+              "hostname_ip": {
+                "type": "string"
+              },
+              "hostname_ttl": {
+                "type": "integer"
+              },
+              "register_hostname": {
+                "type": "boolean"
+              },
+              "renew_before_days": {
+                "type": "integer"
+              },
+              "storage_path": {
+                "type": "string"
+              },
+              "trusted_roots": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "ca_path": {
+            "type": "string"
+          },
+          "cert_path": {
+            "type": "string"
+          },
+          "cert_source": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "http_redirect_port": {
+            "type": "integer"
+          },
+          "key_path": {
+            "type": "string"
+          },
+          "min_version": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "tls_certificate_info": {
+        "items": {
+          "properties": {
+            "dns_names": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ip_addresses": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "issuer": {
+              "type": "string"
+            },
+            "not_after": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "not_before": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "trusted_proxy": {
+        "type": "boolean"
+      },
+      "websocket": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_connections": {
+            "type": "integer"
+          },
+          "ping_interval_seconds": {
+            "type": "integer"
+          },
+          "pong_timeout_seconds": {
+            "type": "integer"
+          },
+          "send_buffer_size": {
+            "type": "integer"
+          },
+          "write_timeout_seconds": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/config/target-versions": {
+    "items": {
+      "type": "string"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/admin/config/test-kitchen": {
+    "properties": {
+      "chef_license_key_credential": {
+        "type": "string"
+      },
+      "driver": {
+        "type": "string"
+      },
+      "driver_secrets": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "driver_settings": {
+        "additionalProperties": {},
+        "type": "object"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "hypervisor_type": {
+        "type": "string"
+      },
+      "image_field_name": {
+        "type": "string"
+      },
+      "images": {
+        "items": {
+          "properties": {
+            "chef_client_path": {
+              "type": "string"
+            },
+            "chef_download_urls": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "driver_settings": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "id": {
+              "type": "string"
+            },
+            "install_method": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "release_ip_on_destroy": {
+              "type": "boolean"
+            },
+            "transport": {
+              "properties": {
+                "password_credential": {
+                  "type": "string"
+                },
+                "ssh_key_credential": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "max_concurrent_vms": {
+        "type": "integer"
+      },
+      "orphan_sweep_age_minutes": {
+        "type": "integer"
+      },
+      "orphan_sweep_interval_minutes": {
+        "type": "integer"
+      },
+      "platform_map": {
+        "items": {
+          "properties": {
+            "image": {
+              "type": "string"
+            },
+            "is_pattern": {
+              "type": "boolean"
+            },
+            "kitchen_name": {
+              "type": "string"
+            },
+            "skip": {
+              "type": "boolean"
+            },
+            "transport": {
+              "properties": {
+                "password_credential": {
+                  "type": "string"
+                },
+                "ssh_key_credential": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "setup_scripts": {
+        "properties": {
+          "linux": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "windows": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "start_rate_max_per_window": {
+        "type": "integer"
+      },
+      "start_rate_window_minutes": {
+        "type": "integer"
+      },
+      "timeout_minutes": {
+        "type": "integer"
+      },
+      "vm_name_prefix": {
+        "type": "string"
+      },
+      "vm_ttl_hours": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/admin/credentials": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "created_by": {
+              "type": "string"
+            },
+            "credential_type": {
+              "type": "string"
+            },
+            "last_rotated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": {},
+              "type": "object"
+            },
+            "name": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "updated_by": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/auth/info": {
+    "properties": {
+      "local_enabled": {
+        "type": "boolean"
+      },
+      "saml_enabled": {
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookbooks": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "compatibility": {
+              "type": "string"
+            },
+            "cookstyle_status": {
+              "type": "string"
+            },
+            "download_error": {
+              "type": "string"
+            },
+            "download_status": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "is_active": {
+              "type": "boolean"
+            },
+            "is_stale_cookbook": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "organisation_id": {
+              "type": "string"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "tk_status": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookbooks/{name}": {
+    "properties": {
+      "git_repos": {
+        "items": {
+          "properties": {
+            "cookstyle": {
+              "items": {
+                "properties": {
+                  "commit_sha": {
+                    "type": "string"
+                  },
+                  "cookstyle_status": {
+                    "type": "string"
+                  },
+                  "correctness_count": {
+                    "type": "integer"
+                  },
+                  "created_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "deprecation_count": {
+                    "type": "integer"
+                  },
+                  "deprecation_warnings": {
+                    "format": "byte",
+                    "type": "string"
+                  },
+                  "duration_seconds": {
+                    "type": "integer"
+                  },
+                  "error_message": {
+                    "type": "string"
+                  },
+                  "git_repo_name": {
+                    "type": "string"
+                  },
+                  "git_repo_url": {
+                    "type": "string"
+                  },
+                  "offence_count": {
+                    "type": "integer"
+                  },
+                  "offences": {
+                    "format": "byte",
+                    "type": "string"
+                  },
+                  "passed": {
+                    "type": "boolean"
+                  },
+                  "process_stderr": {
+                    "type": "string"
+                  },
+                  "process_stdout": {
+                    "type": "string"
+                  },
+                  "scanned_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "target_chef_version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "git_repo": {
+              "properties": {
+                "clone_error": {
+                  "type": "string"
+                },
+                "clone_status": {
+                  "type": "string"
+                },
+                "compatibility_status": {
+                  "type": "string"
+                },
+                "cookstyle_status": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "default_branch": {
+                  "type": "string"
+                },
+                "git_repo_url": {
+                  "type": "string"
+                },
+                "has_test_suite": {
+                  "type": "boolean"
+                },
+                "head_commit_sha": {
+                  "type": "string"
+                },
+                "kitchen_exclude_reason": {
+                  "type": "string"
+                },
+                "kitchen_excluded": {
+                  "type": "boolean"
+                },
+                "kitchen_excluded_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "kitchen_excluded_by": {
+                  "type": "string"
+                },
+                "last_fetched_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tk_passed": {
+                  "type": "integer"
+                },
+                "tk_status": {
+                  "type": "string"
+                },
+                "tk_total": {
+                  "type": "integer"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "name": {
+        "type": "string"
+      },
+      "ownership": {
+        "properties": {
+          "derived": {
+            "type": "boolean"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "server_cookbooks": {
+        "items": {
+          "properties": {
+            "cookbook": {
+              "properties": {
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "dependencies": {},
+                "description": {
+                  "type": "string"
+                },
+                "download_error": {
+                  "type": "string"
+                },
+                "download_status": {
+                  "type": "string"
+                },
+                "first_seen_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "is_active": {
+                  "type": "boolean"
+                },
+                "is_frozen": {
+                  "type": "boolean"
+                },
+                "is_stale_cookbook": {
+                  "type": "boolean"
+                },
+                "last_fetched_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "license": {
+                  "type": "string"
+                },
+                "long_description": {
+                  "type": "string"
+                },
+                "maintainer": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "organisation_name": {
+                  "type": "string"
+                },
+                "platforms": {},
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "cookstyle": {
+              "items": {
+                "properties": {
+                  "cookbook_name": {
+                    "type": "string"
+                  },
+                  "cookbook_version": {
+                    "type": "string"
+                  },
+                  "cookstyle_status": {
+                    "type": "string"
+                  },
+                  "correctness_count": {
+                    "type": "integer"
+                  },
+                  "created_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "deprecation_count": {
+                    "type": "integer"
+                  },
+                  "deprecation_warnings": {
+                    "format": "byte",
+                    "type": "string"
+                  },
+                  "duration_seconds": {
+                    "type": "integer"
+                  },
+                  "error_message": {
+                    "type": "string"
+                  },
+                  "offence_count": {
+                    "type": "integer"
+                  },
+                  "offences": {
+                    "format": "byte",
+                    "type": "string"
+                  },
+                  "organisation_name": {
+                    "type": "string"
+                  },
+                  "passed": {
+                    "type": "boolean"
+                  },
+                  "process_stderr": {
+                    "type": "string"
+                  },
+                  "process_stdout": {
+                    "type": "string"
+                  },
+                  "scanned_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "target_chef_version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookbooks/{name}/platform-coverage": {
+    "properties": {
+      "cookbook_name": {
+        "type": "string"
+      },
+      "coverage_percentage": {
+        "type": "number"
+      },
+      "covered_node_count": {
+        "type": "integer"
+      },
+      "evaluated_at": {
+        "type": "string"
+      },
+      "gap_count": {
+        "type": "integer"
+      },
+      "in_production_not_tested": {
+        "items": {
+          "properties": {
+            "node_count": {
+              "type": "integer"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "platform_family": {
+              "type": "string"
+            },
+            "platform_version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "kitchen_platforms": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "production_platforms": {
+        "items": {
+          "properties": {
+            "node_count": {
+              "type": "integer"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "platform_family": {
+              "type": "string"
+            },
+            "platform_version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "tested_and_in_production": {
+        "items": {
+          "properties": {
+            "kitchen_name": {
+              "type": "string"
+            },
+            "node_count": {
+              "type": "integer"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "platform_version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "tested_not_in_production": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "total_production_nodes": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookstyle/cop-drift": {
+    "properties": {
+      "coverage_gaps": {
+        "items": {
+          "properties": {
+            "cop_name": {
+              "type": "string"
+            },
+            "department": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "registry_available": {
+        "type": "boolean"
+      },
+      "registry_version": {
+        "type": "string"
+      },
+      "stale": {
+        "items": {
+          "properties": {
+            "cop_name": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookstyle/cops": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "auto_correctable_pct": {
+              "type": "number"
+            },
+            "category": {
+              "type": "string"
+            },
+            "classification": {
+              "type": "string"
+            },
+            "classification_source": {
+              "type": "string"
+            },
+            "cookbooks_affected": {
+              "type": "integer"
+            },
+            "cookbooks_excluded_only": {
+              "type": "integer"
+            },
+            "cop_name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "excluded_offences": {
+              "type": "integer"
+            },
+            "introduced_in": {
+              "type": "string"
+            },
+            "is_custom": {
+              "type": "boolean"
+            },
+            "migration_url": {
+              "type": "string"
+            },
+            "removed_in": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string"
+            },
+            "total_offences": {
+              "type": "integer"
+            },
+            "unblocks": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "summary": {
+        "properties": {
+          "blocker_cookbooks": {
+            "type": "integer"
+          },
+          "blocker_cops": {
+            "type": "integer"
+          },
+          "noise_cops": {
+            "type": "integer"
+          },
+          "review_cookbooks": {
+            "type": "integer"
+          },
+          "review_cops": {
+            "type": "integer"
+          },
+          "unclassified_cops": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookstyle/cops/{cop_name}/cookbooks": {
+    "oneOf": [
+      {
+        "$ref": "#/components/schemas/webapi.copCookbookGroupResponse"
+      },
+      {
+        "$ref": "#/components/schemas/webapi.copCookbookResponse"
+      }
+    ]
+  },
+  "GET /api/v1/cookstyle/scan-scope": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "created_by": {
+              "type": "string"
+            },
+            "excluded": {
+              "type": "boolean"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/complexity/trend": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "average_score": {
+              "type": "number"
+            },
+            "collection_run_org": {
+              "type": "string"
+            },
+            "completed_at": {
+              "type": "string"
+            },
+            "critical_count": {
+              "type": "integer"
+            },
+            "high_count": {
+              "type": "integer"
+            },
+            "low_count": {
+              "type": "integer"
+            },
+            "medium_count": {
+              "type": "integer"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "total_cookbooks": {
+              "type": "integer"
+            },
+            "total_score": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/cookbook-compatibility": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "blocked_cookbooks": {
+              "type": "integer"
+            },
+            "needs_review_cookbooks": {
+              "type": "integer"
+            },
+            "ready_cookbooks": {
+              "type": "integer"
+            },
+            "ready_percent": {
+              "type": "number"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "total_cookbooks": {
+              "type": "integer"
+            },
+            "untested_cookbooks": {
+              "type": "integer"
+            },
+            "untested_errored_cookbooks": {
+              "type": "integer"
+            },
+            "untested_inactive_cookbooks": {
+              "type": "integer"
+            },
+            "untested_unscanned_cookbooks": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/cookbook-download-status": {
+    "properties": {
+      "failed_cookbook_count": {
+        "type": "integer"
+      },
+      "failed_cookbooks": {
+        "items": {
+          "properties": {
+            "download_error": {
+              "type": "string"
+            },
+            "is_active": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "failure_message": {
+        "type": "string"
+      },
+      "has_failures": {
+        "type": "boolean"
+      },
+      "status_counts": {
+        "properties": {
+          "failed": {
+            "type": "integer"
+          },
+          "ok": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "status_percentages": {
+        "properties": {
+          "failed_percent": {
+            "type": "number"
+          },
+          "ok_percent": {
+            "type": "number"
+          },
+          "pending_percent": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "total_cookbooks": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/cookstyle/recompute-trend": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "blocked": {
+              "type": "integer"
+            },
+            "completed_at": {
+              "type": "string"
+            },
+            "needs_review": {
+              "type": "integer"
+            },
+            "ready": {
+              "type": "integer"
+            },
+            "source": {
+              "type": "string"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "total_complexity": {
+              "type": "integer"
+            },
+            "total_results": {
+              "type": "integer"
+            },
+            "untested": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "recompute_available_from": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/deployment/status": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "activated": {
+              "type": "integer"
+            },
+            "converge_failing": {
+              "type": "integer"
+            },
+            "converge_passing": {
+              "type": "integer"
+            },
+            "staged": {
+              "type": "integer"
+            },
+            "total": {
+              "type": "integer"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total_nodes": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/deployment/trend": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "by_version": {
+              "additionalProperties": {
+                "properties": {
+                  "converge_passing": {
+                    "type": "integer"
+                  },
+                  "staged_or_activated": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "collection_run_org": {
+              "type": "string"
+            },
+            "completed_at": {
+              "type": "string"
+            },
+            "converge_passing": {
+              "type": "integer"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "staged_or_activated": {
+              "type": "integer"
+            },
+            "total_nodes": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/git-repo-compatibility": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "blocked_repos": {
+              "type": "integer"
+            },
+            "needs_review_repos": {
+              "type": "integer"
+            },
+            "ready_percent": {
+              "type": "number"
+            },
+            "ready_repos": {
+              "type": "integer"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "total_repos": {
+              "type": "integer"
+            },
+            "untested_clone_failed_repos": {
+              "type": "integer"
+            },
+            "untested_errored_repos": {
+              "type": "integer"
+            },
+            "untested_pending_scan_repos": {
+              "type": "integer"
+            },
+            "untested_repos": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/platform-distribution": {
+    "properties": {
+      "distribution": {
+        "items": {
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "group_display_name": {
+              "type": "string"
+            },
+            "group_key": {
+              "type": "string"
+            },
+            "percent": {
+              "type": "number"
+            },
+            "platform": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "groups": {
+        "items": {
+          "properties": {
+            "group_display_name": {
+              "type": "string"
+            },
+            "group_key": {
+              "type": "string"
+            },
+            "total_count": {
+              "type": "integer"
+            },
+            "total_percent": {
+              "type": "number"
+            },
+            "versions": {
+              "items": {
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "group_display_name": {
+                    "type": "string"
+                  },
+                  "group_key": {
+                    "type": "string"
+                  },
+                  "percent": {
+                    "type": "number"
+                  },
+                  "platform": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total_nodes": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/readiness": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "blocked_nodes": {
+              "type": "integer"
+            },
+            "needs_review_nodes": {
+              "type": "integer"
+            },
+            "ready_nodes": {
+              "type": "integer"
+            },
+            "ready_percent": {
+              "type": "number"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "total_nodes": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/readiness/trend": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "blocked_by": {
+              "properties": {
+                "chefspec": {
+                  "type": "integer"
+                },
+                "cookstyle": {
+                  "type": "integer"
+                },
+                "disk": {
+                  "type": "integer"
+                },
+                "foodcritic": {
+                  "type": "integer"
+                },
+                "test_kitchen": {
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "blocked_nodes": {
+              "type": "integer"
+            },
+            "collection_run_org": {
+              "type": "string"
+            },
+            "completed_at": {
+              "type": "string"
+            },
+            "filter_limited": {
+              "type": "boolean"
+            },
+            "needs_review_nodes": {
+              "type": "integer"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "ready_nodes": {
+              "type": "integer"
+            },
+            "ready_percent": {
+              "type": "number"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "total_nodes": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/stale/trend": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "collection_run_org": {
+              "type": "string"
+            },
+            "completed_at": {
+              "type": "string"
+            },
+            "critical_nodes": {
+              "type": "integer"
+            },
+            "fresh_nodes": {
+              "type": "integer"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "stale_nodes": {
+              "type": "integer"
+            },
+            "total_nodes": {
+              "type": "integer"
+            },
+            "warning_nodes": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/test-kitchen-compatibility": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "failed_repos": {
+              "type": "integer"
+            },
+            "partial_repos": {
+              "type": "integer"
+            },
+            "passed_percent": {
+              "type": "number"
+            },
+            "passed_repos": {
+              "type": "integer"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "timed_out_repos": {
+              "type": "integer"
+            },
+            "total_repos": {
+              "type": "integer"
+            },
+            "untested_clone_failed_repos": {
+              "type": "integer"
+            },
+            "untested_pending_scan_repos": {
+              "type": "integer"
+            },
+            "untested_repos": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/version-distribution": {
+    "properties": {
+      "distribution": {
+        "items": {
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "percent": {
+              "type": "number"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total_nodes": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/dashboard/version-distribution/trend": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "collection_run_org": {
+              "type": "string"
+            },
+            "completed_at": {
+              "type": "string"
+            },
+            "distribution": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "total_nodes": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/failure-register": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "cookbook_name": {
+              "type": "string"
+            },
+            "diagnosis": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "string"
+            },
+            "holder_ref": {
+              "type": "string"
+            },
+            "holder_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "plan": {
+              "type": "string"
+            },
+            "raised_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "raised_by": {
+              "type": "string"
+            },
+            "raised_origin": {
+              "type": "string"
+            },
+            "raised_origin_name": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "resolution_note": {
+              "type": "string"
+            },
+            "resolved_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "resolved_by": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "subject_name": {
+              "type": "string"
+            },
+            "subject_type": {
+              "type": "string"
+            },
+            "superseded_by": {
+              "type": "string"
+            },
+            "target_date": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "verdict": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "summary": {
+        "properties": {
+          "open": {
+            "type": "integer"
+          },
+          "open_broken": {
+            "type": "integer"
+          },
+          "open_not_broken": {
+            "type": "integer"
+          },
+          "open_overdue": {
+            "type": "integer"
+          },
+          "open_without_holder": {
+            "type": "integer"
+          },
+          "raised_in_window": {
+            "type": "integer"
+          },
+          "resolved": {
+            "type": "integer"
+          },
+          "resolved_in_window": {
+            "type": "integer"
+          },
+          "total_broken": {
+            "type": "integer"
+          },
+          "total_not_broken": {
+            "type": "integer"
+          },
+          "window_days": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/failure-register/subject/{subject_type}/{subject_name}": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "cookbook_name": {
+              "type": "string"
+            },
+            "diagnosis": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "string"
+            },
+            "holder_ref": {
+              "type": "string"
+            },
+            "holder_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "plan": {
+              "type": "string"
+            },
+            "raised_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "raised_by": {
+              "type": "string"
+            },
+            "raised_origin": {
+              "type": "string"
+            },
+            "raised_origin_name": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "resolution_note": {
+              "type": "string"
+            },
+            "resolved_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "resolved_by": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "subject_name": {
+              "type": "string"
+            },
+            "subject_type": {
+              "type": "string"
+            },
+            "superseded_by": {
+              "type": "string"
+            },
+            "target_date": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "verdict": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/failure-register/{id}": {
+    "properties": {
+      "cookbook_name": {
+        "type": "string"
+      },
+      "diagnosis": {
+        "type": "string"
+      },
+      "evidence": {
+        "type": "string"
+      },
+      "holder_ref": {
+        "type": "string"
+      },
+      "holder_type": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "plan": {
+        "type": "string"
+      },
+      "raised_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "raised_by": {
+        "type": "string"
+      },
+      "raised_origin": {
+        "type": "string"
+      },
+      "raised_origin_name": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "resolution_note": {
+        "type": "string"
+      },
+      "resolved_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "resolved_by": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "subject_name": {
+        "type": "string"
+      },
+      "subject_type": {
+        "type": "string"
+      },
+      "superseded_by": {
+        "type": "string"
+      },
+      "target_date": {
+        "type": "string"
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "verdict": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/features": {
+    "properties": {
+      "run_events": {
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/complexity-labels": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/environments": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/platforms": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "display_name": {
+              "type": "string"
+            },
+            "group_display_name": {
+              "type": "string"
+            },
+            "group_key": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/policy-groups": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/policy-names": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/roles": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/run-chef-versions": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/run-organisations": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/tags": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/filters/target-chef-versions": {
+    "properties": {
+      "data": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/git-repos": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "clone_error": {
+              "type": "string"
+            },
+            "clone_status": {
+              "type": "string"
+            },
+            "compatibility": {
+              "type": "string"
+            },
+            "cookstyle_status": {
+              "type": "string"
+            },
+            "default_branch": {
+              "type": "string"
+            },
+            "git_repo_url": {
+              "type": "string"
+            },
+            "has_test_suite": {
+              "type": "boolean"
+            },
+            "head_commit_sha": {
+              "type": "string"
+            },
+            "human_verdict": {
+              "type": "string"
+            },
+            "human_verdict_reason": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "last_fetched_at": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "tk_passed": {
+              "type": "integer"
+            },
+            "tk_status": {
+              "type": "string"
+            },
+            "tk_total": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/git-repos/excluded": {
+    "items": {
+      "properties": {
+        "clone_error": {
+          "type": "string"
+        },
+        "clone_status": {
+          "type": "string"
+        },
+        "compatibility_status": {
+          "type": "string"
+        },
+        "cookstyle_status": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "default_branch": {
+          "type": "string"
+        },
+        "git_repo_url": {
+          "type": "string"
+        },
+        "has_test_suite": {
+          "type": "boolean"
+        },
+        "head_commit_sha": {
+          "type": "string"
+        },
+        "kitchen_exclude_reason": {
+          "type": "string"
+        },
+        "kitchen_excluded": {
+          "type": "boolean"
+        },
+        "kitchen_excluded_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "kitchen_excluded_by": {
+          "type": "string"
+        },
+        "last_fetched_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tk_passed": {
+          "type": "integer"
+        },
+        "tk_status": {
+          "type": "string"
+        },
+        "tk_total": {
+          "type": "integer"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/git-repos/{name}": {
+    "properties": {
+      "git_repos": {
+        "items": {
+          "properties": {
+            "complexity": {
+              "items": {
+                "properties": {
+                  "affected_node_count": {
+                    "type": "integer"
+                  },
+                  "affected_policy_count": {
+                    "type": "integer"
+                  },
+                  "affected_role_count": {
+                    "type": "integer"
+                  },
+                  "auto_correctable_count": {
+                    "type": "integer"
+                  },
+                  "complexity_label": {
+                    "type": "string"
+                  },
+                  "complexity_score": {
+                    "type": "integer"
+                  },
+                  "correctness_count": {
+                    "type": "integer"
+                  },
+                  "created_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "deprecation_count": {
+                    "type": "integer"
+                  },
+                  "error_count": {
+                    "type": "integer"
+                  },
+                  "evaluated_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "git_repo_name": {
+                    "type": "string"
+                  },
+                  "git_repo_url": {
+                    "type": "string"
+                  },
+                  "manual_fix_count": {
+                    "type": "integer"
+                  },
+                  "modernize_count": {
+                    "type": "integer"
+                  },
+                  "target_chef_version": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "cookstyle": {
+              "items": {
+                "properties": {
+                  "commit_sha": {
+                    "type": "string"
+                  },
+                  "cookstyle_status": {
+                    "type": "string"
+                  },
+                  "correctness_count": {
+                    "type": "integer"
+                  },
+                  "created_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "deprecation_count": {
+                    "type": "integer"
+                  },
+                  "deprecation_warnings": {
+                    "format": "byte",
+                    "type": "string"
+                  },
+                  "duration_seconds": {
+                    "type": "integer"
+                  },
+                  "error_message": {
+                    "type": "string"
+                  },
+                  "git_repo_name": {
+                    "type": "string"
+                  },
+                  "git_repo_url": {
+                    "type": "string"
+                  },
+                  "offence_count": {
+                    "type": "integer"
+                  },
+                  "offences": {
+                    "format": "byte",
+                    "type": "string"
+                  },
+                  "passed": {
+                    "type": "boolean"
+                  },
+                  "process_stderr": {
+                    "type": "string"
+                  },
+                  "process_stdout": {
+                    "type": "string"
+                  },
+                  "scanned_at": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "target_chef_version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "git_repo": {
+              "properties": {
+                "clone_error": {
+                  "type": "string"
+                },
+                "clone_status": {
+                  "type": "string"
+                },
+                "compatibility_status": {
+                  "type": "string"
+                },
+                "cookstyle_status": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "default_branch": {
+                  "type": "string"
+                },
+                "git_repo_url": {
+                  "type": "string"
+                },
+                "has_test_suite": {
+                  "type": "boolean"
+                },
+                "head_commit_sha": {
+                  "type": "string"
+                },
+                "kitchen_exclude_reason": {
+                  "type": "string"
+                },
+                "kitchen_excluded": {
+                  "type": "boolean"
+                },
+                "kitchen_excluded_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "kitchen_excluded_by": {
+                  "type": "string"
+                },
+                "last_fetched_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "tk_passed": {
+                  "type": "integer"
+                },
+                "tk_status": {
+                  "type": "string"
+                },
+                "tk_total": {
+                  "type": "integer"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "ownership": {
+              "properties": {
+                "derived": {
+                  "type": "boolean"
+                },
+                "owners": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "tk_passed": {
+              "type": "integer"
+            },
+            "tk_status": {
+              "type": "string"
+            },
+            "tk_total": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "name": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/git-repos/{name}/files": {
+    "items": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/git-repos/{name}/files/content": {
+    "properties": {
+      "content": {
+        "type": "string"
+      },
+      "encoding": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "size": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/hypervisor/templates": {
+    "items": {
+      "properties": {
+        "guest_os": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "last_modified": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/hypervisor/vms": {
+    "items": {
+      "properties": {
+        "actual_destroy_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "batch_id": {
+          "type": "string"
+        },
+        "cookbook_name": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "expected_destroy_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "hypervisor_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "platform_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "suite_name": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "vm_name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/kitchen/analysis/cookbooks": {
+    "items": {
+      "properties": {
+        "analysed_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "driver_name": {
+          "type": "string"
+        },
+        "error_message": {
+          "type": "string"
+        },
+        "extensions": {},
+        "git_repo_name": {
+          "type": "string"
+        },
+        "git_repo_url": {
+          "type": "string"
+        },
+        "has_local_override": {
+          "type": "boolean"
+        },
+        "head_commit_sha": {
+          "type": "string"
+        },
+        "kitchen_files": {},
+        "local_override_keys": {},
+        "platforms": {},
+        "provisioner_name": {
+          "type": "string"
+        },
+        "require_chef_omnibus": {
+          "type": "boolean"
+        },
+        "suites": {},
+        "transport_type": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "variant_files": {}
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/kitchen/analysis/cookbooks/{name}": {
+    "properties": {
+      "analysed_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "created_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "driver_name": {
+        "type": "string"
+      },
+      "error_message": {
+        "type": "string"
+      },
+      "extensions": {},
+      "git_repo_name": {
+        "type": "string"
+      },
+      "git_repo_url": {
+        "type": "string"
+      },
+      "has_local_override": {
+        "type": "boolean"
+      },
+      "head_commit_sha": {
+        "type": "string"
+      },
+      "kitchen_files": {},
+      "local_override_keys": {},
+      "platforms": {},
+      "provisioner_name": {
+        "type": "string"
+      },
+      "require_chef_omnibus": {
+        "type": "boolean"
+      },
+      "suites": {},
+      "transport_type": {
+        "type": "string"
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "variant_files": {}
+    },
+    "type": "object"
+  },
+  "GET /api/v1/kitchen/analysis/platforms": {
+    "items": {
+      "properties": {
+        "common_extensions": {},
+        "cookbook_count": {
+          "type": "integer"
+        },
+        "has_extensions": {
+          "type": "boolean"
+        },
+        "normalised_name": {
+          "type": "string"
+        },
+        "os_family": {
+          "type": "string"
+        },
+        "os_version": {
+          "type": "string"
+        },
+        "platform_name": {
+          "type": "string"
+        },
+        "transport_type": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/kitchen/analysis/summary": {
+    "properties": {
+      "driver_counts": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "platform_count": {
+        "type": "integer"
+      },
+      "provisioner_counts": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "total_scanned": {
+        "type": "integer"
+      },
+      "total_with_conflicts": {
+        "type": "integer"
+      },
+      "total_with_local_override": {
+        "type": "integer"
+      },
+      "total_without_kitchen": {
+        "type": "integer"
+      },
+      "transport_counts": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/kitchen/queue/{id}": {
+    "properties": {
+      "batch_id": {
+        "type": "string"
+      },
+      "completed_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "cookbook_source": {
+        "type": "string"
+      },
+      "enqueued_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "error_message": {
+        "type": "string"
+      },
+      "git_repo_name": {
+        "type": "string"
+      },
+      "git_repo_url": {
+        "type": "string"
+      },
+      "head_commit_sha": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "instance_name": {
+        "type": "string"
+      },
+      "node_name": {
+        "type": "string"
+      },
+      "organisation_name": {
+        "type": "string"
+      },
+      "output": {
+        "type": "string"
+      },
+      "platform_name": {
+        "type": "string"
+      },
+      "priority": {
+        "type": "integer"
+      },
+      "retry_of": {
+        "type": "string"
+      },
+      "run_type": {
+        "type": "string"
+      },
+      "started_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "suite_name": {
+        "type": "string"
+      },
+      "target_chef_version": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/logs": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "chef_client_version": {
+              "type": "string"
+            },
+            "collection_run_org": {
+              "type": "string"
+            },
+            "commit_sha": {
+              "type": "string"
+            },
+            "cookbook_name": {
+              "type": "string"
+            },
+            "cookbook_version": {
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "export_job_id": {
+              "type": "string"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "notification_channel": {
+              "type": "string"
+            },
+            "organisation": {
+              "type": "string"
+            },
+            "process_output": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string"
+            },
+            "timestamp": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "tls_domain": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/logs/collection-runs": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "organisation_name": {
+              "type": "string"
+            },
+            "run": {
+              "properties": {
+                "checkpoint_start": {
+                  "type": "integer"
+                },
+                "completed_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "error_message": {
+                  "type": "string"
+                },
+                "nodes_collected": {
+                  "type": "integer"
+                },
+                "organisation_name": {
+                  "type": "string"
+                },
+                "started_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "total_nodes": {
+                  "type": "integer"
+                },
+                "updated_at": {
+                  "format": "date-time",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/logs/{id}": {
+    "properties": {
+      "chef_client_version": {
+        "type": "string"
+      },
+      "collection_run_org": {
+        "type": "string"
+      },
+      "commit_sha": {
+        "type": "string"
+      },
+      "cookbook_name": {
+        "type": "string"
+      },
+      "cookbook_version": {
+        "type": "string"
+      },
+      "created_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "export_job_id": {
+        "type": "string"
+      },
+      "id": {
+        "type": "integer"
+      },
+      "message": {
+        "type": "string"
+      },
+      "notification_channel": {
+        "type": "string"
+      },
+      "organisation": {
+        "type": "string"
+      },
+      "process_output": {
+        "type": "string"
+      },
+      "scope": {
+        "type": "string"
+      },
+      "severity": {
+        "type": "string"
+      },
+      "timestamp": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "tls_domain": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/nodes": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "available_disk_mb": {
+              "type": "integer"
+            },
+            "chef_environment": {
+              "type": "string"
+            },
+            "chef_version": {
+              "type": "string"
+            },
+            "collected_at": {
+              "type": "string"
+            },
+            "disk_detail": {
+              "type": "string"
+            },
+            "disk_status": {
+              "type": "string"
+            },
+            "is_stale": {
+              "type": "boolean"
+            },
+            "migration_state": {
+              "type": "string"
+            },
+            "node_name": {
+              "type": "string"
+            },
+            "ohai_time": {
+              "type": "number"
+            },
+            "ohai_time_age_hours": {
+              "type": "number"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "platform_display_name": {
+              "type": "string"
+            },
+            "platform_family": {
+              "type": "string"
+            },
+            "platform_version": {
+              "type": "string"
+            },
+            "policy_group": {
+              "type": "string"
+            },
+            "policy_name": {
+              "type": "string"
+            },
+            "readiness": {
+              "items": {
+                "properties": {
+                  "all_cookbooks_compatible": {
+                    "type": "boolean"
+                  },
+                  "blocking_cookbook_count": {
+                    "type": "integer"
+                  },
+                  "cookstyle_detail": {
+                    "type": "string"
+                  },
+                  "cookstyle_status": {
+                    "type": "string"
+                  },
+                  "disk_detail": {
+                    "type": "string"
+                  },
+                  "disk_status": {
+                    "type": "string"
+                  },
+                  "install_path": {
+                    "type": "string"
+                  },
+                  "is_ready": {
+                    "type": "boolean"
+                  },
+                  "kitchen_detail": {
+                    "type": "string"
+                  },
+                  "kitchen_status": {
+                    "type": "string"
+                  },
+                  "review_cookbook_count": {
+                    "type": "integer"
+                  },
+                  "stale_data": {
+                    "type": "boolean"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "sufficient_disk_space": {
+                    "type": "boolean"
+                  },
+                  "target_chef_version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "ready_to_activate": {
+              "type": "boolean"
+            },
+            "required_disk_mb": {
+              "type": "integer"
+            },
+            "staleness_tier": {
+              "type": "string"
+            },
+            "sufficient_disk_space": {
+              "type": "boolean"
+            },
+            "target_converge_status": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/nodes/by-cookbook/{cookbook_name}": {
+    "properties": {
+      "cookbook_name": {
+        "type": "string"
+      },
+      "data": {
+        "items": {
+          "properties": {
+            "node": {
+              "properties": {
+                "active_chef_version": {
+                  "type": "string"
+                },
+                "available_disk_mb": {
+                  "type": "integer"
+                },
+                "chef_environment": {
+                  "type": "string"
+                },
+                "chef_version": {
+                  "type": "string"
+                },
+                "collected_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "collection_run_org": {
+                  "type": "string"
+                },
+                "cookbooks": {},
+                "created_at": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "custom_attributes": {},
+                "dormant_chef_version": {
+                  "type": "string"
+                },
+                "dormant_installed": {
+                  "type": "boolean"
+                },
+                "filesystem": {},
+                "is_stale": {
+                  "type": "boolean"
+                },
+                "migration_state": {
+                  "type": "string"
+                },
+                "node_name": {
+                  "type": "string"
+                },
+                "ohai_time": {
+                  "type": "number"
+                },
+                "organisation_name": {
+                  "type": "string"
+                },
+                "platform": {
+                  "type": "string"
+                },
+                "platform_caption": {
+                  "type": "string"
+                },
+                "platform_family": {
+                  "type": "string"
+                },
+                "platform_version": {
+                  "type": "string"
+                },
+                "policy_group": {
+                  "type": "string"
+                },
+                "policy_name": {
+                  "type": "string"
+                },
+                "required_disk_mb": {
+                  "type": "integer"
+                },
+                "roles": {},
+                "run_list": {},
+                "sufficient_disk_space": {
+                  "type": "boolean"
+                },
+                "tags": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "target_converge_status": {
+                  "type": "string"
+                },
+                "target_execution_time": {
+                  "type": "string"
+                },
+                "target_version": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "organisation_name": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/nodes/by-version/{chef_version}": {
+    "properties": {
+      "chef_version": {
+        "type": "string"
+      },
+      "data": {
+        "items": {
+          "properties": {
+            "active_chef_version": {
+              "type": "string"
+            },
+            "available_disk_mb": {
+              "type": "integer"
+            },
+            "chef_environment": {
+              "type": "string"
+            },
+            "chef_version": {
+              "type": "string"
+            },
+            "collected_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "collection_run_org": {
+              "type": "string"
+            },
+            "cookbooks": {},
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "custom_attributes": {},
+            "dormant_chef_version": {
+              "type": "string"
+            },
+            "dormant_installed": {
+              "type": "boolean"
+            },
+            "filesystem": {},
+            "is_stale": {
+              "type": "boolean"
+            },
+            "migration_state": {
+              "type": "string"
+            },
+            "node_name": {
+              "type": "string"
+            },
+            "ohai_time": {
+              "type": "number"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "platform_caption": {
+              "type": "string"
+            },
+            "platform_family": {
+              "type": "string"
+            },
+            "platform_version": {
+              "type": "string"
+            },
+            "policy_group": {
+              "type": "string"
+            },
+            "policy_name": {
+              "type": "string"
+            },
+            "required_disk_mb": {
+              "type": "integer"
+            },
+            "roles": {},
+            "run_list": {},
+            "sufficient_disk_space": {
+              "type": "boolean"
+            },
+            "tags": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "target_converge_status": {
+              "type": "string"
+            },
+            "target_execution_time": {
+              "type": "string"
+            },
+            "target_version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/nodes/disks/{organisation}/{name}": {
+    "properties": {
+      "disks": {
+        "items": {
+          "properties": {
+            "device": {
+              "type": "string"
+            },
+            "drive_type": {
+              "type": "string"
+            },
+            "encryption_status": {
+              "type": "string"
+            },
+            "fs_type": {
+              "type": "string"
+            },
+            "inodes_available": {
+              "type": "integer"
+            },
+            "inodes_percent_used": {
+              "type": "integer"
+            },
+            "inodes_used": {
+              "type": "integer"
+            },
+            "kb_available": {
+              "type": "integer"
+            },
+            "kb_size": {
+              "type": "integer"
+            },
+            "kb_used": {
+              "type": "integer"
+            },
+            "mount": {
+              "type": "string"
+            },
+            "mount_options": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "percent_used": {
+              "type": "integer"
+            },
+            "total_inodes": {
+              "type": "integer"
+            },
+            "uuid": {
+              "type": "string"
+            },
+            "volume_name": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "node_name": {
+        "type": "string"
+      },
+      "organisation_name": {
+        "type": "string"
+      },
+      "platform": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/nodes/runs/{organisation}/{name}": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "chef_version": {
+              "type": "string"
+            },
+            "cookbooks": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "end_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "error": {},
+            "failed_resource": {},
+            "run_id": {
+              "type": "string"
+            },
+            "run_list": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "shape": {
+              "type": "string"
+            },
+            "start_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "total_resource_count": {
+              "type": "integer"
+            },
+            "updated_resource_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/nodes/{organisation}/{name}": {
+    "properties": {
+      "install_path": {
+        "type": "string"
+      },
+      "min_remaining_free_percent": {
+        "type": "integer"
+      },
+      "node": {
+        "properties": {
+          "active_chef_version": {
+            "type": "string"
+          },
+          "available_disk_mb": {
+            "type": "integer"
+          },
+          "chef_environment": {
+            "type": "string"
+          },
+          "chef_version": {
+            "type": "string"
+          },
+          "collected_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "collection_run_org": {
+            "type": "string"
+          },
+          "cookbooks": {},
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "custom_attributes": {},
+          "dormant_chef_version": {
+            "type": "string"
+          },
+          "dormant_installed": {
+            "type": "boolean"
+          },
+          "filesystem": {},
+          "is_stale": {
+            "type": "boolean"
+          },
+          "migration_state": {
+            "type": "string"
+          },
+          "node_name": {
+            "type": "string"
+          },
+          "ohai_time": {
+            "type": "number"
+          },
+          "organisation_name": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "platform_caption": {
+            "type": "string"
+          },
+          "platform_family": {
+            "type": "string"
+          },
+          "platform_version": {
+            "type": "string"
+          },
+          "policy_group": {
+            "type": "string"
+          },
+          "policy_name": {
+            "type": "string"
+          },
+          "required_disk_mb": {
+            "type": "integer"
+          },
+          "roles": {},
+          "run_list": {},
+          "sufficient_disk_space": {
+            "type": "boolean"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "target_converge_status": {
+            "type": "string"
+          },
+          "target_execution_time": {
+            "type": "string"
+          },
+          "target_version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "organisation_name": {
+        "type": "string"
+      },
+      "ownership": {
+        "properties": {
+          "derived": {
+            "type": "boolean"
+          },
+          "owners": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "platform_display_name": {
+        "type": "string"
+      },
+      "readiness": {
+        "items": {
+          "properties": {
+            "all_cookbooks_compatible": {
+              "type": "boolean"
+            },
+            "available_disk_mb": {
+              "type": "integer"
+            },
+            "blocking_cookbooks": {},
+            "cookstyle_status": {
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "evaluated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "is_ready": {
+              "type": "boolean"
+            },
+            "kitchen_status": {
+              "type": "string"
+            },
+            "node_name": {
+              "type": "string"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "required_disk_mb": {
+              "type": "integer"
+            },
+            "review_cookbooks": {},
+            "stale_data": {
+              "type": "boolean"
+            },
+            "status": {
+              "type": "string"
+            },
+            "sufficient_disk_space": {
+              "type": "boolean"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total_disk_mb": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/nodes/{organisation}/{name}/dependency-graph": {
+    "properties": {
+      "edges": {
+        "items": {
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "metadata": {
+        "properties": {
+          "incompatible_cookbooks": {
+            "type": "integer"
+          },
+          "tk_failed_cookbooks": {
+            "type": "integer"
+          },
+          "total_cookbooks": {
+            "type": "integer"
+          },
+          "total_roles": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "nodes": {
+        "items": {
+          "properties": {
+            "compatibility_status": {
+              "type": "string"
+            },
+            "complexity_label": {
+              "type": "string"
+            },
+            "complexity_score": {
+              "type": "integer"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "tk_status": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/organisations": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "chef_server_url": {
+              "type": "string"
+            },
+            "client_name": {
+              "type": "string"
+            },
+            "credential_source": {
+              "type": "string"
+            },
+            "last_collected_at": {
+              "type": "string"
+            },
+            "last_collection_status": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "node_count": {
+              "type": "integer"
+            },
+            "org_name": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/organisations/{name}": {
+    "properties": {
+      "chef_server_url": {
+        "type": "string"
+      },
+      "client_key_credential_name": {
+        "type": "string"
+      },
+      "client_name": {
+        "type": "string"
+      },
+      "created_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "org_name": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/owners": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "assignment_counts": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "contact_channel": {
+              "type": "string"
+            },
+            "contact_email": {
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "metadata": {},
+            "name": {
+              "type": "string"
+            },
+            "owner_type": {
+              "type": "string"
+            },
+            "readiness": {
+              "properties": {
+                "blocked": {
+                  "type": "integer"
+                },
+                "ready": {
+                  "type": "integer"
+                },
+                "stale": {
+                  "type": "integer"
+                },
+                "target_chef_version": {
+                  "type": "string"
+                },
+                "total_nodes": {
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/owners/{name}/assignments": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "assignment_source": {
+              "type": "string"
+            },
+            "auto_rule_name": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "entity_key": {
+              "type": "string"
+            },
+            "entity_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "notes": {
+              "type": "string"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "owner_name": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/ownership/audit-log": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "actor": {
+              "type": "string"
+            },
+            "details": {},
+            "entity_key": {
+              "type": "string"
+            },
+            "entity_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "organisation": {
+              "type": "string"
+            },
+            "owner_name": {
+              "type": "string"
+            },
+            "timestamp": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/remediation/priority": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "affected_node_count": {
+              "type": "integer"
+            },
+            "affected_role_count": {
+              "type": "integer"
+            },
+            "auto_correctable_count": {
+              "type": "integer"
+            },
+            "complexity_label": {
+              "type": "string"
+            },
+            "complexity_score": {
+              "type": "integer"
+            },
+            "cookbook_name": {
+              "type": "string"
+            },
+            "cookbook_version": {
+              "type": "string"
+            },
+            "deprecation_count": {
+              "type": "integer"
+            },
+            "error_count": {
+              "type": "integer"
+            },
+            "manual_fix_count": {
+              "type": "integer"
+            },
+            "organisation_name": {
+              "type": "string"
+            },
+            "priority_score": {
+              "type": "integer"
+            },
+            "target_chef_version": {
+              "type": "string"
+            },
+            "version_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "target_chef_version": {
+        "type": "string"
+      },
+      "total_auto_correctable": {
+        "type": "integer"
+      },
+      "total_cookbooks": {
+        "type": "integer"
+      },
+      "total_deprecations": {
+        "type": "integer"
+      },
+      "total_errors": {
+        "type": "integer"
+      },
+      "total_manual_fix": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/remediation/summary": {
+    "properties": {
+      "blocked_nodes_by_complexity": {
+        "type": "integer"
+      },
+      "blocked_nodes_by_readiness": {
+        "type": "integer"
+      },
+      "manual_fixes": {
+        "type": "integer"
+      },
+      "quick_wins": {
+        "type": "integer"
+      },
+      "target_chef_version": {
+        "type": "string"
+      },
+      "total_auto_correctable": {
+        "type": "integer"
+      },
+      "total_cookbooks_evaluated": {
+        "type": "integer"
+      },
+      "total_manual_fix": {
+        "type": "integer"
+      },
+      "total_needing_remediation": {
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/roles": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "compatibility_status": {
+              "type": "string"
+            },
+            "compatible_count": {
+              "type": "integer"
+            },
+            "direct_cookbook_count": {
+              "type": "integer"
+            },
+            "incompatible_count": {
+              "type": "integer"
+            },
+            "node_count": {
+              "type": "integer"
+            },
+            "organisations": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "role_name": {
+              "type": "string"
+            },
+            "tk_status": {
+              "type": "string"
+            },
+            "total_cookbook_count": {
+              "type": "integer"
+            },
+            "transitive_cookbook_count": {
+              "type": "integer"
+            },
+            "untested_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "summary": {
+        "properties": {
+          "compatible_roles": {
+            "type": "integer"
+          },
+          "incompatible_roles": {
+            "type": "integer"
+          },
+          "target_chef_version": {
+            "type": "string"
+          },
+          "total_roles": {
+            "type": "integer"
+          },
+          "untested_roles": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/roles/{name}": {
+    "properties": {
+      "blocking_cookbooks": {
+        "items": {
+          "properties": {
+            "auto_correctable": {
+              "type": "integer"
+            },
+            "complexity_label": {
+              "type": "string"
+            },
+            "complexity_score": {
+              "type": "integer"
+            },
+            "cookbook_name": {
+              "type": "string"
+            },
+            "cookbook_version": {
+              "type": "string"
+            },
+            "dependency_path": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "manual_fix": {
+              "type": "integer"
+            },
+            "target_chef_version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "direct_cookbooks": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "direct_roles": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "nested_role_chain": {
+        "properties": {
+          "children": {
+            "items": "(recursive) datastore.RoleChainNode",
+            "type": "array"
+          },
+          "compatibility_status": {
+            "type": "string"
+          },
+          "complexity_score": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tk_status": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "node_count": {
+        "type": "integer"
+      },
+      "nodes_by_environment": {
+        "items": {
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "environment": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "nodes_by_organisation": {
+        "items": {
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "organisation": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "nodes_by_platform": {
+        "items": {
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "platform_version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "organisations": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "role_name": {
+        "type": "string"
+      },
+      "transitive_cookbooks": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/roles/{name}/dependency-graph": {
+    "properties": {
+      "edges": {
+        "items": {
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "metadata": {
+        "properties": {
+          "incompatible_cookbooks": {
+            "type": "integer"
+          },
+          "total_cookbooks": {
+            "type": "integer"
+          },
+          "total_roles": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "nodes": {
+        "items": {
+          "properties": {
+            "compatibility_status": {
+              "type": "string"
+            },
+            "complexity_label": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/run-events/nodes": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "chef_server_fqdn": {
+              "type": "string"
+            },
+            "chef_version": {
+              "type": "string"
+            },
+            "cookbooks": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "end_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "error": {},
+            "failed_resource": {},
+            "node_name": {
+              "type": "string"
+            },
+            "organisation": {
+              "type": "string"
+            },
+            "run_id": {
+              "type": "string"
+            },
+            "run_list": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "shape": {
+              "type": "string"
+            },
+            "source_fqdn": {
+              "type": "string"
+            },
+            "start_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "total_resource_count": {
+              "type": "integer"
+            },
+            "updated_resource_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/run-events/nodes/{organisation}/{name}": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "chef_version": {
+              "type": "string"
+            },
+            "cookbooks": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "end_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "error": {},
+            "failed_resource": {},
+            "run_id": {
+              "type": "string"
+            },
+            "run_list": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "shape": {
+              "type": "string"
+            },
+            "start_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "total_resource_count": {
+              "type": "integer"
+            },
+            "updated_resource_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "node": {
+        "type": "string"
+      },
+      "organisation": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/run-events/runs": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "chef_server_fqdn": {
+              "type": "string"
+            },
+            "chef_version": {
+              "type": "string"
+            },
+            "cookbooks": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "end_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "error": {},
+            "failed_resource": {},
+            "node_name": {
+              "type": "string"
+            },
+            "organisation": {
+              "type": "string"
+            },
+            "run_id": {
+              "type": "string"
+            },
+            "run_list": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "shape": {
+              "type": "string"
+            },
+            "source_fqdn": {
+              "type": "string"
+            },
+            "start_time": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "total_resource_count": {
+              "type": "integer"
+            },
+            "updated_resource_count": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/saved-filters": {
+    "items": {
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "filters": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "owner_username": {
+          "type": "string"
+        },
+        "shared": {
+          "type": "boolean"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "view": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/server/tls-status": {
+    "properties": {
+      "degraded": {
+        "type": "boolean"
+      },
+      "kind": {
+        "type": "string"
+      },
+      "reason": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/version": {
+    "properties": {
+      "schema_version": {
+        "type": "integer"
+      },
+      "version": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/analysis-tools": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/auth": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/backup": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/collection": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/concurrency": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/exports": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/git-urls": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/ingest": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/logging": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/organisations": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/readiness": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/server": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/target-versions": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/test-kitchen": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  }
+}

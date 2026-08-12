@@ -141,3 +141,10 @@ elasticsearch/
 # =============================================================================
 docker-compose.override.yml
 docker-compose.override.yaml
+
+# Developer tooling — never part of an image.
+tools/
+
+# API probe output — a generated capture, never part of a build.
+tools/api-probe/*.json
+probe*.json

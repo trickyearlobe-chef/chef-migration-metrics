@@ -33,6 +33,35 @@ type SessionInfo struct {
 	AuthProvider string
 	Role         string
 	ExpiresAt    time.Time
+
+	// AccessMethod is how this caller got in — AccessMethodScreen or
+	// AccessMethodCredential.
+	//
+	// It sits here, beside the provider, because the session is the one thing
+	// about a request that the caller cannot write. A header or a client name
+	// would be a claim, and a claim recorded against somebody's judgement reads
+	// as fact without being one.
+	//
+	// Empty means a session that predates this field or a test that did not set
+	// it; treat it as a screen, which is what every session was until
+	// credentials existed.
+	AccessMethod string
+
+	// CredentialID and CredentialName say which credential, when one was used.
+	// Empty for a screen. The name is what a later reader sees, because an id
+	// tells them nothing about who set it up or what for.
+	CredentialID   string
+	CredentialName string
+
+	// CredentialCanWrite is what its owner chose when they made it. Meaningless
+	// for a screen, where the role decides.
+	CredentialCanWrite bool
+}
+
+// IsCredential reports whether this caller got in with a credential rather
+// than at a screen.
+func (s *SessionInfo) IsCredential() bool {
+	return s.AccessMethod == AccessMethodCredential
 }
 
 // IsAdmin returns true if the session has the admin role.
@@ -178,6 +207,9 @@ func (m *SessionManager) ValidateSession(ctx context.Context, token string) (*Se
 		AuthProvider: sess.AuthProvider,
 		Role:         sess.Role,
 		ExpiresAt:    sess.ExpiresAt,
+		// A session row is only ever made by a login screen. A credential does
+		// not create one, so this is not a guess.
+		AccessMethod: AccessMethodScreen,
 	}, nil
 }
 

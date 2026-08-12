@@ -19,6 +19,8 @@ no grouping, inconsistent GET/PUT shapes (some return the section directly, some
   form/toggle kit instead of per-page bespoke markup.
 - [ ] While refactoring, unify the admin-config GET/PUT response shape (direct vs
   `{value}`) so the frontend `api/config.ts` helpers stop special-casing.
+  Held by `TestDebt_EverySettingsSectionAnswersTheSameShape` (`make debt`) — red until it
+  is done, green by itself when it is.
 
 ---
 
@@ -663,3 +665,49 @@ of wrapper and handler — and add a test that probes each operation with a view
 the declaration and the behaviour disagree. Until then the served description understates the
 requirement on 37 operations, saying "authenticated" where the answer is operator or admin, so a
 generated client built on a viewer credential meets 403s the document did not predict.
+
+---
+
+## API credentials — the shortcuts taken
+
+Recorded 2026-08-12 (`feature/assistant-credential`).
+
+- [ ] **A credential never expires.** There is no expiry column and nothing prunes.
+  Destroying one is immediate and is the only way it stops working, so a credential
+  copied out of somebody's editor configuration works until they notice. **Proper fix:**
+  an optional expiry chosen when it is made, and a listing that shows what is close to
+  it. Not asked for in the journey, so deliberately left out of the first cut.
+- [ ] **Nothing tells its owner a credential has been used from somewhere new.** The last
+  used timestamp is the whole of the signal, and it is written at most once a minute.
+- [ ] **Every non-GET counts as a write.** A read-only credential therefore cannot call
+  the POST-shaped endpoints that only preview or profile something (an ownership import
+  preview, for instance). Deliberate — deciding case by case which POSTs are harmless is
+  how a scope rule stops being one — but it is a real limitation if a tool ever needs to
+  preview.
+- [ ] **A writing credential can create a register entry and nothing else, including in
+  the register.** Revising and resolving are barred because neither records what made the
+  change. See `plans/todo-audit.md`; the attribution has to come first, in that order.
+
+## From the API description work (measured 2026-08-12)
+
+- [ ] **A body with a field the service does not understand is accepted and silently
+  dropped.** Every call that reads a JSON body decodes without rejecting unknown fields, and
+  the settings sections read YAML the same way — 37 decode sites, none strict. So a caller who
+  misspells a field, or sends one from an older version, is told it worked. Rejecting them is
+  a breaking change for anything currently sending extra fields, including our own frontend,
+  so it is recorded rather than done.
+  Held by `TestJourney_SomethingItCannotUnderstandIsRefused` (`make journey`).
+
+- [ ] **A described body can advertise fields the service never reads.** Where a handler
+  decodes straight into a stored or settings type, reflection describes the whole type — so
+  custom cop definitions are described as accepting an `id` and timestamps that the store
+  ignores, because it binds its columns explicitly. Not a way in: the values go nowhere. It is
+  a false lead for anybody testing where an input reaches, and an invitation to send fields
+  that do nothing. The fix is a named request type at the boundary rather than the stored one.
+  Held by `TestJourney_NothingIsAdvertisedThatIsNeverRead` (`make journey`), skipped with its
+  reason until the write path can be measured the way the read path is.
+
+- [ ] **Nothing has ever fuzzed this API.** No malformed input at volume, no long strings, no
+  deep nesting, no concurrency. Stated in journeys/security-assessment.md and held by
+  `TestJourney_ItHasBeenFuzzedAtAll`, which stays red until a run has happened and its
+  findings are written down somewhere.

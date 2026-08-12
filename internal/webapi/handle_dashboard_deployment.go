@@ -26,6 +26,17 @@ type deploymentStatusVersionEntry struct {
 	Total           int    `json:"total"`
 }
 
+// deploymentStatusResponse is how far the rollout has got, per version.
+type deploymentStatusResponse struct {
+	Data       []deploymentStatusVersionEntry `json:"data"`
+	TotalNodes int                            `json:"total_nodes"`
+}
+
+// deploymentTrendResponse is the same, over time.
+type deploymentTrendResponse struct {
+	Data []deploymentTrendPoint `json:"data"`
+}
+
 // handleDashboardDeploymentStatus handles GET /api/v1/dashboard/deployment/status.
 // Returns current per-version deployment state via a live GROUP BY query on
 // node_snapshots.
@@ -67,9 +78,9 @@ func (r *Router) handleDashboardDeploymentStatus(w http.ResponseWriter, req *htt
 		})
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"data":        data,
-		"total_nodes": totalNodes,
+	WriteJSON(w, http.StatusOK, deploymentStatusResponse{
+		Data:       data,
+		TotalNodes: totalNodes,
 	})
 }
 
@@ -205,5 +216,5 @@ func (r *Router) handleDashboardDeploymentTrend(w http.ResponseWriter, req *http
 		points = []deploymentTrendPoint{}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{"data": points})
+	WriteJSON(w, http.StatusOK, deploymentTrendResponse{Data: points})
 }

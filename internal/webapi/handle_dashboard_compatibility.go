@@ -33,6 +33,65 @@ func rollupBucketForScan(cookstyleStatus, errorMessage string) string {
 // Dashboard — compatibility endpoints (cookbook, git repo, Test Kitchen)
 // ---------------------------------------------------------------------------
 
+// cookbookCompatSummary is what the static check says about the cookbooks on
+// the Chef servers, for one target version. The untested count is split by
+// why: the scan errored, the cookbook is inactive, or nothing has scanned it.
+type cookbookCompatSummary struct {
+	TargetChefVersion    string  `json:"target_chef_version"`
+	TotalCookbooks       int     `json:"total_cookbooks"`
+	ReadyCookbooks       int     `json:"ready_cookbooks"`
+	NeedsReviewCookbooks int     `json:"needs_review_cookbooks"`
+	BlockedCookbooks     int     `json:"blocked_cookbooks"`
+	UntestedCookbooks    int     `json:"untested_cookbooks"`
+	UntestedErrored      int     `json:"untested_errored_cookbooks"`
+	UntestedInactive     int     `json:"untested_inactive_cookbooks"`
+	UntestedUnscanned    int     `json:"untested_unscanned_cookbooks"`
+	ReadyPercent         float64 `json:"ready_percent"`
+}
+
+// gitRepoCompatSummary is the same for repositories, whose untested count
+// splits differently: the clone failed, or it has not been scanned yet.
+type gitRepoCompatSummary struct {
+	TargetChefVersion        string  `json:"target_chef_version"`
+	TotalRepos               int     `json:"total_repos"`
+	ReadyRepos               int     `json:"ready_repos"`
+	NeedsReviewRepos         int     `json:"needs_review_repos"`
+	BlockedRepos             int     `json:"blocked_repos"`
+	UntestedRepos            int     `json:"untested_repos"`
+	UntestedErroredRepos     int     `json:"untested_errored_repos"`
+	UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
+	UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
+	ReadyPercent             float64 `json:"ready_percent"`
+}
+
+// tkCompatSummary is what happened when repositories ran on real machines.
+// Passing is not the same as compatible and the two are counted apart —
+// see journeys/api-integration.md.
+type tkCompatSummary struct {
+	TargetChefVersion        string  `json:"target_chef_version"`
+	TotalRepos               int     `json:"total_repos"`
+	PassedRepos              int     `json:"passed_repos"`
+	PartialRepos             int     `json:"partial_repos"`
+	FailedRepos              int     `json:"failed_repos"`
+	TimedOutRepos            int     `json:"timed_out_repos"`
+	UntestedRepos            int     `json:"untested_repos"`
+	UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
+	UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
+	PassedPercent            float64 `json:"passed_percent"`
+}
+
+type cookbookCompatibilityResponse struct {
+	Data []cookbookCompatSummary `json:"data"`
+}
+
+type gitRepoCompatibilityResponse struct {
+	Data []gitRepoCompatSummary `json:"data"`
+}
+
+type testKitchenCompatibilityResponse struct {
+	Data []tkCompatSummary `json:"data"`
+}
+
 // handleDashboardCookbookCompatibility handles
 // GET /api/v1/dashboard/cookbook-compatibility.
 // Returns the CookStyle rollup-status breakdown (ready / needs_review / blocked
@@ -71,18 +130,6 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 	// CookStyle rollup summary (cop-classification.md 4-state vocabulary). The
 	// untested segment is sub-split (errored scan / inactive / not-yet-scanned)
 	// for the card tooltip; the three add up to UntestedCookbooks.
-	type compatSummary struct {
-		TargetChefVersion    string  `json:"target_chef_version"`
-		TotalCookbooks       int     `json:"total_cookbooks"`
-		ReadyCookbooks       int     `json:"ready_cookbooks"`
-		NeedsReviewCookbooks int     `json:"needs_review_cookbooks"`
-		BlockedCookbooks     int     `json:"blocked_cookbooks"`
-		UntestedCookbooks    int     `json:"untested_cookbooks"`
-		UntestedErrored      int     `json:"untested_errored_cookbooks"`
-		UntestedInactive     int     `json:"untested_inactive_cookbooks"`
-		UntestedUnscanned    int     `json:"untested_unscanned_cookbooks"`
-		ReadyPercent         float64 `json:"ready_percent"`
-	}
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
 	var allowedNames map[string]bool
@@ -210,14 +257,14 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 		}
 	}
 
-	var summaries []compatSummary
+	var summaries []cookbookCompatSummary
 	for _, tv := range targetVersions {
 		pv := byTV[tv]
 		pct := 0.0
 		if pv.total > 0 {
 			pct = float64(pv.ready) / float64(pv.total) * 100
 		}
-		summaries = append(summaries, compatSummary{
+		summaries = append(summaries, cookbookCompatSummary{
 			TargetChefVersion:    tv,
 			TotalCookbooks:       pv.total,
 			ReadyCookbooks:       pv.ready,
@@ -232,7 +279,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 	}
 
 	if summaries == nil {
-		summaries = []compatSummary{}
+		summaries = []cookbookCompatSummary{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
@@ -266,18 +313,6 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 
 	// CookStyle rollup summary (4-state). UntestedRepos is sub-split into errored
 	// scan / clone-failed / cloned-but-not-yet-scanned for the card tooltip.
-	type compatSummary struct {
-		TargetChefVersion        string  `json:"target_chef_version"`
-		TotalRepos               int     `json:"total_repos"`
-		ReadyRepos               int     `json:"ready_repos"`
-		NeedsReviewRepos         int     `json:"needs_review_repos"`
-		BlockedRepos             int     `json:"blocked_repos"`
-		UntestedRepos            int     `json:"untested_repos"`
-		UntestedErroredRepos     int     `json:"untested_errored_repos"`
-		UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
-		UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
-		ReadyPercent             float64 `json:"ready_percent"`
-	}
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
 	var allowedNames map[string]bool
@@ -412,14 +447,14 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 		}
 	}
 
-	var summaries []compatSummary
+	var summaries []gitRepoCompatSummary
 	for _, tv := range targetVersions {
 		pv := byTV[tv]
 		pct := 0.0
 		if pv.total > 0 {
 			pct = float64(pv.ready) / float64(pv.total) * 100
 		}
-		summaries = append(summaries, compatSummary{
+		summaries = append(summaries, gitRepoCompatSummary{
 			TargetChefVersion:        tv,
 			TotalRepos:               pv.total,
 			ReadyRepos:               pv.ready,
@@ -434,7 +469,7 @@ func (r *Router) handleDashboardGitRepoCompatibility(w http.ResponseWriter, req 
 	}
 
 	if summaries == nil {
-		summaries = []compatSummary{}
+		summaries = []gitRepoCompatSummary{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})
@@ -468,19 +503,6 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	ownerFilterActive := ownedKeys != nil
 
 	targetVersions := r.liveConfig().TargetChefVersionList()
-
-	type tkSummary struct {
-		TargetChefVersion        string  `json:"target_chef_version"`
-		TotalRepos               int     `json:"total_repos"`
-		PassedRepos              int     `json:"passed_repos"`
-		PartialRepos             int     `json:"partial_repos"`
-		FailedRepos              int     `json:"failed_repos"`
-		TimedOutRepos            int     `json:"timed_out_repos"`
-		UntestedRepos            int     `json:"untested_repos"`
-		UntestedCloneFailedRepos int     `json:"untested_clone_failed_repos"`
-		UntestedPendingScanRepos int     `json:"untested_pending_scan_repos"`
-		PassedPercent            float64 `json:"passed_percent"`
-	}
 
 	// Build an allowed-names set for ownership filtering (nil = no filter).
 	var allowedNames map[string]bool
@@ -602,14 +624,14 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 		}
 	}
 
-	var summaries []tkSummary
+	var summaries []tkCompatSummary
 	for _, tv := range targetVersions {
 		pv := byTV[tv]
 		pct := 0.0
 		if pv.total > 0 {
 			pct = float64(pv.passed) / float64(pv.total) * 100
 		}
-		summaries = append(summaries, tkSummary{
+		summaries = append(summaries, tkCompatSummary{
 			TargetChefVersion:        tv,
 			TotalRepos:               pv.total,
 			PassedRepos:              pv.passed,
@@ -624,7 +646,7 @@ func (r *Router) handleDashboardTestKitchenCompatibility(w http.ResponseWriter, 
 	}
 
 	if summaries == nil {
-		summaries = []tkSummary{}
+		summaries = []tkCompatSummary{}
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"data": summaries})

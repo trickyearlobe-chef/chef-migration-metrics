@@ -121,6 +121,18 @@ func (r *Router) handleRunEventRuns(w http.ResponseWriter, req *http.Request) {
 	WritePaginated(w, runs, pg, total)
 }
 
+// nodeRunEventsResponse is the recent runs for one machine, with the machine
+// named back so a caller batching these can tell the answers apart.
+//
+// Capped rather than paged: the store call takes a limit and no offset, so
+// asking for a second page returns the first again — described as per_page
+// alone for that reason. See subCappedNotPaged.
+type nodeRunEventsResponse struct {
+	Organisation string                      `json:"organisation"`
+	Node         string                      `json:"node"`
+	Data         []datastore.ConvergeRunView `json:"data"`
+}
+
 // handleRunEventNodeDetail handles GET /api/v1/run-events/nodes/{organisation}/{node}
 // — every converge run for one node, most-recent first. It keys on the DELIVERED
 // org name directly (no organisations-table resolution) so ingest-only DMZ nodes
@@ -150,10 +162,10 @@ func (r *Router) handleRunEventNodeDetail(w http.ResponseWriter, req *http.Reque
 	if runs == nil {
 		runs = []datastore.ConvergeRunView{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"organisation": organisation,
-		"node":         nodeName,
-		"data":         runs,
+	WriteJSON(w, http.StatusOK, nodeRunEventsResponse{
+		Organisation: organisation,
+		Node:         nodeName,
+		Data:         runs,
 	})
 }
 
@@ -176,7 +188,7 @@ func (r *Router) handleFilterRunOrganisations(w http.ResponseWriter, req *http.R
 	if orgs == nil {
 		orgs = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": orgs})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: orgs})
 }
 
 // handleFilterRunChefVersions handles GET /api/v1/filters/run-chef-versions —
@@ -197,5 +209,5 @@ func (r *Router) handleFilterRunChefVersions(w http.ResponseWriter, req *http.Re
 	if versions == nil {
 		versions = []string{}
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"data": versions})
+	WriteJSON(w, http.StatusOK, filterValuesResponse{Data: versions})
 }

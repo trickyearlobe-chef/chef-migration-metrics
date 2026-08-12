@@ -48,6 +48,35 @@ func roleFilterFromValues(q url.Values, orgNames []string, targetChefVersion str
 //   - sort: name (default), node_count, incompatible_cookbook_count, tk_status
 //   - order: asc (default) or desc
 //   - page, per_page: pagination
+//
+// roleResp is one role in the list. Declared at package level so the route
+// table can name it as the answer — see answers().
+type roleResp struct {
+	RoleName                string   `json:"role_name"`
+	Organisations           []string `json:"organisations"`
+	NodeCount               int      `json:"node_count"`
+	DirectCookbookCount     int      `json:"direct_cookbook_count"`
+	TransitiveCookbookCount int      `json:"transitive_cookbook_count"`
+	TotalCookbookCount      int      `json:"total_cookbook_count"`
+	CompatibilityStatus     string   `json:"compatibility_status"`
+	CompatibleCount         int      `json:"compatible_count"`
+	IncompatibleCount       int      `json:"incompatible_count"`
+	UntestedCount           int      `json:"untested_count"`
+	// Both always present, and never blank: a role that nothing has tested
+	// is untested, which is a state, not the absence of one. Blank left a
+	// caller unable to tell it from a field this version does not have,
+	// and left the screen rendering a badge with no status in it.
+	TKStatus string `json:"tk_status"`
+}
+
+// roleListResponse is the whole answer to listing roles: the page of roles,
+// the counts across the whole filtered set, and where in it this page is.
+type roleListResponse struct {
+	Data       []roleResp                  `json:"data"`
+	Summary    datastore.RoleFilterSummary `json:"summary"`
+	Pagination PaginationResponse          `json:"pagination"`
+}
+
 func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 	if !requireGET(w, req) {
 		return
@@ -102,24 +131,6 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		rows = []datastore.RoleFilterRow{}
 	}
 
-	type roleResp struct {
-		RoleName                string   `json:"role_name"`
-		Organisations           []string `json:"organisations"`
-		NodeCount               int      `json:"node_count"`
-		DirectCookbookCount     int      `json:"direct_cookbook_count"`
-		TransitiveCookbookCount int      `json:"transitive_cookbook_count"`
-		TotalCookbookCount      int      `json:"total_cookbook_count"`
-		CompatibilityStatus     string   `json:"compatibility_status"`
-		CompatibleCount         int      `json:"compatible_count"`
-		IncompatibleCount       int      `json:"incompatible_count"`
-		UntestedCount           int      `json:"untested_count"`
-		// Both always present, and never blank: a role that nothing has tested
-		// is untested, which is a state, not the absence of one. Blank left a
-		// caller unable to tell it from a field this version does not have,
-		// and left the screen rendering a badge with no status in it.
-		TKStatus string `json:"tk_status"`
-	}
-
 	result := make([]roleResp, 0, len(rows))
 	for _, row := range rows {
 		compatibilityStatus := row.CompatibilityStatus
@@ -151,10 +162,10 @@ func (r *Router) handleRoles(w http.ResponseWriter, req *http.Request) {
 		summary = cachedSummary
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"data":       result,
-		"summary":    summary,
-		"pagination": NewPaginationResponse(pg, total),
+	WriteJSON(w, http.StatusOK, roleListResponse{
+		Data:       result,
+		Summary:    summary,
+		Pagination: NewPaginationResponse(pg, total),
 	})
 }
 
@@ -203,6 +214,30 @@ func (r *Router) handleRoleDetail(w http.ResponseWriter, req *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, detail)
+}
+
+// The dependency graph below one role. Narrower than a machine's: a role
+// chain says nothing about versions or what happened on real hardware, so
+// those fields are absent rather than blank. The edges are the same shape as
+// the machine graph's and share the type.
+type roleGraphNode struct {
+	ID                  string `json:"id"`
+	Type                string `json:"type"`
+	Name                string `json:"name"`
+	CompatibilityStatus string `json:"compatibility_status,omitempty"`
+	ComplexityLabel     string `json:"complexity_label,omitempty"`
+}
+
+type roleGraphMetadata struct {
+	TotalRoles            int `json:"total_roles"`
+	TotalCookbooks        int `json:"total_cookbooks"`
+	IncompatibleCookbooks int `json:"incompatible_cookbooks"`
+}
+
+type roleDependencyGraphResponse struct {
+	Nodes    []roleGraphNode   `json:"nodes"`
+	Edges    []graphEdge       `json:"edges"`
+	Metadata roleGraphMetadata `json:"metadata"`
 }
 
 // handleRoleDependencyGraph handles GET /api/v1/roles/:name/dependency-graph
@@ -273,20 +308,7 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 	}
 
 	// Walk from the role to build the scoped graph.
-	type graphNode struct {
-		ID                  string `json:"id"`
-		Type                string `json:"type"`
-		Name                string `json:"name"`
-		CompatibilityStatus string `json:"compatibility_status,omitempty"`
-		ComplexityLabel     string `json:"complexity_label,omitempty"`
-	}
-	type graphEdge struct {
-		From string `json:"from"`
-		To   string `json:"to"`
-		Type string `json:"type"`
-	}
-
-	nodeMap := make(map[string]graphNode)
+	nodeMap := make(map[string]roleGraphNode)
 	var edges []graphEdge
 	visited := make(map[string]bool)
 	cbVisited := make(map[string]bool)
@@ -301,13 +323,13 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 
 		cbID := "cookbook:" + cbName
 		if _, ok := nodeMap[cbID]; !ok {
-			nodeMap[cbID] = graphNode{ID: cbID, Type: "cookbook", Name: cbName}
+			nodeMap[cbID] = roleGraphNode{ID: cbID, Type: "cookbook", Name: cbName}
 		}
 
 		for _, dep := range cbAdj[cbName] {
 			depID := "cookbook:" + dep
 			if _, ok := nodeMap[depID]; !ok {
-				nodeMap[depID] = graphNode{ID: depID, Type: "cookbook", Name: dep}
+				nodeMap[depID] = roleGraphNode{ID: depID, Type: "cookbook", Name: dep}
 			}
 			edges = append(edges, graphEdge{From: cbID, To: depID, Type: "depends_on"})
 			cbWalk(dep)
@@ -323,7 +345,7 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 
 		roleID := "role:" + role
 		if _, ok := nodeMap[roleID]; !ok {
-			nodeMap[roleID] = graphNode{ID: roleID, Type: "role", Name: role}
+			nodeMap[roleID] = roleGraphNode{ID: roleID, Type: "role", Name: role}
 		}
 
 		for _, d := range adj[role] {
@@ -331,7 +353,7 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 			edgeType := "includes_" + d.DependencyType
 
 			if _, ok := nodeMap[targetID]; !ok {
-				nodeMap[targetID] = graphNode{
+				nodeMap[targetID] = roleGraphNode{
 					ID:   targetID,
 					Type: d.DependencyType,
 					Name: d.DependencyName,
@@ -375,7 +397,7 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 	}
 
 	// Convert to sorted slices.
-	nodes := make([]graphNode, 0, len(nodeMap))
+	nodes := make([]roleGraphNode, 0, len(nodeMap))
 	for _, n := range nodeMap {
 		nodes = append(nodes, n)
 	}
@@ -405,13 +427,13 @@ func (r *Router) handleRoleDependencyGraph(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"nodes": nodes,
-		"edges": edges,
-		"metadata": map[string]any{
-			"total_roles":            roleCount,
-			"total_cookbooks":        cookbookCount,
-			"incompatible_cookbooks": incompatibleCount,
+	WriteJSON(w, http.StatusOK, roleDependencyGraphResponse{
+		Nodes: nodes,
+		Edges: edges,
+		Metadata: roleGraphMetadata{
+			TotalRoles:            roleCount,
+			TotalCookbooks:        cookbookCount,
+			IncompatibleCookbooks: incompatibleCount,
 		},
 	})
 }

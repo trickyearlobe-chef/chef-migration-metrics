@@ -14,7 +14,11 @@ import (
 // attaches the SessionInfo to the request context for downstream handlers.
 type Middleware struct {
 	sessions *SessionManager
-	logger   func(level, msg string)
+	// credentials authenticates the other way in. Nil where credentials are
+	// not wired, in which case one presented in a header is tried as a session
+	// id, fails, and is refused — which is the right answer.
+	credentials *CredentialManager
+	logger      func(level, msg string)
 }
 
 // MiddlewareOption is a functional option for NewMiddleware.
@@ -24,6 +28,14 @@ type MiddlewareOption func(*Middleware)
 func WithMiddlewareLogger(fn func(level, msg string)) MiddlewareOption {
 	return func(m *Middleware) {
 		m.logger = fn
+	}
+}
+
+// WithCredentials wires credential authentication alongside sessions, so a
+// tool holding one is admitted as the account it belongs to.
+func WithCredentials(c *CredentialManager) MiddlewareOption {
+	return func(m *Middleware) {
+		m.credentials = c
 	}
 }
 
@@ -51,6 +63,22 @@ func (m *Middleware) RequireAuth(next http.Handler) http.Handler {
 		token := ExtractToken(r)
 		if token == "" {
 			m.writeUnauthorized(w, "Authentication required. Provide a session token via the Authorization header or session cookie.")
+			return
+		}
+
+		// A credential and a session id arrive in the same header, and the
+		// prefix is what tells them apart. Which of the two was presented is
+		// how the caller got in, so it is settled here — the one place the
+		// caller cannot reach — and carried on the session from now on.
+		if m.credentials != nil && IsCredentialSecret(token) {
+			info, err := m.credentials.Validate(r.Context(), token)
+			if err != nil {
+				m.logf("DEBUG", "credential rejected (%.8s...): %v", truncateToken(token), err)
+				m.writeUnauthorized(w, "That credential is not valid. It may have been "+
+					"destroyed, or the account it belongs to may be locked or gone.")
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(ContextWithSession(r.Context(), info)))
 			return
 		}
 

@@ -270,6 +270,29 @@ func (r *Router) handleGitRepos(w http.ResponseWriter, req *http.Request) {
 //
 // ---------------------------------------------------------------------------
 
+// gitRepoDetailEntry is one repository with everything held about it: what the
+// static check said, how complex it is, who owns it, and how it fared on real
+// hardware.
+type gitRepoDetailEntry struct {
+	GitRepo    datastore.GitRepo                  `json:"git_repo"`
+	Cookstyle  []datastore.GitRepoCookstyleResult `json:"cookstyle,omitempty"`
+	Complexity []datastore.GitRepoComplexity      `json:"complexity,omitempty"`
+	Ownership  entityOwners                       `json:"ownership"`
+	// Always present: a test state is one of a known set, and an absent
+	// field is not one of them. See journeys/api-integration.md.
+	TKStatus string `json:"tk_status"`
+	TKPassed int    `json:"tk_passed,omitempty"`
+	TKTotal  int    `json:"tk_total,omitempty"`
+}
+
+// gitRepoDetailResponse answers with every repository of that name — the same
+// name can appear more than once across sources, and picking one for the
+// caller would hide the others.
+type gitRepoDetailResponse struct {
+	Name     string               `json:"name"`
+	GitRepos []gitRepoDetailEntry `json:"git_repos"`
+}
+
 // handleGitRepoDetail handles /api/v1/git-repos/:name and sub-path dispatch.
 func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 	segments := pathSegments(req.URL.Path, "/api/v1/git-repos/")
@@ -369,18 +392,6 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	type gitRepoDetailEntry struct {
-		GitRepo    datastore.GitRepo                  `json:"git_repo"`
-		Cookstyle  []datastore.GitRepoCookstyleResult `json:"cookstyle,omitempty"`
-		Complexity []datastore.GitRepoComplexity      `json:"complexity,omitempty"`
-		Ownership  entityOwners                       `json:"ownership"`
-		// Always present: a test state is one of a known set, and an absent
-		// field is not one of them. See journeys/api-integration.md.
-		TKStatus string `json:"tk_status"`
-		TKPassed int    `json:"tk_passed,omitempty"`
-		TKTotal  int    `json:"tk_total,omitempty"`
-	}
-
 	details := make([]gitRepoDetailEntry, 0, len(gitRepos))
 	for _, gr := range gitRepos {
 		detail := gitRepoDetailEntry{GitRepo: gr}
@@ -427,9 +438,9 @@ func (r *Router) handleGitRepoDetail(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"name":      name,
-		"git_repos": details,
+	WriteJSON(w, http.StatusOK, gitRepoDetailResponse{
+		Name:     name,
+		GitRepos: details,
 	})
 }
 
@@ -735,6 +746,13 @@ func (r *Router) handleListExcludedGitRepos(w http.ResponseWriter, req *http.Req
 // ---------------------------------------------------------------------------
 
 // handleGitRepoExclude marks a git repo as excluded from kitchen testing.
+// excludeGitRepoRequest takes a repository out of scanning, with the reason
+// recorded so a later reader can weigh it.
+type excludeGitRepoRequest struct {
+	Reason     string `json:"reason"`
+	ExcludedBy string `json:"excluded_by"`
+}
+
 func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, name string) {
 	// Leaving a repository out of scanning moves every verdict it feeds, so it
 	// is held to the same role as excluding one from test runs, which is admin.
@@ -748,10 +766,7 @@ func (r *Router) handleGitRepoExclude(w http.ResponseWriter, req *http.Request, 
 		return
 	}
 
-	var body struct {
-		Reason     string `json:"reason"`
-		ExcludedBy string `json:"excluded_by"`
-	}
+	var body excludeGitRepoRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		WriteBadRequest(w, fmt.Sprintf("Invalid JSON body: %v", err))
 		return

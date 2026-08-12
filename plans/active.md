@@ -8,28 +8,58 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — the assistant/API credential (chunk 2)
+## NOW — what a call answers with, and what it takes (chunk 4)
 
-**Read first:** [asking my assistant why this is failing](../journeys/agent-access.md), then run
-`make journey`. The reds in `internal/webapi/agent_access_journey_test.go` are the chunk, and they
-were written before any of it was built, so the list is complete rather than grown a test at a
-time. Nothing else here needs reading to start.
+**The mechanism is built and partly applied. What is left is applying it to the rest.**
+An address declares the type it writes back with `answers()` / `answersPage()` beside `takes()`,
+and the shape is reflected off that type. `takesQuery()` declares the filters; `takesForm()`
+declares the fields of the six form submissions. The `/api-docs` panel shows the answer's fields,
+descending into a page's rows.
 
-**Both product questions this was blocked on are answered, in the journeys:**
+**Two counts are the backlog, and both are recomputed rather than remembered.** A ratchet in
+`openapi_responses_test.go` holds the operations that answer undescribed, and one in
+`openapi_filters_test.go` holds the filters described nowhere. Both fail in either direction, so
+finishing work means striking the number down. Run them for today's figures rather than quoting
+any written here.
 
-- A job that runs unattended **gets its own account** — local, or one the identity provider
-  already carries for a machine. There is no service account and no second permissions model.
-- **How something got in is settled when it signs in**, attached by the service and never supplied
-  by the caller. It belongs on the session, beside the provider a session already records.
+**Declare only what has been measured.** `tools/api-probe/probe.py` reads every GET on a running
+instance and reports any address sending a field the description does not name. It caught one
+wrong declaration the moment it was written. Re-run it after declaring anything, against
+`https://127.0.0.1` with a token in `CMM_API_TOKEN`.
 
-**One rule that cost a near-miss, and applies to anything else being tightened:** check whether an
-ordinary user can see a control wired to an endpoint *before* hardening it, rather than reasoning
-from whether neighbouring endpoints look consistent. Reasoning from neighbours would have broken
-the Retry button on the git repo page, which viewers use to re-run a test that failed on DHCP or
-auth. Detail: `plans/todo-tech-debt.md`.
+**The unit is the (method, address), never the handler.** One handler serves many addresses and
+answers a different shape at each, and two are registered at several exact patterns and dispatch
+on the path inside. Reachability from the handler is an upper bound and nothing more — that is
+what made three attempts at deriving pagination wrong. The addresses left undescribed are mostly
+these: each needs its own dispatch read before it can be declared.
 
-**Still open, nobody has decided:** a feature switched off at runtime is still described, so an
-assistant asks for it and is told it does not exist. Detail: `plans/todo-documentation.md`.
+**Where the recording lives, decided:** `internal/webapi/testdata/response_shapes.json`, derived
+from the Go types and compared on every build, re-recorded deliberately with `-update`. The live
+probe's own output is deliberately *not* kept in git: it is read off a running service, and an
+object's keys there can be data — a map keyed by organisation or version would put customer names
+into the repository.
+
+**Carry forward:**
+
+- **Requiredness of a body's fields is not derivable and is not claimed.** Handlers enforce it by
+  hand. A query parameter is different: four addresses refuse a plain GET, the probe measures
+  which, and those are declared required.
+- **Three decode idioms exist, not one**: JSON into a named type; `decodeAdminConfigBody` for the
+  16 settings sections (read as YAML — the **yaml tag** is the wire name); `io.ReadAll` +
+  `Unmarshal`. Any derivation over handlers must know all three or it silently covers two thirds.
+- **An anonymous map cannot be described.** Roughly half the write sites assemble one inline, and
+  each has to be lifted to a named type before its address can declare anything. That lift is the
+  bulk of the remaining work, and it is mechanical.
+- **Never pull node-ingest structs into this.** `POST /api/v1/ingest` sits in `undescribedBodies`
+  with its reason served alongside it.
+
+Renderer research, if the hand-rolled page is ever revisited: `plans/todo-documentation.md`.
+
+## AFTER THAT — the assistant surface
+
+The last red in the agent-access suite: `TheAssistantSurfaceIsBuiltIn`. The service hosts nothing
+an editor assistant can connect to, so using it would mean deploying a second thing beside it,
+which cannot happen inside the customer estate. Agreed to run on its own branch and thread.
 
 ## The top open question is not ownership — it is whether the blocking list is true
 
@@ -58,7 +88,7 @@ every entry is also a measurement of how wrong the signal is. Detail and the sha
 
 ## Operational facts that bite
 
-**Next free migration number: 0066.**
+**Next free migration number: 0069.**
 
 **There is no down-migration runner** — only `MigrateUp` — so a schema rollback is `psql` by hand
 or a restore. Take a `pg_dump` before any deploy. Two migrations leave a residue an older binary
@@ -67,8 +97,10 @@ assignments re-keyed from URL to repo name). 0063's down script is **not a true 
 cannot tell a row it rewrote from one always held by name.
 
 **Release preconditions — the bump target runs no tests.** `make ci` and `make vuln-go` must pass
-first; `bump-patch-push` does not depend on `ci`. Local `make ci` needs `TRIVY_SKIP_DB_UPDATE=true`
-(the 1.2GB DB pull stalls mid-transfer; GitHub CI pulls it fresh). The push is a human step —
+first; `bump-patch-push` does not depend on `ci`. **Do not set `TRIVY_SKIP_DB_UPDATE=true` for
+`make ci`** — it makes the run fail. Trivy rejects that flag alongside `--download-db-only`, which
+is what the DB-refresh step uses, so the refresh dies before any scan happens. Plain `make ci`
+works; the refresh is already bounded and retried. The push is a human step —
 CLAUDE.md forbids remotes, so an assistant may bump and tag locally and push only with explicit
 per-action authorisation.
 

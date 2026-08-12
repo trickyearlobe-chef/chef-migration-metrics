@@ -116,6 +116,7 @@ type serverApp struct {
 	localAuth      *auth.LocalAuthenticator
 	sessionMgr     *auth.SessionManager
 	authMiddleware *auth.Middleware
+	credentials    *auth.CredentialManager
 	samlHandler    *webapi.SAMLHandler
 
 	// Secrets components.
@@ -534,8 +535,16 @@ func (app *serverApp) setupAuth(ctx context.Context) error {
 		}),
 	)
 
+	// The other way in: a credential somebody made for a tool they are holding.
+	// Wired into the middleware so one presented in the Authorization header is
+	// admitted as the account it belongs to, at that account's level.
+	app.credentials = auth.NewCredentialManager(app.db,
+		auth.WithCredentialLogger(authLogFn),
+	)
+
 	app.authMiddleware = auth.NewMiddleware(app.sessionMgr,
 		auth.WithMiddlewareLogger(authLogFn),
+		auth.WithCredentials(app.credentials),
 	)
 
 	app.startup.Info(fmt.Sprintf("authentication configured: session_expiry=%s, lockout_attempts=%d, min_password_length=%d",
@@ -1482,6 +1491,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			return nil
 		}),
 		webapi.WithAuth(app.localAuth, app.sessionMgr, app.authMiddleware, app.db),
+		webapi.WithCredentialManager(app.credentials),
 		webapi.WithCookstylePropagator(app.cookstylePropagator),
 		webapi.WithCopRegistry(app.copRegistry),
 		webapi.WithReadinessReconciler(func() error {

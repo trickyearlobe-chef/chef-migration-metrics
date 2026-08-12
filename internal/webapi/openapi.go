@@ -5,6 +5,7 @@ package webapi
 
 import (
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -29,6 +30,7 @@ const openAPIPath = "/api/v1/openapi.json"
 // under /api/.
 func (r *Router) openAPIDocument() map[string]any {
 	paths := map[string]any{}
+	schemas := newSchemaRegistry()
 
 	for _, rt := range r.Routes() {
 		for _, addr := range describableAddresses(rt) {
@@ -38,12 +40,31 @@ func (r *Router) openAPIDocument() map[string]any {
 				paths[addr.path] = item
 			}
 			for _, method := range addr.methods {
-				item[strings.ToLower(method)] = r.operation(addr.path, method, rt.Role)
+				op := r.operation(addr.path, method, rt.Role)
+				if addr.paginated[method] {
+					op["parameters"] = append(
+						op["parameters"].([]any), paginationParameters()...)
+				}
+				if addr.capped[method] {
+					op["parameters"] = append(
+						op["parameters"].([]any), perPageParameter())
+				}
+				for _, param := range addr.queries[method] {
+					op["parameters"] = append(
+						op["parameters"].([]any), queryParameter(param))
+				}
+				if body := describedInput(schemas, method, addr, method+" "+addr.path); body != nil {
+					op["requestBody"] = body
+				}
+				if answer, ok := addr.answers[method]; ok {
+					describeAnswer(schemas, op, answer)
+				}
+				item[strings.ToLower(method)] = op
 			}
 		}
 	}
 
-	return map[string]any{
+	doc := map[string]any{
 		"openapi": "3.1.0",
 		"info": map[string]any{
 			"title": "Chef Migration Metrics",
@@ -53,13 +74,144 @@ func (r *Router) openAPIDocument() map[string]any {
 		},
 		"paths": paths,
 	}
+	if defs := schemas.components(); len(defs) > 0 {
+		doc["components"] = map[string]any{"schemas": defs}
+	}
+	return doc
 }
 
-// address is one describable endpoint: a concrete path and the methods it
-// answers.
+// describedInput is what a caller sends, or nil where a call reads nothing.
+//
+// Three kinds of input exist here and they have to stay distinguishable. A JSON
+// document is reflected off the type the handler really decodes into. An upload
+// is said to be an upload. A body this service deliberately does not describe
+// says so, and why. Only the fourth case — reading nothing at all — is absent
+// from the description, because there a caller sending nothing is correct.
+func describedInput(schemas *schemaRegistry, method string, addr address,
+	key string) map[string]any {
+	if bodies, ok := addr.bodies[method]; ok && len(bodies) > 0 {
+		return jsonRequestBody(schemas, bodies)
+	}
+	if fields, ok := addr.forms[method]; ok && len(fields) > 0 {
+		return formRequestBody(fields)
+	}
+	if uploadWrites[key] {
+		return map[string]any{
+			"required":    true,
+			"description": "Sent as a form, not as a JSON document. The individual fields are not described yet.",
+			"content": map[string]any{
+				"multipart/form-data": map[string]any{
+					"schema": map[string]any{"type": "object"},
+				},
+			},
+		}
+	}
+	if why, ok := undescribedBodies[key]; ok {
+		return map[string]any{
+			"required":    true,
+			"description": why,
+			"content": map[string]any{
+				"application/json": map[string]any{"schema": map[string]any{}},
+			},
+		}
+	}
+	return nil
+}
+
+// describeAnswer says what comes back, reflected off the type the handler
+// really encodes.
+//
+// It replaces the content of the 200 rather than adding a second one: an
+// operation says one thing about what it answers with, and the description of
+// that answer stays where an undescribed one already was, so a reader sees the
+// same shape of document either way.
+func describeAnswer(schemas *schemaRegistry, op map[string]any, answer Answer) {
+	schema := schemas.schemaFor(reflect.TypeOf(answer.Value))
+	if answer.Page {
+		schema = schemas.pageOf(reflect.TypeOf(answer.Value))
+	}
+	if len(answer.Or) > 0 {
+		// One of several shapes. A caller has to branch, and saying so is the
+		// only honest description — picking one would be wrong for every call
+		// that got the other.
+		shapes := []any{schema}
+		for _, other := range answer.Or {
+			shapes = append(shapes, schemas.schemaFor(reflect.TypeOf(other)))
+		}
+		schema = map[string]any{"oneOf": shapes}
+	}
+	responses, _ := op["responses"].(map[string]any)
+	ok, _ := responses["200"].(map[string]any)
+	if ok == nil {
+		return
+	}
+	ok["content"] = map[string]any{
+		"application/json": map[string]any{"schema": schema},
+	}
+}
+
+// formRequestBody describes a form submission, field by field.
+//
+// A file is a string of format binary, which is how OpenAPI says "upload"; a
+// generated client turns that into a file part rather than a text one. Which
+// fields are required is left unsaid, as it is for a JSON body: the handlers
+// enforce it by hand, and several of these addresses accept either a file or a
+// database connection, so no single field is required on its own.
+func formRequestBody(fields []formField) map[string]any {
+	props := map[string]any{}
+	for _, field := range fields {
+		schema := map[string]any{"type": "string"}
+		if field.File {
+			schema["format"] = "binary"
+		}
+		props[field.Name] = schema
+	}
+	return map[string]any{
+		"required": true,
+		"content": map[string]any{
+			"multipart/form-data": map[string]any{
+				"schema": map[string]any{"type": "object", "properties": props},
+			},
+		},
+	}
+}
+
+// jsonRequestBody describes a JSON document, reflected off the type the handler
+// really decodes into.
+//
+// Marked required because a body was declared at all: every address that
+// declares one refuses the call outright when the JSON will not parse, so an
+// empty request is never a valid one. Which *fields* are required is a
+// different question, and one nothing here can answer honestly — see
+// openapi_schema.go.
+func jsonRequestBody(schemas *schemaRegistry, bodies []any) map[string]any {
+	schema := schemas.schemaFor(reflect.TypeOf(bodies[0]))
+	if len(bodies) > 1 {
+		parts := make([]any, 0, len(bodies))
+		for _, body := range bodies {
+			parts = append(parts, schemas.schemaFor(reflect.TypeOf(body)))
+		}
+		schema = map[string]any{"allOf": parts}
+	}
+	return map[string]any{
+		"required": true,
+		"content": map[string]any{
+			"application/json": map[string]any{"schema": schema},
+		},
+	}
+}
+
+// address is one describable endpoint: a concrete path, the methods it answers,
+// and the type each of those decodes its request body into.
 type address struct {
-	path    string
-	methods []string
+	path      string
+	methods   []string
+	bodies    map[string][]any
+	paginated map[string]bool
+	capped    map[string]bool
+	answers   map[string]Answer
+	forms     map[string][]formField
+	queries   map[string][]queryParam
 }
 
 // describableAddresses turns a recorded route into the addresses a caller can
@@ -75,11 +227,16 @@ func describableAddresses(rt Route) []address {
 		return nil
 	}
 	if !rt.IsSubtree() {
-		return []address{{path: rt.Pattern, methods: rt.Methods}}
+		return []address{{path: rt.Pattern, methods: rt.Methods, bodies: rt.Bodies,
+			paginated: rt.Paginated, answers: rt.Answers, forms: rt.Forms,
+			queries: rt.Queries}}
 	}
 	out := make([]address, 0, len(rt.SubPaths))
 	for _, sp := range rt.SubPaths {
-		out = append(out, address{path: rt.Pattern + sp.Suffix, methods: sp.Methods})
+		out = append(out, address{
+			path: rt.Pattern + sp.Suffix, methods: sp.Methods, bodies: sp.Bodies,
+			paginated: sp.Paginated, capped: sp.Capped, answers: sp.Answers,
+			queries: sp.Queries})
 	}
 	return out
 }
@@ -106,6 +263,53 @@ func (r *Router) operation(path, method string, role RouteRole) map[string]any {
 		op["summary"] = doc
 	}
 	return op
+}
+
+// paginationParameters describes page and per_page.
+//
+// Every number here is the constant ParsePagination actually applies, so the
+// description cannot tell a caller a limit the service does not keep. Asking
+// for more than the clamp is not an error — it quietly gives less — which is
+// exactly the kind of thing a caller has to be told rather than discover.
+func paginationParameters() []any {
+	return []any{
+		map[string]any{
+			"name": "page", "in": "query", "required": false,
+			"description": "Which page to read. Counts from 1.",
+			"schema": map[string]any{
+				"type": "integer", "minimum": 1, "default": defaultPage,
+			},
+		},
+		perPageParameter(),
+	}
+}
+
+// queryParameter describes one filter.
+//
+// A string, always: everything arrives as text and the handler parses it, so
+// saying "integer" here would describe the parse rather than the wire. What
+// values it accepts is not claimed — nothing can derive that, and a guess in a
+// generated client refuses calls the service would have taken.
+func queryParameter(param queryParam) map[string]any {
+	return map[string]any{
+		"name": param.Name, "in": "query", "required": param.Required,
+		"schema": map[string]any{"type": "string"},
+	}
+}
+
+// perPageParameter is how many to return. On its own — with no page beside it —
+// it says the answer is capped but cannot be walked, which is the truth for the
+// two addresses declared with cappedNotPaged.
+func perPageParameter() map[string]any {
+	return map[string]any{
+		"name": "per_page", "in": "query", "required": false,
+		"description": "How many to return. Asking for more than the maximum is not " +
+			"refused — it returns the maximum.",
+		"schema": map[string]any{
+			"type": "integer", "minimum": 1,
+			"default": defaultPerPage, "maximum": maxPerPage,
+		},
+	}
 }
 
 // pathParameters declares the named segments in a path, which is what tells a

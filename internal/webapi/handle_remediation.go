@@ -14,6 +14,55 @@ import (
 // Remediation endpoints — prioritised remediation planning data.
 // ---------------------------------------------------------------------------
 
+// priorityItem is one cookbook in the order it is worth fixing in: how much
+// work it is, and how much of the estate it unblocks.
+type priorityItem struct {
+	CookbookName         string `json:"cookbook_name"`
+	CookbookVersion      string `json:"cookbook_version,omitempty"`
+	OrganisationName     string `json:"organisation_name,omitempty"`
+	ComplexityScore      int    `json:"complexity_score"`
+	ComplexityLabel      string `json:"complexity_label"`
+	AffectedNodeCount    int    `json:"affected_node_count"`
+	AffectedRoleCount    int    `json:"affected_role_count"`
+	PriorityScore        int    `json:"priority_score"`
+	AutoCorrectableCount int    `json:"auto_correctable_count"`
+	ManualFixCount       int    `json:"manual_fix_count"`
+	DeprecationCount     int    `json:"deprecation_count"`
+	ErrorCount           int    `json:"error_count"`
+	TargetChefVersion    string `json:"target_chef_version"`
+	VersionCount         int    `json:"version_count"`
+}
+
+// remediationPriorityResponse carries the totals across the whole filtered
+// set beside the page, so a caller can size the job without walking it.
+type remediationPriorityResponse struct {
+	TargetChefVersion    string             `json:"target_chef_version"`
+	TotalCookbooks       int                `json:"total_cookbooks"`
+	TotalAutoCorrectable int                `json:"total_auto_correctable"`
+	TotalManualFix       int                `json:"total_manual_fix"`
+	TotalDeprecations    int                `json:"total_deprecations"`
+	TotalErrors          int                `json:"total_errors"`
+	Data                 []priorityItem     `json:"data"`
+	Pagination           PaginationResponse `json:"pagination"`
+}
+
+// remediationSummaryResponse is the same question asked of the whole estate.
+//
+// Blocked machines are counted two ways and both are sent: by the complexity
+// of what they run, and by the readiness verdict recorded against them. They
+// disagree, and collapsing them into one number would hide which.
+type remediationSummaryResponse struct {
+	TargetChefVersion        string `json:"target_chef_version"`
+	TotalCookbooksEvaluated  int    `json:"total_cookbooks_evaluated"`
+	TotalNeedingRemediation  int    `json:"total_needing_remediation"`
+	QuickWins                int    `json:"quick_wins"`
+	ManualFixes              int    `json:"manual_fixes"`
+	BlockedNodesByComplexity int    `json:"blocked_nodes_by_complexity"`
+	BlockedNodesByReadiness  int    `json:"blocked_nodes_by_readiness"`
+	TotalAutoCorrectable     int    `json:"total_auto_correctable"`
+	TotalManualFix           int    `json:"total_manual_fix"`
+}
+
 // handleRemediationPriority handles GET /api/v1/remediation/priority.
 // Returns cookbooks sorted by complexity × blast radius (affected node count),
 // with complexity scores, auto-correctable counts, and top deprecations.
@@ -81,23 +130,6 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		r.logf("ERROR", "resolving organisation filter for remediation priority: %v", err)
 		WriteInternalError(w, "Failed to resolve organisations.")
 		return
-	}
-
-	type priorityItem struct {
-		CookbookName         string `json:"cookbook_name"`
-		CookbookVersion      string `json:"cookbook_version,omitempty"`
-		OrganisationName     string `json:"organisation_name,omitempty"`
-		ComplexityScore      int    `json:"complexity_score"`
-		ComplexityLabel      string `json:"complexity_label"`
-		AffectedNodeCount    int    `json:"affected_node_count"`
-		AffectedRoleCount    int    `json:"affected_role_count"`
-		PriorityScore        int    `json:"priority_score"`
-		AutoCorrectableCount int    `json:"auto_correctable_count"`
-		ManualFixCount       int    `json:"manual_fix_count"`
-		DeprecationCount     int    `json:"deprecation_count"`
-		ErrorCount           int    `json:"error_count"`
-		TargetChefVersion    string `json:"target_chef_version"`
-		VersionCount         int    `json:"version_count"`
 	}
 
 	var items []priorityItem
@@ -261,15 +293,15 @@ func (r *Router) handleRemediationPriority(w http.ResponseWriter, req *http.Requ
 		totalErrors += item.ErrorCount
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"target_chef_version":    targetVersion,
-		"total_cookbooks":        total,
-		"total_auto_correctable": totalAutoCorrectable,
-		"total_manual_fix":       totalManualFix,
-		"total_deprecations":     totalDeprecations,
-		"total_errors":           totalErrors,
-		"data":                   page,
-		"pagination":             NewPaginationResponse(pg, total),
+	WriteJSON(w, http.StatusOK, remediationPriorityResponse{
+		TargetChefVersion:    targetVersion,
+		TotalCookbooks:       total,
+		TotalAutoCorrectable: totalAutoCorrectable,
+		TotalManualFix:       totalManualFix,
+		TotalDeprecations:    totalDeprecations,
+		TotalErrors:          totalErrors,
+		Data:                 page,
+		Pagination:           NewPaginationResponse(pg, total),
 	})
 }
 
@@ -413,16 +445,16 @@ func (r *Router) handleRemediationSummary(w http.ResponseWriter, req *http.Reque
 		totalReadinessBlocked += blocked
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]any{
-		"target_chef_version":         targetVersion,
-		"total_cookbooks_evaluated":   totalCookbooks,
-		"total_needing_remediation":   totalNeeding,
-		"quick_wins":                  quickWins,
-		"manual_fixes":                manualFixes,
-		"blocked_nodes_by_complexity": blockedNodes,
-		"blocked_nodes_by_readiness":  totalReadinessBlocked,
-		"total_auto_correctable":      totalAutoCorrect,
-		"total_manual_fix":            totalManualFix,
+	WriteJSON(w, http.StatusOK, remediationSummaryResponse{
+		TargetChefVersion:        targetVersion,
+		TotalCookbooksEvaluated:  totalCookbooks,
+		TotalNeedingRemediation:  totalNeeding,
+		QuickWins:                quickWins,
+		ManualFixes:              manualFixes,
+		BlockedNodesByComplexity: blockedNodes,
+		BlockedNodesByReadiness:  totalReadinessBlocked,
+		TotalAutoCorrectable:     totalAutoCorrect,
+		TotalManualFix:           totalManualFix,
 	})
 }
 
