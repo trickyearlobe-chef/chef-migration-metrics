@@ -41,6 +41,14 @@ const doc = {
         operationId: "postFailureRegister",
         summary: "Record what you saw when you ran it.",
         "x-required-role": "operator",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/webapi.recordVerdictRequest" },
+            },
+          },
+        },
       },
     },
     "/api/v1/admin/users": {
@@ -48,6 +56,23 @@ const doc = {
         operationId: "getAdminUsers",
         summary: "The local accounts that can sign in.",
         "x-required-role": "admin",
+      },
+    },
+  },
+  components: {
+    schemas: {
+      "webapi.recordVerdictRequest": {
+        type: "object",
+        properties: {
+          subject_name: { type: "string" },
+          verdict: { type: "string" },
+          evidence: { type: "string" },
+          holder: { $ref: "#/components/schemas/webapi.holder" },
+        },
+      },
+      "webapi.holder": {
+        type: "object",
+        properties: { holder_ref: { type: "string" } },
       },
     },
   },
@@ -191,6 +216,50 @@ describe("ApiDocsPage", () => {
     expect(curl).not.toContain("-X GET");
   });
 
+  it("shows which query parameters a list accepts, and their limits", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchApiDocument).mockResolvedValue({
+      ...doc,
+      paths: {
+        "/api/v1/cookbooks": {
+          get: {
+            operationId: "getCookbooks",
+            summary: "Every cookbook with its verdict.",
+            "x-required-role": "authenticated",
+            parameters: [
+              {
+                name: "page",
+                in: "query",
+                required: false,
+                schema: { type: "integer", default: 1, minimum: 1 },
+              },
+              {
+                name: "per_page",
+                in: "query",
+                required: false,
+                schema: { type: "integer", default: 50, maximum: 500 },
+              },
+            ],
+          },
+        },
+      },
+    });
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+
+    await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
+
+    const panel = screen.getByRole("complementary");
+    expect(within(panel).getByText("page")).toBeInTheDocument();
+    expect(within(panel).getByText("per_page")).toBeInTheDocument();
+    // Without "query" beside them these read as path segments, which is a
+    // different call entirely.
+    expect(within(panel).getAllByText("query").length).toBe(2);
+    // Saying it caps at 500 is the difference between a caller writing a loop
+    // and a caller asking for the estate in one go and quietly getting 500.
+    expect(panel.textContent).toContain("500");
+  });
+
   it("shows path parameters as placeholders to be substituted", async () => {
     const user = userEvent.setup();
     vi.mocked(api.fetchApiDocument).mockResolvedValue({
@@ -223,7 +292,7 @@ describe("ApiDocsPage", () => {
     );
   });
 
-  it("says plainly what the description does not yet carry", async () => {
+  it("shows a write's fields, so somebody can build the call without our source", async () => {
     const user = userEvent.setup();
     render(<ApiDocsPage />);
     await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
@@ -232,12 +301,70 @@ describe("ApiDocsPage", () => {
       screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
     );
 
-    // The body is not described. Saying so beats an empty section, which reads
-    // as "this call takes nothing" — and would send somebody to a 400.
     const panel = screen.getByRole("complementary");
-    expect(
-      within(panel).getByText(/request body is not described/i),
-    ).toBeInTheDocument();
+    for (const field of ["subject_name", "verdict", "evidence"]) {
+      expect(within(panel).getByText(field)).toBeInTheDocument();
+    }
+    // Sending nothing is never right on a call that declares a body.
+    expect(within(panel).queryByText(/body is not described/i)).toBeNull();
+  });
+
+  it("follows a reference rather than showing a caller our internal type name", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+
+    await user.click(
+      screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
+    );
+
+    const panel = screen.getByRole("complementary");
+    expect(panel.textContent).not.toContain("#/components/schemas");
+    // A nested type resolves too, or the field reads as having no type at all.
+    expect(within(panel).getByText("holder")).toBeInTheDocument();
+    expect(within(panel).getByText("holder_ref")).toBeInTheDocument();
+  });
+
+  it("puts the fields into the curl, so the example is runnable", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+
+    await user.click(
+      screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
+    );
+
+    const curl = screen.getByTestId("curl-example").textContent ?? "";
+    expect(curl).toContain("subject_name");
+    // The empty placeholder was right when nothing was described; now it would
+    // be a worked example that fails.
+    expect(curl).not.toContain("-d '{}'");
+  });
+
+  it("still says plainly when a write really is described as taking nothing", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchApiDocument).mockResolvedValue({
+      ...doc,
+      paths: {
+        "/api/v1/cookbooks/{name}/rescan": {
+          post: {
+            operationId: "postCookbooksNameRescan",
+            summary: "Scan this cookbook again.",
+            "x-required-role": "operator",
+          },
+        },
+      },
+    });
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks/{name}/rescan"));
+
+    await user.click(
+      screen.getByRole("button", { name: /post \/api\/v1\/cookbooks/i }),
+    );
+
+    // Nothing to send is a real answer and has to read as one, not as a gap.
+    const panel = screen.getByRole("complementary");
+    expect(within(panel).getByText(/reads nothing from the body/i)).toBeInTheDocument();
   });
 
   it("copies the curl to the clipboard", async () => {

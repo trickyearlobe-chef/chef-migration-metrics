@@ -49,20 +49,50 @@ export interface CreatedApiToken {
 }
 
 // The served OpenAPI document, as this service actually emits it. Deliberately
-// narrow: there are no tags, no components and no parameter detail today, so a
-// type promising them would make the page render empty sections that look like
-// missing data rather than absent data.
+// narrow: there are no tags and no response detail today, so a type promising
+// them would make the page render empty sections that look like missing data
+// rather than absent data.
+
+// ApiSchema is as much of JSON Schema as the generator emits. A named type is
+// emitted once under components and referred to, so anything reading a field's
+// type has to be prepared to follow a reference.
+export interface ApiSchema {
+  $ref?: string;
+  type?: string;
+  format?: string;
+  // Bounds, on the pagination parameters. The maximum is load-bearing: the
+  // service clamps rather than refusing, so a caller that cannot see it never
+  // finds out it was capped.
+  minimum?: number;
+  maximum?: number;
+  default?: unknown;
+  properties?: Record<string, ApiSchema>;
+  items?: ApiSchema;
+  additionalProperties?: ApiSchema;
+  allOf?: ApiSchema[];
+}
+
 export interface ApiParameter {
   name: string;
   // "path" today; "query" once the generator emits filters and pagination.
   in: string;
   required?: boolean;
-  schema?: { type?: string };
+  schema?: ApiSchema;
+}
+
+export interface ApiRequestBody {
+  required?: boolean;
+  // Present when the body is deliberately not described in full — an upload,
+  // or telemetry whose shape this service does not decide. The reason is
+  // served so a reader is not left assuming it was forgotten.
+  description?: string;
+  content?: Record<string, { schema?: ApiSchema }>;
 }
 
 export interface ApiOperation {
   operationId?: string;
   parameters?: ApiParameter[];
+  requestBody?: ApiRequestBody;
   summary?: string;
   description?: string;
   // The access this operation needs, folded in by the generator from both the
@@ -74,4 +104,5 @@ export interface OpenApiDocument {
   openapi?: string;
   info?: { title?: string; version?: string; description?: string };
   paths?: Record<string, Record<string, ApiOperation | undefined>>;
+  components?: { schemas?: Record<string, ApiSchema> };
 }

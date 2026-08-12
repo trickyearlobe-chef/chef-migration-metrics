@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchApiDocument } from "../api";
-import type { ApiOperation, OpenApiDocument } from "../types";
+import type { ApiOperation, ApiSchema, OpenApiDocument } from "../types";
 import { ErrorAlert, LoadingSpinner } from "../components/Feedback";
 
 // The service's own description, rendered for a person rather than a client
@@ -107,13 +107,125 @@ function entriesOf(doc: OpenApiDocument | null): Entry[] {
   );
 }
 
+type Schemas = Record<string, ApiSchema>;
+
+// resolve follows a reference to the type it names. Named types are emitted
+// once under components and referred to everywhere else, so a caller reading
+// "$ref: #/components/schemas/webapi.loginRequest" has been told nothing —
+// every reader of a schema has to follow it or render our internal type name at
+// somebody.
+//
+// A reference that does not resolve returns undefined rather than throwing: a
+// dangling one is a bug in the generator, and the page saying "not described"
+// is a better failure than a blank screen.
+function resolve(schema: ApiSchema | undefined, schemas: Schemas): ApiSchema | undefined {
+  let current = schema;
+  // Bounded rather than recursive: a reference cycle in the document must not
+  // hang the browser.
+  for (let hops = 0; current?.$ref && hops < 20; hops++) {
+    current = schemas[current.$ref.replace("#/components/schemas/", "")];
+  }
+  return current?.$ref ? undefined : current;
+}
+
+// allOf is how one body read into several types is described. Flattening the
+// parts into one field list is what a caller needs — they send one document,
+// not three.
+function fieldsOf(
+  schema: ApiSchema | undefined,
+  schemas: Schemas,
+): Array<[string, ApiSchema]> {
+  const target = resolve(schema, schemas);
+  if (!target) return [];
+  if (target.allOf) {
+    return target.allOf.flatMap((part) => fieldsOf(part, schemas));
+  }
+  return Object.entries(target.properties ?? {});
+}
+
+// typeLabel says what a field holds, in the reader's terms rather than JSON
+// Schema's. An unresolved or untyped schema reads as "any", which is honest:
+// the generator emits exactly that for the places where the service genuinely
+// accepts anything.
+function typeLabel(schema: ApiSchema | undefined, schemas: Schemas): string {
+  const target = resolve(schema, schemas);
+  if (!target) return "any";
+  if (target.allOf) return "object";
+  if (target.type === "array") {
+    return `${typeLabel(target.items, schemas)}[]`;
+  }
+  if (target.type === "object" && target.additionalProperties) {
+    return `map of ${typeLabel(target.additionalProperties, schemas)}`;
+  }
+  if (!target.type) return "any";
+  return target.format ? `${target.type} (${target.format})` : target.type;
+}
+
+// exampleFor builds a document with every field in it, so the curl below is a
+// call somebody can edit rather than a shape they have to look up. Values are
+// obviously-placeholder rather than plausible: a realistic-looking example gets
+// pasted and sent.
+function exampleFor(schema: ApiSchema | undefined, schemas: Schemas, depth = 0): unknown {
+  const target = resolve(schema, schemas);
+  if (!target || depth > 4) return null;
+  if (target.allOf) {
+    return Object.assign({}, ...target.allOf.map((p) => exampleFor(p, schemas, depth)));
+  }
+  if (target.properties) {
+    const out: Record<string, unknown> = {};
+    for (const [name, field] of Object.entries(target.properties)) {
+      out[name] = exampleFor(field, schemas, depth + 1);
+    }
+    return out;
+  }
+  switch (target.type) {
+    case "array":
+      return [exampleFor(target.items, schemas, depth + 1)];
+    case "object":
+      return {};
+    case "string":
+      return target.format === "date-time" ? "2026-01-01T00:00:00Z" : "";
+    case "integer":
+    case "number":
+      return 0;
+    case "boolean":
+      return false;
+    default:
+      return null;
+  }
+}
+
+// limitsOf spells out the bounds a parameter carries. The maximum matters more
+// than it looks: asking for more than the cap is not refused, it quietly
+// returns the cap — so a caller who cannot see the number writes a loop that
+// silently reads the same page forever.
+function limitsOf(schema: ApiSchema | undefined): string {
+  if (!schema) return "";
+  const parts: string[] = [];
+  if (schema.minimum !== undefined || schema.maximum !== undefined) {
+    parts.push(`${schema.minimum ?? ""}\u2013${schema.maximum ?? ""}`);
+  }
+  if (schema.default !== undefined) {
+    parts.push(`default ${schema.default}`);
+  }
+  return parts.length ? `(${parts.join(", ")})` : "";
+}
+
+// jsonBodySchema is the JSON document a call takes, if it takes one. An upload
+// is deliberately not one: its content type is different and its fields are not
+// described, so treating it as JSON would put an empty object in the curl and
+// send somebody to a refusal.
+function jsonBodySchema(entry: Entry): ApiSchema | undefined {
+  return entry.op.requestBody?.content?.["application/json"]?.schema;
+}
+
 // curlFor builds a command the reader can paste. The token is a shell variable,
 // never a literal: an example carrying a real credential is a credential that
 // ends up in a ticket, a wiki and a screenshot.
 //
 // Path variables become upper-case placeholders so an unsubstituted one fails
 // loudly at the server rather than quietly matching something.
-function curlFor(entry: Entry, origin: string): string {
+function curlFor(entry: Entry, origin: string, schemas: Schemas): string {
   const path = entry.path.replace(/\{([^}]+)\}/g, (_, name: string) =>
     name.toUpperCase().replace(/[^A-Z0-9]/g, "_"),
   );
@@ -122,27 +234,141 @@ function curlFor(entry: Entry, origin: string): string {
     lines.push(`  -X ${entry.method.toUpperCase()} \\`);
   }
   lines.push(`  -H 'Authorization: Bearer $APITOKEN' \\`);
-  if (!READ_METHODS.includes(entry.method)) {
+
+  const body = jsonBodySchema(entry);
+  const isUpload = entry.op.requestBody?.content?.["multipart/form-data"] !== undefined;
+  if (body) {
+    const example = exampleFor(body, schemas);
+    const rendered = JSON.stringify(example ?? {}, null, 2)
+      .split("\n")
+      .join("\n  ");
     lines.push(`  -H 'Content-Type: application/json' \\`);
-    lines.push(`  -d '{}' \\`);
+    lines.push(`  -d '${rendered}' \\`);
+  } else if (isUpload) {
+    // The field names are not described yet, so naming one here would be an
+    // invention. Showing the shape of the call is still worth more than
+    // showing nothing.
+    lines.push(`  -F 'file=@your-file' \\`);
   }
   lines.push(`  '${origin}${path}'`);
   return lines.join("\n");
 }
 
+// FieldRows renders a body's fields, descending into nested objects so a
+// caller sees the whole document rather than a row saying "object" with no way
+// to find out what goes in it.
+function FieldRows({
+  fields,
+  schemas,
+  depth = 0,
+}: {
+  fields: Array<[string, ApiSchema]>;
+  schemas: Schemas;
+  depth?: number;
+}) {
+  return (
+    <>
+      {fields.map(([name, field]) => {
+        // An array of objects is described by its element, which is what the
+        // caller actually fills in.
+        const resolved = resolve(field, schemas);
+        const nestedSource =
+          resolved?.type === "array" ? resolved.items : field;
+        // Bounded so a self-referencing type cannot render forever.
+        const nested = depth < 4 ? fieldsOf(nestedSource, schemas) : [];
+        return (
+          <Fragment key={name}>
+            <tr className="border-t border-gray-100">
+              <td
+                className="py-1 font-mono text-gray-900"
+                style={{ paddingLeft: depth * 12 }}
+              >
+                {name}
+              </td>
+              <td className="py-1 text-gray-600">{typeLabel(field, schemas)}</td>
+            </tr>
+            {nested.length > 0 && (
+              <FieldRows fields={nested} schemas={schemas} depth={depth + 1} />
+            )}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// RequestBodySection says one of four things, and the difference between them
+// matters more than any of them individually: here are the fields, this is a
+// file upload, this takes a body we deliberately do not describe, or this
+// genuinely reads nothing. An empty section would read as the last one whatever
+// the truth was, which is how somebody ends up at a 400 they cannot explain.
+function RequestBodySection({ entry, schemas }: { entry: Entry; schemas: Schemas }) {
+  const body = entry.op.requestBody;
+
+  if (!body) {
+    return (
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Request body
+        </h3>
+        <p className="mt-1 text-sm text-gray-500">
+          None — this call reads nothing from the body. What it acts on is in
+          the address.
+        </p>
+      </div>
+    );
+  }
+
+  const fields = fieldsOf(jsonBodySchema(entry), schemas);
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+        Request body
+      </h3>
+      {body.description && (
+        <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {body.description}
+        </p>
+      )}
+      {fields.length > 0 ? (
+        <table className="mt-1.5 w-full text-left text-sm">
+          <thead>
+            <tr className="text-xs uppercase tracking-wider text-gray-400">
+              <th className="pb-1 font-medium">Field</th>
+              <th className="pb-1 font-medium">Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            <FieldRows fields={fields} schemas={schemas} />
+          </tbody>
+        </table>
+      ) : (
+        !body.description && (
+          <p className="mt-1 text-sm text-gray-500">
+            Takes a body, but its fields are not described.
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
 function OperationPanel({
   entry,
+  schemas,
   width,
   onClose,
 }: {
   entry: Entry;
+  schemas: Schemas;
   width: number;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const origin =
     typeof window === "undefined" ? "https://your-service" : window.location.origin;
-  const curl = curlFor(entry, origin);
+  const curl = curlFor(entry, origin, schemas);
   const params = entry.op.parameters ?? [];
   const isWrite = !READ_METHODS.includes(entry.method);
 
@@ -210,7 +436,8 @@ function OperationPanel({
         </h3>
         {params.length === 0 ? (
           <p className="mt-1 text-sm text-gray-500">
-            None in the address itself.
+            None — nothing in the address, and nothing accepted in the query
+            string.
           </p>
         ) : (
           <table className="mt-1.5 w-full text-left text-sm">
@@ -231,6 +458,9 @@ function OperationPanel({
                   <td className="py-1 text-gray-600">{p.in}</td>
                   <td className="py-1 text-gray-600">
                     {p.schema?.type ?? "string"}
+                    {limitsOf(p.schema) && (
+                      <span className="text-gray-500"> {limitsOf(p.schema)}</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -239,18 +469,10 @@ function OperationPanel({
         )}
       </div>
 
-      {/* Saying what is absent beats an empty section. An empty "Body" heading
-          reads as "this call takes nothing", which sends somebody to a 400 and
-          makes them distrust the rest of the page. */}
-      {isWrite && (
-        <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          The request body is not described yet — the generator does not emit
-          one. Check the handler, or the screen that makes this call, for the
-          fields it expects.
-        </p>
-      )}
+      {isWrite && <RequestBodySection entry={entry} schemas={schemas} />}
+
       <p className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        Query parameters and the response shape are not described yet either.
+        The response shape is not described yet.
       </p>
 
       <div>
@@ -529,6 +751,7 @@ export function ApiDocsPage() {
               />
               <OperationPanel
                 entry={selectedEntry}
+                schemas={doc?.components?.schemas ?? {}}
                 width={panelWidth}
                 onClose={() => setSelected(null)}
               />
