@@ -69,6 +69,10 @@ type Answer struct {
 	// Value is a zero value of the encoded type. Nothing is read from it but
 	// its shape.
 	Value any
+	// Or holds the other shapes this method can answer with, where it answers
+	// more than one. Two addresses do: what comes back depends on a parameter,
+	// and describing one of the two would be wrong half the time.
+	Or []any
 	// Page says the value is the row type of a paginated envelope rather than
 	// the whole answer — data carries a list of it, with the pagination
 	// metadata beside it.
@@ -343,12 +347,12 @@ func subTakesQuery(suffix, method string, params ...queryParam) RouteOption {
 // on the path inside — so the handler is not the unit, the (method, address)
 // is. tools/api-probe/probe.py asks a running instance what each address really
 // answered and reports every disagreement with the description.
-func answers(method string, v any) RouteOption {
+func answers(method string, v any, or ...any) RouteOption {
 	return func(rt *Route) {
 		if rt.Answers == nil {
 			rt.Answers = map[string]Answer{}
 		}
-		rt.Answers[method] = Answer{Value: v}
+		rt.Answers[method] = Answer{Value: v, Or: or}
 	}
 }
 
@@ -369,8 +373,8 @@ func answersPage(method string, elem any) RouteOption {
 
 // subAnswers is answers for one address under a subtree. Panics when the suffix
 // has not been declared with sub first — see subTakes for why.
-func subAnswers(suffix, method string, v any) RouteOption {
-	return subAnswer(suffix, method, Answer{Value: v}, "subAnswers")
+func subAnswers(suffix, method string, v any, or ...any) RouteOption {
+	return subAnswer(suffix, method, Answer{Value: v, Or: or}, "subAnswers")
 }
 
 // subAnswersPage is answersPage for one address under a subtree.

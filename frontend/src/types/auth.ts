@@ -70,6 +70,9 @@ export interface ApiSchema {
   items?: ApiSchema;
   additionalProperties?: ApiSchema;
   allOf?: ApiSchema[];
+  // One of several shapes, which is how an address that answers differently
+  // depending on a parameter is described. A caller has to branch.
+  oneOf?: ApiSchema[];
 }
 
 export interface ApiParameter {

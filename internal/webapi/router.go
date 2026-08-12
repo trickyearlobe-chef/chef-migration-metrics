@@ -923,14 +923,19 @@ func (r *Router) registerRoutes() {
 	// -----------------------------------------------------------------
 	// Cookstyle cop analysis & classification
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/cookstyle/cops", r.handleCookstyleCops, paginated())
-	r.protect("/api/v1/cookstyle/cop-drift", r.handleCookstyleCopDrift)
+	r.protect("/api/v1/cookstyle/cops", r.handleCookstyleCops, paginated(),
+		answers("GET", copAggregationResponse{}))
+	r.protect("/api/v1/cookstyle/cop-drift", r.handleCookstyleCopDrift,
+		answers("GET", analysis.CopDriftReport{}))
 	r.protect("/api/v1/cookstyle/cops/", r.handleCookstyleCopSubroute,
 		sub("{cop_name}/cookbooks"), sub("{cop_name}/classification", "GET", "PUT"),
 		subPaginated("{cop_name}/cookbooks"),
-		subTakes("{cop_name}/classification", "PUT", classificationPutRequest{}))
+		subTakes("{cop_name}/classification", "PUT", classificationPutRequest{}),
+		subAnswers("{cop_name}/cookbooks", "GET",
+			copCookbookGroupResponse{}, copCookbookResponse{}))
 	r.protect("/api/v1/cookstyle/scan-scope", r.handleCookstyleScanScope,
-		methods("GET", "PUT", "DELETE"), takes("PUT", scanScopePutRequest{}))
+		methods("GET", "PUT", "DELETE"), takes("PUT", scanScopePutRequest{}),
+		answers("GET", scanScopeListResponse{}))
 	r.protect("/api/v1/cookstyle/custom-cops", r.handleCookstyleCustomCops,
 		methods("GET", "POST"), takes("POST", datastore.CustomCopDefinition{}))
 	r.protect("/api/v1/cookstyle/custom-cops/", r.handleCookstyleCustomCop,
@@ -1018,7 +1023,8 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/reassign", r.handleOwnershipEndpoints, methods("POST"),
 		takes("POST", reassignOwnershipRequest{}))
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
-	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints, paginated())
+	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints, paginated(),
+		answersPage("GET", datastore.OwnershipAuditEntry{}))
 	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints, methods("POST"),
 		takesForm("POST", formField{Name: "format"}, formField{Name: "file", File: true}))
 	// Discovery-driven intake. Registered as exact patterns beside the
@@ -1158,12 +1164,15 @@ func (r *Router) registerRoutes() {
 	r.adminOnly("/api/v1/admin/platform-mapping/status", r.handlePlatformMappingStatus)
 
 	// Kitchen analysis endpoints (viewer — any authenticated user)
-	r.protect("/api/v1/kitchen/analysis/summary", r.handleKitchenAnalysisSummary)
+	r.protect("/api/v1/kitchen/analysis/summary", r.handleKitchenAnalysisSummary,
+		answers("GET", datastore.KitchenAnalysisSummary{}))
 	r.protect("/api/v1/kitchen/analysis/platforms", r.handleKitchenAnalysisPlatforms,
-		takesQuery("GET", queryParam{Name: "min_count"}, queryParam{Name: "os_family"}))
-	r.protect("/api/v1/kitchen/analysis/cookbooks", r.handleKitchenAnalysisCookbooksRouter)
+		takesQuery("GET", queryParam{Name: "min_count"}, queryParam{Name: "os_family"}),
+		answers("GET", []datastore.KitchenDiscoveredPlatform{}))
+	r.protect("/api/v1/kitchen/analysis/cookbooks", r.handleKitchenAnalysisCookbooksRouter,
+		answers("GET", []datastore.KitchenAnalysisResult{}))
 	r.protect("/api/v1/kitchen/analysis/cookbooks/", r.handleKitchenAnalysisCookbooksRouter,
-		sub("{name}"))
+		sub("{name}"), subAnswers("{name}", "GET", datastore.KitchenAnalysisResult{}))
 
 	// Kitchen analysis trigger (operator — operational action)
 	r.operatorOnly("/api/v1/kitchen/analysis/trigger", r.handleKitchenAnalysisTrigger, methods("POST"))
@@ -1172,9 +1181,11 @@ func (r *Router) registerRoutes() {
 	// Hypervisor endpoints (viewer for reads, operator for operational,
 	// admin for destructive/config)
 	// -----------------------------------------------------------------
-	r.protect("/api/v1/hypervisor/templates", r.handleHypervisorTemplates)
+	r.protect("/api/v1/hypervisor/templates", r.handleHypervisorTemplates,
+		answers("GET", []hypervisor.Template{}))
 	r.protect("/api/v1/hypervisor/vms", r.handleHypervisorVMs,
-		takesQuery("GET", queryParam{Name: "status"}))
+		takesQuery("GET", queryParam{Name: "status"}),
+		answers("GET", []datastore.TrackedVM{}))
 	r.operatorOnly("/api/v1/hypervisor/vms/", r.handleHypervisorDestroyVM,
 		sub("{id}/destroy", "DELETE", "POST"))
 	r.operatorOnly("/api/v1/hypervisor/cleanup", r.handleHypervisorCleanup, methods("POST"))
@@ -1224,7 +1235,8 @@ func (r *Router) registerRoutes() {
 			queryParam{Name: "type"}))
 	r.protect("/api/v1/kitchen/queue/stats", r.handleKitchenQueueStats)
 	r.protect("/api/v1/kitchen/queue/", r.handleKitchenQueueRouting,
-		sub("{id}"), sub("{id}/cancel", "POST"), sub("{id}/retry", "POST"))
+		sub("{id}"), sub("{id}/cancel", "POST"), sub("{id}/retry", "POST"),
+		subAnswers("{id}", "GET", datastore.KitchenQueueItem{}))
 
 	// -----------------------------------------------------------------
 	// Saved filter endpoints — any authenticated user manages their own;

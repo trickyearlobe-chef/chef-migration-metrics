@@ -1230,6 +1230,190 @@
     },
     "type": "object"
   },
+  "GET /api/v1/cookstyle/cop-drift": {
+    "properties": {
+      "coverage_gaps": {
+        "items": {
+          "properties": {
+            "cop_name": {
+              "type": "string"
+            },
+            "department": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "registry_available": {
+        "type": "boolean"
+      },
+      "registry_version": {
+        "type": "string"
+      },
+      "stale": {
+        "items": {
+          "properties": {
+            "cop_name": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookstyle/cops": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "auto_correctable_pct": {
+              "type": "number"
+            },
+            "category": {
+              "type": "string"
+            },
+            "classification": {
+              "type": "string"
+            },
+            "classification_source": {
+              "type": "string"
+            },
+            "cookbooks_affected": {
+              "type": "integer"
+            },
+            "cookbooks_excluded_only": {
+              "type": "integer"
+            },
+            "cop_name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "excluded_offences": {
+              "type": "integer"
+            },
+            "introduced_in": {
+              "type": "string"
+            },
+            "is_custom": {
+              "type": "boolean"
+            },
+            "migration_url": {
+              "type": "string"
+            },
+            "removed_in": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string"
+            },
+            "total_offences": {
+              "type": "integer"
+            },
+            "unblocks": {
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "summary": {
+        "properties": {
+          "blocker_cookbooks": {
+            "type": "integer"
+          },
+          "blocker_cops": {
+            "type": "integer"
+          },
+          "noise_cops": {
+            "type": "integer"
+          },
+          "review_cookbooks": {
+            "type": "integer"
+          },
+          "review_cops": {
+            "type": "integer"
+          },
+          "unclassified_cops": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/cookstyle/cops/{cop_name}/cookbooks": {
+    "oneOf": [
+      {
+        "$ref": "#/components/schemas/webapi.copCookbookGroupResponse"
+      },
+      {
+        "$ref": "#/components/schemas/webapi.copCookbookResponse"
+      }
+    ]
+  },
+  "GET /api/v1/cookstyle/scan-scope": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "created_by": {
+              "type": "string"
+            },
+            "excluded": {
+              "type": "boolean"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
   "GET /api/v1/dashboard/complexity/trend": {
     "properties": {
       "data": {
@@ -2701,6 +2885,324 @@
     },
     "type": "object"
   },
+  "GET /api/v1/hypervisor/templates": {
+    "items": {
+      "properties": {
+        "guest_os": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "last_modified": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/hypervisor/vms": {
+    "items": {
+      "properties": {
+        "actual_destroy_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "batch_id": {
+          "type": "string"
+        },
+        "cookbook_name": {
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "expected_destroy_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "hypervisor_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "platform_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "suite_name": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "vm_name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/kitchen/analysis/cookbooks": {
+    "items": {
+      "properties": {
+        "analysed_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "driver_name": {
+          "type": "string"
+        },
+        "error_message": {
+          "type": "string"
+        },
+        "extensions": {},
+        "git_repo_name": {
+          "type": "string"
+        },
+        "git_repo_url": {
+          "type": "string"
+        },
+        "has_local_override": {
+          "type": "boolean"
+        },
+        "head_commit_sha": {
+          "type": "string"
+        },
+        "kitchen_files": {},
+        "local_override_keys": {},
+        "platforms": {},
+        "provisioner_name": {
+          "type": "string"
+        },
+        "require_chef_omnibus": {
+          "type": "boolean"
+        },
+        "suites": {},
+        "transport_type": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "variant_files": {}
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/kitchen/analysis/cookbooks/{name}": {
+    "properties": {
+      "analysed_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "created_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "driver_name": {
+        "type": "string"
+      },
+      "error_message": {
+        "type": "string"
+      },
+      "extensions": {},
+      "git_repo_name": {
+        "type": "string"
+      },
+      "git_repo_url": {
+        "type": "string"
+      },
+      "has_local_override": {
+        "type": "boolean"
+      },
+      "head_commit_sha": {
+        "type": "string"
+      },
+      "kitchen_files": {},
+      "local_override_keys": {},
+      "platforms": {},
+      "provisioner_name": {
+        "type": "string"
+      },
+      "require_chef_omnibus": {
+        "type": "boolean"
+      },
+      "suites": {},
+      "transport_type": {
+        "type": "string"
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "variant_files": {}
+    },
+    "type": "object"
+  },
+  "GET /api/v1/kitchen/analysis/platforms": {
+    "items": {
+      "properties": {
+        "common_extensions": {},
+        "cookbook_count": {
+          "type": "integer"
+        },
+        "has_extensions": {
+          "type": "boolean"
+        },
+        "normalised_name": {
+          "type": "string"
+        },
+        "os_family": {
+          "type": "string"
+        },
+        "os_version": {
+          "type": "string"
+        },
+        "platform_name": {
+          "type": "string"
+        },
+        "transport_type": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "type": "array"
+  },
+  "GET /api/v1/kitchen/analysis/summary": {
+    "properties": {
+      "driver_counts": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "platform_count": {
+        "type": "integer"
+      },
+      "provisioner_counts": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      },
+      "total_scanned": {
+        "type": "integer"
+      },
+      "total_with_conflicts": {
+        "type": "integer"
+      },
+      "total_with_local_override": {
+        "type": "integer"
+      },
+      "total_without_kitchen": {
+        "type": "integer"
+      },
+      "transport_counts": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "type": "object"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/kitchen/queue/{id}": {
+    "properties": {
+      "batch_id": {
+        "type": "string"
+      },
+      "completed_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "cookbook_source": {
+        "type": "string"
+      },
+      "enqueued_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "error_message": {
+        "type": "string"
+      },
+      "git_repo_name": {
+        "type": "string"
+      },
+      "git_repo_url": {
+        "type": "string"
+      },
+      "head_commit_sha": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "instance_name": {
+        "type": "string"
+      },
+      "node_name": {
+        "type": "string"
+      },
+      "organisation_name": {
+        "type": "string"
+      },
+      "output": {
+        "type": "string"
+      },
+      "platform_name": {
+        "type": "string"
+      },
+      "priority": {
+        "type": "integer"
+      },
+      "retry_of": {
+        "type": "string"
+      },
+      "run_type": {
+        "type": "string"
+      },
+      "started_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "suite_name": {
+        "type": "string"
+      },
+      "target_chef_version": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
   "GET /api/v1/logs": {
     "properties": {
       "data": {
@@ -3734,6 +4236,62 @@
       "updated_at": {
         "format": "date-time",
         "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/ownership/audit-log": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "actor": {
+              "type": "string"
+            },
+            "details": {},
+            "entity_key": {
+              "type": "string"
+            },
+            "entity_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "integer"
+            },
+            "organisation": {
+              "type": "string"
+            },
+            "owner_name": {
+              "type": "string"
+            },
+            "timestamp": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
       }
     },
     "type": "object"

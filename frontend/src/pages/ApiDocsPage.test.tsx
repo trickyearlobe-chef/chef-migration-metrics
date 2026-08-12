@@ -77,6 +77,34 @@ const doc = {
         "x-required-role": "admin",
       },
     },
+    "/api/v1/cookstyle/cops/{cop_name}/cookbooks": {
+      get: {
+        operationId: "getCookstyleCopsCopNameCookbooks",
+        summary: "Which cookbooks this rule fires on.",
+        "x-required-role": "authenticated",
+        responses: {
+          "200": {
+            description: "The answer.",
+            content: {
+              "application/json": {
+                schema: {
+                  oneOf: [
+                    {
+                      type: "object",
+                      properties: { grouped: { type: "boolean" }, cop_name: { type: "string" } },
+                    },
+                    {
+                      type: "object",
+                      properties: { cop_name: { type: "string" } },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   },
   components: {
     schemas: {
@@ -141,7 +169,7 @@ describe("ApiDocsPage", () => {
       .map((el) => el.textContent);
     expect(badges).toContain("admin");
     expect(badges).toContain("operator");
-    expect(badges.filter((b) => b === "authenticated")).toHaveLength(2);
+    expect(badges.filter((b) => b === "authenticated")).toHaveLength(3);
   });
 
   it("groups addresses so 195 of them can be found", async () => {
@@ -551,6 +579,24 @@ describe("ApiDocsPage", () => {
     // An empty section reads as "answers nothing", which is a different claim
     // and a wrong one.
     expect(within(panel).getByText(/not described yet/i)).toBeInTheDocument();
+  });
+
+
+  it("says when an answer comes back in one of several shapes", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookstyle/cops/{cop_name}/cookbooks"));
+
+    await user.click(
+      screen.getByRole("button", { name: /get \/api\/v1\/cookstyle\/cops/i }),
+    );
+
+    const panel = screen.getByRole("complementary");
+    const response = within(panel).getByTestId("response-shape");
+    // A caller has to branch, so both shapes are shown rather than one of them
+    // chosen for them.
+    expect(within(response).getByText(/one of 2/i)).toBeInTheDocument();
+    expect(within(response).getByText("grouped")).toBeInTheDocument();
   });
 
 });

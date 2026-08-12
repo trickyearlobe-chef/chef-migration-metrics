@@ -370,6 +370,38 @@ function ResponseSection({ entry, schemas }: { entry: Entry; schemas: Schemas })
   const fields = fieldsOf(schema, schemas);
   const resolved = resolve(schema, schemas);
 
+  // One of several shapes: what comes back depends on what was asked for, so
+  // both are shown. Choosing one for the reader would be wrong for every call
+  // that got the other, and they have to branch either way.
+  if (resolved?.oneOf) {
+    return (
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Response
+        </h3>
+        <div data-testid="response-shape">
+          <p className="mt-1 text-sm text-gray-600">
+            Answers one of {resolved.oneOf.length} shapes, depending on what was
+            asked for.
+          </p>
+          {resolved.oneOf.map((shape, i) => (
+            <table key={i} className="mt-1.5 w-full text-left text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-wider text-gray-400">
+                  <th className="pb-1 font-medium">Field</th>
+                  <th className="pb-1 font-medium">Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                <FieldRows fields={fieldsOf(shape, schemas)} schemas={schemas} />
+              </tbody>
+            </table>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">

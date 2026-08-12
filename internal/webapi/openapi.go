@@ -130,6 +130,16 @@ func describeAnswer(schemas *schemaRegistry, op map[string]any, answer Answer) {
 	if answer.Page {
 		schema = schemas.pageOf(reflect.TypeOf(answer.Value))
 	}
+	if len(answer.Or) > 0 {
+		// One of several shapes. A caller has to branch, and saying so is the
+		// only honest description — picking one would be wrong for every call
+		// that got the other.
+		shapes := []any{schema}
+		for _, other := range answer.Or {
+			shapes = append(shapes, schemas.schemaFor(reflect.TypeOf(other)))
+		}
+		schema = map[string]any{"oneOf": shapes}
+	}
 	responses, _ := op["responses"].(map[string]any)
 	ok, _ := responses["200"].(map[string]any)
 	if ok == nil {
