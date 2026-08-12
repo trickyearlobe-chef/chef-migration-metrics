@@ -32,8 +32,26 @@ import (
 // agentJourneyRouter builds a router with a mock store. The mock cannot satisfy
 // a real request, so these tests ask whether a capability is wired, not whether
 // it returns correct data.
+//
+// The exception is credentials, which are wired to a real in-memory store: what
+// this journey asks about them — that a destroyed one stops working, that the
+// secret never comes back — cannot be answered by a router that only routes.
 func agentJourneyRouter() *Router {
-	return newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("19.0"))
+	return newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("19.0"),
+		WithCredentialManager(auth.NewCredentialManager(
+			newMemCredentialStore().withUser("admin", "admin"))))
+}
+
+// agentJourneySend issues an authenticated request with a body and returns the
+// recorder. The counterpart to agentJourneyGet, for the handful of things here
+// that are not reads.
+func agentJourneySend(t *testing.T, router *Router, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, withAdminSession(req))
+	return w
 }
 
 // agentJourneyGet issues an authenticated GET and returns the recorder.
@@ -197,6 +215,9 @@ func TestJourney_ICanIssueMyselfACredential(t *testing.T) {
 // "I want to be able to throw it away and get a new one the moment I am unsure
 // about it" — and "I want to see that I have one and roughly when it was last
 // used."
+//
+// Both halves are exercised against a real credential, because a listing that
+// is empty answers the question by having nothing in it.
 func TestJourney_ICanSeeAndDestroyMyCredential(t *testing.T) {
 	path, ok := agentJourneyServes(t,
 		"/api/v1/auth/me/tokens",
@@ -207,15 +228,97 @@ func TestJourney_ICanSeeAndDestroyMyCredential(t *testing.T) {
 	if !ok {
 		t.Skip("credentials cannot be issued yet; TestJourney_ICanIssueMyselfACredential is the gap")
 	}
+
+	router := agentJourneyRouter()
+	if w := agentJourneySend(t, router, http.MethodPost, path,
+		`{"name":"editor"}`); w.Code != http.StatusCreated {
+		t.Fatalf("creating a credential answered %d: %s", w.Code, w.Body.String())
+	}
+
+	listing := agentJourneyListTokens(t, router, path)
+	if len(listing) != 1 {
+		t.Fatalf("a person made one credential and their record shows %d, so they cannot "+
+			"tell what exists in their name", len(listing))
+	}
+	id, _ := listing[0]["id"].(string)
+	if id == "" {
+		t.Fatal("a credential in the listing has no id, so there is no way to say which " +
+			"one to destroy")
+	}
+	if _, ok := listing[0]["last_used_at"]; !ok {
+		// Absent is how "never used" is reported, which is fine — what would
+		// not be fine is the field never appearing once it has been used. That
+		// is checked in internal/auth, where the clock is.
+		t.Log("last_used_at is absent for a credential that has never been used")
+	}
+
+	w := agentJourneySend(t, router, http.MethodDelete, path+"/"+id, "")
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("destroying a credential answered %d: %s — the one thing somebody does "+
+			"when they think it has leaked is the thing that has to work", w.Code, w.Body.String())
+	}
+	if after := agentJourneyListTokens(t, router, path); len(after) != 0 {
+		t.Errorf("a destroyed credential is still in its owner's record (%d left)", len(after))
+	}
+}
+
+// "Shown once, destroyable instantly. No recovering an old one."
+//
+// The secret comes back from creation and from nowhere else. If it could be
+// read a second time then destroying a credential would not be the remedy for
+// believing somebody else has it — everyone who can read the listing has it.
+func TestJourney_TheSecretIsShownOnceAndNeverAgain(t *testing.T) {
+	path, ok := agentJourneyServes(t,
+		"/api/v1/auth/me/tokens",
+		"/api/v1/auth/me/api-tokens",
+		"/api/v1/me/tokens",
+		"/api/v1/users/me/tokens",
+	)
+	if !ok {
+		t.Skip("credentials cannot be issued yet; TestJourney_ICanIssueMyselfACredential is the gap")
+	}
+
+	router := agentJourneyRouter()
+	created := agentJourneySend(t, router, http.MethodPost, path, `{"name":"editor"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("creating a credential answered %d: %s", created.Code, created.Body.String())
+	}
+
+	var minted struct {
+		Secret string `json:"secret"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &minted); err != nil {
+		t.Fatalf("reading what creating a credential returned: %v", err)
+	}
+	if strings.TrimSpace(minted.Secret) == "" {
+		t.Fatal("creating a credential returned no secret, so there is nothing to put in " +
+			"an editor and the credential is useless")
+	}
+
+	// The whole of the listing, as text: whatever it is called and however it
+	// is nested, the secret must not be in it.
+	again := agentJourneyGet(t, path)
+	if strings.Contains(again.Body.String(), minted.Secret) {
+		t.Error("the secret can be read back from the listing, so it is not shown once — " +
+			"and destroying a credential is no longer a remedy for it having leaked")
+	}
+}
+
+// agentJourneyListTokens reads the credential listing as plain maps, so a test
+// can ask what fields are present without fixing their names here.
+func agentJourneyListTokens(t *testing.T, router *Router, path string) []map[string]any {
+	t.Helper()
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, withAdminSession(httptest.NewRequest(http.MethodGet, path, nil)))
+
 	var listing struct {
-		Tokens []struct {
-			ID         string `json:"id"`
-			LastUsedAt string `json:"last_used_at"`
-		} `json:"tokens"`
+		Tokens []map[string]any `json:"tokens"`
 	}
-	if err := json.Unmarshal(agentJourneyGet(t, path).Body.Bytes(), &listing); err != nil {
-		t.Errorf("a person cannot see which credentials exist in their name: %v", err)
+	if err := json.Unmarshal(w.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("a person cannot see which credentials exist in their name (status %d): %v",
+			w.Code, err)
 	}
+	return listing.Tokens
 }
 
 // "The assistant-facing surface is part of the service. Not a companion
@@ -449,12 +552,26 @@ func TestJourney_ICanChooseWhetherMyCredentialCanWrite(t *testing.T) {
 }
 
 // "Writing means the register of failures, and nothing else."
+//
+// Exercised end to end, with a real credential in the header, in
+// credential_scope_test.go — TestAWritingCredentialCannotReachAnythingElse and
+// TestAReadOnlyCredentialCannotWriteAnywhere. The check is repeated here in
+// one line so that this journey's list does not read as though the question is
+// still open.
 func TestJourney_AWritingCredentialCannotReachAnythingElse(t *testing.T) {
-	t.Skip("credentials cannot be issued yet, so there is nothing whose write access can be " +
-		"exercised. Decided, so it is not settled by whoever builds this first: a credential " +
-		"that can write may record in the failure register and nowhere else, and one that " +
-		"cannot write may do none of it. Becomes checkable once " +
-		"TestJourney_ICanChooseWhetherMyCredentialCanWrite is green")
+	router, secret := credentialScopeFixture(t, "admin", true)
+
+	verdict := `{"subject_name":"example-cookbook","subject_type":"git_repo",` +
+		`"cookbook_name":"example-cookbook","verdict":"broken","reason":"it fails"}`
+	if w := credentialRequest(t, router, secret, http.MethodPost,
+		"/api/v1/failure-register", verdict); w.Code == http.StatusForbidden {
+		t.Errorf("a credential made to record findings cannot record one: %s", w.Body.String())
+	}
+	if w := credentialRequest(t, router, secret, http.MethodPut,
+		"/api/v1/admin/config/collection", `{}`); w.Code != http.StatusForbidden {
+		t.Errorf("a credential that can write reached beyond the failure register (%d), so "+
+			"handing one to a tool hands over the whole service", w.Code)
+	}
 }
 
 // "It acts as me, at my level of access, and it can see exactly what I can see
@@ -465,9 +582,22 @@ func TestJourney_AWritingCredentialCannotReachAnythingElse(t *testing.T) {
 // somebody's, and the assistant in an editor holds one of mine and acts as me.
 // Either way there is one permissions model, and this is the test of that.
 func TestJourney_TheCredentialCarriesItsAccountsLevelAndNoMore(t *testing.T) {
-	t.Skip("credentials cannot be issued yet; that a credential carries its account's level of " +
-		"access — and no second permissions model beside the one the screens already use — is " +
-		"checkable once one can be issued")
+	// Reads as its own account.
+	admin, adminSecret := credentialScopeFixture(t, "admin", false)
+	if w := credentialRequest(t, admin, adminSecret, http.MethodGet,
+		"/api/v1/admin/users", ""); w.Code == http.StatusForbidden {
+		t.Errorf("an administrator's credential cannot see what that administrator sees on "+
+			"screen: %s", w.Body.String())
+	}
+
+	// And no further. Same address, an account a level below.
+	viewer, viewerSecret := credentialScopeFixture(t, "viewer", false)
+	if w := credentialRequest(t, viewer, viewerSecret, http.MethodGet,
+		"/api/v1/admin/users", ""); w.Code != http.StatusForbidden {
+		t.Errorf("a viewer's credential reached an administrator's address (%d), so a "+
+			"credential is a second permissions model rather than another way into the "+
+			"same account", w.Code)
+	}
 }
 
 // agentJourneyTemplateToPath turns an OpenAPI path template into something

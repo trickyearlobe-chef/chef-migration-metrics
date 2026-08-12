@@ -191,13 +191,25 @@ func TestJourney_TheShapeCannotChangeUnderACaller(t *testing.T) {
 }
 
 // "Whether it survives contact with an unattended job is the open question."
+//
+// Answered: a job that runs unattended gets an account of its own — local, or
+// one the identity provider already carries for a machine — rather than
+// borrowing the account of whoever set it up. So there is nothing here that
+// outlives anybody, and what is left to check is that a credential issued from
+// a machine's own record carries that account's level and no more.
 func TestJourney_AnUnattendedJobOutlivesThePersonWhoSetItUp(t *testing.T) {
-	t.Skip("credentials cannot be issued at all yet, so nothing about an unattended job's " +
-		"access can be checked. The question this test was parked on is answered: a job that " +
-		"runs unattended gets an account of its own — local, or one the identity provider " +
-		"already carries for a machine — rather than borrowing the account of whoever set it " +
-		"up. So there is nothing here that outlives anybody. What is left to check is that a " +
-		"credential issued from a machine's own record carries that account's level and no " +
-		"more, which needs " +
-		"TestJourney_ICanIssueMyselfACredential green first")
+	// The machine's own account, at whatever level it was given — not the
+	// level of the person who configured the job.
+	router, secret := credentialScopeFixture(t, "viewer", false)
+
+	if w := credentialRequest(t, router, secret, http.MethodGet,
+		"/api/v1/auth/me", ""); w.Code != http.StatusOK {
+		t.Fatalf("a machine account's credential cannot read at all (%d), so an unattended "+
+			"job has no way in of its own: %s", w.Code, w.Body.String())
+	}
+	if w := credentialRequest(t, router, secret, http.MethodGet,
+		"/api/v1/admin/users", ""); w.Code != http.StatusForbidden {
+		t.Errorf("the job's credential reached beyond its own account's level (%d), which "+
+			"means it is carrying somebody else's access and would outlive them", w.Code)
+	}
 }
