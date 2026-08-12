@@ -622,3 +622,150 @@ func agentJourneyTemplateToPath(template string) string {
 	}
 	return b.String()
 }
+
+// ---------------------------------------------------------------------------
+// "nothing unbounded by default" — measured against a real deployment
+// ---------------------------------------------------------------------------
+//
+// Found by asking a running instance for one cookbook through the surface, on
+// a lab estate holding thirty. The answer was 61,582 characters — under this
+// surface's own 96KB ceiling, so it was not refused, and far past what an
+// assistant can hold. The customer estate is four thousand times the size.
+//
+// TestJourney_NoAnswerIsUnboundedByDefault is green and stays green: it holds
+// the paging machinery, which is right. These hold the one tool that does not
+// use it. That gap is why a measurement found this and the suite did not.
+
+// "nothing unbounded by default, and it should be able to ask the shape of a
+// thing — how many, grouped how — before pulling what it needs to read
+// closely."
+//
+// Every other tool takes something that makes the answer smaller. This one
+// takes the cookbook name and nothing else, so a caller holding a name that is
+// too big has nowhere to go: the refusal past the ceiling says to narrow, and
+// there is nothing to narrow by.
+func TestJourney_TheDetailToolCanBeAskedForLess(t *testing.T) {
+	var detail, list *mcpTool
+	for i := range mcpTools {
+		switch mcpTools[i].name {
+		case mcpCookbookTool:
+			detail = &mcpTools[i]
+		case mcpFindCookbooksTool:
+			list = &mcpTools[i]
+		}
+	}
+	if detail == nil || list == nil {
+		t.Fatalf("cannot find the tools this is about (detail=%v list=%v) — they have been "+
+			"renamed and this test is no longer reading anything", detail != nil, list != nil)
+	}
+
+	// The baseline: reading arguments out of a schema works at all. Without it
+	// a schema this could no longer parse would report every tool as offering
+	// nothing and read as a much bigger problem than it is.
+	if len(mcpToolArgNames(list)) < 2 {
+		t.Fatalf("the list tool appears to take %d arguments, which cannot be right — the "+
+			"schema is no longer being read, and the check below would fail for that reason "+
+			"rather than the one it names", len(mcpToolArgNames(list)))
+	}
+
+	args := mcpToolArgNames(detail)
+	if len(args) <= 1 {
+		t.Errorf("the one tool that answers in full takes only %v, so there is no way to ask "+
+			"it for less. Measured against a running instance, one cookbook answered 61,582 "+
+			"characters on an estate of thirty; past the ceiling the call is refused and the "+
+			"refusal says to narrow, which this tool gives no way to do", args)
+	}
+}
+
+// "One unbounded answer fills it, and then it forgets the question and starts
+// inventing."
+//
+// Of those 61,582 characters, 16,721 were the scanning tool's own stdout —
+// which the assistant cannot use, and which repeats the findings that are
+// already in the answer beside it. The database layer already treats this
+// field as heavy and leaves it out when reading results back for a verdict.
+func TestJourney_AnAnswerCarriesNoRawToolOutput(t *testing.T) {
+	for _, shape := range []any{
+		datastore.GitRepoCookstyleResult{},
+		datastore.ServerCookbookCookstyleResult{},
+	} {
+		typ := reflect.TypeOf(shape)
+
+		// The baseline: this type is the one carrying a scan. A renamed or
+		// emptied struct would otherwise report no raw output and pass.
+		if !mcpTypeHasJSONField(typ, "cookstyle_status") {
+			t.Fatalf("%s does not carry a scan verdict, so it is not the shape this test "+
+				"means and finding no raw output in it proves nothing", typ.Name())
+		}
+
+		for _, field := range []string{"process_stdout", "process_stderr"} {
+			if mcpTypeHasJSONField(typ, field) {
+				t.Errorf("%s hands over %q, so every answer carrying a scan carries the "+
+					"scanning tool's own output — 16,721 characters of it, measured, saying "+
+					"nothing the findings beside it do not", typ.Name(), field)
+			}
+		}
+	}
+}
+
+// "it should be able to ask the shape of a thing ... before pulling what it
+// needs to read closely" — and what it pulls has to be readable when it
+// arrives.
+//
+// The findings are stored as raw JSON and handed over as raw JSON, which the
+// protocol encodes as base64. An assistant reading the answer sees a wall of
+// characters rather than thirty findings, and whether each one can be corrected
+// automatically — the thing most often asked about them — is not visible
+// without decoding it first.
+func TestJourney_FindingsAreReadableWithoutDecoding(t *testing.T) {
+	for _, shape := range []any{
+		datastore.GitRepoCookstyleResult{},
+		datastore.ServerCookbookCookstyleResult{},
+	} {
+		typ := reflect.TypeOf(shape)
+		field, ok := mcpJSONField(typ, "offences")
+		if !ok {
+			t.Fatalf("%s no longer carries findings under the name this test reads, so it "+
+				"cannot say whether they are readable", typ.Name())
+		}
+		if field.Type.Kind() == reflect.Slice && field.Type.Elem().Kind() == reflect.Uint8 {
+			t.Errorf("%s hands the findings over as raw bytes, which arrive base64-encoded. "+
+				"Measured: thirty findings, twenty-eight of them automatically correctable, "+
+				"and none of that visible to an assistant without decoding the answer first",
+				typ.Name())
+		}
+	}
+}
+
+// mcpToolArgNames lists the argument names a tool's schema declares.
+func mcpToolArgNames(tool *mcpTool) []string {
+	props, ok := tool.schema["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	return names
+}
+
+// mcpJSONField finds a struct field by the name it serialises under.
+func mcpJSONField(typ reflect.Type, name string) (reflect.StructField, bool) {
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		tag := f.Tag.Get("json")
+		if tag == "" {
+			continue
+		}
+		if before, _, _ := strings.Cut(tag, ","); before == name {
+			return f, true
+		}
+	}
+	return reflect.StructField{}, false
+}
+
+func mcpTypeHasJSONField(typ reflect.Type, name string) bool {
+	_, ok := mcpJSONField(typ, name)
+	return ok
+}
