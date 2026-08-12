@@ -8,58 +8,56 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — what a call answers with, and what it takes (chunk 4)
+## NOW — the assistant surface, MVP (chunk 5)
 
-**The mechanism is built and partly applied. What is left is applying it to the rest.**
-An address declares the type it writes back with `answers()` / `answersPage()` beside `takes()`,
-and the shape is reflected off that type. `takesQuery()` declares the filters; `takesForm()`
-declares the fields of the six form submissions. The `/api-docs` panel shows the answer's fields,
-descending into a page's rows.
+**Shipped in v2.22.0: the description now carries what a call answers with, the filters it takes,
+and the fields of a form.** That was the prerequisite. This chunk is the thing it was for: an
+assistant in somebody's editor that can read what this service knows.
 
-**Two counts are the backlog, and both are recomputed rather than remembered.** A ratchet in
-`openapi_responses_test.go` holds the operations that answer undescribed, and one in
-`openapi_filters_test.go` holds the filters described nowhere. Both fail in either direction, so
-finishing work means striking the number down. Run them for today's figures rather than quoting
-any written here.
+**Read `journeys/agent-access.md` first — it is the requirement, and it is not the integrator's.**
+An integrator wants all of it in a shape that has not moved; an assistant wants small answers it
+can think about, has to narrow before it fetches, and has to be able to tell what it can ask for
+without being told. Building the assistant surface by exposing the whole API is the obvious move
+and the wrong one.
 
-**Declare only what has been measured.** `tools/api-probe/probe.py` reads every GET on a running
-instance and reports any address sending a field the description does not name. It caught one
-wrong declaration the moment it was written. Re-run it after declaring anything, against
-`https://127.0.0.1` with a token in `CMM_API_TOKEN`.
+**Built into the service, not beside it.** `TestJourney_TheAssistantSurfaceIsBuiltIn` is the red
+that starts this, and it already names the addresses it will accept: `/api/v1/mcp`, `/api/mcp`,
+`/api/v1/mcp/sse`. Deploying a second process next to this cannot happen inside the customer
+estate, so the endpoint is served by the same binary.
 
-**The unit is the (method, address), never the handler.** One handler serves many addresses and
-answers a different shape at each, and two are registered at several exact patterns and dispatch
-on the path inside. Reachability from the handler is an upper bound and nothing more — that is
-what made three attempts at deriving pagination wrong. The addresses left undescribed are mostly
-these: each needs its own dispatch read before it can be declared.
+**A client is already pointed at it** — user-scoped, outside this repository, at
+`/api/v1/mcp` over Streamable HTTP with a bearer token read from `CMM_API_TOKEN`. It answers
+"MCP endpoint not found" today, which is the correct state: build the endpoint at that path and
+it connects. The token is a credential from an account's own record (`/api/v1/auth/me/tokens`),
+carries that account's level and no more, and can be read-only or writing — that machinery is
+built and tested, see `internal/webapi/credential_scope_test.go`.
 
-**Where the recording lives, decided:** `internal/webapi/testdata/response_shapes.json`, derived
-from the Go types and compared on every build, re-recorded deliberately with `-update`. The live
-probe's own output is deliberately *not* kept in git: it is read off a running service, and an
-object's keys there can be data — a map keyed by organisation or version would put customer names
-into the repository.
+**Open, and not ours to settle alone:**
 
-**Carry forward:**
+- Which tools to expose, and whether they are generated from the description or chosen. The
+  journey argues for chosen: an assistant picking from 245 operations picks wrong, and the
+  journey says so from field reports of that exact failure on other tools built here.
+- Whether an assistant may write. The journey says the credential decides, most are read-only,
+  and a finding it wrote must never appear under a person's name unmarked — the register already
+  records how an entry got in.
+- Streamable HTTP against SSE. The client entry assumes the former.
 
-- **Requiredness of a body's fields is not derivable and is not claimed.** Handlers enforce it by
-  hand. A query parameter is different: four addresses refuse a plain GET, the probe measures
-  which, and those are declared required.
-- **Three decode idioms exist, not one**: JSON into a named type; `decodeAdminConfigBody` for the
-  16 settings sections (read as YAML — the **yaml tag** is the wire name); `io.ReadAll` +
-  `Unmarshal`. Any derivation over handlers must know all three or it silently covers two thirds.
-- **An anonymous map cannot be described.** Roughly half the write sites assemble one inline, and
-  each has to be lifted to a named type before its address can declare anything. That lift is the
-  bulk of the remaining work, and it is mechanical.
+**Carry forward from the description work, because the same rules apply:**
+
+- **The unit is the (method, address), never the handler.** One handler serves many addresses and
+  answers a different shape at each. Reachability from the handler is an upper bound and nothing
+  more — three attempts at deriving pagination from it were all wrong.
+- **Measure against a running instance.** `tools/api-probe/probe.py` reads every GET and reports
+  any address sending a field the description does not name. Re-run it after declaring anything.
+- **Two ratchets are the API backlog**, recomputed rather than remembered:
+  `TestResponses_TheUndescribedAnswersOnlyGetFewer` and
+  `TestFilters_TheUndescribedFiltersOnlyGetFewer`. Run them for today's figures; do not quote a
+  number written here. The bulk of what is left is lifting anonymous maps to named types, which
+  is mechanical: an anonymous map cannot be described at all.
 - **Never pull node-ingest structs into this.** `POST /api/v1/ingest` sits in `undescribedBodies`
   with its reason served alongside it.
 
 Renderer research, if the hand-rolled page is ever revisited: `plans/todo-documentation.md`.
-
-## AFTER THAT — the assistant surface
-
-The last red in the agent-access suite: `TheAssistantSurfaceIsBuiltIn`. The service hosts nothing
-an editor assistant can connect to, so using it would mean deploying a second thing beside it,
-which cannot happen inside the customer estate. Agreed to run on its own branch and thread.
 
 ## The top open question is not ownership — it is whether the blocking list is true
 
@@ -103,6 +101,10 @@ is what the DB-refresh step uses, so the refresh dies before any scan happens. P
 works; the refresh is already bounded and retried. The push is a human step —
 CLAUDE.md forbids remotes, so an assistant may bump and tag locally and push only with explicit
 per-action authorisation.
+
+**Dependabot reported 6 alerts on the default branch at the v2.22.0 push (2 high, 4 moderate) —
+not triaged.** The local gates were clean: `make vuln-go` finds nothing this code calls. Treat as
+the same class as the settled 12 below until somebody checks.
 
 **Dependabot — settled 2026-08-02, do not re-triage.** All 12 alerts were dismissed as inaccurate:
 every one named a version outside its own advisory's vulnerable range. The local gates were right
