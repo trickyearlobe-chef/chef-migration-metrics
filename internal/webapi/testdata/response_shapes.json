@@ -5196,6 +5196,27 @@
     },
     "type": "object"
   },
+  "POST /api/v1/mcp": {
+    "properties": {
+      "error": {
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "id": {},
+      "jsonrpc": {
+        "type": "string"
+      },
+      "result": {}
+    },
+    "type": "object"
+  },
   "PUT /api/v1/admin/config/analysis-tools": {
     "properties": {
       "reload": {

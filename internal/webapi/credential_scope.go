@@ -57,6 +57,19 @@ func credentialMayProceed(info *auth.SessionInfo, req *http.Request) bool {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return true
 	}
+	// The assistant surface is a transport, not an act. Every message to it is
+	// a POST, including listing what there is and every read — so refusing the
+	// envelope would refuse a read-only credential everything, and the journey
+	// says most of them will be read-only.
+	//
+	// Nothing is given away by allowing it. What the caller actually asked for
+	// is dispatched inward as its own request, and that request arrives back
+	// here and meets this rule the same as any other. So the write below is
+	// still the only write, whichever door it came through.
+	if req.URL.Path == mcpPath {
+		return true
+	}
+
 	if !info.CredentialCanWrite {
 		return false
 	}
