@@ -1137,52 +1137,65 @@ func (r *Router) registerRoutes() {
 		subTakes("{name}", "PUT", rotateCredentialRequest{}))
 	r.adminOnly("/api/v1/admin/config/organisations", r.handleAdminConfigOrganisations,
 		methods("GET", "PUT"), takes("PUT", []config.Organisation{}),
-		answers("GET", []config.Organisation{}))
+		answers("GET", []config.Organisation{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/collection", r.handleAdminConfigCollection,
 		methods("GET", "PUT"), takes("PUT", config.CollectionConfig{}),
-		answers("GET", config.CollectionConfig{}))
+		answers("GET", config.CollectionConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/target-versions", r.handleAdminConfigTargetVersions,
 		methods("GET", "PUT"), takes("PUT", []string{}),
-		answers("GET", []string{}))
+		answers("GET", []string{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/git-urls", r.handleAdminConfigGitURLs,
 		methods("GET", "PUT"), takes("PUT", []string{}),
-		answers("GET", []string{}))
+		answers("GET", []string{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/concurrency", r.handleAdminConfigConcurrency,
 		methods("GET", "PUT"), takes("PUT", config.ConcurrencyConfig{}),
-		answers("GET", config.ConcurrencyConfig{}))
+		answers("GET", config.ConcurrencyConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/logging", r.handleAdminConfigLogging,
 		methods("GET", "PUT"), takes("PUT", config.LoggingConfig{}),
-		answers("GET", config.LoggingConfig{}))
+		answers("GET", config.LoggingConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/analysis-tools", r.handleAdminConfigAnalysisTools,
 		methods("GET", "PUT"), takes("PUT", config.AnalysisToolsConfig{}),
-		answers("GET", analysisToolsResponse{}))
+		answers("GET", analysisToolsResponse{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/test-kitchen", r.handleAdminConfigTestKitchen,
 		methods("GET", "PUT", "DELETE"), takes("PUT", config.TestKitchenConfig{}),
-		answers("GET", config.TestKitchenConfig{}))
+		answers("GET", config.TestKitchenConfig{}),
+		answers("PUT", putConfigResponse{}))
 	// One body, read into three types: the settings section itself, plus the
 	// certificate and ACME credentials that are routed to encrypted storage
 	// rather than into the section. A caller has to be told about all three.
 	r.adminOnly("/api/v1/admin/config/server", r.handleAdminConfigServer,
 		methods("GET", "PUT"), takes("PUT", config.ServerConfig{},
 			dbCertKeySubmission{}, acmeRoute53CredSubmission{}),
-		answers("GET", serverConfigResponse{}))
+		answers("GET", serverConfigResponse{}), answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/server/generate-csr", r.handleAdminConfigServerGenerateCSR,
 		methods("POST"), takes("POST", generateCSRRequest{}))
 	r.adminOnly("/api/v1/admin/config/auth", r.handleAdminConfigAuth,
 		methods("GET", "PUT"), takes("PUT", config.AuthConfig{}),
-		answers("GET", config.AuthConfig{}))
+		answers("GET", config.AuthConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/exports", r.handleAdminConfigExports,
 		methods("GET", "PUT"), takes("PUT", config.ExportsConfig{}),
-		answers("GET", config.ExportsConfig{}))
+		answers("GET", config.ExportsConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/readiness", r.handleAdminConfigReadiness,
 		methods("GET", "PUT"), takes("PUT", config.ReadinessConfig{}),
-		answers("GET", config.ReadinessConfig{}))
+		answers("GET", config.ReadinessConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/backup", r.handleAdminConfigBackup,
 		methods("GET", "PUT"), takes("PUT", config.BackupConfig{}),
-		answers("GET", config.BackupConfig{}))
+		answers("GET", config.BackupConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/config/ingest", r.handleAdminConfigIngest,
 		methods("GET", "PUT"), takes("PUT", config.IngestConfig{}),
-		answers("GET", config.IngestConfig{}))
+		answers("GET", config.IngestConfig{}),
+		answers("PUT", putConfigResponse{}))
 	r.adminOnly("/api/v1/admin/saml/generate-keypair", r.handleSAMLGenerateKeypair, methods("POST"))
 	r.adminOnly("/api/v1/admin/saml/sp-certificate", r.handleSAMLGetCertificate)
 	r.adminOnly("/api/v1/admin/saml/endpoints", r.handleSAMLEndpoints)

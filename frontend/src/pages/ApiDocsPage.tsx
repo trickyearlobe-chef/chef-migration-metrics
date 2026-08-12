@@ -304,6 +304,136 @@ function responseSchema(entry: Entry): ApiSchema | undefined {
   return entry.op.responses?.["200"]?.content?.["application/json"]?.schema;
 }
 
+// describesShape reports whether the panel can say anything about a schema.
+//
+// The panel used to answer this by asking "does it have fields?", which reads
+// every list, every map and every one-of as undescribed — so a body the
+// description genuinely spelled out as a list of strings was reported as
+// unknown, and the reader went to the network tab for something they had
+// already been told. Everything the generator can emit has to have an answer
+// here; ApiDocsPage.contract.test.ts holds that against what the service
+// really emits.
+export function describesShape(
+  schema: ApiSchema | undefined,
+  schemas: Schemas,
+): boolean {
+  const target = resolve(schema, schemas);
+  if (!target) return false;
+  if (target.oneOf?.length || target.allOf?.length) return true;
+  if (target.properties && Object.keys(target.properties).length > 0) return true;
+  if (target.type === "array") return describesShape(target.items, schemas) ||
+    target.items?.type !== undefined;
+  if (target.additionalProperties) return true;
+  // A bare type — string, integer, boolean — is a complete description of a
+  // scalar answer. An empty schema is not: it means "anything", and saying so
+  // is a different sentence, written where it is used.
+  return target.type !== undefined;
+}
+
+// SchemaShape renders whatever a schema is: a table of fields, a list with its
+// element described, a map, or one of several shapes. Shared by the request and
+// response sections so neither can quietly describe less than the other.
+function SchemaShape({
+  schema,
+  schemas,
+  testId,
+}: {
+  schema: ApiSchema | undefined;
+  schemas: Schemas;
+  testId: string;
+}) {
+  const target = resolve(schema, schemas);
+  if (!target) return null;
+
+  if (target.oneOf?.length) {
+    return (
+      <div data-testid={testId}>
+        <p className="mt-1 text-sm text-gray-600">
+          One of {target.oneOf.length} shapes, depending on what was asked for.
+        </p>
+        {target.oneOf.map((part, i) => (
+          <SchemaShape key={i} schema={part} schemas={schemas} testId={`${testId}-${i}`} />
+        ))}
+      </div>
+    );
+  }
+
+  if (target.type === "array") {
+    const inner = resolve(target.items, schemas);
+    const fields = fieldsOf(target.items, schemas);
+    return (
+      <div data-testid={testId}>
+        <p className="mt-1 text-sm text-gray-600">
+          A list of <code className="font-mono">{typeLabel(target.items, schemas)}</code>.
+        </p>
+        {fields.length > 0 && <FieldTable fields={fields} schemas={schemas} />}
+        {fields.length === 0 && inner?.additionalProperties && (
+          <p className="mt-1 text-sm text-gray-600">
+            Each entry is a map of{" "}
+            <code className="font-mono">
+              {typeLabel(inner.additionalProperties, schemas)}
+            </code>
+            .
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const fields = fieldsOf(schema, schemas);
+  if (fields.length > 0) {
+    return (
+      <div data-testid={testId}>
+        <FieldTable fields={fields} schemas={schemas} />
+      </div>
+    );
+  }
+
+  if (target.additionalProperties) {
+    return (
+      <p data-testid={testId} className="mt-1 text-sm text-gray-600">
+        A map of{" "}
+        <code className="font-mono">
+          {typeLabel(target.additionalProperties, schemas)}
+        </code>
+        , keyed by whatever the answer holds.
+      </p>
+    );
+  }
+
+  if (target.type) {
+    return (
+      <p data-testid={testId} className="mt-1 text-sm text-gray-600">
+        A single <code className="font-mono">{typeLabel(schema, schemas)}</code>.
+      </p>
+    );
+  }
+  return null;
+}
+
+// FieldTable is the two-column table both sections render fields with.
+function FieldTable({
+  fields,
+  schemas,
+}: {
+  fields: Array<[string, ApiSchema]>;
+  schemas: Schemas;
+}) {
+  return (
+    <table className="mt-1.5 w-full text-left text-sm">
+      <thead>
+        <tr className="text-xs uppercase tracking-wider text-gray-400">
+          <th className="pb-1 font-medium">Field</th>
+          <th className="pb-1 font-medium">Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        <FieldRows fields={fields} schemas={schemas} />
+      </tbody>
+    </table>
+  );
+}
+
 // RequestBodySection says one of four things, and the difference between them
 // matters more than any of them individually: here are the fields, this is a
 // file upload, this takes a body we deliberately do not describe, or this
@@ -326,7 +456,7 @@ function RequestBodySection({ entry, schemas }: { entry: Entry; schemas: Schemas
     );
   }
 
-  const fields = fieldsOf(jsonBodySchema(entry), schemas);
+  const schema = jsonBodySchema(entry);
 
   return (
     <div>
@@ -338,18 +468,8 @@ function RequestBodySection({ entry, schemas }: { entry: Entry; schemas: Schemas
           {body.description}
         </p>
       )}
-      {fields.length > 0 ? (
-        <table className="mt-1.5 w-full text-left text-sm">
-          <thead>
-            <tr className="text-xs uppercase tracking-wider text-gray-400">
-              <th className="pb-1 font-medium">Field</th>
-              <th className="pb-1 font-medium">Type</th>
-            </tr>
-          </thead>
-          <tbody>
-            <FieldRows fields={fields} schemas={schemas} />
-          </tbody>
-        </table>
+      {describesShape(schema, schemas) ? (
+        <SchemaShape schema={schema} schemas={schemas} testId="request-shape" />
       ) : (
         !body.description && (
           <p className="mt-1 text-sm text-gray-500">
@@ -367,65 +487,14 @@ function RequestBodySection({ entry, schemas }: { entry: Entry; schemas: Schemas
 // that day — including the fields that were empty and absent.
 function ResponseSection({ entry, schemas }: { entry: Entry; schemas: Schemas }) {
   const schema = responseSchema(entry);
-  const fields = fieldsOf(schema, schemas);
-  const resolved = resolve(schema, schemas);
-
-  // One of several shapes: what comes back depends on what was asked for, so
-  // both are shown. Choosing one for the reader would be wrong for every call
-  // that got the other, and they have to branch either way.
-  if (resolved?.oneOf) {
-    return (
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-          Response
-        </h3>
-        <div data-testid="response-shape">
-          <p className="mt-1 text-sm text-gray-600">
-            Answers one of {resolved.oneOf.length} shapes, depending on what was
-            asked for.
-          </p>
-          {resolved.oneOf.map((shape, i) => (
-            <table key={i} className="mt-1.5 w-full text-left text-sm">
-              <thead>
-                <tr className="text-xs uppercase tracking-wider text-gray-400">
-                  <th className="pb-1 font-medium">Field</th>
-                  <th className="pb-1 font-medium">Type</th>
-                </tr>
-              </thead>
-              <tbody>
-                <FieldRows fields={fieldsOf(shape, schemas)} schemas={schemas} />
-              </tbody>
-            </table>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div>
       <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
         Response
       </h3>
-      {fields.length > 0 ? (
-        <table data-testid="response-shape" className="mt-1.5 w-full text-left text-sm">
-          <thead>
-            <tr className="text-xs uppercase tracking-wider text-gray-400">
-              <th className="pb-1 font-medium">Field</th>
-              <th className="pb-1 font-medium">Type</th>
-            </tr>
-          </thead>
-          <tbody>
-            <FieldRows fields={fields} schemas={schemas} />
-          </tbody>
-        </table>
-      ) : resolved?.type === "array" ? (
-        // A bare list, with no envelope around it. Saying so beats an empty
-        // table, which reads as an answer with no fields in it.
-        <p data-testid="response-shape" className="mt-1 text-sm text-gray-600">
-          A list of{" "}
-          <code className="font-mono">{typeLabel(resolved.items, schemas)}</code>.
-        </p>
+      {describesShape(schema, schemas) ? (
+        <SchemaShape schema={schema} schemas={schemas} testId="response-shape" />
       ) : (
         <p className="mt-1 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
           The shape of this answer is not described yet.

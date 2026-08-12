@@ -77,6 +77,37 @@ const doc = {
         "x-required-role": "admin",
       },
     },
+    "/api/v1/admin/config/git-urls": {
+      put: {
+        operationId: "putAdminConfigGitUrls",
+        summary: "Change how cookbook names are turned into repository addresses.",
+        "x-required-role": "admin",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": { schema: { type: "array", items: { type: "string" } } },
+          },
+        },
+      },
+      get: {
+        operationId: "getAdminConfigGitUrls",
+        summary: "How cookbook names are turned into repository addresses.",
+        "x-required-role": "admin",
+        responses: {
+          "200": {
+            description: "The answer.",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: "#/components/schemas/webapi.cookbookResp" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     "/api/v1/cookstyle/cops/{cop_name}/cookbooks": {
       get: {
         operationId: "getCookstyleCopsCopNameCookbooks",
@@ -597,6 +628,38 @@ describe("ApiDocsPage", () => {
     // chosen for them.
     expect(within(response).getByText(/one of 2/i)).toBeInTheDocument();
     expect(within(response).getByText("grouped")).toBeInTheDocument();
+  });
+
+
+  it("describes a body that is a list, rather than calling it undescribed", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getAllByText("/api/v1/admin/config/git-urls"));
+
+    await user.click(
+      screen.getByRole("button", { name: /put \/api\/v1\/admin\/config\/git-urls/i }),
+    );
+
+    const panel = screen.getByRole("complementary");
+    // The description does say what this takes — a list of strings. Reading
+    // "its fields are not described" sends somebody to the network tab for
+    // something they were already told.
+    expect(within(panel).queryByText(/fields are not described/i)).not.toBeInTheDocument();
+    expect(within(panel).getByTestId("request-shape")).toHaveTextContent(/list of string/i);
+  });
+
+  it("shows what is inside a list, not just that it is a list", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getAllByText("/api/v1/admin/config/git-urls"));
+
+    await user.click(
+      screen.getByRole("button", { name: /get \/api\/v1\/admin\/config\/git-urls/i }),
+    );
+
+    const response = within(screen.getByRole("complementary")).getByTestId("response-shape");
+    // "A list of object" tells a caller nothing they can decode into.
+    expect(within(response).getByText("tk_status")).toBeInTheDocument();
   });
 
 });

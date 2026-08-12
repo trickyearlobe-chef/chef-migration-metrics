@@ -5195,5 +5195,299 @@
       }
     },
     "type": "object"
+  },
+  "PUT /api/v1/admin/config/analysis-tools": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/auth": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/backup": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/collection": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/concurrency": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/exports": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/git-urls": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/ingest": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/logging": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/organisations": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/readiness": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/server": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/target-versions": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "PUT /api/v1/admin/config/test-kitchen": {
+    "properties": {
+      "reload": {
+        "type": "string"
+      },
+      "restart_required": {
+        "type": "boolean"
+      },
+      "value": {},
+      "verdicts_changed": {
+        "type": "integer"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
   }
 }
