@@ -87,20 +87,18 @@ If we circle back:
 - Re-measure before adopting: the counts move, and the Harness proxy quarantines very
   recent versions, so pin a slightly older release.
 
-**The generator gap this exposed.** Every operation carries a summary and `x-required-role`,
-and nothing else: `parameters` is null and the only response is a generic 200. That is thin
-for the client generators the agent-access journey names as the reason for having a
-description at all. Enriching the generator is the prerequisite for both a better page and a
-usable generated client.
+**The generator gap this exposed, now partly closed.** Operations carry their path parameters,
+their filters, their request bodies and — where the address declares one — the shape of the
+answer. Two ratchets say how much is left rather than any sentence here: run
+`go test ./internal/webapi -run TestResponses_TheUndescribed` and `-run TestFilters_TheUndescribed`.
+A renderer only pays off once those reach zero; until then it renders gaps prettily.
 
-**Named types earn their keep beyond the description.** Lifting the 22 anonymous
-`var body struct` declarations to named types is the prerequisite for reflecting request
-schemas, but the same change unblocks rot detection generally — a named type can be snapshotted
-and compared, which is exactly what
-`TestJourney_TheShapeCannotChangeUnderACaller` (`internal/webapi/api_integration_journey_test.go`)
-is skipped for today: nothing records what an answer looked like at a release, so nothing fails
-when a field changes meaning. Do the lift once; it pays the description, the generated client and
-the shape contract.
+**Named types earn their keep beyond the description.** The request-body lift is done, and the
+same lift on the answers is what remains: roughly half the write sites still assemble an
+anonymous map, and an anonymous map cannot be described at all. A named type can be snapshotted
+and compared, which is what `internal/webapi/testdata/response_shapes.json` now does — recorded
+from the Go types, compared on every build, re-recorded deliberately with `-update`. Do the lift
+once; it pays the description, the generated client and the shape contract.
 Do the lift with `sg` (`var body struct { $$$ }` is a shape, not a regex) and confirm call sites
 with LSP `findReferences` rather than grep — the structs are anonymous, so text search cannot tell
 one handler's body from another's.
