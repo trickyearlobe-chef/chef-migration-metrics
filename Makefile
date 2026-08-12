@@ -219,6 +219,22 @@ journey: ## Journey todo list: one test per thing a journey says must be in plac
 	@echo "$(YELLOW)When one turns green it stays green — nothing to update by hand.$(RESET)"
 	@$(MAKE) --no-print-directory journey-coverage
 
+# `make debt` is the same idea for work that belongs to no journey: an item in
+# plans/todo-tech-debt.md is a failing test wherever one can be written, so
+# "outstanding" is recomputed rather than remembered and goes green by itself
+# when somebody fixes it.
+#
+# Like the journeys, it is NOT part of `make ci` and must never be. Red is the
+# normal state, and a red here does not block a release.
+.PHONY: debt
+debt: ## Tech-debt todo list: one test per item that can be held by one
+	@echo "$(GREEN)Tech debt — red is still outstanding:$(RESET)"
+	@go test -tags debt -v -run 'TestDebt' ./... 2>&1 \
+		| grep -E '^(--- (PASS|FAIL|SKIP))|^\s+\S+\.go:[0-9]+:' || true
+	@echo ""
+	@echo "$(YELLOW)Items that cannot be a test are prose in plans/todo-tech-debt.md,$(RESET)"
+	@echo "$(YELLOW)each saying why no test can hold it.$(RESET)"
+
 # journey-status is the session-start form: one line, because a wall of text at
 # the top of every session becomes wallpaper, and wallpaper is how the previous
 # convention got lost. The full list is `make journey`, run when choosing work.
