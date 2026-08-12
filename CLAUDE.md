@@ -219,7 +219,19 @@ things that were false; the directory was renamed so the old habit has no home t
 - Track all tech debt in `plans/todo-tech-debt.md`; keep it current, and point each item at the
   test that holds it.
 - Record any tactical/expedient choice taken over the better strategic one (duplicated code, in-memory workaround, quick hack, hardcoded value) with what was done, why, and the proper fix. A shortcut is acceptable only if it gets recorded.
-- When an item is resolved, confirm with the user, then remove it entirely — no checked-off clutter.
+- **Resolution is promote or purge — decided then, not when the item was written.** A red debt
+  test asserts a shortcut is still there; the moment it goes green it starts asserting the
+  behaviour that replaced it, which is when deleting it costs something.
+  - About the shape of the code (duplication, a hardcoded value, a workaround that is now the
+    real thing) → purge. Doing it again would be new debt, noticed again as new debt.
+  - Now about the behaviour of the product → move the assertion into the journey suite it
+    belongs to, or the gating suite if it should block, then purge the item. The list stays
+    short and the guard survives.
+- Confirm with the user, then remove the item entirely — no checked-off clutter. "The record is
+  in git" covers what we did, not what is still expected, and no build consults it: a purged
+  green test and an item nobody ever wrote look identical afterwards.
+- A green journey test is never purged. It is the proof the thing was built and that we were
+  happy with it, and the suite as a whole is the feature inventory.
 
 ## Testing
 
