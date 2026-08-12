@@ -92,3 +92,15 @@ and nothing else: `parameters` is null and the only response is a generic 200. T
 for the client generators the agent-access journey names as the reason for having a
 description at all. Enriching the generator is the prerequisite for both a better page and a
 usable generated client.
+
+**Named types earn their keep beyond the description.** Lifting the 22 anonymous
+`var body struct` declarations to named types is the prerequisite for reflecting request
+schemas, but the same change unblocks rot detection generally — a named type can be snapshotted
+and compared, which is exactly what
+`TestJourney_TheShapeCannotChangeUnderACaller` (`internal/webapi/api_integration_journey_test.go`)
+is skipped for today: nothing records what an answer looked like at a release, so nothing fails
+when a field changes meaning. Do the lift once; it pays the description, the generated client and
+the shape contract.
+Do the lift with `sg` (`var body struct { $$$ }` is a shape, not a regex) and confirm call sites
+with LSP `findReferences` rather than grep — the structs are anonymous, so text search cannot tell
+one handler's body from another's.

@@ -52,8 +52,17 @@ export interface CreatedApiToken {
 // narrow: there are no tags, no components and no parameter detail today, so a
 // type promising them would make the page render empty sections that look like
 // missing data rather than absent data.
+export interface ApiParameter {
+  name: string;
+  // "path" today; "query" once the generator emits filters and pagination.
+  in: string;
+  required?: boolean;
+  schema?: { type?: string };
+}
+
 export interface ApiOperation {
   operationId?: string;
+  parameters?: ApiParameter[];
   summary?: string;
   description?: string;
   // The access this operation needs, folded in by the generator from both the

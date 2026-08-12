@@ -9,13 +9,14 @@ import { ErrorAlert, LoadingSpinner } from "../components/Feedback";
 // The service's own description, rendered for a person rather than a client
 // generator. Read-only by construction: there is no control here that calls
 // anything, because the page is served to a signed-in person and a "try" button
-// would fire real requests as them.
+// would fire real requests as them. The curl example is the deliberate
+// substitute — it puts the call in the reader's own terminal, where they own
+// what happens.
 //
 // Hand-rolled rather than a renderer library. Measured 2026-08-12, the cheapest
-// of the three real ones added 97 packages to a tree of 371 — and the document
-// carries no parameters, request bodies or schemas, so what they exist to
-// display is not there. See plans/todo-documentation.md for the numbers and for
-// what would have to change first.
+// of the three real ones added 97 packages to a tree of 371. See
+// plans/todo-documentation.md for the numbers and for what the generator would
+// have to emit before one earns its place.
 
 const METHOD_ORDER = ["get", "post", "put", "patch", "delete", "head", "options"];
 
@@ -33,6 +34,8 @@ const ROLE_STYLE: Record<string, string> = {
   authenticated: "bg-gray-100 text-gray-600",
   public: "bg-green-100 text-green-700",
 };
+
+const READ_METHODS = ["get", "head", "options"];
 
 interface Entry {
   path: string;
@@ -64,11 +67,182 @@ function entriesOf(doc: OpenApiDocument | null): Entry[] {
   );
 }
 
+// curlFor builds a command the reader can paste. The token is a shell variable,
+// never a literal: an example carrying a real credential is a credential that
+// ends up in a ticket, a wiki and a screenshot.
+//
+// Path variables become upper-case placeholders so an unsubstituted one fails
+// loudly at the server rather than quietly matching something.
+function curlFor(entry: Entry, origin: string): string {
+  const path = entry.path.replace(/\{([^}]+)\}/g, (_, name: string) =>
+    name.toUpperCase().replace(/[^A-Z0-9]/g, "_"),
+  );
+  const lines = ["curl -sS \\"];
+  if (!READ_METHODS.includes(entry.method)) {
+    lines.push(`  -X ${entry.method.toUpperCase()} \\`);
+  }
+  lines.push(`  -H 'Authorization: Bearer $APITOKEN' \\`);
+  if (!READ_METHODS.includes(entry.method)) {
+    lines.push(`  -H 'Content-Type: application/json' \\`);
+    lines.push(`  -d '{}' \\`);
+  }
+  lines.push(`  '${origin}${path}'`);
+  return lines.join("\n");
+}
+
+function OperationPanel({
+  entry,
+  onClose,
+}: {
+  entry: Entry;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const origin =
+    typeof window === "undefined" ? "https://your-service" : window.location.origin;
+  const curl = curlFor(entry, origin);
+  const params = entry.op.parameters ?? [];
+  const isWrite = !READ_METHODS.includes(entry.method);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(curl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <aside className="w-full shrink-0 space-y-4 rounded-md border border-gray-200 bg-white p-4 xl:sticky xl:top-0 xl:w-[30rem] xl:self-start">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span
+              className={`rounded px-1.5 py-0.5 font-mono text-[11px] font-semibold uppercase ${
+                METHOD_STYLE[entry.method] ?? "bg-gray-100 text-gray-700"
+              }`}
+            >
+              {entry.method}
+            </span>
+            {entry.op["x-required-role"] && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  ROLE_STYLE[entry.op["x-required-role"]] ??
+                  "bg-gray-100 text-gray-600"
+                }`}
+              >
+                {entry.op["x-required-role"]}
+              </span>
+            )}
+          </div>
+          <code className="mt-1.5 block break-all font-mono text-sm text-gray-900">
+            {entry.path}
+          </code>
+        </div>
+        <button
+          onClick={onClose}
+          aria-label="Close details"
+          className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+        >
+          ✕
+        </button>
+      </div>
+
+      {entry.op.summary && (
+        <p className="text-sm text-gray-600">{entry.op.summary}</p>
+      )}
+
+      {entry.op.operationId && (
+        <p className="text-xs text-gray-500">
+          Client method name:{" "}
+          <code className="font-mono text-gray-700">
+            {entry.op.operationId}
+          </code>
+        </p>
+      )}
+
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          Parameters
+        </h3>
+        {params.length === 0 ? (
+          <p className="mt-1 text-sm text-gray-500">
+            None in the address itself.
+          </p>
+        ) : (
+          <table className="mt-1.5 w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wider text-gray-400">
+                <th className="pb-1 font-medium">Name</th>
+                <th className="pb-1 font-medium">In</th>
+                <th className="pb-1 font-medium">Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {params.map((p) => (
+                <tr key={`${p.in}-${p.name}`} className="border-t border-gray-100">
+                  <td className="py-1 font-mono text-gray-900">
+                    {p.name}
+                    {p.required && <span className="text-red-600"> *</span>}
+                  </td>
+                  <td className="py-1 text-gray-600">{p.in}</td>
+                  <td className="py-1 text-gray-600">
+                    {p.schema?.type ?? "string"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Saying what is absent beats an empty section. An empty "Body" heading
+          reads as "this call takes nothing", which sends somebody to a 400 and
+          makes them distrust the rest of the page. */}
+      {isWrite && (
+        <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          The request body is not described yet — the generator does not emit
+          one. Check the handler, or the screen that makes this call, for the
+          fields it expects.
+        </p>
+      )}
+      <p className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+        Query parameters and the response shape are not described yet either.
+      </p>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Example
+          </h3>
+          <button
+            onClick={handleCopy}
+            className="rounded border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <pre
+          data-testid="curl-example"
+          className="mt-1.5 overflow-x-auto rounded bg-gray-900 p-3 font-mono text-xs leading-relaxed text-gray-100"
+        >
+          {curl}
+        </pre>
+        <p className="mt-1.5 text-xs text-gray-500">
+          Set <code className="font-mono">APITOKEN</code> to a credential from
+          your account page. It is a shell variable here on purpose — an example
+          with a real one in it ends up pasted somewhere it should not be.
+        </p>
+      </div>
+    </aside>
+  );
+}
+
 export function ApiDocsPage() {
   const [doc, setDoc] = useState<OpenApiDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -113,12 +287,17 @@ export function ApiDocsPage() {
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [matched]);
 
+  const selectedEntry = useMemo(
+    () => entries.find((e) => `${e.method} ${e.path}` === selected) ?? null,
+    [entries, selected],
+  );
+
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">
+        <h2 className="text-xl font-bold text-gray-800">
           {doc?.info?.title ?? "API"} API
-        </h1>
+        </h2>
         {doc?.info?.description && (
           <p className="mt-1 text-sm text-gray-600">{doc.info.description}</p>
         )}
@@ -147,74 +326,98 @@ export function ApiDocsPage() {
       )}
 
       {!loading && !loadError && (
-        <>
-          <div className="flex items-baseline gap-3">
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter by address or by what it is for…"
-              aria-label="Filter the API description"
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <span className="shrink-0 text-xs text-gray-500">
-              {matched.length} of {entries.length}
-            </span>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1 space-y-4">
+            <div className="flex items-baseline gap-3">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter by address or by what it is for…"
+                aria-label="Filter the API description"
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span className="shrink-0 text-xs text-gray-500">
+                {matched.length} of {entries.length}
+              </span>
+            </div>
+
+            {matched.length === 0 && (
+              <p className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-500">
+                No addresses match that.
+              </p>
+            )}
+
+            {grouped.map(([group, groupEntries]) => (
+              <section
+                key={group}
+                className="overflow-hidden rounded-md border border-gray-200 bg-white"
+              >
+                <h3 className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  {group}
+                </h3>
+                <ul className="divide-y divide-gray-100">
+                  {groupEntries.map((e) => {
+                    const key = `${e.method} ${e.path}`;
+                    return (
+                      <li key={key}>
+                        <button
+                          onClick={() =>
+                            setSelected((s) => (s === key ? null : key))
+                          }
+                          // Spelled out rather than left to the computed name:
+                          // nested inline elements concatenate without spaces,
+                          // so the computed one reads "get/api/v1/cookbooks".
+                          aria-label={`${e.method.toUpperCase()} ${e.path}`}
+                          className={`flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-gray-50 ${
+                            selected === key ? "bg-blue-50" : ""
+                          }`}
+                        >
+                          <span
+                            className={`mt-0.5 w-16 shrink-0 rounded px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold uppercase ${
+                              METHOD_STYLE[e.method] ??
+                              "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            {e.method}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <code className="break-all font-mono text-sm text-gray-900">
+                              {e.path}
+                            </code>
+                            {e.op.summary && (
+                              <span className="mt-0.5 block text-sm text-gray-600">
+                                {e.op.summary}
+                              </span>
+                            )}
+                          </span>
+                          {e.op["x-required-role"] && (
+                            <span
+                              className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                ROLE_STYLE[e.op["x-required-role"]] ??
+                                "bg-gray-100 text-gray-600"
+                              }`}
+                              title="The access this operation needs"
+                            >
+                              {e.op["x-required-role"]}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
           </div>
 
-          {matched.length === 0 && (
-            <p className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-500">
-              No addresses match that.
-            </p>
+          {selectedEntry && (
+            <OperationPanel
+              entry={selectedEntry}
+              onClose={() => setSelected(null)}
+            />
           )}
-
-          {grouped.map(([group, groupEntries]) => (
-            <section
-              key={group}
-              className="overflow-hidden rounded-md border border-gray-200 bg-white"
-            >
-              <h2 className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                {group}
-              </h2>
-              <ul className="divide-y divide-gray-100">
-                {groupEntries.map((e) => (
-                  <li key={`${e.method} ${e.path}`} className="px-4 py-2.5">
-                    <div className="flex items-start gap-3">
-                      <span
-                        className={`mt-0.5 w-16 shrink-0 rounded px-1.5 py-0.5 text-center font-mono text-[11px] font-semibold uppercase ${
-                          METHOD_STYLE[e.method] ?? "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {e.method}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <code className="break-all font-mono text-sm text-gray-900">
-                          {e.path}
-                        </code>
-                        {e.op.summary && (
-                          <p className="mt-0.5 text-sm text-gray-600">
-                            {e.op.summary}
-                          </p>
-                        )}
-                      </div>
-                      {e.op["x-required-role"] && (
-                        <span
-                          className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                            ROLE_STYLE[e.op["x-required-role"]] ??
-                            "bg-gray-100 text-gray-600"
-                          }`}
-                          title="The access this operation needs"
-                        >
-                          {e.op["x-required-role"]}
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </>
+        </div>
       )}
     </div>
   );

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../api";
 import { ApiDocsPage } from "./ApiDocsPage";
@@ -138,6 +138,117 @@ describe("ApiDocsPage", () => {
 
     const link = screen.getByRole("link", { name: /openapi\.json/i });
     expect(link).toHaveAttribute("href", "/api/v1/openapi.json");
+  });
+
+  it("opens a detail panel for the operation that was clicked", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/admin/users"));
+
+    await user.click(screen.getByRole("button", { name: /get \/api\/v1\/admin\/users/i }));
+
+    const panel = screen.getByRole("complementary");
+    expect(within(panel).getByText("getAdminUsers")).toBeInTheDocument();
+    expect(
+      within(panel).getByText("The local accounts that can sign in."),
+    ).toBeInTheDocument();
+  });
+
+  it("gives a runnable curl with the token passed as a variable", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+
+    await user.click(
+      screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
+    );
+
+    const panel = screen.getByRole("complementary");
+    const curl = within(panel).getByTestId("curl-example").textContent ?? "";
+    // A literal secret in an example is a secret somebody pastes into a ticket.
+    expect(curl).toContain("$APITOKEN");
+    expect(curl).toContain("Authorization: Bearer $APITOKEN");
+    expect(curl).toContain("-X POST");
+    expect(curl).toContain("/api/v1/failure-register");
+  });
+
+  it("does not send a body on a read", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+
+    await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
+    const curl = screen.getByTestId("curl-example").textContent ?? "";
+    expect(curl).not.toContain("-d ");
+    expect(curl).not.toContain("-X GET");
+  });
+
+  it("shows path parameters as placeholders to be substituted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.fetchApiDocument).mockResolvedValue({
+      ...doc,
+      paths: {
+        "/api/v1/cookbooks/{name}": {
+          get: {
+            operationId: "getCookbooksName",
+            summary: "One cookbook.",
+            "x-required-role": "authenticated",
+            parameters: [
+              { name: "name", in: "path", required: true, schema: { type: "string" } },
+            ],
+          },
+        },
+      },
+    } as never);
+
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks/{name}"));
+    await user.click(
+      screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }),
+    );
+
+    const panel = screen.getByRole("complementary");
+    expect(within(panel).getByText("name")).toBeInTheDocument();
+    expect(within(panel).getByText(/path/i)).toBeInTheDocument();
+    expect(screen.getByTestId("curl-example").textContent).toContain(
+      "cookbooks/NAME",
+    );
+  });
+
+  it("says plainly what the description does not yet carry", async () => {
+    const user = userEvent.setup();
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getAllByText("/api/v1/failure-register"));
+
+    await user.click(
+      screen.getByRole("button", { name: /post \/api\/v1\/failure-register/i }),
+    );
+
+    // The body is not described. Saying so beats an empty section, which reads
+    // as "this call takes nothing" — and would send somebody to a 400.
+    const panel = screen.getByRole("complementary");
+    expect(
+      within(panel).getByText(/request body is not described/i),
+    ).toBeInTheDocument();
+  });
+
+  it("copies the curl to the clipboard", async () => {
+    // setup() installs its own clipboard stub, so ours has to go on after it
+    // or it is silently replaced and the assertion sees no calls.
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(<ApiDocsPage />);
+    await waitFor(() => screen.getByText("/api/v1/cookbooks"));
+    await user.click(screen.getByRole("button", { name: /get \/api\/v1\/cookbooks/i }));
+    await user.click(screen.getByRole("button", { name: /copy/i }));
+
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining("$APITOKEN"),
+    );
   });
 
   it("reports a failure to load rather than an empty API", async () => {
