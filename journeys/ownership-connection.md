@@ -32,10 +32,19 @@ a string from somebody else's tooling that I would rather paste in whole.
 
 **To test it before going any further.** Asking for the list of tables is not a connection test.
 When that comes back empty or angry I cannot tell whether the account is wrong, the network is
-closed, the database name is wrong or the string is malformed — and those are four different
-people to go and talk to.
+closed, the database name is wrong, the string is malformed, or the account is not one the
+database checks for itself — and those are five different people to go and talk to.
 
-**A failure that tells me which of the four it was**, in the words of whatever refused me. A
+**To be told when the account is not the database's to check.** An account with something in
+front of it — a domain, a machine name, a workgroup, or just a dot — is not checked by the
+database at all. It is handed on to whatever keeps that list of people, and if that thing is not
+trusted where the database lives, or cannot be reached from there, I am refused for a reason
+that has nothing to do with my password and belongs to a different team again. This is the shape
+of account I have actually been given, so it is not a corner case. It is also the one refusal
+that does not repeat my account back to me, which makes seeing the composed connection the only
+thing I have left.
+
+**A failure that tells me which of the five it was**, in the words of whatever refused me. A
 message that has been tidied into "could not connect" has thrown away the only thing in it worth
 having. Two different things can refuse me — the thing that reads the string, and the server —
 and I want to hear from both, as they put it — **except for my password, which must never come
@@ -86,6 +95,11 @@ the wrong answers before — several of them, confidently, in one evening. There
 to try it against, and the cases that matter are known: an account with a domain in front of it,
 and a password with punctuation in it. Anything short of running those two against a server that
 really refuses or really admits them is a guess wearing a test's clothes.
+
+**Nothing here can prove an account with something in front of it works.** The database we try
+these against belongs to nobody's list of people, and it will not let us invent an account that
+looks as though it does. So that is exercised for the first time at the customer, on the account
+they actually use, and the refusal seen here is not the refusal they will get.
 
 **Nothing proves a proposed connection is a good starting point.** A suggestion that is usually
 wrong is worse than none, because it turns setting up a connection into correcting one.

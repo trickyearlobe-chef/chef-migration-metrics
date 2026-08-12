@@ -215,13 +215,24 @@ func TestJourney_ICanTestTheConnectionBeforeBrowsingIt(t *testing.T) {
 		"the conflation the journey rejects.")
 }
 
-// "A failure that tells me which of the four it was, in the words of whatever
+// "A failure that tells me which of the five it was, in the words of whatever
 // refused me."
-func TestJourney_AFailedConnectionSaysWhichOfTheFourThingsFailed(t *testing.T) {
+func TestJourney_AFailedConnectionSaysWhichOfTheFiveThingsFailed(t *testing.T) {
 	t.Skip("TODO: depends on the test above existing at all. The requirement is that the " +
 		"refusal is passed through rather than tidied into 'could not connect' — a wrong " +
-		"account, a closed network, a wrong database name and a malformed string are four " +
-		"different people to go and talk to.")
+		"account, a closed network, a wrong database name, a malformed string and an account " +
+		"the database does not check for itself are five different people to go and talk to.")
+}
+
+// "To be told when the account is not the database's to check."
+func TestJourney_IAmToldWhenTheAccountIsNotTheDatabasesToCheck(t *testing.T) {
+	t.Skip("TODO: nothing tests a connection, so nothing can report this. The behaviour " +
+		"underneath is measured — TestFunctional_MSSQL_ABackslashAccountAsksForIntegratedAuthentication " +
+		"in internal/ownershipsql shows that anything before a backslash, whether a domain, a " +
+		"machine name, a workgroup or a dot, hands the login to a directory rather than to the " +
+		"database. What is missing is saying so. This refusal is also the only one that does " +
+		"not name the account back, so it is the one where the composed connection is all the " +
+		"administrator has.")
 }
 
 // "except for my password, which must never come back to me in a message."
