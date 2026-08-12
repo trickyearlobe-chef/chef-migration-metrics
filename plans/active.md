@@ -8,19 +8,20 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — the assistant/API credential (chunk 2)
+## NOW — the assistant-facing surface (chunk 3)
 
 **Read first:** [asking my assistant why this is failing](../journeys/agent-access.md), then run
-`make journey`. The reds in `internal/webapi/agent_access_journey_test.go` are the chunk, and they
-were written before any of it was built, so the list is complete rather than grown a test at a
-time. Nothing else here needs reading to start.
+`make journey`. One red is left in `internal/webapi/agent_access_journey_test.go`:
+`TheAssistantSurfaceIsBuiltIn`. The service hosts nothing an editor assistant can connect to, so
+using it would mean deploying a second thing beside it — which cannot happen inside the customer
+estate. It has to ship and upgrade with everything else.
 
-**Both product questions this was blocked on are answered, in the journeys:**
+The description and the credential it would be built on are both there now, so this chunk is the
+protocol endpoint and nothing else.
 
-- A job that runs unattended **gets its own account** — local, or one the identity provider
-  already carries for a machine. There is no service account and no second permissions model.
-- **How something got in is settled when it signs in**, attached by the service and never supplied
-  by the caller. It belongs on the session, beside the provider a session already records.
+**Two things it must not re-litigate.** The credential is the account's own, at the account's own
+level, and read-only unless its maker chose otherwise. How a caller got in is settled at sign-in
+and lives on the session — the surface reads it, never sets it.
 
 **One rule that cost a near-miss, and applies to anything else being tightened:** check whether an
 ordinary user can see a control wired to an endpoint *before* hardening it, rather than reasoning
@@ -30,6 +31,15 @@ auth. Detail: `plans/todo-tech-debt.md`.
 
 **Still open, nobody has decided:** a feature switched off at runtime is still described, so an
 assistant asks for it and is told it does not exist. Detail: `plans/todo-documentation.md`.
+
+## QUEUED NEXT — the description as a page an operator can read
+
+Render the OpenAPI document as a browsable tab for operators and admins. Bundled, not a CDN;
+lazy-loaded; supply-chain checked before anything is added. **Try-it-out stays off** — the page is
+served to a signed-in person, so a "try" button fires real calls as them, and the destructive ones
+are one click from a document people open to browse. Nothing in the journey asks for it.
+
+Sized as a small chunk, and it does not block the surface above.
 
 ## The top open question is not ownership — it is whether the blocking list is true
 
@@ -58,7 +68,7 @@ every entry is also a measurement of how wrong the signal is. Detail and the sha
 
 ## Operational facts that bite
 
-**Next free migration number: 0066.**
+**Next free migration number: 0069.**
 
 **There is no down-migration runner** — only `MigrateUp` — so a schema rollback is `psql` by hand
 or a restore. Take a `pg_dump` before any deploy. Two migrations leave a residue an older binary
@@ -67,8 +77,10 @@ assignments re-keyed from URL to repo name). 0063's down script is **not a true 
 cannot tell a row it rewrote from one always held by name.
 
 **Release preconditions — the bump target runs no tests.** `make ci` and `make vuln-go` must pass
-first; `bump-patch-push` does not depend on `ci`. Local `make ci` needs `TRIVY_SKIP_DB_UPDATE=true`
-(the 1.2GB DB pull stalls mid-transfer; GitHub CI pulls it fresh). The push is a human step —
+first; `bump-patch-push` does not depend on `ci`. **Do not set `TRIVY_SKIP_DB_UPDATE=true` for
+`make ci`** — it makes the run fail. Trivy rejects that flag alongside `--download-db-only`, which
+is what the DB-refresh step uses, so the refresh dies before any scan happens. Plain `make ci`
+works; the refresh is already bounded and retried. The push is a human step —
 CLAUDE.md forbids remotes, so an assistant may bump and tag locally and push only with explicit
 per-action authorisation.
 

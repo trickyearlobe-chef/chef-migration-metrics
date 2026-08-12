@@ -43,3 +43,16 @@ Only after the above is in use. Nothing already recorded is discarded.
 - [ ] **Non-human actors.** Auto-derivation and startup cleanup already write `system`.
   Whether a scheduled process should be distinguishable from a person is unresolved, and
   it matters if the log is ever used to answer an accountability question.
+  - **Partly settled for callers**, in one place only: the failure register now stores
+    whether a new entry came from a screen or from a named credential, taken from the
+    session and never from the request. That is the pattern a general log should copy —
+    the session is the only thing about a request a caller cannot write. It says nothing
+    about scheduled work, which has no session at all.
+
+## Attribution gaps this leaves
+
+- [ ] **A revision to a register entry records nobody.** Not a username, not an origin. A
+  credential is barred from revising for exactly that reason, so today the hole is only
+  reachable by a person at a screen — but it means the register cannot answer "who changed
+  this plan". Fixing it is the precondition for ever letting a tool revise one.
+- [ ] **Resolving records a username but not an origin.** Same shape, one step better.

@@ -663,3 +663,25 @@ of wrapper and handler — and add a test that probes each operation with a view
 the declaration and the behaviour disagree. Until then the served description understates the
 requirement on 37 operations, saying "authenticated" where the answer is operator or admin, so a
 generated client built on a viewer credential meets 403s the document did not predict.
+
+---
+
+## API credentials — the shortcuts taken
+
+Recorded 2026-08-12 (`feature/assistant-credential`).
+
+- [ ] **A credential never expires.** There is no expiry column and nothing prunes.
+  Destroying one is immediate and is the only way it stops working, so a credential
+  copied out of somebody's editor configuration works until they notice. **Proper fix:**
+  an optional expiry chosen when it is made, and a listing that shows what is close to
+  it. Not asked for in the journey, so deliberately left out of the first cut.
+- [ ] **Nothing tells its owner a credential has been used from somewhere new.** The last
+  used timestamp is the whole of the signal, and it is written at most once a minute.
+- [ ] **Every non-GET counts as a write.** A read-only credential therefore cannot call
+  the POST-shaped endpoints that only preview or profile something (an ownership import
+  preview, for instance). Deliberate — deciding case by case which POSTs are harmless is
+  how a scope rule stops being one — but it is a real limitation if a tool ever needs to
+  preview.
+- [ ] **A writing credential can create a register entry and nothing else, including in
+  the register.** Revising and resolving are barred because neither records what made the
+  change. See `plans/todo-audit.md`; the attribution has to come first, in that order.
