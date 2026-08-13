@@ -16,7 +16,6 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipschedule"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
 // ---------------------------------------------------------------------------
@@ -119,36 +118,25 @@ func (r *Router) RunSavedImport(ctx context.Context, m datastore.ImportMapping) 
 	return summary, nil
 }
 
-// openSavedDatabaseSource resolves the stored credential and connects.
+// openSavedDatabaseSource resolves the connection the import names and connects.
 //
-// The connection string is read from the credential store by name, exactly as
-// the interactive path reads it. A saved import holds the *name*, so scheduling
-// never becomes the reason a password ends up stored in plain text.
+// A saved import holds the *name* of a connection, exactly as the interactive
+// path does, so scheduling never becomes the reason a password is stored in
+// plain text — and the two paths reach a database through the same code, so a
+// connection that works when somebody watches works when nobody does.
 func (r *Router) openSavedDatabaseSource(ctx context.Context, m datastore.ImportMapping) (ownershipimport.RowSource, error) {
-	if !ownershipsql.IsSupportedDriver(m.DBDriver) {
-		return nil, fmt.Errorf("import %q names an unsupported database driver %q", m.Name, m.DBDriver)
-	}
 	if strings.TrimSpace(m.DBQuery) == "" {
 		return nil, fmt.Errorf("import %q has no query to run", m.Name)
 	}
-	if m.DBCredential == "" {
-		return nil, fmt.Errorf("import %q names no credential to connect with", m.Name)
-	}
-	if r.credentialStore == nil {
-		return nil, fmt.Errorf("credential storage is not configured, so import %q cannot connect", m.Name)
-	}
 
-	cred, err := r.credentialStore.Get(ctx, m.DBCredential)
+	cfg, cleanup, err := r.connectionConfig(ctx, m.DBConnection)
 	if err != nil {
-		return nil, fmt.Errorf("import %q could not read the credential %q: %w", m.Name, m.DBCredential, err)
+		return nil, fmt.Errorf("import %q cannot connect: %w", m.Name, err)
 	}
-	defer secrets.ZeroBytes(cred.Plaintext)
+	defer cleanup()
+	cfg.Query = m.DBQuery
 
-	src, err := ownershipsql.Open(ctx, ownershipsql.Config{
-		Driver: m.DBDriver,
-		DSN:    string(cred.Plaintext),
-		Query:  m.DBQuery,
-	})
+	src, err := ownershipsql.Open(ctx, cfg)
 	if err != nil {
 		// An unreadable source and an empty one look the same in a row count
 		// and mean opposite things, so this is an error rather than nil rows.

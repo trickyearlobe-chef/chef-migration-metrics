@@ -4,6 +4,7 @@
 package webapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -372,6 +373,47 @@ func (r *Router) credentialExists(w http.ResponseWriter, req *http.Request, name
 		return false
 	}
 	return true
+}
+
+// connectionConfig turns the name of a stored connection into the configuration
+// that connects with it: the connection as written, the database it names, and
+// the password read at that moment.
+//
+// The caller must call the returned cleanup, which zeroes the password. It is
+// the one way an import reaches a database — the interactive path and a
+// scheduled run share it, so a connection that works in one works in the other.
+func (r *Router) connectionConfig(ctx context.Context, name string) (ownershipsql.Config, func(), error) {
+	noop := func() {}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ownershipsql.Config{}, noop, errors.New(
+			"no connection was named: choose one that has been set up on this screen")
+	}
+	if r.configStore == nil {
+		return ownershipsql.Config{}, noop, errors.New(
+			"configuration storage is not available, so there are no connections to read")
+	}
+	stored, err := ownershipconn.NewStore(r.configStore).Get(ctx, name)
+	if err != nil {
+		return ownershipsql.Config{}, noop, fmt.Errorf("connection %q: %w", name, err)
+	}
+	if r.credentialStore == nil {
+		return ownershipsql.Config{}, noop, errors.New(
+			"credential storage is not configured, so the password cannot be read")
+	}
+	cred, err := r.credentialStore.Get(ctx, stored.PasswordCredential)
+	if err != nil {
+		return ownershipsql.Config{}, noop, fmt.Errorf(
+			"connection %q names the credential %q for its password, which could not be read: %w",
+			name, stored.PasswordCredential, err)
+	}
+	return ownershipsql.Config{
+			Driver:     stored.Driver,
+			Connection: stored.Connection,
+			Password:   string(cred.Plaintext),
+		}, func() {
+			secrets.ZeroBytes(cred.Plaintext)
+		}, nil
 }
 
 // readPassword fetches the password to put into the connection. The caller must

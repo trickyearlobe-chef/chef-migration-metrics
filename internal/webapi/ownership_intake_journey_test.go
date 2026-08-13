@@ -263,7 +263,7 @@ func TestJourney_CanSeeWhetherTheSourceIsGettingBetterOrWorse(t *testing.T) {
 // intakeFormFields returns the form field names the intake handler reads, so a
 // seam can be asserted without a live database.
 func intakeFormFields() string {
-	return "field_map mapping_id query db_credential table filter_column filter_value"
+	return "field_map mapping_id query db_connection table filter_column filter_value"
 }
 
 // "That decision turns on having watched it run once, including how long it

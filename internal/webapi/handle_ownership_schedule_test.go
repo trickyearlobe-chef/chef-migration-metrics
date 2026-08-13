@@ -25,8 +25,7 @@ func scheduledMappingBody(t *testing.T, overrides map[string]any) string {
 		"name":             "cmdb-nightly",
 		"source_kind":      "database",
 		"field_map":        json.RawMessage(repoFieldMap(t)),
-		"db_driver":        "postgres",
-		"db_credential":    "cmdb",
+		"db_connection":    "cmdb",
 		"db_query":         "SELECT owner, repo FROM asset_owner",
 		"schedule":         "0 2 * * *",
 		"schedule_enabled": true,
@@ -65,8 +64,8 @@ func TestSaveScheduledImport_StoresTheConnectionAndTheSchedule(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 	}
-	if got.DBCredential != "cmdb" {
-		t.Errorf("DBCredential = %q, want the stored credential name", got.DBCredential)
+	if got.DBConnection != "cmdb" {
+		t.Errorf("DBConnection = %q, want the name of the connection it reads through", got.DBConnection)
 	}
 	if !strings.Contains(got.DBQuery, "asset_owner") {
 		t.Errorf("DBQuery = %q, want the query as written", got.DBQuery)
@@ -92,7 +91,7 @@ func TestSaveScheduledImport_RefusesAnUnparseableExpression(t *testing.T) {
 func TestSaveScheduledImport_RefusesToScheduleAFileImport(t *testing.T) {
 	w := postMapping(t, ownershipRouter(&mockStore{}), scheduledMappingBody(t, map[string]any{
 		"source_kind":   "csv",
-		"db_credential": "",
+		"db_connection": "",
 		"db_query":      "",
 	}))
 	if w.Code != http.StatusBadRequest {
@@ -108,7 +107,7 @@ func TestSaveScheduledImport_RefusesToScheduleAFileImport(t *testing.T) {
 // person can see which field is missing.
 func TestSaveScheduledImport_RefusesAScheduleWithNothingToRun(t *testing.T) {
 	for field, missing := range map[string]map[string]any{
-		"db_credential": {"db_credential": ""},
+		"db_connection": {"db_connection": ""},
 		"db_query":      {"db_query": "   "},
 		"schedule":      {"schedule": ""},
 	} {

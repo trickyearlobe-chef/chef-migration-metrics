@@ -38,7 +38,7 @@ func ownershipImportEndpoints(t *testing.T) []*http.Request {
 	t.Helper()
 	return []*http.Request{
 		intakeRequest(t, "/api/v1/ownership/import/tables", "", map[string]string{
-			"db_driver": "postgres", "db_credential": "cmdb",
+			"db_connection": "cmdb",
 		}),
 		intakeRequest(t, "/api/v1/ownership/import/profile", "a,b\n1,2\n", nil),
 		intakeRequest(t, "/api/v1/ownership/import/preview", twoRowCSV, map[string]string{

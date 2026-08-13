@@ -31,11 +31,12 @@ type ImportMapping struct {
 	CreatedAt  time.Time       `json:"created_at"`
 	UpdatedAt  time.Time       `json:"updated_at"`
 
-	// Where a database import reads from. DBCredential names a stored
-	// credential; the connection string itself is never held here, so this
-	// table never becomes the one place a password sits in plain text.
-	DBDriver     string `json:"db_driver,omitempty"`
-	DBCredential string `json:"db_credential,omitempty"`
+	// Where a database import reads from. DBConnection names a connection set
+	// up under the import screen, which carries the address, the database and
+	// the account, and names the credential holding its password — so neither
+	// a password nor a whole connection string is ever held here, and which
+	// database reads it is not asked a second time.
+	DBConnection string `json:"db_connection,omitempty"`
 	DBQuery      string `json:"db_query,omitempty"`
 
 	// Import options that change what a row does, saved because an unattended
@@ -74,8 +75,7 @@ type InsertImportMappingParams struct {
 // reverse, is the kind of asymmetry that goes unnoticed until somebody cannot
 // turn one off.
 type ImportMappingSource struct {
-	DBDriver     string
-	DBCredential string
+	DBConnection string
 	DBQuery      string
 
 	FilterColumn string
@@ -99,7 +99,7 @@ type UpdateImportMappingParams struct {
 
 // importMappingSourceColumns are the fields a saved import needs to run
 // unattended, plus what its last run did.
-const importMappingSourceColumns = `db_driver, db_credential, db_query, ` +
+const importMappingSourceColumns = `db_connection, db_query, ` +
 	`filter_column, filter_value, create_owners, schedule, schedule_enabled, ` +
 	`last_run_at, last_run_status, last_run_detail`
 
@@ -121,7 +121,7 @@ const importMappingSummaryColumns = `id, name, source_kind, delimiter, created_b
 // drift apart from the two Scan calls.
 func importMappingSourceDests(m *ImportMapping, lastRunAt *sql.NullTime) []any {
 	return []any{
-		&m.DBDriver, &m.DBCredential, &m.DBQuery,
+		&m.DBConnection, &m.DBQuery,
 		&m.FilterColumn, &m.FilterValue, &m.CreateOwners,
 		&m.Schedule, &m.ScheduleEnabled,
 		lastRunAt, &m.LastRunStatus, &m.LastRunDetail,
@@ -190,15 +190,15 @@ func (db *DB) InsertImportMapping(ctx context.Context, p InsertImportMappingPara
 	query := `
 		INSERT INTO ownership_import_mappings (
 			name, source_kind, delimiter, field_map, created_by,
-			db_driver, db_credential, db_query,
+			db_connection, db_query,
 			filter_column, filter_value, create_owners,
 			schedule, schedule_enabled)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, $9, $10, $11, $12)
 		RETURNING ` + importMappingColumns
 
 	row := db.pool.QueryRowContext(ctx, query,
 		p.Name, sourceKind, delimiter, []byte(p.FieldMap), p.CreatedBy,
-		p.DBDriver, p.DBCredential, p.DBQuery,
+		p.DBConnection, p.DBQuery,
 		p.FilterColumn, p.FilterValue, p.CreateOwners,
 		p.Schedule, p.ScheduleEnabled)
 	m, err := scanImportMapping(row)
@@ -275,16 +275,16 @@ func (db *DB) UpdateImportMapping(ctx context.Context, id int64, p UpdateImportM
 	query := `
 		UPDATE ownership_import_mappings
 		SET name = $2, delimiter = $3, field_map = $4,
-		    db_driver = $5, db_credential = $6, db_query = $7,
-		    filter_column = $8, filter_value = $9, create_owners = $10,
-		    schedule = $11, schedule_enabled = $12,
+		    db_connection = $5, db_query = $6,
+		    filter_column = $7, filter_value = $8, create_owners = $9,
+		    schedule = $10, schedule_enabled = $11,
 		    updated_at = now()
 		WHERE id = $1
 		RETURNING ` + importMappingColumns
 
 	m, err := scanImportMapping(db.pool.QueryRowContext(ctx, query,
 		id, p.Name, delimiter, []byte(p.FieldMap),
-		p.DBDriver, p.DBCredential, p.DBQuery,
+		p.DBConnection, p.DBQuery,
 		p.FilterColumn, p.FilterValue, p.CreateOwners,
 		p.Schedule, p.ScheduleEnabled))
 	if errors.Is(err, sql.ErrNoRows) {

@@ -1065,27 +1065,23 @@ func (r *Router) registerRoutes() {
 	// The rows an import could not use, as a worklist rather than only an export.
 	r.protect("/api/v1/ownership/import/rejections", r.handleOwnershipIntake, paginated())
 	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake, methods("POST"),
-		takesForm("POST", formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"}))
+		takesForm("POST", formField{Name: "db_connection"}))
 	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake, methods("POST"),
 		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
 			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
-			formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"},
+			formField{Name: "db_connection"},
 			formField{Name: "db_query"}))
 	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake, methods("POST"),
 		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
 			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
-			formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"},
+			formField{Name: "db_connection"},
 			formField{Name: "db_query"},
 			formField{Name: "field_map"}, formField{Name: "filter_column"},
 			formField{Name: "filter_value"}, formField{Name: "create_owners"}))
 	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake, methods("POST"),
 		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
 			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
-			formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"},
+			formField{Name: "db_connection"},
 			formField{Name: "db_query"},
 			formField{Name: "field_map"}, formField{Name: "filter_column"},
 			formField{Name: "filter_value"}, formField{Name: "create_owners"}))

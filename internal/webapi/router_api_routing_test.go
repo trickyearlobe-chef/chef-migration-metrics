@@ -29,14 +29,13 @@ func TestIntakeListTables_IsRouted(t *testing.T) {
 	r := testRouter()
 
 	req := intakeRequest(t, "/api/v1/ownership/import/tables", "", map[string]string{
-		"db_driver": "sqlserver",
 	})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	assertStatus(t, w, http.StatusBadRequest)
-	if !strings.Contains(w.Body.String(), "db_credential is required") {
-		t.Errorf("body = %q, want the list-tables handler's own complaint about db_credential",
+	if !strings.Contains(w.Body.String(), "no connection was named") {
+		t.Errorf("body = %q, want the list-tables handler's own complaint about the connection",
 			w.Body.String())
 	}
 }

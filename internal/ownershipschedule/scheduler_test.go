@@ -41,7 +41,7 @@ func nightly(id int64, name, cron string) datastore.ImportMapping {
 	return datastore.ImportMapping{
 		ID: id, Name: name, SourceKind: "database",
 		Schedule: cron, ScheduleEnabled: true,
-		DBDriver: "postgres", DBCredential: "cmdb", DBQuery: "SELECT 1",
+		DBConnection: "cmdb", DBQuery: "SELECT 1",
 	}
 }
 

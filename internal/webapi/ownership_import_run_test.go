@@ -41,7 +41,6 @@ func savedDatabaseImport(t *testing.T) datastore.ImportMapping {
 		Name:         "cmdb-nightly",
 		SourceKind:   "database",
 		FieldMap:     json.RawMessage(repoFieldMap(t)),
-		DBDriver:     "postgres",
 		DBQuery:      "SELECT 1",
 		CreateOwners: true,
 	}
