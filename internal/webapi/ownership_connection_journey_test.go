@@ -7,12 +7,38 @@ package webapi
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipconn"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
+
+// journeyConfig is the config store with the database and the encryption taken
+// out. What is being asked here is whether a connection can be read back at
+// all, which is a question about the shape of what is stored rather than about
+// where it is kept.
+type journeyConfig struct{ values map[string]json.RawMessage }
+
+func newJourneyConfig() *journeyConfig {
+	return &journeyConfig{values: map[string]json.RawMessage{}}
+}
+
+func (c *journeyConfig) Get(_ context.Context, key string) (json.RawMessage, error) {
+	v, ok := c.values[key]
+	if !ok {
+		return nil, configstore.ErrNotFound
+	}
+	return v, nil
+}
+
+func (c *journeyConfig) Set(_ context.Context, key string, value json.RawMessage, _ bool, _ string) error {
+	c.values[key] = value
+	return nil
+}
 
 // The journey suite for journeys/ownership-connection.md — "Connecting to a
 // database that is not mine". Run it with `make journey`.
@@ -52,10 +78,38 @@ func TestJourney_OnlyThePasswordIsOutOfSight(t *testing.T) {
 		t.Error("a password on its own cannot be stored as the secret for an import, so the " +
 			"whole connection goes on being encrypted and a failure cannot be read")
 	}
-	t.Skip("The half above passes; the half that matters does not exist. Nothing yet holds " +
-		"the connection itself as readable configuration beside that password — the import " +
-		"still takes one encrypted string and nothing else. Remove this skip when a " +
-		"connection can be read back without its password.")
+
+	// And the other half: the connection itself is held as configuration
+	// beside that password, and reads back with the address, the database, the
+	// account and the domain all legible.
+	stored := ownershipconn.NewStore(newJourneyConfig())
+	connection := `sqlserver://EXAMPLECORP\svcaccount:` + ownershipsql.PasswordMarker +
+		`@dbhost.example.com:1433?database=cmdb`
+	if err := stored.Save(context.Background(), ownershipconn.Connection{
+		Name:               "asset-database",
+		Driver:             ownershipsql.DriverSQLServer,
+		Connection:         connection,
+		PasswordCredential: "asset-database-password",
+	}, "admin"); err != nil {
+		t.Fatalf("a connection could not be stored as configuration: %v", err)
+	}
+
+	readBack, err := stored.Get(context.Background(), "asset-database")
+	if err != nil {
+		t.Fatalf("a stored connection could not be read back: %v", err)
+	}
+	for _, visible := range []string{
+		"dbhost.example.com", "1433", "database=cmdb", "EXAMPLECORP", "svcaccount",
+	} {
+		if !strings.Contains(readBack.Connection, visible) {
+			t.Errorf("%q cannot be read back, so it cannot be checked when the connection "+
+				"fails: %s", visible, readBack.Connection)
+		}
+	}
+	if readBack.PasswordCredential == "" {
+		t.Error("nothing says which credential holds the password, so the connection cannot " +
+			"be composed without somebody typing one in")
+	}
 }
 
 // "The password, and only the password, put in for me — correctly."
