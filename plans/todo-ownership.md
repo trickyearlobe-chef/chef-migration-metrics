@@ -72,6 +72,23 @@ Remaining:
   connection per database, and taking the password out of error messages. The reds and skips in
   the suite name them one at a time.
 
+  **Where the two halves live, settled 2026-08-13.** The connection is one entry in the config
+  store, written NOT secret, holding a list of named connections: the name, which database reads
+  it, the connection as typed with the marker in it, and the name of the credential holding the
+  password. The password stays a `generic` credential — a bare password has no shape to check,
+  and `database_url` exists to refuse one. So no new credential type, and nothing in
+  `internal/ownershipconn` ever handles a password: the moment one passes through it, the
+  connection stops being something a screen can show.
+
+  **A PostgreSQL keyword connection was refused as naming no database while naming one.**
+  Measured 2026-08-13: `host=… dbname=cmdb user=…` was read as a single field keyed `host`,
+  because the split was on `;&?` only and libpq separates its pairs with spaces — the refusal
+  even printed `dbname=cmdb` back in its own description of the shape. It is one of the two
+  shapes this journey says must be recognised, and it was refused before anything was dialled by
+  `Open`, `ListTables` and the connection test alike. Splitting a field on spaces only when it
+  already holds more than one `=` reads it, and leaves SQL Server's `Initial Catalog` and
+  `User Id` in one piece.
+
   **The position of the password is marked, not guessed** — `PASSWORD_GOES_HERE`, refused by name
   when absent, because putting it somewhere nobody asked for sends a connection the administrator
   did not write. The spelling was measured: `${password}` is expanded to nothing by every shell

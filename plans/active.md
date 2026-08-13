@@ -17,10 +17,10 @@ preference. Detail and the measurements behind it: `plans/todo-ownership.md`.
 The backend is done: composing, redaction and the connection test are built and measured against
 running servers. What is left is everything an administrator can see, and it starts with storage.
 
-- **C. The connection is readable configuration; only the password is a secret.** Config store
-  and credential shape. Everything on a screen depends on this.
 - **D. Endpoints** take a connection and a password, return the composed connection masked, and
-  test one. Re-run `make frontend-fields` — bodies change.
+  test one. Re-run `make frontend-fields` — bodies change. A stored connection now names the
+  credential holding its password, so an endpoint reads the two and hands them to the composer;
+  the intake still asks for `db_credential` and gets a whole encrypted string.
 - **E. The screen.** Show the composed connection masked, say how to mark the password, propose
   a starting connection per database, derive the database from the scheme rather than asking,
   drop the TLS control (carrying its SQL Server mapping into the proposed connection), and
