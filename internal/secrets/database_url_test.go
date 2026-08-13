@@ -34,6 +34,28 @@ func TestDatabaseURL_AcceptsTheFormsTheImportScreenDocuments(t *testing.T) {
 	}
 }
 
+// libpq's own spelling separates its pairs with spaces rather than with
+// semicolons, and it names the database "dbname". Measured 2026-08-13: a
+// connection in that form was refused as naming no database while naming one in
+// plain sight — the refusal even printed "dbname=cmdb" back in its description
+// of the shape. It is the form a PostgreSQL DBA hands over, and it is one of the
+// two shapes journeys/ownership-connection.md says have to be recognised.
+//
+// The baseline is asserted first: the same connection with no dbname is still
+// refused, so this cannot go green by the check being switched off.
+func TestDatabaseURL_AcceptsPostgresKeywordSpelling(t *testing.T) {
+	const named = "host=dbhost.example.com dbname=cmdb user=svc password=p sslmode=require"
+	const unnamed = "host=dbhost.example.com user=svc password=p sslmode=require"
+
+	if result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte(unnamed)); result.Valid {
+		t.Fatal("the fixture proves nothing: a connection naming no database is accepted in " +
+			"this spelling anyway, so accepting the one below measures nothing")
+	}
+	if result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte(named)); !result.Valid {
+		t.Errorf("refused a connection that names its database as libpq spells it: %v", result.Error)
+	}
+}
+
 func TestDatabaseURL_RejectsAConnectionThatNamesNoDatabase(t *testing.T) {
 	rejected := []string{
 		"postgres://user:pass@host:5432",

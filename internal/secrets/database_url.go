@@ -427,12 +427,38 @@ func redactCredentials(dsn string) string {
 	return scheme + "://" + authority + redactPairs(tail)
 }
 
+// connectionFields splits a connection string into its key=value pairs,
+// whichever spelling it arrives in.
+//
+// The separators are ";", "&" and "?" — and then a space, but only inside a
+// field that already holds more than one "=". That second pass is what reads
+// libpq's own spelling, "host=h dbname=cmdb user=svc", which separates its
+// pairs with spaces. Splitting on spaces unconditionally would break SQL
+// Server's keys instead: it spells them "Initial Catalog" and "User Id", and
+// halving those leaves the database unnamed and the password exposed.
+//
+// It is the same rule redactCredentials applies, and for the same reason: a
+// space-separated connection was otherwise read as one field whose key was
+// "host", so "dbname=cmdb" was never seen and the connection was refused as
+// naming no database while printing that database back in the refusal.
+func connectionFields(dsn string) []string {
+	var out []string
+	for _, field := range strings.FieldsFunc(dsn, func(r rune) bool {
+		return r == ';' || r == '&' || r == '?'
+	}) {
+		if strings.Count(field, "=") > 1 && strings.Contains(field, " ") {
+			out = append(out, strings.Fields(field)...)
+			continue
+		}
+		out = append(out, field)
+	}
+	return out
+}
+
 // hasKeyword reports whether a keyword appears with a value, whatever separator
 // and spelling it arrives in.
 func hasKeyword(dsn, want string) bool {
-	fields := strings.FieldsFunc(dsn, func(r rune) bool {
-		return r == ';' || r == '&' || r == '?'
-	})
+	fields := connectionFields(dsn)
 	for _, field := range fields {
 		key, value, found := strings.Cut(field, "=")
 		if !found {
@@ -449,9 +475,7 @@ func hasKeyword(dsn, want string) bool {
 // separator these strings use. A connection string is a bag of key=value pairs
 // whichever spelling it arrives in, so they are all treated the same way.
 func namesDatabase(dsn string) bool {
-	fields := strings.FieldsFunc(dsn, func(r rune) bool {
-		return r == ';' || r == '&' || r == '?'
-	})
+	fields := connectionFields(dsn)
 	for _, field := range fields {
 		key, value, found := strings.Cut(field, "=")
 		if !found {
