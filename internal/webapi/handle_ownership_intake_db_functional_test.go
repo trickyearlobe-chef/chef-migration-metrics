@@ -13,6 +13,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipconn"
 )
 
 // The database ingest through the API, against a real SQL Server. The unit
@@ -23,14 +25,38 @@ import (
 //
 //	make mssql-up && make seed-mssql
 //
-// then set CMM_TEST_MSSQL_DSN.
-func mssqlDSNForAPI(t *testing.T) string {
+// then run it through `make test-mssql-api`, which supplies the environment.
+
+// storedConnection sets up what an administrator would set up before importing:
+// a password held as a credential, and a connection beside it that says where
+// the password goes rather than carrying it. Returns a router that can reach
+// both, and the name to send as db_connection.
+//
+// The two are deliberately built the long way rather than from the ready-made
+// DSN: the point of this suite is the path a person actually takes, and that
+// path never has the whole connection in one piece.
+func storedConnection(t *testing.T) (*Router, string) {
 	t.Helper()
-	dsn := os.Getenv("CMM_TEST_MSSQL_DSN")
-	if dsn == "" {
-		t.Skip("CMM_TEST_MSSQL_DSN is not set; run: make mssql-up && make seed-mssql")
+	visible := os.Getenv("CMM_TEST_MSSQL_VISIBLE_URL")
+	password := os.Getenv("CMM_TEST_MSSQL_NASTY_PW")
+	if visible == "" || password == "" {
+		t.Skip("CMM_TEST_MSSQL_VISIBLE_URL and CMM_TEST_MSSQL_NASTY_PW are not set; " +
+			"run: make test-mssql-api")
 	}
-	return dsn
+
+	credStore := newMockCredentialStore(testCredentialEncryptor(t))
+	mustCreateCredential(t, credStore, "cmdb-password", "generic", password)
+	configStore := newTestConfigStore(t)
+	r := newTestRouterForAdminConfig(nil, configStore, nil, WithCredentialStore(credStore))
+
+	if err := ownershipconn.NewStore(configStore).Save(t.Context(), ownershipconn.Connection{
+		Name:               "cmdb-connection",
+		Connection:         visible,
+		PasswordCredential: "cmdb-password",
+	}, "test-admin"); err != nil {
+		t.Fatalf("setting the connection up: %v", err)
+	}
+	return r, "cmdb-connection"
 }
 
 const apiOwnerQuery = `
@@ -41,8 +67,10 @@ const apiOwnerQuery = `
 	WHERE s.left_company = 0 OR s.left_company IS NULL
 	ORDER BY a.asset_id`
 
-// databaseIntakeForm builds the multipart body naming a database source.
-func databaseIntakeForm(t *testing.T, credential, query string) (*bytes.Buffer, string) {
+// databaseIntakeForm builds the multipart body naming a database source. The
+// connection is named, never sent: what it is and where its password lives are
+// read on the server.
+func databaseIntakeForm(t *testing.T, connection, query string) (*bytes.Buffer, string) {
 	t.Helper()
 	body := &bytes.Buffer{}
 	w := multipart.NewWriter(body)
@@ -62,13 +90,9 @@ func databaseIntakeForm(t *testing.T, credential, query string) (*bytes.Buffer, 
 }
 
 func TestFunctional_IntakeProfile_ReadsFromSQLServer(t *testing.T) {
-	dsn := mssqlDSNForAPI(t)
+	r, connection := storedConnection(t)
 
-	credStore := newMockCredentialStore(testCredentialEncryptor(t))
-	mustCreateCredential(t, credStore, "cmdb-connection", "generic", dsn)
-	r := newTestRouterWithCredentials(credStore)
-
-	body, contentType := databaseIntakeForm(t, "cmdb-connection", apiOwnerQuery)
+	body, contentType := databaseIntakeForm(t, connection, apiOwnerQuery)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import/profile", body)
 	req.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()
@@ -109,16 +133,12 @@ func TestFunctional_IntakeProfile_ReadsFromSQLServer(t *testing.T) {
 // Nothing had ever run this query: the endpoint was unreachable, so the button
 // answered an error and the SQL underneath it was never executed.
 func TestFunctional_IntakeListTables_ReadsFromSQLServer(t *testing.T) {
-	dsn := mssqlDSNForAPI(t)
-
-	credStore := newMockCredentialStore(testCredentialEncryptor(t))
-	mustCreateCredential(t, credStore, "cmdb-connection", "generic", dsn)
-	r := newTestRouterWithCredentials(credStore)
+	r, connection := storedConnection(t)
 
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 	for k, v := range map[string]string{
-		"db_connection": "cmdb-connection",
+		"db_connection": connection,
 	} {
 		if err := mw.WriteField(k, v); err != nil {
 			t.Fatalf("writing field %s: %v", k, err)
@@ -171,10 +191,7 @@ func TestFunctional_IntakeListTables_ReadsFromSQLServer(t *testing.T) {
 // credential the request must be refused, so a password cannot be pasted into
 // a URL, a log or a browser's history.
 func TestFunctional_IntakeProfile_RefusesWithoutAStoredCredential(t *testing.T) {
-	mssqlDSNForAPI(t)
-
-	credStore := newMockCredentialStore(testCredentialEncryptor(t))
-	r := newTestRouterWithCredentials(credStore)
+	r, _ := storedConnection(t)
 
 	body, contentType := databaseIntakeForm(t, "", apiOwnerQuery)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import/profile", body)
@@ -191,13 +208,9 @@ func TestFunctional_IntakeProfile_RefusesWithoutAStoredCredential(t *testing.T) 
 // A query the server rejects must come back as a bad request naming the
 // problem, not as an empty profile that reads like an empty database.
 func TestFunctional_IntakeProfile_ReportsABadQuery(t *testing.T) {
-	dsn := mssqlDSNForAPI(t)
+	r, connection := storedConnection(t)
 
-	credStore := newMockCredentialStore(testCredentialEncryptor(t))
-	mustCreateCredential(t, credStore, "cmdb-connection", "generic", dsn)
-	r := newTestRouterWithCredentials(credStore)
-
-	body, contentType := databaseIntakeForm(t, "cmdb-connection", "SELECT * FROM no_such_table")
+	body, contentType := databaseIntakeForm(t, connection, "SELECT * FROM no_such_table")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import/profile", body)
 	req.Header.Set("Content-Type", contentType)
 	w := httptest.NewRecorder()

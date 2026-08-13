@@ -419,7 +419,19 @@ test-frontend: ## Run frontend unit tests
 	@# (supply-chain checked) and restore --coverage if frontend coverage is wanted.
 
 .PHONY: test-all
-test-all: test test-frontend ## Run all unit tests (Go + frontend)
+test-all: test test-frontend vet-tagged ## Run all unit tests (Go + frontend), and compile the tagged ones
+
+.PHONY: vet-tagged
+vet-tagged: ## Compile the build-tagged suites, which the untagged run never sees
+	# A tagged test file is invisible to `go test ./...`, so one that does not
+	# compile passes every local gate and fails in CI — which is exactly what
+	# happened at v2.23.0, on a rename that missed a functional test. These
+	# suites need a database to RUN; they need nothing to COMPILE, and compiling
+	# them is what catches this.
+	@echo "$(GREEN)Compiling the tagged suites (functional, journey, debt)...$(RESET)"
+	go vet -tags functional ./...
+	go vet -tags journey ./...
+	go vet -tags debt ./...
 
 .PHONY: coverage
 coverage: test ## Generate and open HTML coverage report
@@ -524,6 +536,17 @@ test-mssql: ## Run the SQL Server ownership-ingest functional tests
 	CMM_TEST_MSSQL_VISIBLE_URL='$(MSSQL_VISIBLE_URL)' \
 	CMM_TEST_MSSQL_VISIBLE_KEYWORD='$(MSSQL_VISIBLE_KEYWORD)' \
 	go test -count=1 -tags $(FUNCTIONAL_TEST_TAGS) -run 'TestFunctional_MSSQL' -v ./internal/ownershipsql/
+
+.PHONY: test-mssql-api
+test-mssql-api: ## Run the ownership intake API against SQL Server, through a stored connection
+	# The same server, reached the way an administrator reaches it: a connection
+	# that says where its password goes, and the password beside it as a
+	# credential. CI has no SQL Server, so these skip there — which is why they
+	# have to be run here before a release.
+	CMM_TEST_MSSQL_DSN="$(MSSQL_DSN)" \
+	CMM_TEST_MSSQL_NASTY_PW="$(MSSQL_NASTY_PW)" \
+	CMM_TEST_MSSQL_VISIBLE_URL='$(MSSQL_VISIBLE_URL)' \
+	go test -count=1 -tags $(FUNCTIONAL_TEST_TAGS) -run 'TestFunctional_Intake' -v ./internal/webapi/
 
 .PHONY: mssql-down
 mssql-down: ## Stop the SQL Server container
