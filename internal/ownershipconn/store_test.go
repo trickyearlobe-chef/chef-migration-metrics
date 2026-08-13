@@ -183,8 +183,8 @@ func TestAConnectionThatNamesNoDatabaseIsRefused(t *testing.T) {
 
 // Measured, and the reason it is refused rather than passed on: given a
 // postgres:// connection the SQL Server driver reads it as keyword pairs, finds
-// no account, and the server answers "Login failed for user ''" — a refusal
-// that names the wrong team.
+// no account, and the server answers "Login failed for user" with an empty
+// account name — a refusal that names the wrong team.
 func TestAConnectionWhoseSchemeNamesAnotherDatabaseIsRefused(t *testing.T) {
 	ctx := context.Background()
 	s, _ := store(t)
