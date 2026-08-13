@@ -52,25 +52,25 @@ What was settled on the way, so it need not be worked out again:
 The discovery-driven CSV intake is in (`journeys/ownership-intake.md`).
 Remaining:
 
-- [ ] **SQL source — the reading half is built** (`internal/ownershipsql`), for SQL Server and
-  PostgreSQL equally. What remains is credentials in the encrypted config store, the
-  profile/preview/run endpoints taking a database as an alternative source, and the UI. See
-  `plans/active.md` for the ordered list.
+- [ ] **A saved import names a connection, and migration 0069 is not reversible in kind.** It
+  replaced `db_credential` and `db_driver` with `db_connection`: what an import names is a
+  connection now, and the older shape wants the name of a credential holding a whole connection
+  string, which is a different object that may not exist. Nothing was carried across because
+  nothing was there — no saved database import existed anywhere — and a credential holding a
+  whole connection cannot be split into a connection and a password without decrypting it and
+  guessing which part was the secret. The one that exists is re-created by hand, once.
 
-- [ ] **The connection is visible; only the password is secret.** Requirement and reasoning:
-  `journeys/ownership-connection.md`, suite `internal/webapi/ownership_connection_journey_test.go`.
-  Settled with the product owner 2026-08-12: one connection string the administrator can read and
-  edit, with **only the password substituted into it**, because the password is the only value
-  they can never see and therefore never check. Nothing visible is rewritten behind them. A
-  starting example is proposed per kind of database and is freely overridable. The connection can
-  be tested before browsing tables, and both the string reader and the server report in their own
-  words.
+### The visible connection — the decisions, not the work
 
-  What is left is everything the administrator can see: holding the connection and its password
-  apart in the config store, endpoints that take them, a screen that shows the composed
-  connection masked, a connection test separate from listing tables, a proposed starting
-  connection per database, and taking the password out of error messages. The reds and skips in
-  the suite name them one at a time.
+Requirement: `journeys/ownership-connection.md`, suite
+`internal/webapi/ownership_connection_journey_test.go`, which recomputes what is outstanding.
+Settled with the product owner 2026-08-12: one connection string the administrator can read and
+edit, with **only the password substituted into it**, because the password is the only value they
+can never see and therefore never check. Nothing visible is rewritten behind them. A starting
+example is proposed per kind of database and is freely overridable. The connection can be tested
+before browsing tables, and both the string reader and the server report in their own words.
+
+What follows is kept because it is expensive to re-establish, and every line of it was measured.
 
   **Where the two halves live, settled 2026-08-13.** The connection is one entry in the config
   store, written NOT secret, holding a list of named connections: the name, which database reads
@@ -136,7 +136,11 @@ Remaining:
   A keyword-shaped connection carries no scheme, so something must still say which database —
   the dropdown cannot go away entirely, only stop being asked when the connection already answers.
 
-  **The TLS control should go when this ships, and its knowledge must not go with it.** Its own
+  **The TLS control is gone, and its knowledge is in the proposed connections.** What follows is
+  the reasoning, kept because it is expensive to re-establish, not as work to do. The mapping now
+  lives in the starting connection offered per database and the note beside it, and
+  `TestTheConnectionsTheScreenProposesCanActuallyBeSent` holds every proposal to composing and
+  naming its database. Its own
   stated reason is that the connection is a stored credential, so changing a TLS setting meant
   retyping the whole thing including the password — and that reason disappears entirely once the
   connection is visible and the password is separate. It is also an override that silently wins
@@ -217,11 +221,6 @@ Remaining:
   question of deriving the driver from the connection string: it stops being a question.
   The load-bearing consequence is that only the password is a secret, which removes the
   redactor and the shape describer rather than improving them.
-
-- [ ] **A saved import does not carry the TLS override.** The interactive import takes one
-  per run, but `ImportMapping` has no column for it, so a schedule built from a connection
-  needing an override connects without one and fails. Not silent — the failure now reports
-  that no `sslmode` was set — but wrong. Needs a column and a migration.
 
 - [ ] **`strict` TLS for SQL Server is offered but unproven against a server that supports
   it.** The local container cannot do TDS 8.0, so the only thing measured is that it

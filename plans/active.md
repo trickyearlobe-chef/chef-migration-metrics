@@ -8,29 +8,26 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — finish the connection journey, in dependency order
+## NOW — the connection journey, and what nobody has watched yet
 
-Agreed 2026-08-13: build the rest of `journeys/ownership-connection.md`. The composer is done
-and measured; everything left is what the administrator can see. Order below is dependency, not
-preference. Detail and the measurements behind it: `plans/todo-ownership.md`.
+`journeys/ownership-connection.md` is built. What is left is not code: **nobody has set a
+connection up on a running instance and watched it work.** Every layer is covered by tests, the
+composing and the five outcomes are measured against a real SQL Server, and the screen is driven
+by its own suite — but a restart drops the session and the API token is scoped to the failure
+register, so the whole path has only ever been exercised in pieces. Sign in, set up a connection
+against the lab SQL Server (`make mssql-up`, and the awkward `cmmnasty` login is what to use),
+test it, browse its tables, and import from it. That is the first time anything has.
 
-The backend is done: composing, redaction and the connection test are built and measured against
-running servers. What is left is everything an administrator can see, and it starts with storage.
+Two things stay unproven wherever it is tried, because they cannot be answered here:
 
-- **E. The screen.** Show the composed connection masked, say how to mark the password, propose
-  a starting connection per database, derive the database from the scheme rather than asking,
-  drop the TLS control (carrying its SQL Server mapping into the proposed connection), and
-  correct the two help texts that describe the old model.
+- An account with something in front of it — a domain, a machine name, a workgroup, a dot. The
+  container belongs to nobody's directory and will not accept a login that looks as though it
+  does, so the customer's own account takes a path nothing has exercised.
+- Whether a proposed connection is a good starting point. A suggestion that is usually wrong is
+  worse than none, and only somebody using it can tell the two apart.
 
-  **The intake still asks for `db_credential` and gets one whole encrypted string.** Switching it
-  to name a stored connection belongs with the screen rather than before it: the two have to
-  change together or the import screen stops working between chunks. Nothing needs migrating —
-  no saved import exists, and the one credential holding a whole connection is re-created by
-  hand as a connection plus a password.
-
-Snagging found on the running instance 2026-08-13: with **A database** selected the delimiter
-help text is still shown, though its input is correctly hidden. File-only guidance under a
-database source.
+**The customer's first import is still a CSV.** Their database sits behind a firewall nobody has
+opened, so none of the above changes what happens there next.
 
 ## Then — the other reds
 
@@ -120,7 +117,7 @@ every entry is also a measurement of how wrong the signal is. Detail and the sha
 
 ## Operational facts that bite
 
-**Next free migration number: 0069.**
+**Next free migration number: 0070.**
 
 **The local instance is running detached, not from a terminal.** It was restarted as
 `nohup ./build/chef-migration-metrics --config deploy/pkg/config.yml &` after a `make build`, so
