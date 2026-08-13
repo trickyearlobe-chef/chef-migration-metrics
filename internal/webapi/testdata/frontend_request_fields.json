@@ -141,10 +141,15 @@
   "owner_a",
   "owner_b"
  ],
+ "POST /api/v1/ownership/import/connections": [
+  "connection",
+  "driver",
+  "name",
+  "password_credential"
+ ],
  "POST /api/v1/ownership/import/mappings": [
   "create_owners",
-  "db_credential",
-  "db_driver",
+  "db_connection",
   "db_query",
   "delimiter",
   "field_map",
@@ -154,6 +159,17 @@
   "schedule",
   "schedule_enabled",
   "source_kind"
+ ],
+ "POST /api/v1/ownership/import/show-connection": [
+  "connection",
+  "driver",
+  "name"
+ ],
+ "POST /api/v1/ownership/import/test-connection": [
+  "connection",
+  "driver",
+  "name",
+  "password_credential"
  ],
  "POST /api/v1/ownership/merge": [
   "from_owner",

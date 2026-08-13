@@ -7,10 +7,10 @@ import {
   commitOwnershipImport,
   createImportMapping,
   fetchImportMappings,
-  fetchCredentials,
   ApiError,
 } from "../api";
 import { CronDescription } from "../components/CronDescription";
+import { OwnershipConnectionPanel } from "./OwnershipConnectionPanel";
 import type { IntakeDatabaseSource, IntakeDatabaseTable } from "../api";
 import type {
   IntakeFieldMap,
@@ -78,48 +78,6 @@ const TARGET_FIELDS: {
     hint: "Optional. Defaults to the owner value before it is turned into a handle.",
   },
 ];
-
-// What a connection string has to look like, per database.
-//
-// The string itself is saved as a credential on another page, but this is the
-// page somebody is looking at when they need to know the format — and they are
-// importing owners, not administering databases. Both forms below are the ones
-// the drivers actually accept (lib/pq and go-mssqldb); the note covers the one
-// thing that reliably catches people out, which is transport security
-// differing between the two.
-// The placeholder is `pass`, not `password`, and deliberately so: the
-// pre-commit secret scanner blocks `scheme://user:<8+ chars>@host` because that
-// is what a real DSN looks like. Keep any edit here under that length rather
-// than reaching for --no-verify — the rule is doing its job.
-// What each database actually offers, least strict first. The two vocabularies
-// are different and do not translate: SQL Server has no "encrypt if the server
-// offers it, otherwise do not", so it is not offered one. Every SQL Server value
-// here was measured against a real server — see internal/ownershipsql/tls_mode.go.
-//
-// A Go test reads these lists out of this file and compares them with the ones
-// the server accepts, so the screen cannot offer a mode that is then refused.
-const TLS_MODES: Record<string, string[]> = {
-  postgres: ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"],
-  sqlserver: ["disable", "require", "verify", "strict"],
-};
-
-const TLS_NOTES: Record<string, string> = {
-  postgres:
-    "PostgreSQL requires TLS unless the connection says otherwise, and fails against a server without it. Choose disable for a server with no TLS, or prefer to use it when the server offers one. disable sends the password across the network in the clear.",
-  sqlserver:
-    "SQL Server encrypts the login by default and no more. Choose require to encrypt everything without checking the certificate, or verify to check it too — verify refuses a server using SQL Server's own self-signed certificate.",
-};
-
-const CONNECTION_EXAMPLES: Record<string, { example: string; note: string }> = {
-  sqlserver: {
-    example: "sqlserver://user:pass@host:1433?database=cmdb",
-    note: "Name the database in the query string. A named instance goes in the path: host/INSTANCE.",
-  },
-  postgres: {
-    example: "postgres://user:pass@host:5432/database",
-    note: "TLS is required unless you add ?sslmode=disable, so a server without it refuses to connect.",
-  },
-};
 
 const ENTITY_TYPES = ["git_repo", "node", "cookbook", "role", "policy"];
 
@@ -210,8 +168,7 @@ export function OwnershipMappedImport() {
     // schedule off an import that was working.
     if (m.source_kind === "database") {
       setSourceKind("database");
-      if (m.db_driver) setDbDriver(m.db_driver);
-      setDbCredential(m.db_credential ?? "");
+      setDbConnection(m.db_connection ?? "");
       setDbQuery(m.db_query ?? "");
       setFilterColumn(m.filter_column ?? "");
       setFilterValue(m.filter_value ?? "");
@@ -234,45 +191,16 @@ export function OwnershipMappedImport() {
   // Where the rows come from. A file, or a query against a database — the
   // customer's owner list lives in a system of record, not always a export.
   const [sourceKind, setSourceKind] = useState<"file" | "database">("file");
-  const [dbDriver, setDbDriver] = useState("sqlserver");
-  const [dbCredential, setDbCredential] = useState("");
-  // Overrides the connection's own sslmode. Empty means "as stored", which is
-  // the right default: the connection usually already says what it wants. The
-  // override exists because the Postgres driver requires TLS when the string
-  // says nothing, so a connection that works elsewhere fails here, and the only
-  // other way to change it was retyping the whole credential.
-  const [dbTlsMode, setDbTlsMode] = useState("");
+  // The name of a connection set up in the panel below. The connection itself
+  // carries which database reads it and where its password is kept, so nothing
+  // here asks either question a second time.
+  const [dbConnection, setDbConnection] = useState("");
   const [dbQuery, setDbQuery] = useState("");
-  const [credentialNames, setCredentialNames] = useState<string[]>([]);
-  const [credentialError, setCredentialError] = useState<string | null>(null);
 
   // A saved database import can run unattended. Only a database one: a file
   // import has no stored source, because somebody has to bring the file.
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [schedule, setSchedule] = useState("0 2 * * *");
-
-  // The connection string lives in a stored credential, so the picker offers
-  // the names of the ones already saved rather than asking for a password here.
-  useEffect(() => {
-    if (sourceKind !== "database") return;
-    let cancelled = false;
-    fetchCredentials()
-      .then((res) => {
-        if (cancelled) return;
-        setCredentialNames((res.data ?? []).map((c) => c.name));
-        setCredentialError(null);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // An unreadable list must not render as an empty one: they read the
-        // same on screen and mean opposite things.
-        setCredentialNames([]);
-        setCredentialError("Could not load the saved credentials.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sourceKind]);
 
   const [tables, setTables] = useState<IntakeDatabaseTable[] | null>(null);
   const [tableFilter, setTableFilter] = useState("");
@@ -283,7 +211,7 @@ export function OwnershipMappedImport() {
     setError(null);
     setLoading("Looking at what is there…");
     try {
-      const res = await listImportDatabaseTables(dbDriver, dbCredential, dbTlsMode);
+      const res = await listImportDatabaseTables(dbConnection);
       setTables(res.data ?? []);
     } catch (err: unknown) {
       // An unreadable list must not render as an empty one.
@@ -303,7 +231,7 @@ export function OwnershipMappedImport() {
   }
 
   function databaseSource(): IntakeDatabaseSource {
-    return { driver: dbDriver, credential: dbCredential, query: dbQuery, tlsMode: dbTlsMode };
+    return { connection: dbConnection, query: dbQuery };
   }
 
   /** Read the query's columns, so the mapping below has something to offer. */
@@ -377,7 +305,7 @@ export function OwnershipMappedImport() {
 
   /** Ready to run when the mapping is complete and a source is chosen. */
   const sourceReady =
-    sourceKind === "file" ? Boolean(file) : Boolean(dbCredential && dbQuery.trim());
+    sourceKind === "file" ? Boolean(file) : Boolean(dbConnection && dbQuery.trim());
 
   const blockedReason = previewBlockedReason({
     sourceKind,
@@ -425,8 +353,7 @@ export function OwnershipMappedImport() {
         ...(sourceKind === "database"
           ? {
               source_kind: "database",
-              db_driver: dbDriver,
-              db_credential: dbCredential,
+              db_connection: dbConnection,
               db_query: dbQuery,
               // The row filter is part of the import, not a convenience of
               // this screen: an unattended run that dropped it would import
@@ -497,93 +424,11 @@ export function OwnershipMappedImport() {
 
         {sourceKind === "database" && (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="text-sm text-gray-700">
-                <span className="mb-1 block text-xs font-medium text-gray-500">
-                  Database
-                </span>
-                <select
-                  value={dbDriver}
-                  onChange={(e) => {
-                    setDbDriver(e.target.value);
-                    // The vocabularies differ, so a mode chosen for one database
-                    // is not a mode the other has. Keeping it would send a value
-                    // the server then refuses.
-                    setDbTlsMode("");
-                  }}
-                  className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
-                >
-                  <option value="sqlserver">SQL Server</option>
-                  <option value="postgres">PostgreSQL</option>
-                </select>
-              </label>
-
-              <label className="text-sm text-gray-700">
-                <span className="mb-1 block text-xs font-medium text-gray-500">
-                  Connection
-                </span>
-                <select
-                  value={dbCredential}
-                  onChange={(e) => setDbCredential(e.target.value)}
-                  className="min-w-56 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
-                >
-                  <option value="">Choose a saved credential…</option>
-                  {credentialNames.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {TLS_MODES[dbDriver] && (
-                <label className="text-sm text-gray-700">
-                  <span className="mb-1 block text-xs font-medium text-gray-500">
-                    TLS
-                  </span>
-                  <select
-                    value={dbTlsMode}
-                    onChange={(e) => setDbTlsMode(e.target.value)}
-                    className="rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
-                  >
-                    <option value="">As the connection says</option>
-                    {(TLS_MODES[dbDriver] ?? []).map((mode) => (
-                      <option key={mode} value={mode}>
-                        {mode}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
-
-            {dbTlsMode === "" && TLS_NOTES[dbDriver] && (
-              <p className="text-xs text-gray-500">{TLS_NOTES[dbDriver]}</p>
-            )}
-
-            {credentialError ? (
-              <p className="text-xs text-red-600">{credentialError}</p>
-            ) : (
-              <div className="space-y-1.5">
-                <p className="text-xs text-gray-500">
-                  The connection string is held as a credential and never typed
-                  in here, so the password is not sent to your browser. Add one
-                  under Admin → Credentials, as type Generic.
-                </p>
-                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-                  <p className="text-xs text-gray-500">
-                    A {dbDriver === "postgres" ? "PostgreSQL" : "SQL Server"}{" "}
-                    connection string looks like this:
-                  </p>
-                  <code className="mt-1 block select-all break-all font-mono text-xs text-gray-800">
-                    {CONNECTION_EXAMPLES[dbDriver]?.example}
-                  </code>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {CONNECTION_EXAMPLES[dbDriver]?.note}
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* Setting the connection up is its own act, and so is testing it.
+                See journeys/ownership-connection.md: what is sent has to be
+                readable, because when it fails an encrypted connection string
+                leaves nothing to do but guess. */}
+            <OwnershipConnectionPanel value={dbConnection} onChange={setDbConnection} />
 
             <label className="block text-sm text-gray-700">
               <span className="mb-1 block text-xs font-medium text-gray-500">
@@ -651,7 +496,7 @@ export function OwnershipMappedImport() {
             <button
               type="button"
               onClick={handleBrowseTables}
-              disabled={!dbCredential || loading !== null}
+              disabled={!dbConnection || loading !== null}
               className="mr-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
             >
               Browse tables
@@ -659,7 +504,7 @@ export function OwnershipMappedImport() {
             <button
               type="button"
               onClick={handleReadQuery}
-              disabled={!dbCredential || !dbQuery.trim() || loading !== null}
+              disabled={!dbConnection || !dbQuery.trim() || loading !== null}
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-300"
             >
               Read the query
@@ -689,10 +534,15 @@ export function OwnershipMappedImport() {
             />
           </label>
         </div>
-        <p className="mt-2 text-xs text-gray-500">
-          CMM guesses the delimiter. If it guesses wrong, set it here and choose
-          the file again — the guess is never binding.
-        </p>
+        {/* Guidance about a file, so it goes when the source is a database.
+            The input was already hidden and this was not, which left advice
+            about a control nobody could see. */}
+        {sourceKind !== "database" && (
+          <p className="mt-2 text-xs text-gray-500">
+            CMM guesses the delimiter. If it guesses wrong, set it here and choose
+            the file again — the guess is never binding.
+          </p>
+        )}
       </div>
 
       {error && <ErrorAlert message={error} />}

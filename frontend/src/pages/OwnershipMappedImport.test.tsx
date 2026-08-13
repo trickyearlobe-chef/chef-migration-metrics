@@ -13,6 +13,10 @@ vi.mock("../api", async () => {
     profileImportDatabase: vi.fn(),
     listImportDatabaseTables: vi.fn(),
     fetchCredentials: vi.fn(),
+    listOwnershipConnections: vi.fn(),
+    saveOwnershipConnection: vi.fn(),
+    showOwnershipConnection: vi.fn(),
+    testOwnershipConnection: vi.fn(),
     previewOwnershipImport: vi.fn(),
     commitOwnershipImport: vi.fn(),
     createImportMapping: vi.fn(),
@@ -303,12 +307,16 @@ describe("importing owners from a database", () => {
       isAdmin: true,
       user: { role: "admin", username: "test" },
     });
-    vi.mocked(api.fetchCredentials).mockResolvedValue({
+    vi.mocked(api.listOwnershipConnections).mockResolvedValue({
       data: [
-        { name: "cmdb-connection", credential_type: "generic" },
-        { name: "chef-key", credential_type: "chef_client_key" },
+        {
+          name: "cmdb-connection",
+          driver: "sqlserver",
+          connection: `sqlserver://svc:${api.PASSWORD_MARKER}@dbhost.example.com:1433?database=cmdb`,
+          password_credential: "cmdb-password",
+        },
       ],
-    } as never);
+    });
     vi.mocked(api.profileImportDatabase).mockResolvedValue(profile);
   });
 
@@ -317,15 +325,15 @@ describe("importing owners from a database", () => {
     await user.click(screen.getByRole("radio", { name: /A database/ }));
   }
 
-  it("offers the saved credentials rather than asking for a password", async () => {
+  it("offers the connections that have been set up, and asks for no password", async () => {
     const user = userEvent.setup();
     await chooseDatabase(user);
 
     expect(
       await screen.findByRole("option", { name: "cmdb-connection" }),
     ).toBeInTheDocument();
-    // No password field anywhere: the connection string never comes through
-    // the browser.
+    // No password field anywhere: the password is a stored credential and
+    // never comes through the browser.
     expect(
       document.querySelector('input[type="password"]'),
     ).not.toBeInTheDocument();
@@ -348,8 +356,7 @@ describe("importing owners from a database", () => {
     await waitFor(() => {
       expect(api.profileImportDatabase).toHaveBeenCalledWith(
         expect.objectContaining({
-          driver: "sqlserver",
-          credential: "cmdb-connection",
+          connection: "cmdb-connection",
           query: "SELECT owner_email FROM asset_owner",
         }),
       );
@@ -369,45 +376,15 @@ describe("importing owners from a database", () => {
     expect(screen.getByRole("button", { name: /Read the query/ })).toBeDisabled();
   });
 
-  // The connection string is saved as a secret on another page entirely, but
-  // this is the page somebody is looking at when they need to know what one
-  // looks like — and they are importing owners, not administering databases.
-  // Sending them elsewhere to find the format is how they arrive with a
-  // connection string that does not work.
-  it("shows what the connection string looks like for the chosen database", async () => {
-    const user = userEvent.setup();
-    await chooseDatabase(user);
-
-    // SQL Server is the default.
-    expect(
-      await screen.findByText(/sqlserver:\/\/user:pass@host:1433\?database=/),
-    ).toBeInTheDocument();
-
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: /Database/ }),
-      "postgres",
-    );
-
-    // The example has to follow the database chosen: the two formats are not
-    // interchangeable, and a PostgreSQL example under a SQL Server selection
-    // is worse than none.
-    expect(
-      await screen.findByText(/postgres:\/\/user:pass@host:5432\//),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/sqlserver:\/\/user:pass@host:1433/),
-    ).not.toBeInTheDocument();
-  });
-
-  // An unreadable credential list must not render as an empty one: they read
-  // the same on screen and mean opposite things.
-  it("says so when the saved credentials cannot be loaded", async () => {
-    vi.mocked(api.fetchCredentials).mockRejectedValue(new Error("nope"));
+  // An unreadable list must not render as an empty one: they read the same on
+  // screen and mean opposite things.
+  it("says so when the connections cannot be loaded", async () => {
+    vi.mocked(api.listOwnershipConnections).mockRejectedValue(new Error("nope"));
     const user = userEvent.setup();
     await chooseDatabase(user);
 
     expect(
-      await screen.findByText(/Could not load the saved credentials/),
+      await screen.findByText(/Could not load the connections/),
     ).toBeInTheDocument();
   });
 });
@@ -422,9 +399,16 @@ describe("browsing the database", () => {
       isAdmin: true,
       user: { role: "admin", username: "test" },
     });
-    vi.mocked(api.fetchCredentials).mockResolvedValue({
-      data: [{ name: "cmdb-connection", credential_type: "generic" }],
-    } as never);
+    vi.mocked(api.listOwnershipConnections).mockResolvedValue({
+      data: [
+        {
+          name: "cmdb-connection",
+          driver: "sqlserver",
+          connection: `sqlserver://svc:${api.PASSWORD_MARKER}@dbhost.example.com:1433?database=cmdb`,
+          password_credential: "cmdb-password",
+        },
+      ],
+    });
     vi.mocked(api.listImportDatabaseTables).mockResolvedValue({
       data: [
         { schema: "dbo", name: "staff", kind: "table", qualified_name: "[dbo].[staff]" },
@@ -495,9 +479,16 @@ describe("scheduling a database import", () => {
       isAdmin: true,
       user: { role: "admin", username: "test" },
     });
-    vi.mocked(api.fetchCredentials).mockResolvedValue({
-      data: [{ name: "cmdb-connection", credential_type: "generic" }],
-    } as never);
+    vi.mocked(api.listOwnershipConnections).mockResolvedValue({
+      data: [
+        {
+          name: "cmdb-connection",
+          driver: "sqlserver",
+          connection: `sqlserver://svc:${api.PASSWORD_MARKER}@dbhost.example.com:1433?database=cmdb`,
+          password_credential: "cmdb-password",
+        },
+      ],
+    });
     vi.mocked(api.profileImportDatabase).mockResolvedValue(profile);
     vi.mocked(api.createImportMapping).mockResolvedValue({
       id: 1,
@@ -549,7 +540,7 @@ describe("scheduling a database import", () => {
         expect.objectContaining({
           name: "cmdb-nightly",
           source_kind: "database",
-          db_credential: "cmdb-connection",
+          db_connection: "cmdb-connection",
           db_query: "SELECT owner_email FROM asset_owner",
           schedule: "0 2 * * *",
           schedule_enabled: true,
@@ -569,4 +560,25 @@ describe("scheduling a database import", () => {
       screen.queryByRole("checkbox", { name: /Run this import on a schedule/ }),
     ).not.toBeInTheDocument();
   });
+});
+
+// Snagging, found on the running instance 2026-08-13: the delimiter input was
+// correctly hidden under a database source and the advice about it was not, so
+// the screen explained a control that was not there.
+it("says nothing about the delimiter when the source is a database", async () => {
+  const user = userEvent.setup();
+  mockUseAuth.mockReturnValue({
+    isOperator: true,
+    isAdmin: true,
+    user: { role: "admin", username: "test" },
+  });
+  vi.mocked(api.listOwnershipConnections).mockResolvedValue({ data: [] });
+  render(<OwnershipMappedImport />, { wrapper: Wrapper });
+
+  // Baseline: it is said for a file, so its absence below is the source kind
+  // rather than the text having been removed altogether.
+  expect(screen.getByText(/guesses the delimiter/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("radio", { name: /A database/ }));
+  expect(screen.queryByText(/guesses the delimiter/)).not.toBeInTheDocument();
 });
