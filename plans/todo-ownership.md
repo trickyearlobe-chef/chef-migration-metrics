@@ -75,10 +75,17 @@ Remaining:
   **Where the two halves live, settled 2026-08-13.** The connection is one entry in the config
   store, written NOT secret, holding a list of named connections: the name, which database reads
   it, the connection as typed with the marker in it, and the name of the credential holding the
-  password. The password stays a `generic` credential — a bare password has no shape to check,
-  and `database_url` exists to refuse one. So no new credential type, and nothing in
-  `internal/ownershipconn` ever handles a password: the moment one passes through it, the
-  connection stops being something a screen can show.
+  password. The password is a `generic` credential and the `database_url` credential type is
+  gone with its format validation: a password has no shape, and refusing one for its shape is
+  refusing a password somebody's database really has. Nothing in `internal/ownershipconn` ever
+  handles a password — the moment one passes through it, the connection stops being something a
+  screen can show.
+
+  **Where the shape check went, since the credential type no longer performs it.** It happens
+  when a connection is set up and when it is tested: `ownershipconn.Validate` and the composer.
+  The parsing itself stayed in `internal/secrets` — it is bytes, it belongs at the bottom of the
+  tree, and `internal/ownershipsql` applies the same check at the point of use, so a connection
+  stored before any of this cannot slip through.
 
   **A PostgreSQL keyword connection was refused as naming no database while naming one.**
   Measured 2026-08-13: `host=… dbname=cmdb user=…` was read as a single field keyed `host`,

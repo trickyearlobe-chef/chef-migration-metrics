@@ -19,14 +19,15 @@ way, and writing a query blind against a schema you cannot see is guesswork.
 
 ### Finding my way around a database I have never seen
 
-Somebody else sets up the credentials. From that point I am working blind in somebody else's
-system, and every step I cannot check is one I will have to undo in front of people.
+The connection comes from somebody else, and so does the password inside it. From that point I
+am working blind in somebody else's system, and every step I cannot check is one I will have to
+undo in front of people.
 
 **The connection has to name its database, and I would rather it did.** My instinct was to ask
 what the account can see and pick from a list, but an account that can enumerate every database
 on a server is a broader grant than the job needs, and I would have to defend it. Naming one
-database is the same thing said more narrowly, and the person who set the credential up already
-knew which one they meant. If I need two, that is two connections.
+database is the same thing said more narrowly, and whoever composed the connection already knew
+which one they meant. If I need two, that is two connections.
 
 **Then the tables in it, and the views as well.** In a system of record the thing I want is
 often a view somebody already built for exactly this, and if I am only shown tables I will go
@@ -135,19 +136,20 @@ of asset has to be imported once per kind, using a row filter to select each —
 screen says so. Getting it wrong writes assignments against the wrong kind of thing, which
 happened on 2026-08-03. No test covers this because the behaviour is not wrong, only silent.
 
-That a connection has to name its database is pinned where it is stored, so the refusal reaches
-whoever composed it: a connection [naming no
+That a connection has to name its database is pinned where the connection is set up, so the
+refusal reaches whoever composed it: a connection [naming no
 database](internal/secrets/database_url_test.go#TestDatabaseURL_RejectsAConnectionThatNamesNoDatabase)
 is refused, as is [one for a driver we cannot
 open](internal/secrets/database_url_test.go#TestDatabaseURL_RejectsADriverWeCannotUse), while
 [the forms the screen documents are
 accepted](internal/secrets/database_url_test.go#TestDatabaseURL_AcceptsTheFormsTheImportScreenDocuments).
-The refusal [never quotes the value
+The refusal [never quotes the connection
 back](internal/secrets/database_url_test.go#TestDatabaseURL_RefusalNeverQuotesTheValue), which
-matters here because the value is a password and this estate's logs are widely readable. The
-same refusal is repeated [at the point of
+matters because one often arrives with a password already written into it — pasted in from
+somebody else's tooling — and this estate's logs are widely readable. The same refusal is
+repeated [at the point of
 use](internal/ownershipsql/dsn_database_test.go#TestEntryPointsRefuseAConnectionWithoutADatabase),
-so a connection stored before this existed cannot slip through.
+so a connection set up before this existed cannot slip through.
 
 That views are offered alongside tables — usually where the thing worth importing already lives
 — is pinned [for every driver we
