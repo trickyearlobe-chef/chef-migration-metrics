@@ -19,15 +19,15 @@ import (
 
 // copAggregateItem is one row in the cop aggregation response.
 type copAggregateItem struct {
-	CopName              string  `json:"cop_name"`
-	Description          string  `json:"description"`
-	Category             string  `json:"category"`
-	Severity             string  `json:"severity"`
-	Classification       string  `json:"classification"`
-	ClassificationSource string  `json:"classification_source"`
-	RemovedIn            string  `json:"removed_in,omitempty"`
-	IntroducedIn         string  `json:"introduced_in,omitempty"`
-	MigrationURL         string  `json:"migration_url,omitempty"`
+	CopName              string `json:"cop_name"`
+	Description          string `json:"description"`
+	Category             string `json:"category"`
+	Severity             string `json:"severity"`
+	Classification       string `json:"classification"`
+	ClassificationSource string `json:"classification_source"`
+	RemovedIn            string `json:"removed_in,omitempty"`
+	IntroducedIn         string `json:"introduced_in,omitempty"`
+	MigrationURL         string `json:"migration_url,omitempty"`
 	// CookbooksAffected counts cookbooks carrying this cop in code that runs on
 	// a converging node — the cookbooks it can actually block.
 	//

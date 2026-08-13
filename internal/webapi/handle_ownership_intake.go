@@ -25,8 +25,10 @@ import (
 // ---------------------------------------------------------------------------
 // Discovery-driven ownership intake — /api/v1/ownership/import/*
 //
-// The fixed-header import at /api/v1/ownership/import is a separate,
-// unchanged handler. See journeys/ownership-intake.md.
+// The one way ownership comes in from a source. A second, fixed-header import
+// used to sit at /api/v1/ownership/import: it required the file to already be
+// in CMM's shape, which no source has ever supplied, and it admitted operators
+// where this admits only administrators. See journeys/ownership-intake.md.
 // ---------------------------------------------------------------------------
 
 // intakeMaxUploadBytes is the in-memory threshold for a multipart upload, NOT
@@ -51,7 +53,18 @@ const intakeMaxUploadBytes = 10 << 20
 // when 19,000 of its rows are wanted. Still a backstop rather than a target:
 // a bound that cannot be exceeded by accident is worth more than the few
 // imports it inconveniences.
-const intakeMaxRows = 100000
+//
+// Raised to 250,000 so the customer's source loads in one go — theirs is about
+// 130,000 and growing, and splitting it is the thing journeys/ownership-intake.md
+// says must not be necessary.
+//
+// This is one constant, and it is NOT the whole of that requirement. A commit
+// is a single synchronous request with nothing transactional about it, so at
+// this size it holds a connection open for minutes, past the default timeout of
+// most proxies — and a timeout part way through leaves rows imported, no record
+// of where it stopped, and nothing to resume. Raising the number makes the big
+// import possible; batching or a resumable commit is what would make it safe.
+const intakeMaxRows = 250000
 
 // intakeMaxReportRows bounds the per-row detail returned to the caller, not
 // the import.
@@ -92,6 +105,15 @@ func (r *Router) handleOwnershipIntake(w http.ResponseWriter, req *http.Request)
 	switch {
 	case path == "/api/v1/ownership/import/rejections":
 		r.handleOwnershipImportRejections(w, req)
+	case path == "/api/v1/ownership/import/connections":
+		r.handleOwnershipConnections(w, req)
+	case strings.HasPrefix(path, "/api/v1/ownership/import/connections/"):
+		r.handleOwnershipConnectionItem(w, req,
+			strings.TrimPrefix(path, "/api/v1/ownership/import/connections/"))
+	case path == "/api/v1/ownership/import/show-connection":
+		r.handleShowOwnershipConnection(w, req)
+	case path == "/api/v1/ownership/import/test-connection":
+		r.handleTestOwnershipConnection(w, req)
 	case path == "/api/v1/ownership/import/tables":
 		r.handleIntakeListTables(w, req)
 	case path == "/api/v1/ownership/import/profile":
@@ -837,8 +859,7 @@ type importMappingRequest struct {
 	Delimiter  string          `json:"delimiter"`
 	FieldMap   json.RawMessage `json:"field_map"`
 
-	DBDriver     string `json:"db_driver"`
-	DBCredential string `json:"db_credential"`
+	DBConnection string `json:"db_connection"`
 	DBQuery      string `json:"db_query"`
 
 	FilterColumn string `json:"filter_column"`
@@ -884,8 +905,7 @@ func decodeMappingBody(w http.ResponseWriter, req *http.Request) (mappingRequest
 	}
 
 	source := datastore.ImportMappingSource{
-		DBDriver:        strings.TrimSpace(raw.DBDriver),
-		DBCredential:    strings.TrimSpace(raw.DBCredential),
+		DBConnection:    strings.TrimSpace(raw.DBConnection),
 		DBQuery:         strings.TrimSpace(raw.DBQuery),
 		FilterColumn:    strings.TrimSpace(raw.FilterColumn),
 		FilterValue:     strings.TrimSpace(raw.FilterValue),
@@ -937,8 +957,8 @@ func validateImportSchedule(w http.ResponseWriter, name, sourceKind string, src 
 				"database can run unattended — a file has to be brought by somebody.", name))
 		return false
 	}
-	if src.DBCredential == "" {
-		WriteBadRequest(w, "A scheduled import needs db_credential: the connection is read from a stored credential.")
+	if src.DBConnection == "" {
+		WriteBadRequest(w, "A scheduled import needs db_connection: the name of a connection set up on this screen.")
 		return false
 	}
 	if src.DBQuery == "" {
@@ -1166,61 +1186,32 @@ const intakeSourceDatabase = "database"
 // The query is the administrator's own, and runs under whatever that
 // connection's permissions allow.
 func (r *Router) openIntakeDatabaseSource(w http.ResponseWriter, req *http.Request) (ownershipimport.RowSource, func(), bool) {
-	driver := req.FormValue("db_driver")
-	if !ownershipsql.IsSupportedDriver(driver) {
-		WriteBadRequest(w, fmt.Sprintf(
-			"db_driver must be one of: %s.", strings.Join(ownershipsql.SupportedDrivers, ", ")))
-		return nil, nil, false
-	}
-
 	query := strings.TrimSpace(req.FormValue("db_query"))
 	if query == "" {
 		WriteBadRequest(w, "db_query is required when reading from a database.")
 		return nil, nil, false
 	}
 
-	credName := req.FormValue("db_credential")
-	if credName == "" {
-		WriteBadRequest(w, "db_credential is required: the connection string is read from a stored credential, never from the request.")
-		return nil, nil, false
-	}
-	if r.credentialStore == nil {
-		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
-			"Credential storage is not configured. Set CMM_CREDENTIAL_ENCRYPTION_KEY to enable.")
-		return nil, nil, false
-	}
-
-	cred, err := r.credentialStore.Get(req.Context(), credName)
+	cfg, cleanup, err := r.connectionConfig(req.Context(), req.FormValue("db_connection"))
 	if err != nil {
-		// The name is the operator's own input, so saying it is not found is
-		// helpful rather than leaky; the value never appears either way.
-		WriteBadRequest(w, fmt.Sprintf("Could not read the credential %q: %v", credName, err))
+		WriteBadRequest(w, "Could not use that connection: "+err.Error())
 		return nil, nil, false
 	}
-	dsn := string(cred.Plaintext)
-	defer secrets.ZeroBytes(cred.Plaintext)
+	defer cleanup()
+	cfg.Query = query
 
-	src, err := ownershipsql.Open(req.Context(), ownershipsql.Config{
-		Driver: driver,
-		DSN:    dsn,
-		Query:  query,
-		// An explicit override, empty unless somebody asked for one. lib/pq
-		// requires TLS when the connection says nothing, so a connection that
-		// works everywhere else fails here — and the only other way to change it
-		// was to retype the whole credential, password included.
-		TLSMode: req.FormValue("db_tls_mode"),
-	})
+	src, err := ownershipsql.Open(req.Context(), cfg)
 	if err != nil {
 		// Report the failure rather than an empty result: an unreadable source
 		// and an empty one read the same on screen and mean opposite things.
 		//
 		// The shape goes with it. A driver's own parse or TLS error says nothing
-		// about the connection string, the value is encrypted and never logged,
-		// and whoever is debugging this works in a VDI that cannot take a
-		// screenshot — so a log line they can transfer out as text is the only
-		// thing that carries a diagnosis. The shape holds no values.
-		shape := secrets.DescribeConnectionShape(dsn)
-		r.logf("WARN", "ownership/import: opening %s source: %v %s", driver, err, shape)
+		// about the connection, and whoever is debugging this works in a VDI
+		// that cannot take a screenshot — so a log line they can transfer out as
+		// text is the only thing that carries a diagnosis. The shape holds no
+		// values, and the connection it describes never held the password.
+		shape := secrets.DescribeConnectionShape(cfg.Connection)
+		r.logf("WARN", "ownership/import: opening %s source: %v %s", cfg.Driver, err, shape)
 		WriteBadRequest(w, "Could not read from the database: "+err.Error()+" "+shape)
 		return nil, nil, false
 	}
@@ -1245,42 +1236,20 @@ func (r *Router) handleIntakeListTables(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	driver := req.FormValue("db_driver")
-	if !ownershipsql.IsSupportedDriver(driver) {
-		WriteBadRequest(w, fmt.Sprintf(
-			"db_driver must be one of: %s.", strings.Join(ownershipsql.SupportedDrivers, ", ")))
-		return
-	}
-	credName := req.FormValue("db_credential")
-	if credName == "" {
-		WriteBadRequest(w, "db_credential is required: the connection string is read from a stored credential, never from the request.")
-		return
-	}
-	if r.credentialStore == nil {
-		WriteError(w, http.StatusServiceUnavailable, ErrCodeServiceUnavailable,
-			"Credential storage is not configured. Set CMM_CREDENTIAL_ENCRYPTION_KEY to enable.")
-		return
-	}
-
-	cred, err := r.credentialStore.Get(req.Context(), credName)
+	cfg, cleanup, err := r.connectionConfig(req.Context(), req.FormValue("db_connection"))
 	if err != nil {
-		WriteBadRequest(w, fmt.Sprintf("Could not read the credential %q: %v", credName, err))
+		WriteBadRequest(w, "Could not use that connection: "+err.Error())
 		return
 	}
-	dsn := string(cred.Plaintext)
-	defer secrets.ZeroBytes(cred.Plaintext)
+	defer cleanup()
 
-	tables, err := ownershipsql.ListTables(req.Context(), ownershipsql.Config{
-		Driver:  driver,
-		DSN:     dsn,
-		TLSMode: req.FormValue("db_tls_mode"),
-	})
+	tables, err := ownershipsql.ListTables(req.Context(), cfg)
 	if err != nil {
 		// The shape travels with the failure, for the reasons given where a
 		// source is opened: the driver's error describes its own disappointment,
 		// not the string it was handed.
-		shape := secrets.DescribeConnectionShape(dsn)
-		r.logf("WARN", "ownership/import: listing tables on %s: %v %s", driver, err, shape)
+		shape := secrets.DescribeConnectionShape(cfg.Connection)
+		r.logf("WARN", "ownership/import: listing tables on %s: %v %s", cfg.Driver, err, shape)
 		WriteBadRequest(w, "Could not list the tables: "+err.Error()+" "+shape)
 		return
 	}
@@ -1296,7 +1265,7 @@ func (r *Router) handleIntakeListTables(w http.ResponseWriter, req *http.Request
 	}
 	out := make([]tableOut, len(tables))
 	for i, t := range tables {
-		out[i] = tableOut{Table: t, QualifiedName: t.QualifiedName(driver)}
+		out[i] = tableOut{Table: t, QualifiedName: t.QualifiedName(cfg.Driver)}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
@@ -1325,8 +1294,8 @@ func (r *Router) intakeRunLabel(req *http.Request) (string, *int64) {
 
 	// A database source with no saved import: name the connection, which is
 	// the only thing that identifies where the rows came from.
-	if cred := req.FormValue("db_credential"); cred != "" {
-		return cred, nil
+	if name := req.FormValue("db_connection"); name != "" {
+		return name, nil
 	}
 
 	return "manual import", nil

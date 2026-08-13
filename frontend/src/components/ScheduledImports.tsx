@@ -128,9 +128,9 @@ function SavedImportRow({
     <tr>
       <td>
         <span className="font-medium text-gray-800">{mapping.name}</span>
-        {mapping.db_credential && (
+        {mapping.db_connection && (
           <span className="block text-xs text-gray-500">
-            via {mapping.db_credential}
+            via {mapping.db_connection}
           </span>
         )}
       </td>

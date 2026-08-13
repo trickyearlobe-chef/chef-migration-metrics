@@ -176,14 +176,14 @@ func (r *Router) handleCookbookRemediation(w http.ResponseWriter, req *http.Requ
 		// variant token, so a Blocker variant and a Review variant of the same cop
 		// form distinct groups (and land in different classification sections). The
 		// frontend keys React elements and collapse state on this, not cop_name.
-		GroupKey             string          `json:"group_key"`
-		CopName              string          `json:"cop_name"`
-		Severity             string          `json:"severity"`
-		Classification       string          `json:"classification"`
-		ClassificationSource string          `json:"classification_source"`
-		RemovedIn            string          `json:"removed_in,omitempty"`
-		Count                int             `json:"count"`
-		CorrectableCount     int             `json:"correctable_count"`
+		GroupKey             string `json:"group_key"`
+		CopName              string `json:"cop_name"`
+		Severity             string `json:"severity"`
+		Classification       string `json:"classification"`
+		ClassificationSource string `json:"classification_source"`
+		RemovedIn            string `json:"removed_in,omitempty"`
+		Count                int    `json:"count"`
+		CorrectableCount     int    `json:"correctable_count"`
 
 		// OutOfScopeCount is how many of Count sit in files the converge never
 		// executes. BlocksCookbook is false when the group is entirely out of

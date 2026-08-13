@@ -48,8 +48,7 @@ func databaseIntakeForm(t *testing.T, credential, query string) (*bytes.Buffer, 
 	w := multipart.NewWriter(body)
 	for k, v := range map[string]string{
 		"source_type":   "database",
-		"db_driver":     "sqlserver",
-		"db_credential": credential,
+		"db_connection": connection,
 		"db_query":      query,
 	} {
 		if err := w.WriteField(k, v); err != nil {
@@ -119,8 +118,7 @@ func TestFunctional_IntakeListTables_ReadsFromSQLServer(t *testing.T) {
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 	for k, v := range map[string]string{
-		"db_driver":     "sqlserver",
-		"db_credential": "cmdb-connection",
+		"db_connection": "cmdb-connection",
 	} {
 		if err := mw.WriteField(k, v); err != nil {
 			t.Fatalf("writing field %s: %v", k, err)
@@ -187,7 +185,7 @@ func TestFunctional_IntakeProfile_RefusesWithoutAStoredCredential(t *testing.T) 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", w.Code, w.Body.String())
 	}
-	assertBodyContains(t, w, "db_credential is required")
+	assertBodyContains(t, w, "no connection was named")
 }
 
 // A query the server rejects must come back as a bad request naming the

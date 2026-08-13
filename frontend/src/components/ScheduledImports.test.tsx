@@ -33,7 +33,7 @@ function savedImport(overrides: Partial<IntakeMapping> = {}): IntakeMapping {
     created_by: "admin",
     created_at: "2026-08-01T09:00:00Z",
     updated_at: "2026-08-01T09:00:00Z",
-    db_credential: "cmdb-connection",
+    db_connection: "cmdb-connection",
     schedule: "0 2 * * *",
     schedule_enabled: true,
     ...overrides,

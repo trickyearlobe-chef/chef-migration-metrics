@@ -8,7 +8,28 @@ backlog — do not re-summarise it here; the duplication is what makes this file
 **"What is next" starts with `make journey`.** The reds are the only backlog that is recomputed
 rather than remembered, so where they and this file disagree, the reds are right.
 
-## NOW — pick from the reds
+## NOW — the connection journey, and what nobody has watched yet
+
+`journeys/ownership-connection.md` is built. What is left is not code: **nobody has set a
+connection up on a running instance and watched it work.** Every layer is covered by tests, the
+composing and the five outcomes are measured against a real SQL Server, and the screen is driven
+by its own suite — but a restart drops the session and the API token is scoped to the failure
+register, so the whole path has only ever been exercised in pieces. Sign in, set up a connection
+against the lab SQL Server (`make mssql-up`, and the awkward `cmmnasty` login is what to use),
+test it, browse its tables, and import from it. That is the first time anything has.
+
+Two things stay unproven wherever it is tried, because they cannot be answered here:
+
+- An account with something in front of it — a domain, a machine name, a workgroup, a dot. The
+  container belongs to nobody's directory and will not accept a login that looks as though it
+  does, so the customer's own account takes a path nothing has exercised.
+- Whether a proposed connection is a good starting point. A suggestion that is usually wrong is
+  worse than none, and only somebody using it can tell the two apart.
+
+**The customer's first import is still a CSV.** Their database sits behind a firewall nobody has
+opened, so none of the above changes what happens there next.
+
+## Then — the other reds
 
 `make journey` has six. Two in `journeys/own-password.md` — nobody can change their own
 password, and nothing tells them the rules before telling them they got it wrong. One in
@@ -24,11 +45,17 @@ from it.** The paging tests hold the machinery and the machinery is right; the o
 does not use it was never held. A green suite is evidence about what it covers and nothing
 else.
 
-**Next is ownership, and it starts with a suite rather than code.**
-`journeys/ownership-identity.md` and `journeys/ownership-attribution.md` have **no suite at
-all**, so there is no list of what they require and no way to tell how much is already built.
-Writing them is the first task; `journeys/ownership-intake.md` is 16 green and 4 skips and is
-not where the work is. Backlog: `plans/todo-ownership.md`.
+**Ownership is now enumerated.** `journeys/ownership-identity.md` and
+`journeys/ownership-attribution.md` have suites, so what they require is a list that recomputes
+itself. Identity came out entirely built — every requirement green, and the four skips are the
+three things the journey itself says nothing can prove plus the one gap: nothing links a
+signed-in person to an owner record, so the sign-in name is an anchor by decision rather than by
+property. Attribution has one red.
+
+**The red: a row in a list does not say who owns it.** Ownership reaches the detail page, the
+totals and the export; the list carries an owner *filter* and no owner *column*. So the screen
+work is dispatched from cannot answer "who owns this, and if nobody, say so" — the journey's
+second requirement. Backlog: `plans/todo-ownership.md`.
 
 **Do not plan against the 92% repo-ownership figure.** About half are assigned to one person as
 a stand-in for unknown; genuine coverage is nearer 45%, and it has not been re-measured.
@@ -90,7 +117,7 @@ every entry is also a measurement of how wrong the signal is. Detail and the sha
 
 ## Operational facts that bite
 
-**Next free migration number: 0069.**
+**Next free migration number: 0070.**
 
 **The local instance is running detached, not from a terminal.** It was restarted as
 `nohup ./build/chef-migration-metrics --config deploy/pkg/config.yml &` after a `make build`, so

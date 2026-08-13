@@ -424,8 +424,7 @@ func insertScheduledImport(t *testing.T, db *DB, name, cron string) ImportMappin
 		FieldMap:   json.RawMessage(sampleFieldMap),
 		CreatedBy:  "tester",
 		ImportMappingSource: ImportMappingSource{
-			DBDriver:        "postgres",
-			DBCredential:    "cmdb-connection",
+			DBConnection:    "cmdb-connection",
 			DBQuery:         "SELECT owner, repo FROM asset_owner",
 			FilterColumn:    "asset_kind",
 			FilterValue:     "git_repo",
@@ -453,8 +452,7 @@ func TestFunctional_ScheduledImport_RoundTripsItsSource(t *testing.T) {
 		t.Fatalf("GetImportMapping: %v", err)
 	}
 	for _, c := range []struct{ field, got, want string }{
-		{"db_driver", got.DBDriver, "postgres"},
-		{"db_credential", got.DBCredential, "cmdb-connection"},
+		{"db_connection", got.DBConnection, "cmdb-connection"},
 		{"db_query", got.DBQuery, "SELECT owner, repo FROM asset_owner"},
 		{"filter_column", got.FilterColumn, "asset_kind"},
 		{"filter_value", got.FilterValue, "git_repo"},

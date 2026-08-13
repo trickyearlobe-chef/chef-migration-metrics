@@ -1101,57 +1101,6 @@ func TestIntakeMappings_NonNumericIDIs404(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression: the fixed-header import is untouched
-// ---------------------------------------------------------------------------
-
-// The fixed-header path is the fast lane for administrators who already have a
-// file in CMM's format. The new routes sit beneath the same prefix, so this
-// asserts the old one still dispatches to the old handler.
-func TestFixedHeaderImport_StillWorksUnchanged(t *testing.T) {
-	var written []datastore.InsertAssignmentParams
-	store := &mockStore{
-		GetOwnerByNameFn: func(_ context.Context, name string) (datastore.Owner, error) {
-			return datastore.Owner{Name: name}, nil
-		},
-		InsertAssignmentFn: func(_ context.Context, p datastore.InsertAssignmentParams) (datastore.OwnershipAssignment, error) {
-			written = append(written, p)
-			return datastore.OwnershipAssignment{}, nil
-		},
-	}
-	r := ownershipRouter(store)
-	w := httptest.NewRecorder()
-
-	csv := "owner,entity_type,entity_key,organisation,notes\n" +
-		"alice,git_repo,web-app,,from the old flow\n"
-	r.ServeHTTP(w, intakeRequest(t, "/api/v1/ownership/import", csv, map[string]string{"format": "csv"}))
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
-	}
-	var body struct {
-		Imported int `json:"imported"`
-		Skipped  int `json:"skipped"`
-		Errors   []struct {
-			Line  int    `json:"line"`
-			Error string `json:"error"`
-		} `json:"errors"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decoding: %v", err)
-	}
-	if body.Imported != 1 {
-		t.Errorf("imported = %d, want 1 (errors: %+v)", body.Imported, body.Errors)
-	}
-	if len(written) != 1 || written[0].EntityKey != "web-app" {
-		t.Errorf("wrote %+v", written)
-	}
-	// The old response shape is part of the contract — the shipped UI reads it.
-	if body.Errors == nil {
-		t.Error("errors must serialise as an array, never null")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Importing one kind of row from a consolidated export
 //
 // The real source is a database holding several kinds of row together —

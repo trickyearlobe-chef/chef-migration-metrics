@@ -8,7 +8,6 @@ import type {
   AuditLogResponse,
   OwnershipLookupResponse,
   ReassignResponse,
-  ImportResponse,
   CookbookCommittersResponse,
   CommitterAssignResponse,
   IntakeFieldMap,
@@ -189,19 +188,6 @@ export function fetchAuditLog(
   );
 }
 
-export async function importOwnership(
-  file: File,
-  format: "csv" | "json",
-): Promise<ImportResponse> {
-  const formData = new FormData();
-  formData.append("format", format);
-  formData.append("file", file);
-  return apiFetch<ImportResponse>(buildUrl("/ownership/import"), {
-    method: "POST",
-    body: formData,
-  });
-}
-
 export function fetchCookbookCommitters(
   cookbookName: string,
   filters?: CommitterFilterQuery,
@@ -242,19 +228,16 @@ export function assignCookbookCommitters(
 // ---------------------------------------------------------------------------
 
 /** Where the rows come from. A file that was uploaded, or a query against a
- * database. The connection string is never sent — the server reads it from a
- * stored credential, so a password never travels through the browser. */
+ * database reached through a connection that was set up beforehand.
+ *
+ * Only the NAME of the connection is sent. The connection itself, and the
+ * credential holding its password, are read on the server — so no password
+ * travels through the browser, and which database reads it is not asked twice:
+ * the connection already says. */
 export interface IntakeDatabaseSource {
-  driver: string;
-  /** Name of a stored credential holding the connection string. */
-  credential: string;
+  /** Name of a connection set up under "Where the rows come from". */
+  connection: string;
   query: string;
-  /** Overrides the connection's own sslmode, PostgreSQL only. Empty leaves the
-   * stored connection exactly as it is. Needed because the Postgres driver
-   * requires TLS when the connection says nothing, so a connection that works
-   * elsewhere fails here — and the alternative was retyping the whole
-   * credential, password included. */
-  tlsMode?: string;
 }
 
 export interface IntakeRunOptions {
@@ -294,12 +277,8 @@ function intakeFormData(opts: IntakeRunOptions): FormData {
 /** The database half of the multipart body the server expects. */
 function appendDatabaseSource(formData: FormData, db: IntakeDatabaseSource) {
   formData.append("source_type", "database");
-  formData.append("db_driver", db.driver);
-  formData.append("db_credential", db.credential);
+  formData.append("db_connection", db.connection);
   formData.append("db_query", db.query);
-  if (db.tlsMode) {
-    formData.append("db_tls_mode", db.tlsMode);
-  }
 }
 
 export function profileImportSource(
@@ -327,16 +306,10 @@ export interface IntakeDatabaseTable {
 /** List what a connection can see, so a table can be chosen rather than typed.
  * Whoever sets the import up often cannot inspect the database themselves. */
 export function listImportDatabaseTables(
-  driver: string,
-  credential: string,
-  tlsMode?: string,
+  connection: string,
 ): Promise<{ data: IntakeDatabaseTable[] }> {
   const formData = new FormData();
-  formData.append("db_driver", driver);
-  formData.append("db_credential", credential);
-  if (tlsMode) {
-    formData.append("db_tls_mode", tlsMode);
-  }
+  formData.append("db_connection", connection);
   return apiFetch<{ data: IntakeDatabaseTable[] }>(
     buildUrl("/ownership/import/tables"),
     { method: "POST", body: formData },
@@ -388,8 +361,7 @@ export function createImportMapping(body: {
   // schedule, re-run with nobody present. A file import has none of this:
   // somebody has to bring the file.
   source_kind?: string;
-  db_driver?: string;
-  db_credential?: string;
+  db_connection?: string;
   db_query?: string;
   filter_column?: string;
   filter_value?: string;
@@ -471,5 +443,119 @@ export function fetchImportRejections(params?: {
       page: params?.page,
       per_page: params?.per_page,
     }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Setting up the connection an import reads through
+//
+// See journeys/ownership-connection.md. The address, the database and the
+// account are configuration the administrator reads and edits; only the
+// password is a secret, held as a credential and named here. The marker below
+// is where it goes — it is shown on screen because a marker nobody can read
+// about is just a new thing to get wrong.
+// ---------------------------------------------------------------------------
+
+/** Where the password goes in a connection. Written out here rather than
+ * fetched: the screen has to show it before any call is made, including the
+ * very first one. A Go test reads this line and compares it with the marker the
+ * server really substitutes, so the two cannot drift — a screen telling
+ * somebody to write a marker the server does not recognise would refuse every
+ * connection typed from it. */
+export const PASSWORD_MARKER = "PASSWORD_GOES_HERE";
+
+/** A connection an import can read through. The password is not here: it lives
+ * in the credential named by password_credential. */
+export interface OwnershipConnection {
+  name: string;
+  driver: string;
+  connection: string;
+  password_credential: string;
+  updated_at?: string;
+  updated_by?: string;
+}
+
+export function listOwnershipConnections(): Promise<{
+  data: OwnershipConnection[];
+}> {
+  return apiFetch<{ data: OwnershipConnection[] }>(
+    buildUrl("/ownership/import/connections"),
+  );
+}
+
+export function saveOwnershipConnection(body: {
+  name: string;
+  driver?: string;
+  connection: string;
+  password_credential: string;
+}): Promise<OwnershipConnection> {
+  return apiFetch<OwnershipConnection>(buildUrl("/ownership/import/connections"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteOwnershipConnection(
+  name: string,
+): Promise<{ deleted: string }> {
+  return apiFetch<{ deleted: string }>(
+    buildUrl(`/ownership/import/connections/${encodeURIComponent(name)}`),
+    { method: "DELETE" },
+  );
+}
+
+/** What a connection composes to, with the password masked. This is the answer
+ * to "what was actually sent", which is the question that has cost days. */
+export interface ComposedConnection {
+  driver: string;
+  connection: string;
+  form: string;
+}
+
+export function showOwnershipConnection(body: {
+  name?: string;
+  driver?: string;
+  connection?: string;
+}): Promise<ComposedConnection> {
+  return apiFetch<ComposedConnection>(
+    buildUrl("/ownership/import/show-connection"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** What a connection test found. `outcome` is which of the five it was, so the
+ * screen can name a person to go and talk to rather than printing "failed". */
+export interface ConnectionTestResult {
+  outcome:
+    | "connected"
+    | "malformed"
+    | "unreachable"
+    | "refused"
+    | "no-database"
+    | "untrusted-domain"
+    | "unknown";
+  connection: string;
+  form: string;
+  detail?: string;
+}
+
+export function testOwnershipConnection(body: {
+  name?: string;
+  driver?: string;
+  connection?: string;
+  password_credential?: string;
+}): Promise<ConnectionTestResult> {
+  return apiFetch<ConnectionTestResult>(
+    buildUrl("/ownership/import/test-connection"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
   );
 }

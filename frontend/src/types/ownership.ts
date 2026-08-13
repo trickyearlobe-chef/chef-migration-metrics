@@ -126,17 +126,6 @@ export interface ReassignResponse {
   source_owner_deleted: boolean;
 }
 
-export interface ImportResponse {
-  imported: number;
-  skipped: number;
-  errors: ImportError[];
-}
-
-export interface ImportError {
-  line: number;
-  error: string;
-}
-
 export type OwnerListResponse = PaginatedResponse<Owner>;
 export type AssignmentListResponse = PaginatedResponse<OwnershipAssignment>;
 export type AuditLogResponse = PaginatedResponse<OwnershipAuditEntry>;
@@ -276,10 +265,9 @@ export interface IntakeMapping {
   created_at: string;
   updated_at: string;
 
-  // Where a database import reads from. db_credential names a stored
-  // credential — the connection string itself never reaches the browser.
-  db_driver?: string;
-  db_credential?: string;
+  // Where a database import reads from. db_connection names a connection set
+  // up on the import screen; the password behind it never reaches the browser.
+  db_connection?: string;
   db_query?: string;
 
   filter_column?: string;

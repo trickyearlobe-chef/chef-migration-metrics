@@ -52,22 +52,175 @@ What was settled on the way, so it need not be worked out again:
 The discovery-driven CSV intake is in (`journeys/ownership-intake.md`).
 Remaining:
 
-- [ ] **SQL source — the reading half is built** (`internal/ownershipsql`), for SQL Server and
-  PostgreSQL equally. What remains is credentials in the encrypted config store, the
-  profile/preview/run endpoints taking a database as an alternative source, and the UI. See
-  `plans/active.md` for the ordered list.
+- [ ] **A saved import names a connection, and migration 0069 is not reversible in kind.** It
+  replaced `db_credential` and `db_driver` with `db_connection`: what an import names is a
+  connection now, and the older shape wants the name of a credential holding a whole connection
+  string, which is a different object that may not exist. Nothing was carried across because
+  nothing was there — no saved database import existed anywhere — and a credential holding a
+  whole connection cannot be split into a connection and a password without decrypting it and
+  guessing which part was the secret. The one that exists is re-created by hand, once.
 
-- [ ] **Hold a database connection as its parts rather than as a string to be parsed** —
+### The visible connection — the decisions, not the work
+
+Requirement: `journeys/ownership-connection.md`, suite
+`internal/webapi/ownership_connection_journey_test.go`, which recomputes what is outstanding.
+Settled with the product owner 2026-08-12: one connection string the administrator can read and
+edit, with **only the password substituted into it**, because the password is the only value they
+can never see and therefore never check. Nothing visible is rewritten behind them. A starting
+example is proposed per kind of database and is freely overridable. The connection can be tested
+before browsing tables, and both the string reader and the server report in their own words.
+
+What follows is kept because it is expensive to re-establish, and every line of it was measured.
+
+  **Where the two halves live, settled 2026-08-13.** The connection is one entry in the config
+  store, written NOT secret, holding a list of named connections: the name, which database reads
+  it, the connection as typed with the marker in it, and the name of the credential holding the
+  password. The password is a `generic` credential and the `database_url` credential type is
+  gone with its format validation: a password has no shape, and refusing one for its shape is
+  refusing a password somebody's database really has. Nothing in `internal/ownershipconn` ever
+  handles a password — the moment one passes through it, the connection stops being something a
+  screen can show.
+
+  **The order the endpoints support, settled with the product owner 2026-08-13.** Somebody stores
+  the password; somebody composes the connection round the marker; somebody tests it; only then is
+  it kept and used to browse. So a connection is tested before it has been stored, and storing
+  does not require a passing test — their own server is unreachable from here today, and a save
+  that demanded a green test could not record their connection at all.
+
+  **Showing a connection never reads its password.** The mask is substituted through the same
+  escaping the real password goes through, so what comes back is the shape of the real connection
+  without the secret being fetched to answer. Held by a test that stores a real password and
+  asserts it does not come back — the first version of that test could not tell, because it
+  composed a connection that had no password behind it.
+
+  **Where the shape check went, since the credential type no longer performs it.** It happens
+  when a connection is set up and when it is tested: `ownershipconn.Validate` and the composer.
+  The parsing itself stayed in `internal/secrets` — it is bytes, it belongs at the bottom of the
+  tree, and `internal/ownershipsql` applies the same check at the point of use, so a connection
+  stored before any of this cannot slip through.
+
+  **A PostgreSQL keyword connection was refused as naming no database while naming one.**
+  Measured 2026-08-13: `host=… dbname=cmdb user=…` was read as a single field keyed `host`,
+  because the split was on `;&?` only and libpq separates its pairs with spaces — the refusal
+  even printed `dbname=cmdb` back in its own description of the shape. It is one of the two
+  shapes this journey says must be recognised, and it was refused before anything was dialled by
+  `Open`, `ListTables` and the connection test alike. Splitting a field on spaces only when it
+  already holds more than one `=` reads it, and leaves SQL Server's `Initial Catalog` and
+  `User Id` in one piece.
+
+  **The position of the password is marked, not guessed** — `PASSWORD_GOES_HERE`, refused by name
+  when absent, because putting it somewhere nobody asked for sends a connection the administrator
+  did not write. The spelling was measured: `${password}` is expanded to nothing by every shell
+  and cost a wrong test run, and `[password]` is a glob character class that resolved to a
+  filename in the working directory. The screen must show how to write it; nothing does yet.
+
+  **Two things on the import screen become wrong the moment this ships, and are right today.**
+  Both are part of this item rather than separate defects — changing either before the visible
+  connection exists would make the screen describe something that is not there.
+
+  - It tells the administrator the connection is held as a credential, typed in under Admin →
+    Credentials as type Generic, and never entered on the import screen. That stops being true
+    when the connection is visible and only the password is a secret.
+  - Its worked example is a URL with the password inline (`sqlserver://user:pass@host…`), which
+    is precisely what the new model says not to write.
+
+  **The database dropdown is redundant for a URL connection, and worse than redundant.** The
+  scheme already names the database, so a screen can derive it — `DriverNamedByScheme`. Measured
+  2026-08-13, and the reason this is not merely tidying: when the choice and the scheme disagree,
+  neither driver says so. Given a `postgres://` connection the SQL Server driver does not object
+  to the scheme at all; it falls back to reading the string as keyword pairs, finds no account,
+  and the server answers `Login failed for user ''`, which reads as a broken credential. libpq
+  handed a `sqlserver://` connection reaches `SSL is not enabled on the server`, which reads as a
+  TLS problem. Both send somebody to the wrong team. The composer now refuses a mismatch, and an
+  unknown scheme with it, because passing either on is silent mis-reading rather than tolerance.
+  A keyword-shaped connection carries no scheme, so something must still say which database —
+  the dropdown cannot go away entirely, only stop being asked when the connection already answers.
+
+  **The TLS control is gone, and its knowledge is in the proposed connections.** What follows is
+  the reasoning, kept because it is expensive to re-establish, not as work to do. The mapping now
+  lives in the starting connection offered per database and the note beside it, and
+  `TestTheConnectionsTheScreenProposesCanActuallyBeSent` holds every proposal to composing and
+  naming its database. Its own
+  stated reason is that the connection is a stored credential, so changing a TLS setting meant
+  retyping the whole thing including the password — and that reason disappears entirely once the
+  connection is visible and the password is separate. It is also an override that silently wins
+  over what the connection already says, which is the one thing this journey forbids.
+  - PostgreSQL: a straight deletion. The mode is one `sslmode=` the administrator can now type.
+  - SQL Server: not a straight deletion. Four friendly modes map onto *pairs* of driver options
+    (`encrypt` plus `TrustServerCertificate`), and that mapping was measured against a real
+    server because `encrypt=false` and saying nothing parse identically and then behave
+    differently. Deleting the control without moving that mapping into the proposed starting
+    connection and the on-screen help throws away something expensive to establish.
+  - It is an API change, so `make frontend-fields` must be re-run, and saved imports carrying a
+    stored TLS mode need a decision rather than a silent drop.
+
+  **Measured 2026-08-12, and it contradicts the obvious assumption.** `sql.Open` was probed
+  directly for both drivers. SQL Server given a URL-form DSN parses eagerly and returns
+  `unable to parse connection string: invalid URL format` — the exact error the customer hit,
+  and it is the driver's, not ours. But the same driver accepts literal nonsense when the string
+  is not URL-shaped, because it falls back to keyword parsing; and lib/pq validates **nothing**
+  at Open, accepting `"not a url at all"` without complaint. So: pass driver errors through, but
+  they cannot be the validation, and the "must name a database" rule stays ours.
+
+  **The escaping rules, measured against running servers 2026-08-12 — and the rule written here
+  before was wrong.** It said brace-quoting for keyword-shaped strings. Braces mean nothing to
+  SQL Server's keyword parser: they arrive as part of the password and the server answers "login
+  failed", which reads as a bad account and sends the search to the wrong people. Do not
+  re-derive these; they are held by tests that connect (`make test-mssql`, and the PostgreSQL
+  ones under `CMM_TEST_DATABASE_URL`).
+
+  - URL-shaped, either database: percent-encode. A colon must be escaped in the account and need
+    not be in the password.
+  - SQL Server keyword-shaped (`k=v;k=v`): wrap in double quotes, doubling any inside. A raw
+    semicolon ends the value early and leading and trailing spaces are trimmed away.
+  - SQL Server `odbc:` prefixed: braces, doubling any closing brace. A third shape the same
+    driver reads, which is why the rule cannot be chosen by database alone.
+  - PostgreSQL keyword-shaped (`k=v k=v`): wrap in single quotes, backslash-escaping backslashes
+    and single quotes.
+
+  **A backslash in the account is not a SQL login, and this is the customer's shape.** Measured
+  2026-08-13: whatever stands before the backslash — a domain, a workgroup, a Windows machine's
+  own hostname, or `.` — the driver switches to integrated (NTLM) authentication and the password
+  stops being a SQL password. A server not in that domain refuses with "the login is from an
+  untrusted domain", and unlike every other refusal it does **not** name the account back, so the
+  account cannot be checked from the message.
+
+  This cannot be proven anywhere we have. The container is Linux and joined to nothing, and SQL
+  Server refuses to create a password login whose name contains a backslash ("not a valid name
+  because it contains invalid characters"). So when their firewall opens, their connection takes
+  a path nothing here has exercised — and "untrusted domain" locally is not the failure they will
+  see. That is a fifth thing a failure can mean, on top of the four the journey names.
+
+  What *is* held: the account arrives exactly as typed, for every prefix shape and in both
+  spellings (`TestTheAccountArrivesExactlyAsTyped`), and a real server quotes it back unchanged
+  for the shapes it authenticates itself
+  (`TestFunctional_MSSQL_TheServerQuotesTheAccountBackAsTyped`).
+
+  **A composed connection must not be escaped twice.** Found by a test that connected directly
+  and was refused through `ListTables`: the second pass turns every `%` into `%25`, and it
+  reports as a refused login rather than as a mangled string — our own code producing this
+  journey's failure. The password is composed in last, after any TLS override.
+
+  **Errors must have the password taken out of them.** Both the string reader and the server
+  routinely quote what they were handed, and neither knows which part was secret; this estate
+  ships its logs to a Splunk many people can read, and screenshots and support bundles carry the
+  same text. Redact wherever and however it appears, **including escaped** — the escaped form is
+  the case that will be missed, because the password in the message no longer looks like the
+  password that was stored.
+
+  Highest value first: **showing the composed string with the password masked**. It answers in
+  one glance the question that has cost days. The composing and the masking exist and are
+  measured; what does not exist is anything that shows them, which is the half the requirement
+  is actually about.
+
+- [ ] **SUPERSEDED — hold a database connection as its parts rather than as a string to be parsed** —
+  replaced by the item above, which keeps one visible string and injects only the password.
+  `plans/database-connection-as-parts.md` is kept for its reasoning, not as work to do. Original:
   host, database, user, password and a list of vendor options, with the connection string
   constructed when connecting. See `plans/database-connection-as-parts.md`. This absorbs the
   question of deriving the driver from the connection string: it stops being a question.
   The load-bearing consequence is that only the password is a secret, which removes the
   redactor and the shape describer rather than improving them.
-
-- [ ] **A saved import does not carry the TLS override.** The interactive import takes one
-  per run, but `ImportMapping` has no column for it, so a schedule built from a connection
-  needing an override connects without one and fails. Not silent — the failure now reports
-  that no `sslmode` was set — but wrong. Needs a column and a migration.
 
 - [ ] **`strict` TLS for SQL Server is offered but unproven against a server that supports
   it.** The local container cannot do TDS 8.0, so the only thing measured is that it
@@ -110,6 +263,16 @@ Remaining:
   and report it as "profiled the first N rows" rather than as a row count, plus a
   statement timeout on the connection. A true count, if wanted, is a separate cheap
   `COUNT(*)` rather than a side effect of reading everything.
+- [ ] **Raise the import cap to 250,000 rows.** Requirement: `journeys/ownership-intake.md`
+  ("To load the whole thing in one go"), held red by
+  `TestJourney_TheWholeSourceLoadsInOneGo`. The cap is 100,000 today and the customer's source
+  holds about 130,000 in one list; splitting it needs filters that between them must cover
+  everything exactly once, with no way to check they did. **The cap itself is one constant. The
+  problem is the commit path** — see the synchronous-request note below: ~500 rows/second means
+  130k is around four minutes of a held-open request and 250k around eight, past most default
+  proxy timeouts, and a timeout mid-commit leaves a partial import and no report. Raising the
+  number without batching or a resumable commit ships a cap that fails later instead of sooner.
+
 - [ ] **Reuse a saved mapping from the UI.** The mapping CRUD endpoints ship and the
   UI can save one, but cannot yet load one back — a repeat import still re-maps by hand.
 - [ ] **Download the match report as CSV.** The report is on screen only.

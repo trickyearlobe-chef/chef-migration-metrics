@@ -10,15 +10,21 @@ import (
 	"strings"
 )
 
-// A database connection is a credential with a shape, so it is checked when it
-// is stored — the same treatment a Chef client key gets, and for the same
-// reason. See journeys/ownership-intake.md.
+// Whether a connection string names a database, and a driver we can open. See
+// journeys/ownership-intake.md.
 //
-// Stored as a generic secret it is just bytes: a connection missing its
-// database, or pointing at a driver we cannot open, is accepted quietly and
-// fails much later, in front of the administrator setting up an import. That
-// person did not compose the string and often cannot fix it. Checking here puts
-// the refusal in front of whoever wrote it, while they still have it open.
+// It is checked when the connection is set up and when it is tested — where the
+// person who can fix it is looking at it. A connection missing its database is
+// otherwise accepted quietly and fails much later, in front of an administrator
+// who did not compose the string and often cannot correct it.
+//
+// This was once the validator for a credential type, back when the whole
+// connection was one encrypted secret. It is not any more: the connection is
+// configuration, held in internal/ownershipconn, and the only credential beside
+// it is a password — which has no shape, so there is nothing to check about it.
+// The parsing lives here still because it is bytes and belongs at the bottom of
+// the tree, and because internal/ownershipsql applies the same check at the
+// point of use.
 //
 // The two things checked are the two the importer cannot recover from: a driver
 // it has no way to open, and a connection that does not say which database to
@@ -63,23 +69,14 @@ var ErrDatabaseURLNamesNoDatabase = errors.New(
 // obvious mistake of omitting the database; a connection string is a bag of
 // vendor options this code has no business adjudicating, and refusing a valid
 // one blocks somebody with no way round it.
-func ValidateDatabaseURL(dsn string) error {
-	result := validateDatabaseURL([]byte(dsn))
-	if result.Valid {
-		return nil
-	}
-	return result.Error
-}
-
-// validateDatabaseURL checks a stored database connection string.
-//
-// No error it returns ever includes the value. The value is a password, and an
-// error message is the shortest path from a credential into a log that a great
+// No error it returns ever includes the value. A connection may still have a
+// password written into it — somebody pastes one in from another tool — and an
+// error message is the shortest path from a password into a log that a great
 // many people can read.
-func validateDatabaseURL(value []byte) ValidationResult {
-	dsn := strings.TrimSpace(string(value))
+func ValidateDatabaseURL(dsn string) error {
+	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
+		return describedRefusal(ErrNotADatabaseURL, dsn)
 	}
 
 	// Whether this is a URL is decided textually, and net/url is never asked to
@@ -92,27 +89,27 @@ func validateDatabaseURL(value []byte) ValidationResult {
 	// question is whether a database is named, and that is answered on the text.
 	if scheme, rest, isURL := splitDatabaseURLScheme(dsn); isURL {
 		if !databaseURLSchemes[scheme] {
-			return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
+			return describedRefusal(ErrNotADatabaseURL, dsn)
 		}
 		if namesDatabase(dsn) {
-			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
+			return nil
 		}
 		// Postgres names the database in the path. SQL Server uses the path for
 		// a named instance, so a path alone does not count there.
 		if scheme != "sqlserver" && pathNamesDatabase(rest) {
-			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
+			return nil
 		}
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)}
+		return describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)
 	}
 
 	// The keyword-value spelling a DBA is as likely to hand over as a URL.
 	if !looksLikeKeywordValue(dsn) {
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
+		return describedRefusal(ErrNotADatabaseURL, dsn)
 	}
 	if !namesDatabase(dsn) {
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)}
+		return describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)
 	}
-	return ValidationResult{Valid: true, Metadata: map[string]any{"driver": "sqlserver"}}
+	return nil
 }
 
 // DescribeConnectionShape says what a connection string is shaped like, using
@@ -427,12 +424,38 @@ func redactCredentials(dsn string) string {
 	return scheme + "://" + authority + redactPairs(tail)
 }
 
+// connectionFields splits a connection string into its key=value pairs,
+// whichever spelling it arrives in.
+//
+// The separators are ";", "&" and "?" — and then a space, but only inside a
+// field that already holds more than one "=". That second pass is what reads
+// libpq's own spelling, "host=h dbname=cmdb user=svc", which separates its
+// pairs with spaces. Splitting on spaces unconditionally would break SQL
+// Server's keys instead: it spells them "Initial Catalog" and "User Id", and
+// halving those leaves the database unnamed and the password exposed.
+//
+// It is the same rule redactCredentials applies, and for the same reason: a
+// space-separated connection was otherwise read as one field whose key was
+// "host", so "dbname=cmdb" was never seen and the connection was refused as
+// naming no database while printing that database back in the refusal.
+func connectionFields(dsn string) []string {
+	var out []string
+	for _, field := range strings.FieldsFunc(dsn, func(r rune) bool {
+		return r == ';' || r == '&' || r == '?'
+	}) {
+		if strings.Count(field, "=") > 1 && strings.Contains(field, " ") {
+			out = append(out, strings.Fields(field)...)
+			continue
+		}
+		out = append(out, field)
+	}
+	return out
+}
+
 // hasKeyword reports whether a keyword appears with a value, whatever separator
 // and spelling it arrives in.
 func hasKeyword(dsn, want string) bool {
-	fields := strings.FieldsFunc(dsn, func(r rune) bool {
-		return r == ';' || r == '&' || r == '?'
-	})
+	fields := connectionFields(dsn)
 	for _, field := range fields {
 		key, value, found := strings.Cut(field, "=")
 		if !found {
@@ -449,9 +472,7 @@ func hasKeyword(dsn, want string) bool {
 // separator these strings use. A connection string is a bag of key=value pairs
 // whichever spelling it arrives in, so they are all treated the same way.
 func namesDatabase(dsn string) bool {
-	fields := strings.FieldsFunc(dsn, func(r rune) bool {
-		return r == ';' || r == '&' || r == '?'
-	})
+	fields := connectionFields(dsn)
 	for _, field := range fields {
 		key, value, found := strings.Cut(field, "=")
 		if !found {

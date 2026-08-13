@@ -59,7 +59,22 @@ type Config struct {
 	Driver string
 	// DSN is the connection string, including credentials. It is never logged
 	// and never returned to a client.
+	//
+	// This is the older way of holding a connection, where the whole string is
+	// one secret. Prefer Connection and Password: a connection nobody can read
+	// back is one nobody can correct, which is what journeys/ownership-connection.md
+	// is about.
 	DSN string
+	// Connection is the part an administrator can read: the address, the
+	// database and the account, with the password's position marked by
+	// PasswordMarker rather than written out. When it is set it is used instead
+	// of DSN, and Password is put where the marker says.
+	Connection string
+	// Password is the one value that is kept out of sight, because it is the
+	// one nobody can inspect and therefore the one nobody can check. It is put
+	// into Connection at the last moment, escaped for the form that connection
+	// is written in.
+	Password string
 	// Query is the SELECT to read rows from. It is supplied by an
 	// administrator, and is run as-is under whatever the connection's own
 	// permissions allow.
@@ -73,14 +88,42 @@ type Config struct {
 }
 
 // resolveDSN prepares the stored connection for the driver: the TLS override if
-// one was asked for, and percent-encoding of the user and password, which the
-// person who typed them should not have to do by hand.
+// one was asked for, and escaping of the credential, which the person who typed
+// it should not have to do by hand.
+//
+// The password goes in last. Composing after the TLS override keeps the secret
+// out of every intermediate string, and — the reason this is not merely tidy —
+// stops the composed connection being escaped twice. An already-escaped
+// password put through encodeCredentialForURL again has each "%" turned into
+// "%25", so it connects nowhere and reports a refused login, which reads as a
+// wrong password rather than as a mangled one.
 func (c Config) resolveDSN() (string, error) {
+	if c.Connection != "" {
+		visible, err := applyTLSMode(c.Driver, c.Connection, c.TLSMode)
+		if err != nil {
+			return "", err
+		}
+		composed, err := Compose(c.Driver, visible, c.Password)
+		if err != nil {
+			return "", err
+		}
+		return composed.DSN, nil
+	}
+
 	dsn, err := applyTLSMode(c.Driver, c.DSN, c.TLSMode)
 	if err != nil {
 		return "", err
 	}
 	return encodeCredentialForURL(dsn), nil
+}
+
+// connectionForChecking is the connection to run the "names a database" check
+// against — the visible half when there is one, the whole string otherwise.
+func (c Config) connectionForChecking() string {
+	if c.Connection != "" {
+		return c.Connection
+	}
+	return c.DSN
 }
 
 // sqlSource adapts a query result to ownershipimport.RowSource.
@@ -93,6 +136,9 @@ type sqlSource struct {
 	row     ownershipimport.Row
 	number  int
 	err     error
+	// password is kept only to take it back out of anything the driver says
+	// while rows are being read.
+	password string
 }
 
 // Open connects, runs the query and returns a source positioned before the
@@ -101,14 +147,19 @@ type sqlSource struct {
 // The connection is verified before the query runs, so a bad host or a refused
 // login is reported as such rather than as an empty result — an unreadable
 // source and an empty one read the same on screen and mean opposite things.
-func Open(ctx context.Context, cfg Config) (ownershipimport.RowSource, error) {
+func Open(ctx context.Context, cfg Config) (src ownershipimport.RowSource, err error) {
+	// Every way out of here is redacted, rather than each error being tidied
+	// where it is made. A path added later that forgets to do it by hand is
+	// exactly how a password reaches a log, and this cannot be forgotten.
+	defer func() { err = redactErr(err, cfg.Password) }()
+
 	if !IsSupportedDriver(cfg.Driver) {
 		return nil, fmt.Errorf("ownershipsql: unsupported driver %q", cfg.Driver)
 	}
 	if strings.TrimSpace(cfg.Query) == "" {
 		return nil, fmt.Errorf("ownershipsql: a query is required")
 	}
-	if err := validateDSNNamesDatabase(cfg.Driver, cfg.DSN); err != nil {
+	if err := validateDSNNamesDatabase(cfg.Driver, cfg.connectionForChecking()); err != nil {
 		return nil, err
 	}
 
@@ -148,7 +199,7 @@ func Open(ctx context.Context, cfg Config) (ownershipimport.RowSource, error) {
 		return nil, fmt.Errorf("ownershipsql: reading the result columns: %w", err)
 	}
 
-	s := &sqlSource{db: db, rows: rows, columns: columns}
+	s := &sqlSource{db: db, rows: rows, columns: columns, password: cfg.Password}
 	s.scan = make([]any, len(columns))
 	s.ptrs = make([]any, len(columns))
 	for i := range s.scan {
@@ -184,15 +235,15 @@ func (s *sqlSource) Next() bool {
 
 func (s *sqlSource) Row() ownershipimport.Row { return s.row }
 
-func (s *sqlSource) Err() error { return s.err }
+func (s *sqlSource) Err() error { return redactErr(s.err, s.password) }
 
 func (s *sqlSource) Close() error {
 	rowsErr := s.rows.Close()
 	dbErr := s.db.Close()
 	if rowsErr != nil {
-		return rowsErr
+		return redactErr(rowsErr, s.password)
 	}
-	return dbErr
+	return redactErr(dbErr, s.password)
 }
 
 // asText renders one cell as the string the mapper works in. NULL becomes the
@@ -263,14 +314,16 @@ func listTablesQuery(driver string) string {
 
 // ListTables returns the tables and views the connection can see, so an
 // administrator can choose one instead of writing a query blind.
-func ListTables(ctx context.Context, cfg Config) ([]Table, error) {
+func ListTables(ctx context.Context, cfg Config) (tables []Table, err error) {
+	defer func() { err = redactErr(err, cfg.Password) }()
+
 	if !IsSupportedDriver(cfg.Driver) {
 		return nil, fmt.Errorf("ownershipsql: unsupported driver %q", cfg.Driver)
 	}
 	// Checked here as well as in Open: listing tables is the first thing an
 	// administrator does, so it is where the missing database should be
 	// reported — not several screens later when they try to read rows.
-	if err := validateDSNNamesDatabase(cfg.Driver, cfg.DSN); err != nil {
+	if err := validateDSNNamesDatabase(cfg.Driver, cfg.connectionForChecking()); err != nil {
 		return nil, err
 	}
 

@@ -38,7 +38,7 @@ func ownershipImportEndpoints(t *testing.T) []*http.Request {
 	t.Helper()
 	return []*http.Request{
 		intakeRequest(t, "/api/v1/ownership/import/tables", "", map[string]string{
-			"db_driver": "postgres", "db_credential": "cmdb",
+			"db_connection": "cmdb",
 		}),
 		intakeRequest(t, "/api/v1/ownership/import/profile", "a,b\n1,2\n", nil),
 		intakeRequest(t, "/api/v1/ownership/import/preview", twoRowCSV, map[string]string{
@@ -47,6 +47,15 @@ func ownershipImportEndpoints(t *testing.T) []*http.Request {
 		intakeRequest(t, "/api/v1/ownership/import/commit", twoRowCSV, map[string]string{
 			"field_map": repoFieldMap(t),
 		}),
+		// Setting a connection up, and asking a server about one. An operator
+		// must not learn what a connection reaches, or compose one at all: the
+		// answer names hosts and accounts in somebody else's estate.
+		jsonRequest(http.MethodGet, "/api/v1/ownership/import/connections", ""),
+		jsonRequest(http.MethodPost, "/api/v1/ownership/import/connections", "{}"),
+		jsonRequest(http.MethodGet, "/api/v1/ownership/import/connections/x", ""),
+		jsonRequest(http.MethodDelete, "/api/v1/ownership/import/connections/x", ""),
+		jsonRequest(http.MethodPost, "/api/v1/ownership/import/show-connection", "{}"),
+		jsonRequest(http.MethodPost, "/api/v1/ownership/import/test-connection", "{}"),
 		jsonRequest(http.MethodGet, "/api/v1/ownership/import/mappings", ""),
 		jsonRequest(http.MethodPost, "/api/v1/ownership/import/mappings", mappingBody(t, "x")),
 		jsonRequest(http.MethodGet, "/api/v1/ownership/import/mappings/1", ""),

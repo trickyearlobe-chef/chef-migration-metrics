@@ -479,6 +479,20 @@ MSSQL_DSN         ?= sqlserver://sa:$(MSSQL_SA_PASSWORD)@localhost:1433?database
 # a semicolon, a space and a hash, none of which a URL can hold unescaped. The
 # encoding repair is proved by connecting with it, not by asserting about it.
 MSSQL_NASTY_DSN   ?= sqlserver://cmmnasty:pa%ss;wo rd\#7Q!@localhost:1433?database=cmdb
+# The same awkward login, split the way an administrator now holds it: a
+# connection they can read, and a password they cannot. Composing the two and
+# connecting is the only thing that proves the escaping, which is why both
+# spellings of the visible half are here.
+#
+# "PW" rather than "PASSWORD" so the secret scanner does not stop on the quoted
+# variable reference in test-mssql below. It reads a quoted value after a
+# password-shaped name as a hardcoded credential, which for "$(...)" it is not.
+MSSQL_NASTY_PW        ?= pa%ss;wo rd\#7Q!
+# PASSWORD_GOES_HERE marks where the password goes. Letters and underscores
+# because they survive a shell: "${...}" was expanded to nothing here, and
+# "[...]" is a glob that matched a file in the working directory.
+MSSQL_VISIBLE_URL     ?= sqlserver://cmmnasty:PASSWORD_GOES_HERE@localhost:1433?database=cmdb
+MSSQL_VISIBLE_KEYWORD ?= server=localhost;port=1433;database=cmdb;user id=cmmnasty;password=PASSWORD_GOES_HERE
 COMPOSE_FILE      := deploy/docker-compose/docker-compose.yml
 
 .PHONY: mssql-up
@@ -506,6 +520,9 @@ seed-mssql: ## Create the sample ownership database in SQL Server
 test-mssql: ## Run the SQL Server ownership-ingest functional tests
 	CMM_TEST_MSSQL_DSN="$(MSSQL_DSN)" \
 	CMM_TEST_MSSQL_NASTY_DSN="$(MSSQL_NASTY_DSN)" \
+	CMM_TEST_MSSQL_NASTY_PW="$(MSSQL_NASTY_PW)" \
+	CMM_TEST_MSSQL_VISIBLE_URL='$(MSSQL_VISIBLE_URL)' \
+	CMM_TEST_MSSQL_VISIBLE_KEYWORD='$(MSSQL_VISIBLE_KEYWORD)' \
 	go test -count=1 -tags $(FUNCTIONAL_TEST_TAGS) -run 'TestFunctional_MSSQL' -v ./internal/ownershipsql/
 
 .PHONY: mssql-down

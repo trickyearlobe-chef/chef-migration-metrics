@@ -14,8 +14,9 @@ import (
 	"testing"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipconn"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
 )
 
 // The journey suite for journeys/ownership-intake.md. Run it with `make journey`.
@@ -64,11 +65,25 @@ func TestJourney_CanLoadFromAFileOrADatabase(t *testing.T) {
 }
 
 // "The connection has to name its database, and I would rather it did."
+//
+// Checked where the connection is set up. The baseline is asserted first: the
+// same connection with a database named is accepted, so this cannot pass
+// because connections are being refused for some other reason entirely.
 func TestJourney_ConnectionMustNameItsDatabase(t *testing.T) {
-	stored := secrets.ValidateCredentialValue(
-		secrets.CredentialTypeDatabaseURL, []byte("postgres://user:pass@host:5432"))
-	if stored.Valid {
-		t.Error("a connection naming no database can be stored, and fails later " +
+	named := ownershipconn.Connection{
+		Name:               "asset-database",
+		Connection:         "postgres://user:" + ownershipsql.PasswordMarker + "@host:5432/cmdb",
+		PasswordCredential: "asset-database-password",
+	}
+	if _, err := ownershipconn.Validate(named); err != nil {
+		t.Fatalf("the fixture proves nothing: a connection that does name its database is "+
+			"refused anyway: %v", err)
+	}
+
+	unnamed := named
+	unnamed.Connection = "postgres://user:" + ownershipsql.PasswordMarker + "@host:5432"
+	if _, err := ownershipconn.Validate(unnamed); err == nil {
+		t.Error("a connection naming no database can be set up, and fails later " +
 			"in front of somebody who cannot fix it")
 	}
 }
@@ -248,7 +263,7 @@ func TestJourney_CanSeeWhetherTheSourceIsGettingBetterOrWorse(t *testing.T) {
 // intakeFormFields returns the form field names the intake handler reads, so a
 // seam can be asserted without a live database.
 func intakeFormFields() string {
-	return "field_map mapping_id query db_credential table filter_column filter_value"
+	return "field_map mapping_id query db_connection table filter_column filter_value"
 }
 
 // "That decision turns on having watched it run once, including how long it
@@ -280,13 +295,38 @@ func TestJourney_CanRunItAgainOnASchedule(t *testing.T) {
 	}
 }
 
+// "To load the whole thing in one go. Their source runs to about a hundred and
+// thirty thousand records and it is one list."
+//
+// A cap below what the customer actually holds is a cap somebody works around,
+// and the workaround is filters that are meant to cover everything exactly once
+// with no way to check that they did.
+func TestJourney_TheWholeSourceLoadsInOneGo(t *testing.T) {
+	const theirs = 130000
+	if intakeMaxRows < theirs {
+		t.Errorf("an import stops at %d rows and the source holds about %d, so it cannot be "+
+			"loaded without being split", intakeMaxRows, theirs)
+	}
+}
+
 // "Importing is an administrator's act, not an operator's."
+//
+// Every door, not one of them. This asserted the commit endpoint alone and was
+// green while a second import route accepted the same operator — the rule read
+// as proven because the test that proved it only knew about one way in.
 func TestJourney_ImportingIsAnAdministratorsAct(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/ownership/import/commit", nil)
-	journeyRouter().ServeHTTP(w, withOperatorSession(req))
-	if w.Code != http.StatusForbidden {
-		t.Errorf("an operator can commit an import (answered %d)", w.Code)
+	for _, path := range []string{
+		"/api/v1/ownership/import",
+		"/api/v1/ownership/import/commit",
+	} {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		journeyRouter().ServeHTTP(w, withOperatorSession(req))
+		// Gone is as good as forbidden: the requirement is that an operator
+		// cannot import, not that every route exists to refuse them.
+		if w.Code != http.StatusForbidden && w.Code != http.StatusNotFound {
+			t.Errorf("an operator can import ownership through %s (answered %d)", path, w.Code)
+		}
 	}
 }
 

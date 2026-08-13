@@ -27,6 +27,8 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipconn"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
@@ -1057,36 +1059,29 @@ func (r *Router) registerRoutes() {
 	r.protect("/api/v1/ownership/lookup", r.handleOwnershipEndpoints)
 	r.protect("/api/v1/ownership/audit-log", r.handleOwnershipEndpoints, paginated(),
 		answersPage("GET", datastore.OwnershipAuditEntry{}))
-	r.protect("/api/v1/ownership/import", r.handleOwnershipEndpoints, methods("POST"),
-		takesForm("POST", formField{Name: "format"}, formField{Name: "file", File: true}))
-	// Discovery-driven intake. Registered as exact patterns beside the
-	// fixed-header route above, which stays in service unchanged.
+	// Discovery-driven intake: the one way ownership comes in from a source.
 	// Every case in handleOwnershipIntake's dispatch switch needs an entry
 	// here; TestOwnershipIntakeDispatchCasesAreRouted holds the two in step.
 	// The rows an import could not use, as a worklist rather than only an export.
 	r.protect("/api/v1/ownership/import/rejections", r.handleOwnershipIntake, paginated())
 	r.protect("/api/v1/ownership/import/tables", r.handleOwnershipIntake, methods("POST"),
-		takesForm("POST", formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"}))
+		takesForm("POST", formField{Name: "db_connection"}))
 	r.protect("/api/v1/ownership/import/profile", r.handleOwnershipIntake, methods("POST"),
 		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
 			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
-			formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"},
+			formField{Name: "db_connection"},
 			formField{Name: "db_query"}))
 	r.protect("/api/v1/ownership/import/preview", r.handleOwnershipIntake, methods("POST"),
 		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
 			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
-			formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"},
+			formField{Name: "db_connection"},
 			formField{Name: "db_query"},
 			formField{Name: "field_map"}, formField{Name: "filter_column"},
 			formField{Name: "filter_value"}, formField{Name: "create_owners"}))
 	r.protect("/api/v1/ownership/import/commit", r.handleOwnershipIntake, methods("POST"),
 		takesForm("POST", formField{Name: "source_type"}, formField{Name: "file", File: true},
 			formField{Name: "delimiter"}, formField{Name: "mapping_id"},
-			formField{Name: "db_driver"}, formField{Name: "db_credential"},
-			formField{Name: "db_tls_mode"},
+			formField{Name: "db_connection"},
 			formField{Name: "db_query"},
 			formField{Name: "field_map"}, formField{Name: "filter_column"},
 			formField{Name: "filter_value"}, formField{Name: "create_owners"}))
@@ -1096,6 +1091,22 @@ func (r *Router) registerRoutes() {
 		sub("{id}", "GET", "PUT", "DELETE"), sub("{id}/run", "POST"),
 		subTakes("{id}", "PUT", importMappingRequest{}))
 	r.protect("/api/v1/ownership/import/clear", r.handleOwnershipIntake, methods("GET", "POST"))
+	// Setting up the connection an import reads through: readable configuration
+	// beside an encrypted password. See journeys/ownership-connection.md.
+	r.protect("/api/v1/ownership/import/connections", r.handleOwnershipIntake,
+		methods("GET", "POST"), takes("POST", ownershipConnectionRequest{}),
+		answers("GET", ownershipConnectionsResponse{}),
+		answers("POST", ownershipconn.Connection{}))
+	r.protect("/api/v1/ownership/import/connections/", r.handleOwnershipIntake,
+		sub("{name}", "GET", "DELETE"),
+		subAnswers("{name}", "GET", ownershipconn.Connection{}),
+		subAnswers("{name}", "DELETE", deletedConnectionResponse{}))
+	r.protect("/api/v1/ownership/import/show-connection", r.handleOwnershipIntake,
+		methods("POST"), takes("POST", showConnectionRequest{}),
+		answers("POST", composedConnectionResponse{}))
+	r.protect("/api/v1/ownership/import/test-connection", r.handleOwnershipIntake,
+		methods("POST"), takes("POST", testConnectionRequest{}),
+		answers("POST", ownershipsql.Result{}))
 	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases,
 		methods("GET", "POST", "DELETE"), takes("POST", createOwnerAliasRequest{}))
 	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases,
