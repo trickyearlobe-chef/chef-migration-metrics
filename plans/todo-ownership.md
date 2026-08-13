@@ -81,6 +81,18 @@ Remaining:
   handles a password — the moment one passes through it, the connection stops being something a
   screen can show.
 
+  **The order the endpoints support, settled with the product owner 2026-08-13.** Somebody stores
+  the password; somebody composes the connection round the marker; somebody tests it; only then is
+  it kept and used to browse. So a connection is tested before it has been stored, and storing
+  does not require a passing test — their own server is unreachable from here today, and a save
+  that demanded a green test could not record their connection at all.
+
+  **Showing a connection never reads its password.** The mask is substituted through the same
+  escaping the real password goes through, so what comes back is the shape of the real connection
+  without the secret being fetched to answer. Held by a test that stores a real password and
+  asserts it does not come back — the first version of that test could not tell, because it
+  composed a connection that had no password behind it.
+
   **Where the shape check went, since the credential type no longer performs it.** It happens
   when a connection is set up and when it is tested: `ownershipconn.Validate` and the composer.
   The parsing itself stayed in `internal/secrets` — it is bytes, it belongs at the bottom of the

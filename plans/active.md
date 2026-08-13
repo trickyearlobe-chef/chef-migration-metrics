@@ -17,14 +17,16 @@ preference. Detail and the measurements behind it: `plans/todo-ownership.md`.
 The backend is done: composing, redaction and the connection test are built and measured against
 running servers. What is left is everything an administrator can see, and it starts with storage.
 
-- **D. Endpoints** take a connection and a password, return the composed connection masked, and
-  test one. Re-run `make frontend-fields` — bodies change. A stored connection now names the
-  credential holding its password, so an endpoint reads the two and hands them to the composer;
-  the intake still asks for `db_credential` and gets a whole encrypted string.
 - **E. The screen.** Show the composed connection masked, say how to mark the password, propose
   a starting connection per database, derive the database from the scheme rather than asking,
   drop the TLS control (carrying its SQL Server mapping into the proposed connection), and
   correct the two help texts that describe the old model.
+
+  **The intake still asks for `db_credential` and gets one whole encrypted string.** Switching it
+  to name a stored connection belongs with the screen rather than before it: the two have to
+  change together or the import screen stops working between chunks. Nothing needs migrating —
+  no saved import exists, and the one credential holding a whole connection is re-created by
+  hand as a connection plus a password.
 
 Snagging found on the running instance 2026-08-13: with **A database** selected the delimiter
 help text is still shown, though its input is correctly hidden. File-only guidance under a
