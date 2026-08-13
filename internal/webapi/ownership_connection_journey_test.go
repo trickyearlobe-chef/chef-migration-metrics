@@ -64,16 +64,9 @@ func (c *journeyConfig) Set(_ context.Context, key string, value json.RawMessage
 func TestJourney_OnlyThePasswordIsOutOfSight(t *testing.T) {
 	const password = "s3cr3t!p@ss/w0rd"
 
-	// Baseline: what an import connection has to be today.
-	whole := secrets.ValidateCredentialValue(
-		secrets.CredentialTypeDatabaseURL, []byte(password))
-	if whole.Valid {
-		t.Fatal("the fixture proves nothing: a bare password is already accepted as an " +
-			"import connection, so nothing here is measuring what is encrypted")
-	}
-
-	// What the journey asks for: the secret is the password, and the rest of
-	// the connection is configuration somebody can read.
+	// The secret is the password and nothing else, so it is stored as what it
+	// is: bytes with no shape. A password refused for its shape is a password
+	// somebody's database really has and this tool will not hold.
 	if !secrets.ValidateCredentialValue(secrets.CredentialTypeGeneric, []byte(password)).Valid {
 		t.Error("a password on its own cannot be stored as the secret for an import, so the " +
 			"whole connection goes on being encrypted and a failure cannot be read")
@@ -82,9 +75,17 @@ func TestJourney_OnlyThePasswordIsOutOfSight(t *testing.T) {
 	// And the other half: the connection itself is held as configuration
 	// beside that password, and reads back with the address, the database, the
 	// account and the domain all legible.
-	stored := ownershipconn.NewStore(newJourneyConfig())
+	config := newJourneyConfig()
+	stored := ownershipconn.NewStore(config)
 	connection := `sqlserver://EXAMPLECORP\svcaccount:` + ownershipsql.PasswordMarker +
 		`@dbhost.example.com:1433?database=cmdb`
+
+	// Baseline: nothing is stored yet, so what is read below was put there by
+	// this code rather than sitting in the fixture.
+	if _, err := stored.Get(context.Background(), "asset-database"); err == nil {
+		t.Fatal("the fixture proves nothing: a connection is readable before one was stored")
+	}
+
 	if err := stored.Save(context.Background(), ownershipconn.Connection{
 		Name:               "asset-database",
 		Driver:             ownershipsql.DriverSQLServer,

@@ -14,8 +14,9 @@ import (
 	"testing"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipconn"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
-	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
 )
 
 // The journey suite for journeys/ownership-intake.md. Run it with `make journey`.
@@ -64,11 +65,25 @@ func TestJourney_CanLoadFromAFileOrADatabase(t *testing.T) {
 }
 
 // "The connection has to name its database, and I would rather it did."
+//
+// Checked where the connection is set up. The baseline is asserted first: the
+// same connection with a database named is accepted, so this cannot pass
+// because connections are being refused for some other reason entirely.
 func TestJourney_ConnectionMustNameItsDatabase(t *testing.T) {
-	stored := secrets.ValidateCredentialValue(
-		secrets.CredentialTypeDatabaseURL, []byte("postgres://user:pass@host:5432"))
-	if stored.Valid {
-		t.Error("a connection naming no database can be stored, and fails later " +
+	named := ownershipconn.Connection{
+		Name:               "asset-database",
+		Connection:         "postgres://user:" + ownershipsql.PasswordMarker + "@host:5432/cmdb",
+		PasswordCredential: "asset-database-password",
+	}
+	if _, err := ownershipconn.Validate(named); err != nil {
+		t.Fatalf("the fixture proves nothing: a connection that does name its database is "+
+			"refused anyway: %v", err)
+	}
+
+	unnamed := named
+	unnamed.Connection = "postgres://user:" + ownershipsql.PasswordMarker + "@host:5432"
+	if _, err := ownershipconn.Validate(unnamed); err == nil {
+		t.Error("a connection naming no database can be set up, and fails later " +
 			"in front of somebody who cannot fix it")
 	}
 }

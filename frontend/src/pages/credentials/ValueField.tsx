@@ -1,14 +1,12 @@
 import { INPUT_CLS } from "./constants";
 
-// The example matters more for a connection string than for a key: it is the
-// only place the required shape is stated, and the value is refused without a
-// database in it.
+// A database connection is no longer typed here. It is configuration an
+// administrator reads and edits on the import screen, and the credential beside
+// it holds the password on its own — see journeys/ownership-connection.md.
 function placeholderFor(credentialType: string): string {
   switch (credentialType) {
     case "chef_client_key":
       return "-----BEGIN RSA PRIVATE KEY-----\n...";
-    case "database_url":
-      return "postgres://user:pass@host:5432/DATABASE\nsqlserver://user:pass@host:1433?database=DATABASE";
     default:
       return "Enter value\u2026";
   }

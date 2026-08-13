@@ -10,15 +10,21 @@ import (
 	"strings"
 )
 
-// A database connection is a credential with a shape, so it is checked when it
-// is stored — the same treatment a Chef client key gets, and for the same
-// reason. See journeys/ownership-intake.md.
+// Whether a connection string names a database, and a driver we can open. See
+// journeys/ownership-intake.md.
 //
-// Stored as a generic secret it is just bytes: a connection missing its
-// database, or pointing at a driver we cannot open, is accepted quietly and
-// fails much later, in front of the administrator setting up an import. That
-// person did not compose the string and often cannot fix it. Checking here puts
-// the refusal in front of whoever wrote it, while they still have it open.
+// It is checked when the connection is set up and when it is tested — where the
+// person who can fix it is looking at it. A connection missing its database is
+// otherwise accepted quietly and fails much later, in front of an administrator
+// who did not compose the string and often cannot correct it.
+//
+// This was once the validator for a credential type, back when the whole
+// connection was one encrypted secret. It is not any more: the connection is
+// configuration, held in internal/ownershipconn, and the only credential beside
+// it is a password — which has no shape, so there is nothing to check about it.
+// The parsing lives here still because it is bytes and belongs at the bottom of
+// the tree, and because internal/ownershipsql applies the same check at the
+// point of use.
 //
 // The two things checked are the two the importer cannot recover from: a driver
 // it has no way to open, and a connection that does not say which database to
@@ -63,23 +69,14 @@ var ErrDatabaseURLNamesNoDatabase = errors.New(
 // obvious mistake of omitting the database; a connection string is a bag of
 // vendor options this code has no business adjudicating, and refusing a valid
 // one blocks somebody with no way round it.
-func ValidateDatabaseURL(dsn string) error {
-	result := validateDatabaseURL([]byte(dsn))
-	if result.Valid {
-		return nil
-	}
-	return result.Error
-}
-
-// validateDatabaseURL checks a stored database connection string.
-//
-// No error it returns ever includes the value. The value is a password, and an
-// error message is the shortest path from a credential into a log that a great
+// No error it returns ever includes the value. A connection may still have a
+// password written into it — somebody pastes one in from another tool — and an
+// error message is the shortest path from a password into a log that a great
 // many people can read.
-func validateDatabaseURL(value []byte) ValidationResult {
-	dsn := strings.TrimSpace(string(value))
+func ValidateDatabaseURL(dsn string) error {
+	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
+		return describedRefusal(ErrNotADatabaseURL, dsn)
 	}
 
 	// Whether this is a URL is decided textually, and net/url is never asked to
@@ -92,27 +89,27 @@ func validateDatabaseURL(value []byte) ValidationResult {
 	// question is whether a database is named, and that is answered on the text.
 	if scheme, rest, isURL := splitDatabaseURLScheme(dsn); isURL {
 		if !databaseURLSchemes[scheme] {
-			return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
+			return describedRefusal(ErrNotADatabaseURL, dsn)
 		}
 		if namesDatabase(dsn) {
-			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
+			return nil
 		}
 		// Postgres names the database in the path. SQL Server uses the path for
 		// a named instance, so a path alone does not count there.
 		if scheme != "sqlserver" && pathNamesDatabase(rest) {
-			return ValidationResult{Valid: true, Metadata: map[string]any{"driver": scheme}}
+			return nil
 		}
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)}
+		return describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)
 	}
 
 	// The keyword-value spelling a DBA is as likely to hand over as a URL.
 	if !looksLikeKeywordValue(dsn) {
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrNotADatabaseURL, dsn)}
+		return describedRefusal(ErrNotADatabaseURL, dsn)
 	}
 	if !namesDatabase(dsn) {
-		return ValidationResult{Valid: false, Error: describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)}
+		return describedRefusal(ErrDatabaseURLNamesNoDatabase, dsn)
 	}
-	return ValidationResult{Valid: true, Metadata: map[string]any{"driver": "sqlserver"}}
+	return nil
 }
 
 // DescribeConnectionShape says what a connection string is shaped like, using

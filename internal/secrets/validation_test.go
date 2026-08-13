@@ -322,7 +322,6 @@ func TestValidCredentialTypes_ContainsAllConstants(t *testing.T) {
 	expected := []string{
 		CredentialTypeChefClientKey,
 		CredentialTypeGeneric,
-		CredentialTypeDatabaseURL,
 	}
 	for _, ct := range expected {
 		if !ValidCredentialTypes[ct] {
@@ -344,7 +343,6 @@ func TestCredentialTypeConstants(t *testing.T) {
 		expected string
 	}{
 		{CredentialTypeChefClientKey, "chef_client_key"},
-		{CredentialTypeDatabaseURL, "database_url"},
 		{CredentialTypeGeneric, "generic"},
 	}
 	for _, tt := range tests {

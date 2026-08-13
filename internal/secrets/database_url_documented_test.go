@@ -31,9 +31,12 @@ var documentedExample = regexp.MustCompile(
 
 // filesThatShowAFormat are the places a connection format is put in front of a
 // person. Paths are repo-relative; a missing one fails rather than skips.
+//
+// The credentials dialog was one of these. It is not any more: a connection is
+// not a credential, so that dialog shows no connection format and has none to
+// be held to. Where connections are shown is the import screen.
 var filesThatShowAFormat = []string{
 	"frontend/src/pages/OwnershipMappedImport.tsx",
-	"frontend/src/pages/credentials/ValueField.tsx",
 }
 
 func TestDatabaseURL_AcceptsEveryFormatWeShowOnScreen(t *testing.T) {

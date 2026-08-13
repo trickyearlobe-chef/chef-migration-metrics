@@ -9,13 +9,14 @@ import (
 	"testing"
 )
 
-// A database connection is its own kind of secret, checked when it is stored —
-// see journeys/ownership-intake.md.
+// Whether a connection names its database, checked where it is set up and where
+// it is tested — see journeys/ownership-intake.md and
+// journeys/ownership-connection.md.
 //
-// Stored as a generic secret, a malformed or database-less connection string is
-// accepted quietly and fails later, in front of the administrator setting up an
-// import, who did not write it and cannot fix it. Checking it here puts the
-// refusal in front of the person who composed it, while they still have it open.
+// Unchecked, a database-less connection is accepted quietly and fails later, in
+// front of the administrator setting up an import, who did not write it and
+// cannot fix it. Checking it puts the refusal in front of the person who
+// composed it, while they still have it open.
 
 func TestDatabaseURL_AcceptsTheFormsTheImportScreenDocuments(t *testing.T) {
 	accepted := []string{
@@ -27,9 +28,8 @@ func TestDatabaseURL_AcceptsTheFormsTheImportScreenDocuments(t *testing.T) {
 		"server=host;user id=svc;password=p;database=cmdb",
 	}
 	for _, dsn := range accepted {
-		result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte(dsn))
-		if !result.Valid {
-			t.Errorf("rejected a connection the import screen tells people to use: %v", result.Error)
+		if err := ValidateDatabaseURL(dsn); err != nil {
+			t.Errorf("rejected a connection the import screen tells people to use: %v", err)
 		}
 	}
 }
@@ -47,12 +47,12 @@ func TestDatabaseURL_AcceptsPostgresKeywordSpelling(t *testing.T) {
 	const named = "host=dbhost.example.com dbname=cmdb user=svc password=p sslmode=require"
 	const unnamed = "host=dbhost.example.com user=svc password=p sslmode=require"
 
-	if result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte(unnamed)); result.Valid {
+	if err := ValidateDatabaseURL(unnamed); err == nil {
 		t.Fatal("the fixture proves nothing: a connection naming no database is accepted in " +
 			"this spelling anyway, so accepting the one below measures nothing")
 	}
-	if result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte(named)); !result.Valid {
-		t.Errorf("refused a connection that names its database as libpq spells it: %v", result.Error)
+	if err := ValidateDatabaseURL(named); err != nil {
+		t.Errorf("refused a connection that names its database as libpq spells it: %v", err)
 	}
 }
 
@@ -64,42 +64,40 @@ func TestDatabaseURL_RejectsAConnectionThatNamesNoDatabase(t *testing.T) {
 		"server=host;user id=svc;password=p",
 	}
 	for _, dsn := range rejected {
-		result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte(dsn))
-		if result.Valid {
-			t.Errorf("stored a connection that names no database: %s", dsn)
+		if err := ValidateDatabaseURL(dsn); err == nil {
+			t.Errorf("accepted a connection that names no database: %s", dsn)
 		}
 	}
 }
 
 func TestDatabaseURL_RejectsSomethingThatIsNotAConnectionAtAll(t *testing.T) {
 	for _, value := range []string{"hunter2", "/etc/passwd", "SELECT * FROM owners"} {
-		result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte(value))
-		if result.Valid {
-			t.Errorf("stored %q as a database connection", value)
+		if err := ValidateDatabaseURL(value); err == nil {
+			t.Errorf("accepted %q as a database connection", value)
 		}
 	}
 }
 
-// The value IS the password. An error that quotes it is the shortest path from
-// a credential to a shared log — and this estate ships its logs to a Splunk a
-// great many people can read.
+// A connection carries a password often enough — somebody pastes one in from
+// another tool, and the refusal is the moment they are told not to. An error
+// that quotes it is the shortest path from a password to a shared log, and this
+// estate ships its logs to a Splunk a great many people can read.
 func TestDatabaseURL_RefusalNeverQuotesTheValue(t *testing.T) {
 	const secret = "hunter2"
-	result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte("postgres://svc:"+secret+"@host:5432"))
-	if result.Valid {
+	err := ValidateDatabaseURL("postgres://svc:" + secret + "@host:5432")
+	if err == nil {
 		t.Fatal("expected a refusal")
 	}
-	if strings.Contains(result.Error.Error(), secret) {
-		t.Errorf("the refusal quotes the connection string, password included: %v", result.Error)
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the refusal quotes the connection string, password included: %v", err)
 	}
 }
 
-// An unknown scheme is refused rather than stored to fail later against a
+// An unknown scheme is refused rather than accepted to fail later against a
 // driver we do not have.
 func TestDatabaseURL_RejectsADriverWeCannotUse(t *testing.T) {
-	result := ValidateCredentialValue(CredentialTypeDatabaseURL, []byte("mysql://user:pass@host:3306/cmdb"))
-	if result.Valid {
-		t.Error("stored a connection for a driver the importer cannot open")
+	if err := ValidateDatabaseURL("mysql://user:pass@host:3306/cmdb"); err == nil {
+		t.Error("accepted a connection for a driver the importer cannot open")
 	}
 }
 

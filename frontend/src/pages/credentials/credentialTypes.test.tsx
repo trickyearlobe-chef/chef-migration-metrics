@@ -3,8 +3,6 @@
 
 import { describe, it, expect } from "vitest";
 import { CREDENTIAL_TYPES, typeLabel, BADGE_LABELS, BADGE_STYLES } from "./constants";
-import { ValueField } from "./ValueField";
-import { render, screen } from "@testing-library/react";
 
 // A credential type the server validates but the screen never offers is a type
 // nobody can use. That is what shipped in v2.21.1: database connections were
@@ -19,7 +17,7 @@ describe("credential types", () => {
   // Kept in step with internal/secrets/validation.go — ValidCredentialTypes
   // there has a matching completeness test, so the two lists cannot drift apart
   // without one of them failing.
-  const SERVER_TYPES = ["chef_client_key", "generic", "database_url"];
+  const SERVER_TYPES = ["chef_client_key", "generic"];
 
   it("offers every type the server accepts", () => {
     for (const t of SERVER_TYPES) {
@@ -38,14 +36,8 @@ describe("credential types", () => {
     }
   });
 
-  // The placeholder is the only place the required shape is stated, and a
-  // connection without a database in it is refused.
-  it("shows the shape a database connection has to have", () => {
-    render(
-      <ValueField credentialType="database_url" value="" onChange={() => {}} />,
-    );
-    const field = screen.getByRole("textbox") as HTMLTextAreaElement;
-    expect(field.placeholder).toMatch(/postgres:\/\//);
-    expect(field.placeholder).toMatch(/DATABASE/);
-  });
+  // A database connection is not one of these any more: it is configuration on
+  // the import screen with only its password held here, so there is no
+  // connection shape for this dialog to state. See
+  // journeys/ownership-connection.md.
 });
