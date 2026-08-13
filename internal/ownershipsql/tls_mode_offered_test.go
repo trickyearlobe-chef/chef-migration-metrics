@@ -9,85 +9,88 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
-// The screen must not offer a TLS mode the server then refuses.
+// A connection proposed on screen must be one this code can actually send.
 //
-// This is the same rule that already cost a customer an evening in a different
-// guise: a format was displayed, somebody used it, and it was rejected. The two
-// lists live in different languages in different files, so the only way to keep
-// them honest is to read the displayed one and check it.
+// This replaces a check on a TLS control that no longer exists. That control
+// was an override which silently won over whatever the connection already said,
+// and its stated reason — that changing a TLS setting meant retyping a whole
+// encrypted connection, password included — disappeared when the connection
+// became something the administrator can read and edit.
 //
-// It fails if a mode is added on either side alone, or if the list moves
-// somewhere this cannot see — both worth a red build, because the screen is where
-// people get their choices from.
-
-const importScreen = "frontend/src/pages/OwnershipMappedImport.tsx"
-
-// tlsModeList matches one driver's array in the TLS_MODES record, e.g.
+// The knowledge it held did not go with it. The four friendly SQL Server modes
+// mapped onto pairs of driver options, measured against a real server because
+// "encrypt=false" and saying nothing parse identically and then behave
+// differently. That mapping is now in the proposed connections and the note
+// beside them, which is where somebody writing a connection is looking.
 //
-//	postgres: ["disable", "allow"],
-var tlsModeList = regexp.MustCompile(`(?m)^\s*(postgres|sqlserver):\s*\[([^\]]*)\]`)
+// So what is checked here is the proposal itself: that each one composes and
+// names its database. A proposal that is usually wrong is worse than none,
+// because it turns setting a connection up into correcting one — and one that
+// cannot even be sent is the worst of that kind.
 
-func TestTheScreenOffersOnlyModesTheServerAccepts(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(importScreen)))
-	if err != nil {
-		t.Fatalf("cannot read the screen that offers these modes — if it moved, point "+
-			"this test at its new home rather than deleting it: %v", err)
-	}
+var connectionPanel = filepath.Join("..", "..", "frontend", "src", "pages",
+	"OwnershipConnectionPanel.tsx")
 
-	matches := tlsModeList.FindAllStringSubmatch(string(content), -1)
-	if len(matches) == 0 {
-		t.Fatal("found no TLS mode lists on the import screen; if they moved, update this test")
-	}
+// proposedConnection matches one entry of the PROPOSED record. Each is written
+// as a join round the marker rather than as one string, so that no line in that
+// file has the shape of a real connection carrying a password — so this reads
+// the expression and puts it back together.
+//
+//	sqlserver:
+//	  "sqlserver://user:" + PASSWORD_MARKER + "@host:1433?database=cmdb",
+var proposedConnection = regexp.MustCompile(`(?m)^\s*(postgres|sqlserver):\s*\n?\s*("[^\n]+),\s*$`)
 
-	checked := 0
-	for _, match := range matches {
-		driver, list := match[1], match[2]
-		for _, quoted := range strings.Split(list, ",") {
-			mode := strings.Trim(strings.TrimSpace(quoted), `"'`)
-			if mode == "" {
-				continue
-			}
-			checked++
-			if !isTLSMode(driver, mode) {
-				t.Errorf("the screen offers %q for %s, which the server refuses\n"+
-					"  the server accepts: %s", mode, driver, strings.Join(TLSModesFor(driver), ", "))
-			}
-		}
-	}
-	if checked == 0 {
-		t.Fatal("no mode was checked, so this test proves nothing")
-	}
+// proposedBlock isolates the PROPOSED record, so the note beside it — which
+// talks about the same two databases in prose — is not read as a connection.
+var proposedBlock = regexp.MustCompile(`(?s)const PROPOSED[^{]*\{(.*?)\n\};`)
 
-	// And the other direction: a mode the server accepts but nothing offers is
-	// unreachable, which is its own kind of wrong.
-	for _, driver := range SupportedDrivers {
-		for _, mode := range TLSModesFor(driver) {
-			if !strings.Contains(string(content), `"`+mode+`"`) {
-				t.Errorf("the server accepts %q for %s but the screen never offers it",
-					mode, driver)
-			}
-		}
-	}
+// asWritten puts a joined proposal back into the string a browser would render.
+func asWritten(expression string) string {
+	joined := strings.ReplaceAll(expression, `" + PASSWORD_MARKER + "`, PasswordMarker)
+	return strings.Trim(strings.TrimSpace(joined), `"`)
 }
 
-// repoRoot walks up to the directory holding go.mod, so this survives the
-// package being moved.
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := os.Getwd()
+func TestTheConnectionsTheScreenProposesCanActuallyBeSent(t *testing.T) {
+	content, err := os.ReadFile(connectionPanel)
 	if err != nil {
-		t.Fatalf("cannot find the working directory: %v", err)
+		t.Fatalf("cannot read the screen that proposes these connections — if it moved, "+
+			"point this test at its new home rather than deleting it: %v", err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
+
+	block := proposedBlock.FindStringSubmatch(string(content))
+	if block == nil {
+		t.Fatal("the screen no longer declares the connections it proposes; if they moved, " +
+			"update this test rather than deleting the case")
+	}
+	matches := proposedConnection.FindAllStringSubmatch(block[1], -1)
+	if len(matches) == 0 {
+		t.Fatal("the screen proposes no connection at all; if the proposals moved, update " +
+			"this test rather than deleting the case")
+	}
+
+	for _, match := range matches {
+		driver, proposal := match[1], asWritten(match[2])
+
+		if err := secrets.ValidateDatabaseURL(proposal); err != nil {
+			t.Errorf("the %s connection offered as a starting point names no database: %v",
+				driver, err)
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("no go.mod above %s", dir)
+		composed, err := Compose(driver, proposal, "irrelevant")
+		if err != nil {
+			t.Errorf("the %s connection offered as a starting point cannot be composed, so "+
+				"anybody starting from it is refused: %v", driver, err)
+			continue
 		}
-		dir = parent
+		// The scheme has to agree with the database it is offered for, or the
+		// screen proposes a connection that reads as the other database and
+		// fails as a login error somewhere else entirely.
+		if composed.Form == FormURL && !strings.HasPrefix(strings.ToLower(proposal), driver) {
+			t.Errorf("the connection offered for %s does not begin with its own scheme: %s",
+				driver, proposal)
+		}
 	}
 }

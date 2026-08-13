@@ -5,6 +5,9 @@ package ownershipsql
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -510,5 +513,34 @@ func TestDriverNamedByScheme(t *testing.T) {
 	}
 	if _, known := DriverNamedByScheme("mysql"); known {
 		t.Error("mysql is named as a database this reads")
+	}
+}
+
+// The screen tells the administrator how to mark where the password goes, and
+// it has to be the marker this package actually substitutes.
+//
+// The spelling is written out in the frontend rather than fetched, because the
+// screen must show it before any call is made — including the very first one,
+// when there is nothing to fetch it from. So the two can drift, and a screen
+// teaching a marker the server does not recognise would refuse every connection
+// typed from it, naming a marker that is on screen in front of them.
+//
+// Read out of the file rather than duplicated here: a copy would be a third
+// spelling to keep true.
+func TestTheMarkerTheScreenTeachesIsTheOneWeSubstitute(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "frontend", "src", "api", "ownership.ts"))
+	if err != nil {
+		t.Fatalf("cannot read the file that tells people how to mark the password — if it "+
+			"moved, point this test at its new home rather than deleting it: %v", err)
+	}
+	declaration := regexp.MustCompile(`PASSWORD_MARKER\s*=\s*"([^"]+)"`).
+		FindStringSubmatch(string(source))
+	if declaration == nil {
+		t.Fatal("the frontend no longer declares PASSWORD_MARKER, so nothing on screen says " +
+			"how to mark where the password goes")
+	}
+	if declaration[1] != PasswordMarker {
+		t.Errorf("the screen tells people to write %q and this substitutes %q — every "+
+			"connection typed from that screen is refused", declaration[1], PasswordMarker)
 	}
 }

@@ -8,6 +8,8 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -43,15 +45,33 @@ func (c *journeyConfig) Set(_ context.Context, key string, value json.RawMessage
 // The journey suite for journeys/ownership-connection.md — "Connecting to a
 // database that is not mine". Run it with `make journey`.
 //
-// Nothing in this journey is built, so this is a todo list rather than an
-// inventory, and every test here is skipped rather than red. That is not a
-// lower standard, it is the honest state: the shape is settled — one visible
-// connection with the password substituted into it — but there is nothing yet
-// to compose, so there is nothing to assert against.
+// The escaping ones in particular are MEASURED against a real SQL Server rather
+// than asserted from argument. That is the whole finding this journey came
+// from, and writing them any other way would reproduce it — several confident
+// wrong answers came out of reasoning about it in one evening.
 //
-// The escaping ones in particular must be MEASURED against a real SQL Server
-// rather than asserted from argument. That is the whole finding this journey
-// came from, and writing them any other way would reproduce it.
+// What remains skipped is what cannot be answered from here rather than what
+// has not been done: an account belonging to a directory needs a server that is
+// in one, and whether a proposed connection helps is a thing only somebody
+// using it can say.
+
+// theConnectionPanel is the screen where a connection is set up. Requirements
+// about what an administrator can SEE are held on that side, and the tests that
+// drive it are in OwnershipConnectionPanel.test.tsx — this reads the screen
+// itself so that a requirement cannot quietly lose its screen without anything
+// noticing. What it proves is that the capability is wired to a screen at all;
+// what it does NOT prove is that the screen behaves, which is what the frontend
+// suite is for.
+func theConnectionPanel(t *testing.T) string {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join("..", "..", "frontend", "src", "pages",
+		"OwnershipConnectionPanel.tsx"))
+	if err != nil {
+		t.Fatalf("there is no screen for setting a connection up — if it moved, point this "+
+			"test at its new home rather than deleting it: %v", err)
+	}
+	return string(source)
+}
 
 // "Only the password out of sight. The address, the database, the account and
 // the domain in plain view, and editable."
@@ -181,9 +201,14 @@ func TestJourney_IAmToldHowToMarkWhereThePasswordGoes(t *testing.T) {
 		t.Errorf("the refusal does not tell me what to write: %v", err)
 	}
 
-	t.Skip("The refusal names the marker; no screen does. Nothing shows the administrator " +
-		"how to mark the position before they get it wrong, which is the half of this " +
-		"requirement that is about being told rather than being refused.")
+	// And the screen says so before they get it wrong, rather than only after.
+	// That the marker it teaches is the one this code substitutes is held by
+	// TestTheMarkerTheScreenTeachesIsTheOneWeSubstitute in internal/ownershipsql;
+	// that it reaches the page is held by OwnershipConnectionPanel.test.tsx.
+	if !strings.Contains(theConnectionPanel(t), "PASSWORD_MARKER") {
+		t.Error("the screen where a connection is written says nothing about how to mark " +
+			"where the password goes, so the marker is a thing to be got wrong")
+	}
 }
 
 // "It must not quietly rewrite anything the administrator can see: typing an
@@ -290,19 +315,32 @@ func TestJourney_IAmShownWhatWillActuallyBeSent(t *testing.T) {
 			"read what was sent")
 	}
 
-	t.Skip("The composing and masking exist, are measured, and an endpoint now answers with " +
-		"them — but no screen displays one, so the administrator still cannot read what was " +
-		"sent without asking the API themselves. Remove this skip when the import screen " +
-		"shows the composed connection.")
+	// And a screen shows it. What it looks like when it does is held by
+	// OwnershipConnectionPanel.test.tsx ("shows what will actually be sent,
+	// masked").
+	if !strings.Contains(theConnectionPanel(t), "showOwnershipConnection") {
+		t.Error("no screen asks what a connection composes to, so the administrator still " +
+			"cannot read what was sent")
+	}
 }
 
 // "Show me one that would work for the kind of database I picked, filled in
 // with what I have already told you — then let me change any of it."
 func TestJourney_AConnectionIsProposedAndICanOverrideIt(t *testing.T) {
-	t.Skip("TODO: nothing proposes a connection. The shape is settled — one visible string " +
-		"with the password substituted in — so what is missing is a starting example per " +
-		"kind of database, filled in from what has already been said and freely editable " +
-		"afterwards.")
+	// One per kind of database, and each one composes and names its database —
+	// held by TestTheConnectionsTheScreenProposesCanActuallyBeSent in
+	// internal/ownershipsql, which reads them off the screen itself. That they
+	// can then be edited, and that editing is not undone by changing the
+	// database, is held by OwnershipConnectionPanel.test.tsx.
+	panel := theConnectionPanel(t)
+	if !strings.Contains(panel, "PROPOSED") {
+		t.Error("nothing proposes a connection, so every one is written from nothing")
+	}
+	for _, database := range []string{"sqlserver", "postgres"} {
+		if !strings.Contains(panel, database+"://") {
+			t.Errorf("no connection is proposed for %s", database)
+		}
+	}
 }
 
 // "To test it before going any further. Asking for the list of tables is not a
@@ -338,10 +376,13 @@ func TestJourney_ICanTestTheConnectionBeforeBrowsingIt(t *testing.T) {
 		t.Error("there is no way to ask whether a connection works except by trying to use it")
 	}
 
-	t.Skip("Testing a connection is built, measured, and has an address of its own — but the " +
-		"import screen does not offer it. Browsing tables is still the first thing that " +
-		"really connects there, which is the conflation this requirement rejects. Remove " +
-		"this skip when the screen has a test of its own.")
+	// And the screen offers it as its own act, before anything is browsed. What
+	// the five answers look like on the page is held by
+	// OwnershipConnectionPanel.test.tsx.
+	if !strings.Contains(theConnectionPanel(t), "testOwnershipConnection") {
+		t.Error("the screen offers no connection test, so browsing tables is still the first " +
+			"thing that really connects — the conflation this requirement rejects")
+	}
 }
 
 // "A failure that tells me which of the five it was, in the words of whatever
