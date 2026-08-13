@@ -261,6 +261,12 @@ var apiDocs = map[string]string{
 	"PUT /api/v1/kitchen/batches/{id}":                                   "Change what is in a batch.",
 	"PUT /api/v1/owners/{name}":                                          "Correct an owner's details.",
 	"PUT /api/v1/ownership/import/mappings/{id}":                         "Change a saved import.",
+	"DELETE /api/v1/ownership/import/connections/{name}":                 "Remove a stored database connection.",
+	"GET /api/v1/ownership/import/connections":                           "The database connections an import can read through — readable, with only the password held elsewhere.",
+	"GET /api/v1/ownership/import/connections/{name}":                    "One database connection, as it was written.",
+	"POST /api/v1/ownership/import/connections":                          "Keep a database connection, naming the credential that holds its password.",
+	"POST /api/v1/ownership/import/show-connection":                      "Show what a connection will send, with the password masked.",
+	"POST /api/v1/ownership/import/test-connection":                      "Ask the server whether a connection works, and say which of five things failed.",
 }
 
 // What a handler requires beyond the wrapper its route was registered with.
@@ -286,7 +292,13 @@ var apiRoles = map[string]RouteRole{
 	"DELETE /api/v1/owners/{name}/assignments/{id}":        RoleOperator,
 	"DELETE /api/v1/ownership/aliases":                     RoleOperator,
 	"DELETE /api/v1/ownership/aliases/{id}":                RoleOperator,
+	"DELETE /api/v1/ownership/import/connections/{name}":   RoleAdmin,
 	"DELETE /api/v1/ownership/import/mappings/{id}":        RoleAdmin,
+	"GET /api/v1/ownership/import/connections":             RoleAdmin,
+	"GET /api/v1/ownership/import/connections/{name}":      RoleAdmin,
+	"POST /api/v1/ownership/import/connections":            RoleAdmin,
+	"POST /api/v1/ownership/import/show-connection":        RoleAdmin,
+	"POST /api/v1/ownership/import/test-connection":        RoleAdmin,
 	"GET /api/v1/cookstyle/cops/{cop_name}/classification": RoleAdmin,
 	"GET /api/v1/ownership/duplicates":                     RoleAdmin,
 	"GET /api/v1/ownership/duplicates/dismissed":           RoleAdmin,
@@ -433,6 +445,12 @@ var unpaginatedDespiteReaching = map[string]bool{
 	"/api/v1/ownership/import/preview":    true,
 	"/api/v1/ownership/import/commit":     true,
 	"/api/v1/ownership/import/clear":      true,
+	// Setting a connection up: a list short enough to read whole, two verbs
+	// that answer about one connection, and one that answers about a server.
+	"/api/v1/ownership/import/connections":     true,
+	"/api/v1/ownership/import/connections/":    true,
+	"/api/v1/ownership/import/show-connection": true,
+	"/api/v1/ownership/import/test-connection": true,
 	// handleOwnershipEndpoints, likewise.
 	"/api/v1/ownership/lookup":   true,
 	"/api/v1/ownership/reassign": true,

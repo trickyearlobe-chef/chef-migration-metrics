@@ -105,6 +105,15 @@ func (r *Router) handleOwnershipIntake(w http.ResponseWriter, req *http.Request)
 	switch {
 	case path == "/api/v1/ownership/import/rejections":
 		r.handleOwnershipImportRejections(w, req)
+	case path == "/api/v1/ownership/import/connections":
+		r.handleOwnershipConnections(w, req)
+	case strings.HasPrefix(path, "/api/v1/ownership/import/connections/"):
+		r.handleOwnershipConnectionItem(w, req,
+			strings.TrimPrefix(path, "/api/v1/ownership/import/connections/"))
+	case path == "/api/v1/ownership/import/show-connection":
+		r.handleShowOwnershipConnection(w, req)
+	case path == "/api/v1/ownership/import/test-connection":
+		r.handleTestOwnershipConnection(w, req)
 	case path == "/api/v1/ownership/import/tables":
 		r.handleIntakeListTables(w, req)
 	case path == "/api/v1/ownership/import/profile":

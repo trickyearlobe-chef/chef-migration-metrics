@@ -1,4 +1,12 @@
 {
+  "DELETE /api/v1/ownership/import/connections/{name}": {
+    "properties": {
+      "deleted": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
   "GET /api/v1/admin/config/analysis-tools": {
     "properties": {
       "value": {
@@ -4350,6 +4358,62 @@
     },
     "type": "object"
   },
+  "GET /api/v1/ownership/import/connections": {
+    "properties": {
+      "data": {
+        "items": {
+          "properties": {
+            "connection": {
+              "type": "string"
+            },
+            "driver": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "password_credential": {
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "updated_by": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "type": "object"
+  },
+  "GET /api/v1/ownership/import/connections/{name}": {
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "driver": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "password_credential": {
+        "type": "string"
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "updated_by": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
   "GET /api/v1/remediation/priority": {
     "properties": {
       "data": {
@@ -5065,6 +5129,61 @@
         "type": "string"
       },
       "result": {}
+    },
+    "type": "object"
+  },
+  "POST /api/v1/ownership/import/connections": {
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "driver": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "password_credential": {
+        "type": "string"
+      },
+      "updated_at": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "updated_by": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "POST /api/v1/ownership/import/show-connection": {
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "driver": {
+        "type": "string"
+      },
+      "form": {
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "POST /api/v1/ownership/import/test-connection": {
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "detail": {
+        "type": "string"
+      },
+      "form": {
+        "type": "string"
+      },
+      "outcome": {
+        "type": "string"
+      }
     },
     "type": "object"
   },

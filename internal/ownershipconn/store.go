@@ -198,19 +198,11 @@ func Validate(conn Connection) (Connection, error) {
 			"ownershipconn: the connection must name the stored credential holding its password")
 	}
 
-	// The scheme already says which database this is, so it is read rather
-	// than asked for a second time — and a keyword-shaped connection carries
-	// no scheme, so for that shape it still has to be said.
-	if scheme, _, isURL := strings.Cut(conn.Connection, "://"); isURL && conn.Driver == "" {
-		if named, known := ownershipsql.DriverNamedByScheme(scheme); known {
-			conn.Driver = named
-		}
+	driver, err := ResolveDriver(conn.Driver, conn.Connection)
+	if err != nil {
+		return Connection{}, err
 	}
-	if !ownershipsql.IsSupportedDriver(conn.Driver) {
-		return Connection{}, fmt.Errorf(
-			"ownershipconn: say which database this connection is for (%s) — its own spelling does not",
-			strings.Join(ownershipsql.SupportedDrivers, " or "))
-	}
+	conn.Driver = driver
 
 	// A connection has to name the database it reads. Checked by the same code
 	// that checks a stored credential, so the two cannot drift apart — they
@@ -230,6 +222,28 @@ func Validate(conn Connection) (Connection, error) {
 	}
 
 	return conn, nil
+}
+
+// ResolveDriver says which database reads a connection: the one chosen, or the
+// one the connection's own scheme names when nothing was chosen.
+//
+// A URL-shaped connection already says which database it is for, so asking a
+// second time is not merely redundant — the two can disagree, and neither
+// driver says so when they do. A keyword-shaped connection carries no scheme,
+// so for that shape somebody still has to say.
+func ResolveDriver(driver, connection string) (string, error) {
+	driver = strings.TrimSpace(driver)
+	if scheme, _, isURL := strings.Cut(strings.TrimSpace(connection), "://"); isURL && driver == "" {
+		if named, known := ownershipsql.DriverNamedByScheme(scheme); known {
+			driver = named
+		}
+	}
+	if !ownershipsql.IsSupportedDriver(driver) {
+		return "", fmt.Errorf(
+			"ownershipconn: say which database this connection is for (%s) — its own spelling does not",
+			strings.Join(ownershipsql.SupportedDrivers, " or "))
+	}
+	return driver, nil
 }
 
 // read returns the stored document, or an empty one when nothing is stored.

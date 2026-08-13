@@ -283,10 +283,17 @@ func TestJourney_IAmShownWhatWillActuallyBeSent(t *testing.T) {
 		t.Errorf("the password is in what I am shown: %s", composed.Masked)
 	}
 
-	t.Skip("The composing and masking exist and are measured; nothing SHOWS them. No " +
-		"endpoint returns a masked connection and no screen displays one, so the " +
-		"administrator still cannot read what was sent — which is the requirement. " +
-		"Remove this skip when the import screen shows the composed connection.")
+	// And it is reachable: an address answers with the composed connection,
+	// masked, for a connection that has not been stored yet.
+	if !reaches(t, "POST", "/api/v1/ownership/import/show-connection") {
+		t.Error("nothing will say what a connection composes to, so the administrator cannot " +
+			"read what was sent")
+	}
+
+	t.Skip("The composing and masking exist, are measured, and an endpoint now answers with " +
+		"them — but no screen displays one, so the administrator still cannot read what was " +
+		"sent without asking the API themselves. Remove this skip when the import screen " +
+		"shows the composed connection.")
 }
 
 // "Show me one that would work for the kind of database I picked, filled in
@@ -325,10 +332,16 @@ func TestJourney_ICanTestTheConnectionBeforeBrowsingIt(t *testing.T) {
 			"list already did")
 	}
 
-	t.Skip("Testing a connection is built and measured; the import screen does not offer " +
-		"it. Browsing tables is still the first thing that really connects there, which is " +
-		"the conflation this requirement rejects. Remove this skip when the screen has a " +
-		"test of its own.")
+	// And it is its own address, answerable before anything is stored — the
+	// order this is actually done in: compose, test, then keep.
+	if !reaches(t, "POST", "/api/v1/ownership/import/test-connection") {
+		t.Error("there is no way to ask whether a connection works except by trying to use it")
+	}
+
+	t.Skip("Testing a connection is built, measured, and has an address of its own — but the " +
+		"import screen does not offer it. Browsing tables is still the first thing that " +
+		"really connects there, which is the conflation this requirement rejects. Remove " +
+		"this skip when the screen has a test of its own.")
 }
 
 // "A failure that tells me which of the five it was, in the words of whatever
@@ -383,13 +396,26 @@ func TestJourney_AFailedConnectionSaysWhichOfTheFiveThingsFailed(t *testing.T) {
 
 // "To be told when the account is not the database's to check."
 func TestJourney_IAmToldWhenTheAccountIsNotTheDatabasesToCheck(t *testing.T) {
-	t.Skip("TODO: nothing tests a connection, so nothing can report this. The behaviour " +
-		"underneath is measured — TestFunctional_MSSQL_ABackslashAccountAsksForIntegratedAuthentication " +
-		"in internal/ownershipsql shows that anything before a backslash, whether a domain, a " +
-		"machine name, a workgroup or a dot, hands the login to a directory rather than to the " +
-		"database. What is missing is saying so. This refusal is also the only one that does " +
-		"not name the account back, so it is the one where the composed connection is all the " +
-		"administrator has.")
+	// It is one of the answers a connection test can give, rather than being
+	// filed under a refused login — which would send somebody to argue with
+	// the owner of an account that was never the database's to check.
+	if ownershipsql.OutcomeUntrustedDomain == ownershipsql.OutcomeRefused {
+		t.Error("an account handed to a directory reports as a refused login, which names " +
+			"the wrong team")
+	}
+	if !reaches(t, "POST", "/api/v1/ownership/import/test-connection") {
+		t.Error("nothing tests a connection, so nothing can report this")
+	}
+
+	t.Skip("The reporting exists and the behaviour underneath is measured — " +
+		"TestFunctional_MSSQL_ABackslashAccountAsksForIntegratedAuthentication in " +
+		"internal/ownershipsql shows that anything before a backslash, whether a domain, a " +
+		"machine name, a workgroup or a dot, hands the login to a directory rather than to " +
+		"the database. What cannot be answered here is whether the right words come back " +
+		"from a server that really is in a domain: ours belongs to nobody's list of people " +
+		"and will not accept an account that looks as though it does. This refusal is also " +
+		"the only one that does not name the account back, so it is the one where the " +
+		"composed connection is all the administrator has.")
 }
 
 // "except for my password, which must never come back to me in a message."

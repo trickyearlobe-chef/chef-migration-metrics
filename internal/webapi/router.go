@@ -27,6 +27,8 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/hypervisor"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipconn"
+	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipsql"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/perf"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
@@ -1093,6 +1095,22 @@ func (r *Router) registerRoutes() {
 		sub("{id}", "GET", "PUT", "DELETE"), sub("{id}/run", "POST"),
 		subTakes("{id}", "PUT", importMappingRequest{}))
 	r.protect("/api/v1/ownership/import/clear", r.handleOwnershipIntake, methods("GET", "POST"))
+	// Setting up the connection an import reads through: readable configuration
+	// beside an encrypted password. See journeys/ownership-connection.md.
+	r.protect("/api/v1/ownership/import/connections", r.handleOwnershipIntake,
+		methods("GET", "POST"), takes("POST", ownershipConnectionRequest{}),
+		answers("GET", ownershipConnectionsResponse{}),
+		answers("POST", ownershipconn.Connection{}))
+	r.protect("/api/v1/ownership/import/connections/", r.handleOwnershipIntake,
+		sub("{name}", "GET", "DELETE"),
+		subAnswers("{name}", "GET", ownershipconn.Connection{}),
+		subAnswers("{name}", "DELETE", deletedConnectionResponse{}))
+	r.protect("/api/v1/ownership/import/show-connection", r.handleOwnershipIntake,
+		methods("POST"), takes("POST", showConnectionRequest{}),
+		answers("POST", composedConnectionResponse{}))
+	r.protect("/api/v1/ownership/import/test-connection", r.handleOwnershipIntake,
+		methods("POST"), takes("POST", testConnectionRequest{}),
+		answers("POST", ownershipsql.Result{}))
 	r.protect("/api/v1/ownership/aliases", r.handleOwnershipAliases,
 		methods("GET", "POST", "DELETE"), takes("POST", createOwnerAliasRequest{}))
 	r.protect("/api/v1/ownership/aliases/", r.handleOwnershipAliases,
