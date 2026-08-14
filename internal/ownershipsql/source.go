@@ -235,7 +235,22 @@ func (s *sqlSource) Next() bool {
 
 func (s *sqlSource) Row() ownershipimport.Row { return s.row }
 
-func (s *sqlSource) Err() error { return redactErr(s.err, s.password) }
+// Err reports what stopped the read, and how far it had got.
+//
+// The count is the difference between "it was killed" and a measurement: how
+// much arrived before the failure is what says whether a source of that size
+// can be read across the link, and whether a filter has helped. The count is
+// already kept.
+func (s *sqlSource) Err() error {
+	if s.err == nil {
+		return nil
+	}
+	if s.number == 0 {
+		// Nothing was read, so there is nothing to say about how far it got.
+		return redactErr(s.err, s.password)
+	}
+	return redactErr(fmt.Errorf("%w (after %d rows)", s.err, s.number), s.password)
+}
 
 func (s *sqlSource) Close() error {
 	rowsErr := s.rows.Close()
