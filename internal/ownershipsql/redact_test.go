@@ -29,6 +29,15 @@ func serverErrorCarrying(message string, number int32, severity uint8, line int3
 	}}
 }
 
+// serverErrorCarryingAll is the same with the whole list the server sent, which
+// is how a killed process really arrives: the cause first, the consequence
+// last, and the driver reporting the last one.
+func serverErrorCarryingAll(all ...mssql.Error) error {
+	last := all[len(all)-1]
+	last.All = all
+	return serverErrorShape{inner: last}
+}
+
 // The password must not come back in anything anybody reads.
 //
 // This is the one on the list that fails dangerously rather than annoyingly.
@@ -200,5 +209,43 @@ func TestTheHiddenMessageIsRedactedToo(t *testing.T) {
 	}
 	if !strings.Contains(cleaned.Error(), "Login failed") {
 		t.Errorf("redaction took away the message it was meant to keep: %v", cleaned)
+	}
+}
+
+// The cause, not only the consequence.
+//
+// Measured against a running server 2026-08-14, after a customer's read was
+// killed: SQL Server sent three errors and the driver reports the last, which
+// says the session is in the kill state. That is what happened AFTER the thing
+// that went wrong. The reason is the first, and it was being thrown away — so
+// the customer read a fixed string, then a consequence, and still did not know
+// why.
+func TestEveryThingTheServerSaidIsCarried(t *testing.T) {
+	killed := serverErrorCarryingAll(
+		mssql.Error{Number: 1222, Class: 16, Message: "Lock request time out period exceeded."},
+		mssql.Error{Number: 2745, Class: 16, Message: "Process ID 60 has raised user error."},
+		mssql.Error{Number: 596, Class: 21, Message: "Cannot continue the execution because the session is in the kill state."},
+	)
+
+	// Baseline: the driver's own rendering gives the consequence and not the
+	// cause, so finding the cause below is this code carrying it.
+	if strings.Contains(killed.Error(), "Lock request") {
+		t.Fatal("the fixture proves nothing: the driver already reports the first error")
+	}
+
+	explained := explainDriverError(fmt.Errorf("ownershipsql: running the query: %w", killed)).Error()
+	if !strings.Contains(explained, "Lock request time out period exceeded") {
+		t.Errorf("the reason the query failed is not in what the reader is shown: %s", explained)
+	}
+	if !strings.Contains(explained, "kill state") {
+		t.Errorf("what actually stopped it is no longer shown: %s", explained)
+	}
+	// In the order the server said them, so the first thing read is the cause.
+	if strings.Index(explained, "Lock request") > strings.Index(explained, "kill state") {
+		t.Errorf("the consequence is shown before the cause: %s", explained)
+	}
+	// Said once each.
+	if strings.Count(explained, "kill state") != 1 {
+		t.Errorf("an error is repeated, which makes a list of three read as a wall: %s", explained)
 	}
 }

@@ -48,13 +48,44 @@ func explainDriverError(err error) error {
 		return err
 	}
 
-	// The number, the severity and the line are what somebody searches for and
-	// what a DBA asks for first. They cost a few characters and they are the
-	// difference between a message and a lead.
-	detail := fmt.Sprintf("%s (SQL Server error %d, severity %d, line %d)",
-		strings.TrimSuffix(inner.Message, "."), inner.Number, inner.Class, inner.LineNo)
+	return explainedError{message: err.Error() + ": " + describeAll(inner), cause: err}
+}
 
-	return explainedError{message: err.Error() + ": " + detail, cause: err}
+// describeAll renders everything the server said, in the order it said it.
+//
+// SQL Server sends a list and the driver reports the last of it. For a killed
+// process the last is "the session is in the kill state", which is what
+// happened AFTER the thing that went wrong — so reporting it alone tells
+// somebody their query stopped and not why. Measured 2026-08-14 against a
+// running server: a terminated process arrived as three errors, the reason
+// first and that consequence last, and a customer read only the consequence.
+//
+// So the whole list goes out, cause first. It is longer than one line and that
+// is the point: the first sentence is the answer, and the rest is what a DBA
+// will ask about next.
+func describeAll(inner mssql.Error) string {
+	said := inner.All
+	if len(said) == 0 {
+		said = []mssql.Error{inner}
+	}
+	parts := make([]string, 0, len(said))
+	for _, e := range said {
+		if strings.TrimSpace(e.Message) == "" {
+			continue
+		}
+		parts = append(parts, describeOne(e))
+	}
+	if len(parts) == 0 {
+		return describeOne(inner)
+	}
+	return strings.Join(parts, "; then ")
+}
+
+// describeOne is one of the server's errors with what a DBA asks for first: the
+// number, the severity and the line.
+func describeOne(e mssql.Error) string {
+	return fmt.Sprintf("%s (SQL Server error %d, severity %d, line %d)",
+		strings.TrimSuffix(strings.TrimSpace(e.Message), "."), e.Number, e.Class, e.LineNo)
 }
 
 // explainedError carries the fuller message and keeps the original reachable,
