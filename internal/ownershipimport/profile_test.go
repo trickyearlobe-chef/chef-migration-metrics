@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func profileCSV(t *testing.T, in string) SourceProfile {
@@ -223,3 +224,51 @@ func TestProfile_BoundsDistinctTracking(t *testing.T) {
 		t.Error("unique_id: the count is capped but does not say so, which reads as an exact figure")
 	}
 }
+
+// How long reading took, beside how much was read.
+//
+// The two together are a throughput: not "did it fail" but "how fast is this,
+// and can a source of this size be read across this link at all".
+func TestProfileSaysHowLongTheReadTook(t *testing.T) {
+	profile, err := Profile(&sleepingSource{
+		columns: []string{"owner"},
+		rows:    []string{"alice", "bob"},
+		perRow:  30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("profiling: %v", err)
+	}
+	// Baseline: the rows really were read, so a duration below is time spent
+	// reading rather than time spent doing nothing.
+	if profile.RowCount != 2 {
+		t.Fatalf("the fixture proves nothing: %d rows were read", profile.RowCount)
+	}
+	if profile.DurationMS < 50 {
+		t.Errorf("reading two rows that each took 30ms is reported as %dms, so the number "+
+			"is not measuring the read", profile.DurationMS)
+	}
+}
+
+// sleepingSource is a source that takes its time, so a duration can be
+// asserted without asserting that a fast machine is slow.
+type sleepingSource struct {
+	columns []string
+	rows    []string
+	perRow  time.Duration
+	at      int
+	row     Row
+}
+
+func (s *sleepingSource) Columns() []string { return s.columns }
+func (s *sleepingSource) Next() bool {
+	if s.at >= len(s.rows) {
+		return false
+	}
+	time.Sleep(s.perRow)
+	s.at++
+	s.row = Row{Number: s.at, Values: map[string]string{s.columns[0]: s.rows[s.at-1]}}
+	return true
+}
+func (s *sleepingSource) Row() Row     { return s.row }
+func (s *sleepingSource) Err() error   { return nil }
+func (s *sleepingSource) Close() error { return nil }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A read that dies part-way says how far it got.
@@ -24,11 +25,21 @@ func TestAReadThatDiesPartWaySaysHowFarItGot(t *testing.T) {
 			"mentions rows")
 	}
 
-	partWay := &sqlSource{err: errors.New("killed"), number: 412_317}
+	partWay := &sqlSource{
+		err:     errors.New("killed"),
+		number:  412_317,
+		started: time.Now().Add(-25 * time.Second),
+	}
 	got := partWay.Err().Error()
 	if !strings.Contains(got, "412317") && !strings.Contains(got, "412,317") {
 		t.Errorf("the failure does not say how far the read got, so nobody can tell whether "+
 			"it managed five thousand rows or four hundred thousand: %s", got)
+	}
+	// With the time beside it the two are a throughput, which is what decides
+	// whether a source of a given size can be read across a given link.
+	if !strings.Contains(got, "25s") {
+		t.Errorf("the failure does not say how long the read lasted, so the count is a "+
+			"number without a rate: %s", got)
 	}
 	if !strings.Contains(got, "killed") {
 		t.Errorf("saying how far it got lost what actually went wrong: %s", got)

@@ -139,6 +139,11 @@ type sqlSource struct {
 	// password is kept only to take it back out of anything the driver says
 	// while rows are being read.
 	password string
+	// started is when the first row was asked for, so a read that fails can
+	// say how long it lasted as well as how far it got. Together those two are
+	// a throughput, which is what decides whether a source of a given size can
+	// be read across a given link at all.
+	started time.Time
 }
 
 // Open connects, runs the query and returns a source positioned before the
@@ -199,7 +204,8 @@ func Open(ctx context.Context, cfg Config) (src ownershipimport.RowSource, err e
 		return nil, fmt.Errorf("ownershipsql: reading the result columns: %w", err)
 	}
 
-	s := &sqlSource{db: db, rows: rows, columns: columns, password: cfg.Password}
+	s := &sqlSource{db: db, rows: rows, columns: columns, password: cfg.Password,
+		started: time.Now()}
 	s.scan = make([]any, len(columns))
 	s.ptrs = make([]any, len(columns))
 	for i := range s.scan {
@@ -249,7 +255,17 @@ func (s *sqlSource) Err() error {
 		// Nothing was read, so there is nothing to say about how far it got.
 		return redactErr(s.err, s.password)
 	}
-	return redactErr(fmt.Errorf("%w (after %d rows)", s.err, s.number), s.password)
+	return redactErr(fmt.Errorf("%w (after %d rows in %s)",
+		s.err, s.number, s.elapsed()), s.password)
+}
+
+// elapsed is how long the read lasted, rounded to something a person reads
+// rather than a duration with six decimal places in it.
+func (s *sqlSource) elapsed() time.Duration {
+	if s.started.IsZero() {
+		return 0
+	}
+	return time.Since(s.started).Round(100 * time.Millisecond)
 }
 
 func (s *sqlSource) Close() error {

@@ -159,6 +159,10 @@ export interface IntakeColumnProfile {
 export interface IntakeSourceProfile {
   columns: IntakeColumnProfile[];
   row_count: number;
+  /** How long reading the source took. Beside the row count it is a
+   * throughput, which is what says whether a source of a given size can be
+   * read across this link at all. */
+  duration_ms?: number;
   /** Source rows skipped by the import filter. Not failures — they were
    * asked to be left out. */
   filtered_out?: number;

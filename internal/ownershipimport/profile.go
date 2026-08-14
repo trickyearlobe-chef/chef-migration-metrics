@@ -3,7 +3,10 @@
 
 package ownershipimport
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // MaxSampleValues caps the de-duplicated sample values reported per column.
 // Ten is enough to recognise what a column holds; identical samples tell the
@@ -41,10 +44,17 @@ type ColumnProfile struct {
 
 // SourceProfile is what the profile endpoint returns. It persists nothing.
 type SourceProfile struct {
-	Columns       []ColumnProfile `json:"columns"`
-	RowCount      int             `json:"row_count"`
-	MalformedRows int             `json:"malformed_rows"`
-	Warnings      []string        `json:"warnings"`
+	Columns  []ColumnProfile `json:"columns"`
+	RowCount int             `json:"row_count"`
+	// DurationMS is how long reading the source took.
+	//
+	// Beside the row count it is a throughput, and that is what decides
+	// whether a source of a given size can be read across a given link at all.
+	// A customer whose read was killed part-way could not answer that question
+	// from anything on screen, and it is the question that comes first.
+	DurationMS    int64    `json:"duration_ms"`
+	MalformedRows int      `json:"malformed_rows"`
+	Warnings      []string `json:"warnings"`
 }
 
 // Profile reads a source to the end and describes its columns.
@@ -52,6 +62,7 @@ type SourceProfile struct {
 // Columns are reported in source order, because that is how the administrator
 // sees them in their own tooling.
 func Profile(src RowSource) (SourceProfile, error) {
+	startedAt := time.Now()
 	columns := src.Columns()
 
 	distinct := make([]map[string]bool, len(columns))
@@ -132,5 +143,6 @@ func Profile(src RowSource) (SourceProfile, error) {
 		}
 	}
 
+	profile.DurationMS = time.Since(startedAt).Milliseconds()
 	return profile, nil
 }
