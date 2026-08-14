@@ -9,6 +9,13 @@ hardening, and one display-only bug. Sourcing model: only minimal values come fr
 env/`config.yaml`; client keys live in the DB via the UI (see
 [[credential-sourcing-model]]) — env-var sourcing for client keys is out of scope.
 
+## Setting up git access
+
+- [ ] **Nothing in CMM manages SSH: `git clone` inherits whatever identity and `known_hosts`
+  the service account has.** Requirement and the decisions behind it:
+  `journeys/service-git-access.md`, suite `internal/webapi/service_git_access_journey_test.go`,
+  which recomputes what is outstanding. Do not restate the requirement here.
+
 ## Bugs
 
 - [ ] **Status page mislabels config-synced orgs' credential source as "file"**
