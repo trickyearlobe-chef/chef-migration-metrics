@@ -50,6 +50,7 @@ set centrally.
 | [Changing it without downtime](service-configuration.md) | Can I change a setting from the screen? |
 | [Finding the setting I came for](admin-navigation.md) | Where is it, and will I find it again? |
 | [Credentials that stay secret](service-secrets.md) | Where are the passwords, and who can read them? |
+| [Letting it reach our git servers](service-git-access.md) | Which key do I paste in, and is that really them? |
 | [Keeping the data flowing](service-collection.md) | Is it still collecting, and would I know? |
 | [Diagnosing a box I cannot reach](service-diagnosis.md) | What do I send support, and is it safe to send? |
 | [Not losing it](service-continuity.md) | Can I restore, and can I upgrade without loss? |
