@@ -7,12 +7,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	mssql "github.com/microsoft/go-mssqldb"
 
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/auth"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
@@ -1367,5 +1370,37 @@ func TestIntakePreview_DoesNotTouchTheStoredFindings(t *testing.T) {
 
 	if called {
 		t.Error("a preview replaced the stored findings, so a dry run wipes the work list")
+	}
+}
+
+// The shape note belongs to a connection nobody could read, not to a server
+// that answered.
+//
+// Found at the customer 2026-08-14: a query with SQL Server's syntax written
+// wrongly came back with the server's complaint followed by a paragraph about
+// backslashes in the account and how to percent-encode them. The connection was
+// fine — it had authenticated and listed tables — so every word of that was
+// about something that was not wrong, attached to a failure it had nothing to
+// do with.
+func TestIntake_TheShapeNoteIsNotAttachedWhenTheServerAnswered(t *testing.T) {
+	// A refusal in the server's own words, as the driver hands it over.
+	answered := mssql.Error{Message: "Incorrect syntax near '50'.", Number: 102, Class: 15}
+
+	if shapeWorthShowing(answered) {
+		t.Error("the shape of the connection is described when the server itself refused the " +
+			"query — the connection plainly worked, so the note describes something that is " +
+			"not wrong and sends the reader to the wrong place")
+	}
+}
+
+// The baseline: it is still attached when nothing answered, which is what it
+// exists for. A connection that could not be read or reached is exactly the
+// case where nobody can see what was sent.
+func TestIntake_TheShapeNoteIsStillAttachedWhenNothingAnswered(t *testing.T) {
+	unreachable := errors.New("unable to open tcp connection with host 'dbhost.example.com:1433'")
+
+	if !shapeWorthShowing(unreachable) {
+		t.Error("the shape is withheld when nothing answered, which is the one case it was " +
+			"written for")
 	}
 }

@@ -74,13 +74,20 @@ func passwordSpellings(password string) []string {
 	return out
 }
 
-// redactErr returns err with every spelling of the password taken out, while
-// keeping it chainable — callers still need errors.Is to work, because which
-// of the five things failed is decided by the cause and not by the words.
+// redactErr returns the error as somebody may safely read it: anything the
+// driver hid put back, and every spelling of the password taken out. It stays
+// chainable — callers still need errors.Is to work, because which of the five
+// things failed is decided by the cause and not by the words.
+//
+// Both halves are done here, in the one place every path out already goes
+// through, for the same reason: a path added later that remembers to do it by
+// hand is not a rule, and one that forgets is how a password reaches a log or a
+// diagnosis never reaches a screen.
 func redactErr(err error, password string) error {
 	if err == nil {
 		return nil
 	}
+	err = explainDriverError(err)
 	cleaned := RedactPassword(err.Error(), password)
 	if cleaned == err.Error() {
 		return err
