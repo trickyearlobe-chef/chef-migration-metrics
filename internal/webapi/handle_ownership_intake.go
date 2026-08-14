@@ -15,6 +15,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lib/pq"
+	mssql "github.com/microsoft/go-mssqldb"
+
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/collector"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/datastore"
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/ownershipimport"
@@ -1178,6 +1181,30 @@ func trimReportRows(rows []ownershipimport.ReportRow, truncated *bool) []ownersh
 // an uploaded file.
 const intakeSourceDatabase = "database"
 
+// shapeWorthShowing reports whether describing the connection's shape would
+// help with this failure.
+//
+// It exists for the connection nobody can read: an unreachable host, a string
+// the driver would not parse, a TLS refusal that says nothing about what was
+// sent. Whoever is debugging that works in a locked-down desktop that cannot
+// take a screenshot, so a line of text describing the shape is the only thing
+// that carries a diagnosis.
+//
+// Once the SERVER has answered, none of that applies. It read the connection,
+// authenticated, and refused what it was asked — so the shape describes
+// something that is demonstrably not wrong. Found at the customer 2026-08-14:
+// a query with SQL Server's syntax written wrongly came back with the server's
+// own complaint followed by advice about percent-encoding the backslash in
+// their account, which had just worked.
+func shapeWorthShowing(err error) bool {
+	var fromSQLServer mssql.Error
+	if errors.As(err, &fromSQLServer) {
+		return false
+	}
+	var fromPostgres *pq.Error
+	return !errors.As(err, &fromPostgres)
+}
+
 // openIntakeDatabaseSource opens a RowSource over a query against a database.
 //
 // The connection string is never accepted from the request. It is read from a
@@ -1210,9 +1237,12 @@ func (r *Router) openIntakeDatabaseSource(w http.ResponseWriter, req *http.Reque
 		// that cannot take a screenshot — so a log line they can transfer out as
 		// text is the only thing that carries a diagnosis. The shape holds no
 		// values, and the connection it describes never held the password.
-		shape := secrets.DescribeConnectionShape(cfg.Connection)
-		r.logf("WARN", "ownership/import: opening %s source: %v %s", cfg.Driver, err, shape)
-		WriteBadRequest(w, "Could not read from the database: "+err.Error()+" "+shape)
+		shape := ""
+		if shapeWorthShowing(err) {
+			shape = " " + secrets.DescribeConnectionShape(cfg.Connection)
+		}
+		r.logf("WARN", "ownership/import: opening %s source: %v%s", cfg.Driver, err, shape)
+		WriteBadRequest(w, "Could not read from the database: "+err.Error()+shape)
 		return nil, nil, false
 	}
 
@@ -1248,9 +1278,12 @@ func (r *Router) handleIntakeListTables(w http.ResponseWriter, req *http.Request
 		// The shape travels with the failure, for the reasons given where a
 		// source is opened: the driver's error describes its own disappointment,
 		// not the string it was handed.
-		shape := secrets.DescribeConnectionShape(cfg.Connection)
-		r.logf("WARN", "ownership/import: listing tables on %s: %v %s", cfg.Driver, err, shape)
-		WriteBadRequest(w, "Could not list the tables: "+err.Error()+" "+shape)
+		shape := ""
+		if shapeWorthShowing(err) {
+			shape = " " + secrets.DescribeConnectionShape(cfg.Connection)
+		}
+		r.logf("WARN", "ownership/import: listing tables on %s: %v%s", cfg.Driver, err, shape)
+		WriteBadRequest(w, "Could not list the tables: "+err.Error()+shape)
 		return
 	}
 	if tables == nil {

@@ -8,9 +8,12 @@ package ownershipsql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+
+	mssql "github.com/microsoft/go-mssqldb"
 )
 
 // Which of the five it was, decided by asking real servers to refuse in each of
@@ -251,5 +254,52 @@ func TestFunctional_Postgres_TheConnectionTestSaysWhichOfTheFiveItWas(t *testing
 				}
 			}
 		})
+	}
+}
+
+// What SQL Server said when it aborted the process, rather than six fixed words.
+//
+// Measured, and the reason this test exists: a customer read a table and got
+// "SQL Server had internal error" and nothing else. That string is the driver's
+// own rendering of an aborted process — severity 20 and up — and the real
+// message is wrapped inside it, where nothing on a screen can reach it.
+//
+// A severity-20 error is what aborts a process, so that is what this raises.
+func TestFunctional_MSSQL_AnAbortedProcessSaysWhySQLServerAbortedIt(t *testing.T) {
+	visible := visibleConnection(t, "CMM_TEST_MSSQL_VISIBLE_URL")
+	password := nastyPassword(t)
+
+	_, err := Open(context.Background(), Config{
+		Driver:     DriverSQLServer,
+		Connection: visible,
+		Password:   password,
+		Query:      "RAISERROR('deliberate abort', 20, 1) WITH LOG",
+	})
+	if err == nil {
+		t.Fatal("the server accepted a severity-20 error without aborting, so this measures " +
+			"nothing")
+	}
+
+	// The baseline: the driver's own rendering really is the fixed string, so
+	// what is asserted below is this code digging the message out rather than
+	// the driver having started to say it.
+	var hidden mssql.ServerError
+	if !errors.As(err, &hidden) {
+		t.Skip("the driver no longer wraps an aborted process in ServerError; if it now says " +
+			"what happened by itself, delete this rather than leaving it to assert nothing")
+	}
+	if strings.Contains(hidden.Error(), "kill state") || strings.Contains(hidden.Error(), "596") {
+		t.Fatal("the fixture proves nothing: the driver's wrapper now carries the message")
+	}
+
+	// What the person reading actually gets.
+	for _, want := range []string{"SQL Server error", "severity"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure does not carry %q, so a screen still shows six words that "+
+				"say nothing: %v", want, err)
+		}
+	}
+	if !strings.Contains(err.Error(), "running the query") {
+		t.Errorf("the failure no longer says what we were doing: %v", err)
 	}
 }
