@@ -292,7 +292,16 @@ func TestFunctional_MSSQL_AnAbortedProcessSaysWhySQLServerAbortedIt(t *testing.T
 		t.Fatal("the fixture proves nothing: the driver's wrapper now carries the message")
 	}
 
-	// What the person reading actually gets.
+	// What the person reading actually gets: the reason first, then what it led
+	// to. The reason is the one the server sent first and the driver reports
+	// last, which is how a customer came to read a consequence and nothing else.
+	if !strings.Contains(err.Error(), "deliberate abort") {
+		t.Errorf("the reason the query failed is missing, so the reader gets what happened "+
+			"afterwards and not why: %v", err)
+	}
+	if strings.Index(err.Error(), "deliberate abort") > strings.Index(err.Error(), "kill state") {
+		t.Errorf("the consequence is shown before the cause: %v", err)
+	}
 	for _, want := range []string{"SQL Server error", "severity"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the failure does not carry %q, so a screen still shows six words that "+
