@@ -10,10 +10,7 @@ import (
 	"testing"
 )
 
-// The release workflow publishes a zip of the repository including its .git
-// directory. Two lines in that job decide what ends up inside it, and both are
-// the kind of line an editor or a dependency bump removes without comment.
-// These tests fail when that happens, and say what it costs.
+// Guards on the source-archive job: what the published zip may contain.
 
 const sourceArchiveJob = "source-archive"
 
@@ -28,9 +25,7 @@ func releaseWorkflow(t *testing.T) string {
 	return string(b)
 }
 
-// jobBlock returns the lines of one job, from its `  <name>:` header to the
-// next job at the same indent. Text rather than YAML parsing: this needs no
-// dependency, and the checks below are about lines being present at all.
+// jobBlock returns one job's lines, from its header to the next job.
 func jobBlock(t *testing.T, name string) string {
 	t.Helper()
 
@@ -46,10 +41,7 @@ func jobBlock(t *testing.T, name string) string {
 		}
 	}
 	if start < 0 {
-		t.Fatalf("release.yml has no %q job.\n"+
-			"It produces the only archive carrying the repository's history and tags; the\n"+
-			"generated source zips hold the tagged tree alone. If it was removed on purpose,\n"+
-			"remove these tests in the same change.", name)
+		t.Fatalf("release.yml has no %q job; remove these tests with it", name)
 	}
 
 	for i := start + 1; i < len(lines); i++ {
@@ -61,43 +53,50 @@ func jobBlock(t *testing.T, name string) string {
 	return strings.Join(lines[start:], "\n")
 }
 
-// TestSourceArchiveDoesNotPersistCredentials fails when the checkout in the
-// source-archive job stops disabling credential persistence.
-//
-// actions/checkout otherwise writes an http.extraheader holding a token into
-// .git/config. That file is inside the published archive, so the token would be
-// published with it — and the archive is meant to be copied onto other servers.
+// actions/checkout writes a token into .git/config, and .git is published.
 func TestSourceArchiveDoesNotPersistCredentials(t *testing.T) {
 	block := jobBlock(t, sourceArchiveJob)
 
 	if !strings.Contains(block, "persist-credentials: false") {
-		t.Errorf("the %s job's checkout no longer sets `persist-credentials: false`.\n"+
-			"actions/checkout writes a token into .git/config, and this job publishes .git.\n"+
-			"Restore the line rather than relying on `git clone` to drop it.", sourceArchiveJob)
+		t.Errorf("%s: checkout must set `persist-credentials: false`; .git is published",
+			sourceArchiveJob)
 	}
 }
 
-// TestSourceArchiveClonesWithNoLocal fails when the clone loses --no-local.
-//
-// Cloning a path without it copies the object store wholesale, so every other
-// branch's commits travel inside the archive with no ref pointing at them.
-// `git branch` in the unpacked copy still shows only main, which is what makes
-// this worth a test: the archive looks correct and is not.
+// Without --no-local, clone copies the whole object store: every branch ships,
+// unreferenced and invisible to `git branch`.
 func TestSourceArchiveClonesWithNoLocal(t *testing.T) {
 	block := jobBlock(t, sourceArchiveJob)
 
 	if !strings.Contains(block, "git clone") {
-		t.Fatalf("the %s job no longer clones; these assertions describe a job that "+
-			"no longer exists", sourceArchiveJob)
+		t.Fatalf("%s: no `git clone`", sourceArchiveJob)
 	}
 	if !strings.Contains(block, "--no-local") {
-		t.Errorf("the %s job's `git clone` no longer passes --no-local.\n"+
-			"Without it git copies the whole object store, so branches other than main end\n"+
-			"up in the archive as unreferenced objects — invisible to `git branch`, and\n"+
-			"recoverable by anyone holding the file.", sourceArchiveJob)
+		t.Errorf("%s: `git clone` must pass --no-local, or every branch ships as "+
+			"unreferenced objects", sourceArchiveJob)
 	}
 	if !strings.Contains(block, "--single-branch") {
-		t.Errorf("the %s job's `git clone` no longer passes --single-branch, so the archive\n"+
-			"carries every branch rather than main alone.", sourceArchiveJob)
+		t.Errorf("%s: `git clone` must pass --single-branch", sourceArchiveJob)
+	}
+}
+
+// Tag auto-following varies by git version, so the job must not rely on it.
+func TestSourceArchiveTakesTagsExplicitly(t *testing.T) {
+	block := jobBlock(t, sourceArchiveJob)
+
+	if !strings.Contains(block, "refs/tags/*:refs/tags/*") {
+		t.Errorf("%s: tags must be fetched by refspec, not left to clone", sourceArchiveJob)
+	}
+}
+
+// A stray-tags-only check passes an archive that is missing tags.
+func TestSourceArchiveChecksTagsInBothDirections(t *testing.T) {
+	block := jobBlock(t, sourceArchiveJob)
+
+	if !strings.Contains(block, "--no-merged main") {
+		t.Errorf("%s: must reject tags not reachable from main", sourceArchiveJob)
+	}
+	if !strings.Contains(block, "is missing tags that are on main") {
+		t.Errorf("%s: must reject an archive that is missing tags", sourceArchiveJob)
 	}
 }

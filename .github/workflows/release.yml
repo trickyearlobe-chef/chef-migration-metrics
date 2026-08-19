@@ -377,6 +377,12 @@ jobs:
           git clone --quiet --no-local --single-branch --branch main \
             "${GITHUB_WORKSPACE}" "staging/${NAME}"
 
+          # Tag auto-following varies by git version; take them by refspec.
+          git -C "staging/${NAME}" fetch --quiet --no-tags "${GITHUB_WORKSPACE}" \
+            'refs/tags/*:refs/tags/*'
+          git -C "staging/${NAME}" tag --no-merged main \
+            | xargs -r git -C "staging/${NAME}" tag -d
+
           git -C "staging/${NAME}" remote set-url origin \
             "${{ github.server_url }}/${{ github.repository }}.git"
           git -C "staging/${NAME}" reflog expire --expire=now --all
@@ -404,6 +410,15 @@ jobs:
           STRAY_TAGS="$(git -C "${REPO}" tag --no-merged main)"
           if [ -n "${STRAY_TAGS}" ]; then
             echo "::error::archive carries tags not reachable from main: ${STRAY_TAGS}"
+            exit 1
+          fi
+
+          # Missing tags, not just stray ones.
+          MISSING="$(comm -23 \
+            <(git tag --merged main | sort) \
+            <(git -C "${REPO}" tag | sort))"
+          if [ -n "${MISSING}" ]; then
+            echo "::error::archive is missing tags that are on main: $(echo ${MISSING} | tr '\n' ' ')"
             exit 1
           fi
 
