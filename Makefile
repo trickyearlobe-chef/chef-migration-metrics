@@ -54,6 +54,11 @@ LDFLAGS := -X main.version=$(VERSION_FULL) \
 HOST_OS   := $(shell go env GOOS 2>/dev/null || echo linux)
 HOST_ARCH := $(shell go env GOARCH 2>/dev/null || echo amd64)
 
+# Executable suffix for the host build. Windows will not execute a file that
+# lacks one: the build succeeds, and running it fails with
+# "CreateProcess ... Access is denied", which reads as a permissions fault.
+HOST_EXT  := $(if $(filter windows,$(HOST_OS)),.exe,)
+
 # nFPM
 NFPM := $(shell command -v nfpm 2>/dev/null)
 
@@ -106,8 +111,8 @@ build: build-frontend ## Compile Go binary for the host platform
 	@mkdir -p $(BUILD_DIR)
 	CGO_ENABLED=0 GOOS=$(HOST_OS) GOARCH=$(HOST_ARCH) go build \
 		-ldflags "$(LDFLAGS)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/chef-migration-metrics/
-	@echo "$(GREEN)Binary: $(BUILD_DIR)/$(BINARY_NAME)$(RESET)"
+		-o $(BUILD_DIR)/$(BINARY_NAME)$(HOST_EXT) ./cmd/chef-migration-metrics/
+	@echo "$(GREEN)Binary: $(BUILD_DIR)/$(BINARY_NAME)$(HOST_EXT)$(RESET)"
 
 .PHONY: build-linux-amd64
 build-linux-amd64: build-frontend ## Cross-compile for linux/amd64
@@ -1062,14 +1067,14 @@ version-delete-tag: ## Delete a version tag locally and remotely (TAG=v1.2.3)
 .PHONY: run
 run: build ## Build and run the application locally
 	@echo "$(GREEN)Starting $(BINARY_NAME)...$(RESET)"
-	$(BUILD_DIR)/$(BINARY_NAME) --config deploy/pkg/config.yml
+	$(BUILD_DIR)/$(BINARY_NAME)$(HOST_EXT) --config deploy/pkg/config.yml
 
 .PHONY: run-privileged
 run-privileged: build ## Grant CAP_NET_BIND_SERVICE then run (binds ports <1024 in dev)
 	@echo "$(YELLOW)Granting CAP_NET_BIND_SERVICE to the binary (needs sudo)...$(RESET)"
-	sudo setcap cap_net_bind_service=+ep $(BUILD_DIR)/$(BINARY_NAME)
+	sudo setcap cap_net_bind_service=+ep $(BUILD_DIR)/$(BINARY_NAME)$(HOST_EXT)
 	@echo "$(GREEN)Starting $(BINARY_NAME) (can bind privileged ports)...$(RESET)"
-	$(BUILD_DIR)/$(BINARY_NAME) --config deploy/pkg/config.yml
+	$(BUILD_DIR)/$(BINARY_NAME)$(HOST_EXT) --config deploy/pkg/config.yml
 
 .PHONY: dev
 dev: ## Run with go run (faster iteration, no binary output)
