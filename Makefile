@@ -188,14 +188,19 @@ build-frontend: ## Build the React SPA frontend (creates placeholder dist/ if np
 # Test
 # =============================================================================
 
+# The mkdir is load-bearing on a clean checkout: build/ is gitignored, so it
+# does not exist after a fresh clone, and `go test -coverprofile=build/...`
+# fails on the missing directory before running a single test.
 .PHONY: test
 test: ## Run all Go unit tests with race detection
 	@echo "$(GREEN)Running Go unit tests...$(RESET)"
+	@mkdir -p $(BUILD_DIR)
 	go test -race -coverprofile=$(BUILD_DIR)/coverage.out ./...
 	@echo "$(GREEN)Coverage report: $(BUILD_DIR)/coverage.out$(RESET)"
 
 .PHONY: test-verbose
 test-verbose: ## Run all Go unit tests with verbose output
+	@mkdir -p $(BUILD_DIR)
 	go test -race -v -coverprofile=$(BUILD_DIR)/coverage.out ./...
 
 .PHONY: test-short
