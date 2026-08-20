@@ -139,6 +139,11 @@ type sqlSource struct {
 	// password is kept only to take it back out of anything the driver says
 	// while rows are being read.
 	password string
+	// started is when the first row was asked for, so a read that fails can
+	// say how long it lasted as well as how far it got. Together those two are
+	// a throughput, which is what decides whether a source of a given size can
+	// be read across a given link at all.
+	started time.Time
 }
 
 // Open connects, runs the query and returns a source positioned before the
@@ -199,7 +204,8 @@ func Open(ctx context.Context, cfg Config) (src ownershipimport.RowSource, err e
 		return nil, fmt.Errorf("ownershipsql: reading the result columns: %w", err)
 	}
 
-	s := &sqlSource{db: db, rows: rows, columns: columns, password: cfg.Password}
+	s := &sqlSource{db: db, rows: rows, columns: columns, password: cfg.Password,
+		started: time.Now()}
 	s.scan = make([]any, len(columns))
 	s.ptrs = make([]any, len(columns))
 	for i := range s.scan {
@@ -235,7 +241,32 @@ func (s *sqlSource) Next() bool {
 
 func (s *sqlSource) Row() ownershipimport.Row { return s.row }
 
-func (s *sqlSource) Err() error { return redactErr(s.err, s.password) }
+// Err reports what stopped the read, and how far it had got.
+//
+// The count is the difference between "it was killed" and a measurement: how
+// much arrived before the failure is what says whether a source of that size
+// can be read across the link, and whether a filter has helped. The count is
+// already kept.
+func (s *sqlSource) Err() error {
+	if s.err == nil {
+		return nil
+	}
+	if s.number == 0 {
+		// Nothing was read, so there is nothing to say about how far it got.
+		return redactErr(s.err, s.password)
+	}
+	return redactErr(fmt.Errorf("%w (after %d rows in %s)",
+		s.err, s.number, s.elapsed()), s.password)
+}
+
+// elapsed is how long the read lasted, rounded to something a person reads
+// rather than a duration with six decimal places in it.
+func (s *sqlSource) elapsed() time.Duration {
+	if s.started.IsZero() {
+		return 0
+	}
+	return time.Since(s.started).Round(100 * time.Millisecond)
+}
 
 func (s *sqlSource) Close() error {
 	rowsErr := s.rows.Close()

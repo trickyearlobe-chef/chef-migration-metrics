@@ -582,3 +582,29 @@ it("says nothing about the delimiter when the source is a database", async () =>
   await user.click(screen.getByRole("radio", { name: /A database/ }));
   expect(screen.queryByText(/guesses the delimiter/)).not.toBeInTheDocument();
 });
+
+// Rows and the time they took, together.
+//
+// The two together are a throughput, which is what says whether a source of a
+// given size can be read across a given link at all.
+it("says how long the source took to read, beside how much was read", async () => {
+  const user = userEvent.setup();
+  mockUseAuth.mockReturnValue({
+    isOperator: true,
+    isAdmin: true,
+    user: { role: "admin", username: "test" },
+  });
+  vi.mocked(api.profileImportSource).mockResolvedValue({
+    ...profile,
+    row_count: 412317,
+    duration_ms: 24600,
+  } as never);
+
+  render(<OwnershipMappedImport />, { wrapper: Wrapper });
+  const file = new File(["Owner,Repo\nalice,web-app\n"], "owners.csv", { type: "text/csv" });
+  const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+  await user.upload(input, file);
+
+  expect(await screen.findByText(/412,317 rows/)).toBeInTheDocument();
+  expect(screen.getByText(/read in 24\.6s/)).toBeInTheDocument();
+});

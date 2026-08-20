@@ -79,6 +79,18 @@ const TARGET_FIELDS: {
   },
 ];
 
+
+// How long the source took to read, said the way somebody would say it. With
+// the row count beside it this is a throughput, which is the number that
+// answers whether a source of a given size can be read across a given link.
+function formatReadDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${Math.round(seconds - minutes * 60)}s`;
+}
+
 const ENTITY_TYPES = ["git_repo", "node", "cookbook", "role", "policy"];
 
 const TRANSFORMS = [
@@ -554,6 +566,12 @@ export function OwnershipMappedImport() {
             <h3 className="card-header">
               2. What CMM found — {profile.row_count.toLocaleString()} rows,{" "}
               {profile.columns.length} columns
+              {profile.duration_ms !== undefined && (
+                <span className="font-normal text-gray-500">
+                  {" "}
+                  — read in {formatReadDuration(profile.duration_ms)}
+                </span>
+              )}
             </h3>
             {profile.warnings.length > 0 && (
               <ul className="mb-3 space-y-1 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800">
