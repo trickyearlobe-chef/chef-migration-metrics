@@ -241,14 +241,18 @@ jobs:
         run: |
           GOARCH=${{ matrix.arch }} CGO_ENABLED=0 GOOS=linux go build \
             -ldflags "-X main.version=${VERSION} -X main.commit=${GIT_COMMIT} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -o build/chef-migration-metrics ./cmd/chef-migration-metrics/
+            -o build/chef-migration-metrics-linux-${{ matrix.arch }} ./cmd/chef-migration-metrics/
 
       - name: Build ${{ matrix.format }} package
         env:
           VERSION: ${{ needs.extract-version.outputs.version }}
           ARCH: ${{ matrix.arch }}
         run: |
-          nfpm package --packager ${{ matrix.format }} --target build/
+          # nfpm.yaml names the amd64 binary and cannot take the architecture
+          # from the environment, so the Makefile derives a config per arch.
+          make build/nfpm-${{ matrix.arch }}.yaml
+          nfpm package -f build/nfpm-${{ matrix.arch }}.yaml \
+            --packager ${{ matrix.format }} --target build/
 
       - name: Upload package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
