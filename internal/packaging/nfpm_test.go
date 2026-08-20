@@ -231,3 +231,30 @@ func TestWindowsArchivesDoNotRequireZip(t *testing.T) {
 		t.Errorf("package-archives calls zip directly: %s", strings.TrimSpace(bare))
 	}
 }
+
+// The release workflow builds its own binary and calls nfpm directly, so it is
+// a second consumer of the packaging paths and drifts from them silently: a
+// package job that cannot find its binary only shows up when a tag is pushed.
+func TestReleaseWorkflowPackagesWhatItBuilds(t *testing.T) {
+	b, err := os.ReadFile(repoRoot + "/.github/workflows/release.yml")
+	if err != nil {
+		t.Fatalf("read release workflow: %v", err)
+	}
+	wf := string(b)
+
+	// Derived from nfpm.yaml rather than written out, so moving the path there
+	// fails here instead of at tag time.
+	src := readNfpm(t, nfpmFile).binarySrc(t)
+	want := strings.TrimPrefix(strings.Replace(src, "amd64", "${{ matrix.arch }}", 1), "./")
+	if !strings.Contains(wf, want) {
+		t.Errorf("release workflow builds no %q, so nfpm would not find the binary it packages", want)
+	}
+
+	if cfg := "-f build/nfpm-${{ matrix.arch }}.yaml"; !strings.Contains(wf, cfg) {
+		t.Errorf("release workflow does not package with %q, so every architecture would use the amd64 source path", cfg)
+	}
+
+	if bare := regexp.MustCompile(`nfpm package\s+--`).FindString(wf); bare != "" {
+		t.Errorf("release workflow runs %q without a per-architecture config", strings.TrimSpace(bare))
+	}
+}
