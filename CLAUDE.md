@@ -10,12 +10,43 @@
 - Be concise in all generated files (journeys, todos, plans) — no preamble or narrative; every line costs retrieval budget.
 - Only read journeys, todos, or plans relevant to the current task.
 
-## Customer Data Protection
+## Everything Committed Is Public And Permanent
 
-- NEVER include real customer names, organisation names, internal hostnames, or other identifying information in any file that will be committed to git. This includes code, tests, journeys, plans, comments, commit messages, and documentation.
+This repository is public, and its history is shipped to customers as a release
+asset. Commit messages, code comments, test names, failure strings, fixtures and
+docs are all equally permanent and equally readable. A hook cannot judge nuance,
+so the rule is what you write, not what gets caught.
+
+- NEVER commit real customer names, organisation names, internal hostnames, or other identifying information. Applies to code, tests, journeys, plans, comments, commit messages, and documentation.
+- NEVER commit anything measured from a customer's estate: fleet counts, table
+  or row sizes, node/org/repo counts, timings taken from their data. Use a
+  placeholder or state the shape without the number.
+- NEVER commit the story of how something was found: incident narrative, what
+  failed and when, who reported it, what was discussed, what anyone thinks of a
+  tool, vendor, product or decision.
 - Use generic placeholders: `example-corp`, `acme`, `x-custom-*`, `customer`, `org-a`, `10.0.0.1`, `user@example.com`.
-- If real customer data is needed for local testing, put it in a file listed in `.gitignore` (e.g. `.git-deny-patterns`, `.env`, `.local/`).
-- A pre-commit hook enforces this by scanning staged files against patterns in `.git-deny-patterns`. Keep that file up to date when new customers are onboarded.
+- Real customer data needed locally goes in a `.gitignore`d file (`.git-deny-patterns`, `.env`, `.local/`).
+- The pre-commit hook scanning `.git-deny-patterns` is a floor for the crudest
+  cases, not the control. Keep it current as customers are onboarded.
+
+### Minimal by default
+
+Write the least that lets the next person work. Terse is not a style preference
+here; it is the containment.
+
+- **Comments** say what the code does, or the constraint it satisfies. Never how
+  it was discovered, what it cost, what broke, or when.
+- **Failure strings** say what is wrong and what to restore. One line.
+- **Commit messages** state the facts of the change and stop. A body where the
+  subject cannot carry them: what the change does, which parts are load-bearing
+  and must not be removed, what it deliberately leaves out. Never how it was
+  found, what broke, what was measured, or who wanted it.
+- The reasoning is worth keeping, but not here. It goes in `~/.claude/`, which
+  is never committed. `plans/` and `journeys/` are tracked — they are as public
+  as the code, and this section applies to them in full.
+- Before writing any comment or commit message, ask what it would tell a reader
+  who is a customer, a competitor, or an auditor. If the answer is anything
+  about them, us, or the day we had, cut it.
 
 ## Knowledge
 
@@ -38,7 +69,7 @@
     picking it up as work-to-do quietly re-implements something that was already built. Nothing
     records which were green before, so this one is judgement.
 - **Workflow**: Pull items from a `todo-*.md` into `active.md` as chunked work. On completion, remove from `active.md` and mark done/remove from the todo.
-- **Done lives in code, not prose**: completed work leaves the plan entirely — "done-ness" is git history + passing tests, never re-asserted in prose. Status checkboxes and "DONE/merged" notes rot and cause stale-audit drift. Record *decisions* (the why) in the journey itself or a short decisions note; never leave *status* claims that nothing re-validates.
+- **Done lives in code, not prose**: completed work leaves the plan entirely — "done-ness" is git history + passing tests, never re-asserted in prose. Status checkboxes and "DONE/merged" notes rot and cause stale-audit drift. Record *decisions* (the why) outside the repository; never leave *status* claims that nothing re-validates.
 - **Chunking for context management**: Split the active plan into independent chunks that each fit within a single session. Each chunk must list: scope (which files), steps, and acceptance criteria. Mark dependencies between chunks explicitly.
 - **Session boundaries**: One chunk = one session/thread. Do not carry context pollution from prior chunks — start each chunk fresh by reading only the plan and relevant journeys.
 - **Reprioritisation**: Rewrite `active.md` freely when priorities shift. Old items stay in their todo files.
@@ -160,7 +191,8 @@ things that were false; the directory was renamed so the old habit has no home t
 ## Commits
 
 - One logical unit of work per commit — never batch unrelated changes. Commit early and often, but ask the user first.
-- Message format `<type>(<scope>): <summary>`, with a body (blank-line separated) when the "why" isn't obvious.
+- Message format `<type>(<scope>): <summary>`. A body carries facts the subject cannot — see Minimal by default.
+- **Show the message before committing.** It is permanent the moment it is written and the user never sees it otherwise. Propose it, wait, then commit.
 - Do not commit secrets, credentials, or API keys. Use environment variables.
 - NEVER add an AI/assistant authorship trailer to commit messages or PR bodies, from ANY tool — no `Co-authored-by:` line naming Claude, Anthropic, Copilot, Cursor, or any AI agent, and no "Generated with …" attribution line. This applies equally to Claude Code and GitHub Copilot and overrides their default behaviour. Genuine human co-authors are fine. A `commit-msg` hook strips AI trailers as a backstop.
 
