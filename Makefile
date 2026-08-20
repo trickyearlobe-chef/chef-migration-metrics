@@ -874,6 +874,23 @@ package-deb: package-deb-amd64 package-deb-arm64 ## Build DEB packages for every
 	@echo "$(GREEN)DEBs:$(RESET)"
 	@ls -1 $(BUILD_DIR)/*.deb
 
+# Git Bash on Windows has no zip(1), so archive creation falls back to the
+# bsdtar that ships with Windows 10+, then to PowerShell. Paths are relative to
+# $(BUILD_DIR)/stage.
+define make_zip
+	@cd $(BUILD_DIR)/stage && \
+	if command -v zip >/dev/null 2>&1; then \
+		zip -rq "$(1)" "$(2)"; \
+	elif tar --version 2>/dev/null | grep -qi bsdtar; then \
+		tar -a -cf "$(1)" "$(2)"; \
+	elif command -v powershell >/dev/null 2>&1; then \
+		powershell -NoProfile -Command "Compress-Archive -Force -Path '$(2)' -DestinationPath '$(1)'"; \
+	else \
+		echo "$(RED)ERROR: no zip, bsdtar or powershell available to build $(1)$(RESET)" >&2; \
+		exit 1; \
+	fi
+endef
+
 .PHONY: package-archives
 package-archives: build-all ## Build distribution archives (tar.gz / zip) for all platforms
 	@echo "$(GREEN)Building distribution archives for $(VERSION_FULL)...$(RESET)"
@@ -915,17 +932,17 @@ package-archives: build-all ## Build distribution archives (tar.gz / zip) for al
 		mkdir -p "$$STAGING" && \
 		cp $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe "$$STAGING/$(BINARY_NAME).exe" && \
 		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
-		cp README.md LICENSE "$$STAGING/" && \
-		cd $(BUILD_DIR)/stage && zip -rq ../archives/$(BINARY_NAME)-$(VERSION)-windows-amd64.zip $(BINARY_NAME)-$(VERSION)-windows-amd64 && \
-		rm -rf "$$STAGING"
+		cp README.md LICENSE "$$STAGING/"
+	$(call make_zip,../archives/$(BINARY_NAME)-$(VERSION)-windows-amd64.zip,$(BINARY_NAME)-$(VERSION)-windows-amd64)
+	@rm -rf $(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-windows-amd64
 	@# --- Windows arm64 (zip) ---
 	@STAGING=$(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-windows-arm64 && \
 		mkdir -p "$$STAGING" && \
 		cp $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe "$$STAGING/$(BINARY_NAME).exe" && \
 		cp deploy/pkg/config.yml "$$STAGING/config.yml.example" && \
-		cp README.md LICENSE "$$STAGING/" && \
-		cd $(BUILD_DIR)/stage && zip -rq ../archives/$(BINARY_NAME)-$(VERSION)-windows-arm64.zip $(BINARY_NAME)-$(VERSION)-windows-arm64 && \
-		rm -rf "$$STAGING"
+		cp README.md LICENSE "$$STAGING/"
+	$(call make_zip,../archives/$(BINARY_NAME)-$(VERSION)-windows-arm64.zip,$(BINARY_NAME)-$(VERSION)-windows-arm64)
+	@rm -rf $(BUILD_DIR)/stage/$(BINARY_NAME)-$(VERSION)-windows-arm64
 	@rm -rf $(BUILD_DIR)/stage
 	@echo "$(GREEN)Archives:$(RESET)"
 	@ls -lh $(BUILD_DIR)/archives/

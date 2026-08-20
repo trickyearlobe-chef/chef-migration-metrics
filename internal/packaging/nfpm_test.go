@@ -198,3 +198,36 @@ func TestGeneratedConfigPackagesItsOwnArchitecture(t *testing.T) {
 		}
 	}
 }
+
+// Git Bash on Windows ships no zip(1). Archive creation must therefore not
+// depend on it, or `make package-archives` fails on the one platform whose
+// archive is a zip in the first place.
+func TestWindowsArchivesDoNotRequireZip(t *testing.T) {
+	mk := readMakefile(t)
+
+	def := regexp.MustCompile(`(?s)define make_zip\n(.*?)\nendef`).FindStringSubmatch(mk)
+	if def == nil {
+		t.Fatal("Makefile has no make_zip definition")
+	}
+	body := def[1]
+	if !strings.Contains(body, "command -v zip") {
+		t.Error("make_zip does not check whether zip is available before using it")
+	}
+	var alternatives int
+	for _, alt := range []string{"bsdtar", "Compress-Archive"} {
+		if strings.Contains(body, alt) {
+			alternatives++
+		}
+	}
+	if alternatives == 0 {
+		t.Error("make_zip offers no alternative to zip for hosts without it")
+	}
+
+	archives := regexp.MustCompile(`(?ms)^package-archives:.*?\n\n`).FindString(mk)
+	if archives == "" {
+		t.Fatal("Makefile has no package-archives rule")
+	}
+	if bare := regexp.MustCompile(`(?m)^\s*.*[^v] zip -`).FindString(archives); bare != "" {
+		t.Errorf("package-archives calls zip directly: %s", strings.TrimSpace(bare))
+	}
+}
