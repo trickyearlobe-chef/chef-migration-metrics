@@ -10,8 +10,11 @@
 #   make package-all
 #
 # Direct usage:
+#   make build-linux-amd64
 #   VERSION=1.2.3 ARCH=amd64 nfpm package --packager rpm --target build/
 #   VERSION=1.2.3 ARCH=amd64 nfpm package --packager deb --target build/
+#
+# Other architectures go through the Makefile: make package-rpm-arm64
 #
 # This file is the packaging definition.
 # yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
@@ -37,8 +40,10 @@ recommends:
   - chef-workstation
 
 contents:
-  # Go binary
-  - src: ./build/chef-migration-metrics
+  # Go binary — a linux cross-compile, so the package is identical whatever
+  # host builds it. nfpm does not expand ${ARCH} in a source path, so this
+  # names amd64 and the Makefile derives a config per architecture from it.
+  - src: ./build/chef-migration-metrics-linux-amd64
     dst: /usr/bin/chef-migration-metrics
     file_info:
       mode: 0755

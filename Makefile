@@ -97,7 +97,7 @@ help: ## Show this help message
 	@echo "$(BOLD)Version:$(RESET)  $(VERSION_FULL)"
 	@echo "$(BOLD)Commit:$(RESET)   $(GIT_COMMIT_SHORT)$(GIT_DIRTY)"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-28s$(RESET) %s\n", $$1, $$2}'
 	@echo ""
 
@@ -830,17 +830,49 @@ _check-nfpm:
 		exit 1; \
 	fi
 
+# An RPM or DEB carries a Linux binary whatever machine builds it, so every
+# package target cross-compiles rather than using the host build. Packaging
+# from Windows against the host build read as a packaging fault: the host
+# binary is chef-migration-metrics.exe, and nfpm reported its source missing.
+#
+# The architecture cannot be a variable inside nfpm.yaml: nfpm expands
+# ${ARCH} in the arch field but not in a contents source — measured, with both
+# $ARCH and ${ARCH} taken literally. So nfpm.yaml names the amd64 cross-compile
+# and the rule below derives one config per architecture from it. Nothing else
+# in the file differs between architectures.
+$(BUILD_DIR)/nfpm-%.yaml: nfpm.yaml
+	@mkdir -p $(BUILD_DIR)
+	@sed 's|$(BINARY_NAME)-linux-amd64|$(BINARY_NAME)-linux-$*|' $< > $@
+
+.PHONY: package-rpm-amd64
+package-rpm-amd64: _check-nfpm build-linux-amd64 $(BUILD_DIR)/nfpm-amd64.yaml ## Build RPM package for linux/amd64
+	@echo "$(GREEN)Building RPM package (linux/amd64)...$(RESET)"
+	VERSION=$(VERSION) ARCH=amd64 nfpm package -f $(BUILD_DIR)/nfpm-amd64.yaml --packager rpm --target $(BUILD_DIR)/
+
+.PHONY: package-rpm-arm64
+package-rpm-arm64: _check-nfpm build-linux-arm64 $(BUILD_DIR)/nfpm-arm64.yaml ## Build RPM package for linux/arm64
+	@echo "$(GREEN)Building RPM package (linux/arm64)...$(RESET)"
+	VERSION=$(VERSION) ARCH=arm64 nfpm package -f $(BUILD_DIR)/nfpm-arm64.yaml --packager rpm --target $(BUILD_DIR)/
+
+.PHONY: package-deb-amd64
+package-deb-amd64: _check-nfpm build-linux-amd64 $(BUILD_DIR)/nfpm-amd64.yaml ## Build DEB package for linux/amd64
+	@echo "$(GREEN)Building DEB package (linux/amd64)...$(RESET)"
+	VERSION=$(VERSION) ARCH=amd64 nfpm package -f $(BUILD_DIR)/nfpm-amd64.yaml --packager deb --target $(BUILD_DIR)/
+
+.PHONY: package-deb-arm64
+package-deb-arm64: _check-nfpm build-linux-arm64 $(BUILD_DIR)/nfpm-arm64.yaml ## Build DEB package for linux/arm64
+	@echo "$(GREEN)Building DEB package (linux/arm64)...$(RESET)"
+	VERSION=$(VERSION) ARCH=arm64 nfpm package -f $(BUILD_DIR)/nfpm-arm64.yaml --packager deb --target $(BUILD_DIR)/
+
 .PHONY: package-rpm
-package-rpm: _check-nfpm build ## Build RPM package
-	@echo "$(GREEN)Building RPM package...$(RESET)"
-	VERSION=$(VERSION) ARCH=$(HOST_ARCH) nfpm package --packager rpm --target $(BUILD_DIR)/
-	@echo "$(GREEN)RPM: $(BUILD_DIR)/*.rpm$(RESET)"
+package-rpm: package-rpm-amd64 package-rpm-arm64 ## Build RPM packages for every architecture
+	@echo "$(GREEN)RPMs:$(RESET)"
+	@ls -1 $(BUILD_DIR)/*.rpm
 
 .PHONY: package-deb
-package-deb: _check-nfpm build ## Build DEB package
-	@echo "$(GREEN)Building DEB package...$(RESET)"
-	VERSION=$(VERSION) ARCH=$(HOST_ARCH) nfpm package --packager deb --target $(BUILD_DIR)/
-	@echo "$(GREEN)DEB: $(BUILD_DIR)/*.deb$(RESET)"
+package-deb: package-deb-amd64 package-deb-arm64 ## Build DEB packages for every architecture
+	@echo "$(GREEN)DEBs:$(RESET)"
+	@ls -1 $(BUILD_DIR)/*.deb
 
 .PHONY: package-archives
 package-archives: build-all ## Build distribution archives (tar.gz / zip) for all platforms
