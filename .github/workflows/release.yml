@@ -10,10 +10,9 @@
 # Job dependency graph:
 #
 #   extract-version (instant)
-#     ├── verify (quality + security gate)
-#     │     ├── build-packages ──────────┐
-#     │     └── build-archives ──────────┼── release
-#     └── source-archive ────────────────┘
+#     └── verify (quality + security gate)
+#           ├── build-packages ──────────┐
+#           └── build-archives ──────────┴── release
 # =============================================================================
 
 name: Release
@@ -343,106 +342,12 @@ jobs:
           path: build/archives/*
 
   # ---------------------------------------------------------------------------
-  # Source Archive — the repository itself, with its history and tags
-  #
-  # GitHub's generated source zip is a snapshot of the tagged tree with no
-  # `.git`, so it carries neither history nor tags. This produces one that does.
-  #
-  # Scope is `main` and the tags reachable from it, and nothing else. Two things
-  # enforce that rather than merely intending it:
-  #
-  #   --no-local  is load-bearing. Cloning a path without it copies the object
-  #               store wholesale, so every other branch's commits would ride
-  #               along inside the archive with no ref pointing at them —
-  #               invisible to `git branch`, recoverable with `git fsck`.
-  #   the assert step re-reads the finished repository and fails the release if
-  #               a credential, an extra branch or an unreachable tag is in it.
-  # ---------------------------------------------------------------------------
-  source-archive:
-    name: Source Archive (history + tags)
-    runs-on: ubuntu-latest
-    needs: [extract-version]
-    steps:
-      - name: Checkout main with full history
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: main
-          fetch-depth: 0
-          # Otherwise checkout writes an http.extraheader holding a token into
-          # .git/config, and this job publishes .git.
-          persist-credentials: false
-
-      - name: Build source archive
-        run: |
-          set -euo pipefail
-          NAME="chef-migration-metrics-${{ needs.extract-version.outputs.version }}-src-with-history"
-          mkdir -p staging build/archives
-
-          git clone --quiet --no-local --single-branch --branch main \
-            "${GITHUB_WORKSPACE}" "staging/${NAME}"
-
-          # Tag auto-following varies by git version; take them by refspec.
-          git -C "staging/${NAME}" fetch --quiet --no-tags "${GITHUB_WORKSPACE}" \
-            'refs/tags/*:refs/tags/*'
-          git -C "staging/${NAME}" tag --no-merged main \
-            | xargs -r git -C "staging/${NAME}" tag -d
-
-          git -C "staging/${NAME}" remote set-url origin \
-            "${{ github.server_url }}/${{ github.repository }}.git"
-          git -C "staging/${NAME}" reflog expire --expire=now --all
-          git -C "staging/${NAME}" gc --quiet --prune=now
-
-          (cd staging && zip -rq "../build/archives/${NAME}.zip" "${NAME}")
-          ls -lh build/archives/
-
-      - name: Assert the archive holds main, its tags, and no credentials
-        run: |
-          set -euo pipefail
-          REPO="staging/chef-migration-metrics-${{ needs.extract-version.outputs.version }}-src-with-history"
-
-          if git -C "${REPO}" config --get-regexp '^http\.'; then
-            echo "::error::archive .git/config carries an http.* entry — a credential would be published"
-            exit 1
-          fi
-
-          BRANCHES="$(git -C "${REPO}" for-each-ref --format='%(refname:short)' refs/heads)"
-          if [ "${BRANCHES}" != "main" ]; then
-            echo "::error::archive carries branches other than main: ${BRANCHES}"
-            exit 1
-          fi
-
-          STRAY_TAGS="$(git -C "${REPO}" tag --no-merged main)"
-          if [ -n "${STRAY_TAGS}" ]; then
-            echo "::error::archive carries tags not reachable from main: ${STRAY_TAGS}"
-            exit 1
-          fi
-
-          # Missing tags, not just stray ones.
-          MISSING="$(comm -23 \
-            <(git tag --merged main | sort) \
-            <(git -C "${REPO}" tag | sort))"
-          if [ -n "${MISSING}" ]; then
-            echo "::error::archive is missing tags that are on main: $(echo ${MISSING} | tr '\n' ' ')"
-            exit 1
-          fi
-
-          echo "Branch:   ${BRANCHES}"
-          echo "Tags:     $(git -C "${REPO}" tag | wc -l)"
-          echo "Describes as: $(git -C "${REPO}" describe --tags)"
-
-      - name: Upload source archive artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: source-archive
-          path: build/archives/*
-
-  # ---------------------------------------------------------------------------
   # Create GitHub Release
   # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [extract-version, build-packages, build-archives, source-archive]
+    needs: [extract-version, build-packages, build-archives]
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -497,10 +402,7 @@ jobs:
 
           ## Source
 
-          \`chef-migration-metrics-${VERSION}-src-with-history.zip\` is the repository
-          itself — \`main\`, its tags, and the \`.git\` directory. Unzip it and it is a
-          working clone, unlike the generated source archives above it, which contain
-          only the tagged tree.
+          GitHub's generated source archives below carry the tagged tree.
           EOF
 
       - name: Create GitHub Release
