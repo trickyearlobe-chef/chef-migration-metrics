@@ -15,7 +15,7 @@ require (
 	github.com/lib/pq v1.12.1
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/russellhaering/goxmldsig v1.6.0
-	github.com/vmware/govmomi v0.54.1
+	github.com/vmware/govmomi v0.55.0
 	golang.org/x/crypto v0.53.0
 	gopkg.in/yaml.v3 v3.0.1
 )
