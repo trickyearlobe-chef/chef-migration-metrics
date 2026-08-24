@@ -26,7 +26,7 @@ type CSRRequest struct {
 	Country            string
 	DNSNames           []string
 	IPAddresses        []string
-	// KeyAlgorithm selects the keypair algorithm (tls-csr.md § 4.4). Empty
+	// KeyAlgorithm selects the keypair algorithm. Empty
 	// defaults to ecdsa-p256.
 	KeyAlgorithm string
 }
@@ -94,7 +94,7 @@ func GenerateCSR(req CSRRequest) (csrPEM, keyPEM []byte, err error) {
 	return csrPEM, keyPEM, nil
 }
 
-// generateKey produces a private key for the named algorithm (tls-csr.md § 4.4).
+// generateKey produces a private key for the named algorithm.
 // An empty name defaults to ecdsa-p256.
 func generateKey(algo string) (crypto.Signer, error) {
 	switch algo {

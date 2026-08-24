@@ -29,8 +29,8 @@ export interface UseSortReturn<T extends string> {
 /**
  * Generic hook for column-header sorting state.
  *
- * Handles the toggle-on-same-field / pick-default-on-new-field logic that
- * was previously duplicated across 8+ page components.
+ * Handles the toggle-on-same-field / pick-default-on-new-field logic shared by
+ * the page components.
  */
 export function useSort<T extends string>({
   defaultField,

@@ -8,8 +8,8 @@
 #      lies (e.g. ENV.clone exists but raises), so call and catch.
 # Run on a Chef Workstation host: chef exec ruby poly_disambiguate.rb
 #
-# Below is worked for Lint/DeprecatedClassMethods (the one poly cop in the
-# customer estate). Generalise per cop: each stores its table differently.
+# Below is worked for Lint/DeprecatedClassMethods. Generalise per cop: each
+# stores its table differently.
 require "cookstyle"
 require "socket"
 

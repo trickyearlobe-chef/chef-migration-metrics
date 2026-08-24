@@ -1,7 +1,7 @@
 # Getting ownership in from where it is already written down
 
 **As the administrator setting this up, I need to load ownership from the system that already
-holds it, because nobody is going to assign four thousand repositories by hand and an
+holds it, because nobody is going to assign thousands of repositories by hand and an
 ownership record that is entered twice is a record that will be wrong in one of the two
 places.**
 
@@ -48,7 +48,7 @@ To tidy values on the way in without editing the source: strip a mail domain, pu
 out of a longer string. The source belongs to somebody else and I cannot make them change it.
 
 **To see what it will do before it does it.** A preview of what would be created and changed,
-against real rows. I will not point an import at four thousand assignments on trust.
+against real rows. I will not point an import at thousands of assignments on trust.
 
 To have the rows it could not use handed back to me as a worklist — which row, and what was
 wrong with it — so I can get the source fixed rather than silently importing three quarters of
@@ -64,8 +64,8 @@ To be able to run it again on a schedule once I trust it, and to see whether the
 getting better or worse. **That decision turns on having watched it run once, including how long
 it took** — a job that takes forty minutes is a different proposition from one that takes four.
 
-**To load the whole thing in one go.** Their source runs to about a hundred and thirty thousand
-records and it is one list. Splitting it — by hand, or by writing filters that between them are
+**To load the whole thing in one go.** The source is one list, and it can run to a hundred and
+fifty thousand records or more. Splitting it — by hand, or by writing filters that between them are
 supposed to cover everything exactly once — is a job with no way to check it was done right, and
 it has to be redone every time the source is refreshed. A cap I have to work around is a cap
 that will eventually be worked around wrongly.
@@ -130,11 +130,11 @@ guessing](internal/ownershipimport/transform_test.go#TestRegexExtract_EmptyOnNoM
 and stripping a mail domain [leaves an address literal
 alone](internal/ownershipimport/transform_test.go#TestStripDomain_LeavesIPLiteralsUnchanged).
 
-**A known gap, and it has already caused a wrong import.** What kind of thing is being imported
+**A known gap.** What kind of thing is being imported
 is chosen once for the whole run, not read from a column. A source table holding several kinds
 of asset has to be imported once per kind, using a row filter to select each — and nothing on
-screen says so. Getting it wrong writes assignments against the wrong kind of thing, which
-happened on 2026-08-03. No test covers this because the behaviour is not wrong, only silent.
+screen says so. Getting it wrong writes assignments against the wrong kind of thing. No test
+covers this because the behaviour is not wrong, only silent.
 
 That a connection has to name its database is pinned where the connection is set up, so the
 refusal reaches whoever composed it: a connection [naming no

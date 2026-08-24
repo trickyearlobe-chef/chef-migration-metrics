@@ -36,7 +36,7 @@ type dbCertKeySubmission struct {
 // these are routed to dedicated encrypted config-store secret keys
 // (configstore.KeyServerTLSACMERoute53AccessKeyID / SecretAccessKey) — never
 // into the server.tls config section — so credentials stay out of the assembled
-// config struct and GET responses (tls-acme.md § 3.4 / § 3.5). region and
+// config struct and GET responses. region and
 // hosted_zone_id are non-secret and travel in dns_provider_config as normal.
 type acmeRoute53CredSubmission struct {
 	TLS struct {
@@ -144,7 +144,7 @@ func (r *Router) handleAdminConfigServer(w http.ResponseWriter, req *http.Reques
 		// key is never read or returned here.
 		data = r.attachDBCertInfo(req.Context(), cfg, data)
 		// In ACME mode, surface the issued certificate's metadata and the
-		// operator status panel data (tls-acme.md § 3.14).
+		// operator status panel data.
 		data = r.attachACMEInfo(req.Context(), cfg, data)
 		WriteJSON(w, http.StatusOK, data)
 	case http.MethodPut:
@@ -250,7 +250,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 			switch {
 			case haveCert && haveKey:
 				// Reorder the operator-supplied bundle into leaf → intermediate(s)
-				// → root before preflight and storage (tls-static.md § 2.2). The
+				// → root before preflight and storage. The
 				// preflight below matches the key against cert[0], so the leaf must
 				// lead; an incomplete chain is stored with a non-fatal warning, never
 				// rejected. Only CSR-promoted bundles (below) are left as-is.
@@ -267,7 +267,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 				}
 				dbCertProvided = true
 			case haveCert && !haveKey:
-				// Match-and-promote (tls-csr.md § 4.5): an operator pasting a
+				// Match-and-promote: an operator pasting a
 				// signed certificate with no key promotes the pending CSR key if
 				// the certificate's public key matches it. The active cert/key are
 				// only replaced on a successful match, preserving fail-open.
@@ -360,7 +360,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 					fmt.Sprintf("server.tls.http_redirect_port (%d) must differ from the HTTPS listen port; both would bind the same port.", effPort))
 				return
 			}
-			// Automatic HTTPS binds 443 when TLS is active (tls.md § 1.5), so the
+			// Automatic HTTPS binds 443 when TLS is active, so the
 			// redirect listener must not collide with 443 either.
 			if input.TLS.HTTPRedirectPort == 443 {
 				WriteError(w, http.StatusUnprocessableEntity, ErrCodeValidationError,
@@ -419,7 +419,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	// current address/port, so test-binding the unchanged value would always
 	// fail — hence the change check. This catches an unbindable address/port
 	// before it is persisted and forces the degraded fallback on the next
-	// restart (encrypted-config-store.md).
+	// restart.
 	if input.Port != 0 {
 		live := r.liveConfig()
 		changed := live == nil ||
@@ -481,8 +481,8 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 			WriteInternalError(w, "Failed to store TLS private key.")
 			return
 		}
-		// A promoted CSR key is now active — remove the pending copy (tls-csr.md
-		// § 4.5). Non-fatal: the key is still secret and a new CSR overwrites it.
+		// A promoted CSR key is now active — remove the pending copy.
+		// Non-fatal: the key is still secret and a new CSR overwrites it.
 		if promotePending {
 			if err := r.configStore.Delete(ctx, configstore.KeyServerTLSPrivateKeyPending); err != nil {
 				r.logf("WARN", "admin/config/server: delete promoted pending key: %v", err)
@@ -490,8 +490,8 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
-	// Persist submitted Route 53 DNS-01 credentials as encrypted secrets
-	// (tls-acme.md § 3.4/§ 3.5). Write-only: an empty field leaves the stored
+	// Persist submitted Route 53 DNS-01 credentials as encrypted secrets.
+	// Write-only: an empty field leaves the stored
 	// secret untouched so a save that omits credentials does not wipe them.
 	if v := r53Creds.TLS.ACME.Route53.AccessKeyID; v != "" {
 		j, _ := json.Marshal(v)
@@ -519,7 +519,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	// Reconfigure the running WebSocket hub in place when the websocket section
-	// changed (configuration-live-reload.md: subsystem). Existing connections are
+	// changed (subsystem). Existing connections are
 	// preserved — the new max_connections/send_buffer_size take effect on
 	// subsequent registrations, and timeouts on subsequent connections (pulled
 	// live by the handler). Values come from the reloaded live config so unset
@@ -534,7 +534,7 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	// Swap the running static-TLS certificate in place so the listener serves
-	// the new pair without a restart (tls-static.md § 2.3). Best-effort: when
+	// the new pair without a restart. Best-effort: when
 	// no reloader is wired (file source, plain HTTP, or no DB listener yet) the
 	// pair is already persisted and the next restart applies it.
 	if dbCertProvided && r.tlsReload != nil {
@@ -544,14 +544,14 @@ func (r *Router) putAdminConfigServer(w http.ResponseWriter, req *http.Request) 
 	}
 
 	// An ACME save re-asserts hostname registration and re-checks issuance
-	// immediately rather than waiting out the renewal interval (tls-acme.md
-	// § 3.14). Non-blocking; no-op when no renewer is wired.
+	// immediately rather than waiting out the renewal interval.
+	// Non-blocking; no-op when no renewer is wired.
 	if input.TLS.Mode == "acme" && r.acmeReRegister != nil {
 		r.acmeReRegister()
 	}
 
 	// Rebind the running listener in place when the listen target changed or the
-	// TLS section changed (configuration-live-reload.md listener-rebind). A tls
+	// TLS section changed (listener-rebind). A tls
 	// change covers an off↔static mode toggle (H4a), a same-mode static field
 	// change — min_version / mTLS CA / cert source-or-paths (H4b-1) — and an
 	// http_redirect_port change (H4b-2), each rebuilding the HTTPS (+ redirect)
@@ -649,7 +649,7 @@ func (r *Router) dbCertPairStored(ctx context.Context) bool {
 // pendingKeyPEM returns the stored pending CSR private key PEM and true when one
 // is present. The pending key is a secret (server.tls.private_key.pending); it
 // is never returned by any API, only used internally to match-and-promote an
-// uploaded signed certificate (tls-csr.md § 4.5).
+// uploaded signed certificate.
 func (r *Router) pendingKeyPEM(ctx context.Context) ([]byte, bool) {
 	if r.configStore == nil {
 		return nil, false
@@ -668,7 +668,7 @@ func (r *Router) pendingKeyPEM(ctx context.Context) ([]byte, bool) {
 // attachDBCertInfo augments a serialised server-config JSON object with a
 // `tls_certificate_info` field carrying the installed DB certificate chain's
 // operator-safe metadata (per-cert subject/SANs/issuer/expiry/role for
-// leaf → intermediate(s) → root — tls-static.md § 2.2). It is a no-op unless the
+// leaf → intermediate(s) → root). It is a no-op unless the
 // live cert_source is `db` and a certificate is stored. The private key is never
 // read. On any error it returns data unchanged.
 func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data json.RawMessage) json.RawMessage {
@@ -707,7 +707,7 @@ func (r *Router) attachDBCertInfo(ctx context.Context, cfg *config.Config, data 
 // mode is `acme`, with `tls_certificate_info` (the issued certificate's
 // operator-safe metadata, read from server.tls.acme.cert) and `acme_status`
 // (last renewal / last error / hostname error, read from server.tls.acme.status)
-// to drive the Server & TLS ACME status panel (tls-acme.md § 3.14). The private
+// to drive the Server & TLS ACME status panel. The private
 // key is never read. On any per-field error that field is omitted; data is
 // otherwise returned unchanged.
 func (r *Router) attachACMEInfo(ctx context.Context, cfg *config.Config, data json.RawMessage) json.RawMessage {

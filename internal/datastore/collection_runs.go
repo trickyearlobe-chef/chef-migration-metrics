@@ -99,6 +99,17 @@ type UpdateCollectionRunProgressParams struct {
 	CheckpointStart  int
 }
 
+// The four functions that change a collection run — progress, complete, fail
+// and interrupt — all match their row by organisation name alone, and read the
+// result with QueryRowContext, which returns the first row and discards the
+// rest without reporting it. That is safe only because the primary key on
+// organisation_name guarantees there is exactly one row per organisation.
+//
+// If that key is ever dropped so an organisation can hold more than one run,
+// each of these rewrites every row that organisation has and still returns
+// success. Change them to target a run id and to refuse to proceed when they
+// would affect more than one row, in the same change that drops the key.
+
 // UpdateCollectionRunProgress updates the node counts and checkpoint
 // position of a running collection. This is called periodically during
 // collection to support checkpoint/resume.
@@ -283,35 +294,6 @@ func (db *DB) abandonCollectionRun(ctx context.Context, q queryable, organisatio
 	return run, nil
 }
 
-// ResumeCollectionRun resets an interrupted collection run back to "running"
-// status so that the collector can continue from the checkpoint. The
-// checkpoint_start value is preserved.
-func (db *DB) ResumeCollectionRun(ctx context.Context, organisationName string) (CollectionRun, error) {
-	return db.resumeCollectionRun(ctx, db.q(), organisationName)
-}
-
-func (db *DB) resumeCollectionRun(ctx context.Context, q queryable, organisationName string) (CollectionRun, error) {
-	if organisationName == "" {
-		return CollectionRun{}, fmt.Errorf("datastore: organisation name is required to resume")
-	}
-
-	const query = `
-		UPDATE collection_runs
-		SET status     = 'running',
-		    updated_at = now()
-		WHERE organisation_name = $1 AND status = 'interrupted'
-		RETURNING organisation_name, status, started_at, completed_at,
-		          total_nodes, nodes_collected, checkpoint_start,
-		          error_message, created_at, updated_at
-	`
-
-	run, err := scanCollectionRun(q.QueryRowContext(ctx, query, organisationName))
-	if err != nil {
-		return CollectionRun{}, fmt.Errorf("datastore: resuming collection run: %w", err)
-	}
-	return run, nil
-}
-
 // ListCompletedRunsForOrganisation returns all completed collection run rows
 // for the given organisation since the given time. This is used during
 // checkpoint/resume to determine which organisations have already been
@@ -348,63 +330,6 @@ func (db *DB) getLatestCollectionRun(ctx context.Context, q queryable, organisat
 		LIMIT 1
 	`
 	return scanCollectionRun(q.QueryRowContext(ctx, query, organisationName))
-}
-
-// GetLatestCompletedCollectionRun returns the most recent completed
-// collection run for the given organisation. Returns ErrNotFound if no
-// completed runs exist.
-func (db *DB) GetLatestCompletedCollectionRun(ctx context.Context, organisationName string) (CollectionRun, error) {
-	return db.getLatestCompletedCollectionRun(ctx, db.q(), organisationName)
-}
-
-func (db *DB) getLatestCompletedCollectionRun(ctx context.Context, q queryable, organisationName string) (CollectionRun, error) {
-	const query = `
-		SELECT organisation_name, status, started_at, completed_at,
-		       total_nodes, nodes_collected, checkpoint_start,
-		       error_message, created_at, updated_at
-		FROM collection_runs
-		WHERE organisation_name = $1 AND status = 'completed'
-		ORDER BY started_at DESC
-		LIMIT 1
-	`
-	return scanCollectionRun(q.QueryRowContext(ctx, query, organisationName))
-}
-
-// ListCollectionRuns returns all collection runs for the given organisation,
-// ordered by started_at descending (most recent first). If limit is > 0,
-// at most limit rows are returned.
-func (db *DB) ListCollectionRuns(ctx context.Context, organisationName string, limit int) ([]CollectionRun, error) {
-	return db.listCollectionRuns(ctx, db.q(), organisationName, limit)
-}
-
-func (db *DB) listCollectionRuns(ctx context.Context, q queryable, organisationName string, limit int) ([]CollectionRun, error) {
-	var query string
-	var args []any
-
-	if limit > 0 {
-		query = `
-			SELECT organisation_name, status, started_at, completed_at,
-			       total_nodes, nodes_collected, checkpoint_start,
-			       error_message, created_at, updated_at
-			FROM collection_runs
-			WHERE organisation_name = $1
-			ORDER BY started_at DESC
-			LIMIT $2
-		`
-		args = []any{organisationName, limit}
-	} else {
-		query = `
-			SELECT organisation_name, status, started_at, completed_at,
-			       total_nodes, nodes_collected, checkpoint_start,
-			       error_message, created_at, updated_at
-			FROM collection_runs
-			WHERE organisation_name = $1
-			ORDER BY started_at DESC
-		`
-		args = []any{organisationName}
-	}
-
-	return scanCollectionRuns(q.QueryContext(ctx, query, args...))
 }
 
 // GetRunningCollectionRuns returns all collection runs currently in

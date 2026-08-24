@@ -72,7 +72,7 @@ export function deleteUser(username: string): Promise<void> {
 // restart-required configuration changes take effect. The server returns 202
 // and then exits for the supervisor to restart; the caller should poll
 // waitForServerHealthy to detect when it is back online.
-// See configuration-live-reload.md § Apply & Restart.
+//pply & Restart.
 export function restartServer(): Promise<{ status: string; message: string }> {
   return apiFetch<{ status: string; message: string }>(
     buildUrl("/admin/restart"),

@@ -142,7 +142,7 @@ restrict_on_send(dcm).each do |m|
   puts "  #{m} (#{where}) -> #{present ? 'PRESENT -> Review' : 'REMOVED -> Blocker'}"
 end
 
-# --- Resolve the previously-inconclusive DeprecatedPlatformMethods --------------
+# --- What DeprecatedPlatformMethods actually matches ---------------------------
 puts "\n=== DeprecatedPlatformMethods: what does it actually match? ==="
 dpm = cop_class("Chef/Deprecations/DeprecatedPlatformMethods")
 puts "  RESTRICT_ON_SEND=#{restrict_on_send(dpm).inspect}"

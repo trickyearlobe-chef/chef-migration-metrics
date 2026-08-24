@@ -2,8 +2,8 @@
 --
 -- P1 coverage full-scan hotspot: GetProductionPlatformsForCookbook runs
 -- `WHERE cookbooks ? $1` (JSONB key-existence) which, with no index on
--- node_snapshots.cookbooks, sequentially scans every row (~119k at customer
--- scale) per call.
+-- node_snapshots.cookbooks, sequentially scans one row per node in the fleet
+-- per call.
 --
 -- Fix: a GIN index using the DEFAULT jsonb_ops opclass. jsonb_ops indexes the
 -- `?`, `?|`, `?&`, `@>`, `@?`, `@@` operators. jsonb_path_ops is deliberately

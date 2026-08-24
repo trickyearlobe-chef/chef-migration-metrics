@@ -62,8 +62,8 @@ var ErrDatabaseURLNamesNoDatabase = errors.New(
 
 // ValidateDatabaseURL reports whether a connection string names a database and
 // a driver the importer can open. Exported so the SQL package can apply exactly
-// this check at the point of use without a second copy of the parsing — the
-// first version had two, and a customer connection was refused by one of them.
+// this check at the point of use without a second copy of the parsing, which
+// would drift.
 //
 // It errs towards accepting. The purpose is an early, helpful refusal for the
 // obvious mistake of omitting the database; a connection string is a bag of
@@ -115,16 +115,14 @@ func ValidateDatabaseURL(dsn string) error {
 // DescribeConnectionShape says what a connection string is shaped like, using
 // nothing from the string itself.
 //
-// Exported because the shape has to reach a log, not only a screen: the people
-// who hit these failures work in a restricted VDI that cannot take a screenshot,
-// so a log they can transfer out as text is the only channel that carries a
-// diagnosis.
+// Exported because the shape has to reach a log, not only a screen: where a
+// screenshot cannot be taken, text a reader can transfer out is the only channel
+// that carries a diagnosis.
 //
-// A refusal that quotes the value puts a password in a shared log. A refusal
-// that says nothing cannot be diagnosed without decrypting the credential, and
-// the people who hit it are reachable through a VDI and a screenshot. So this
-// reports structure — which form, which separators, what was missing — and no
-// values whatsoever. It is safe in a log, a ticket and a support bundle.
+// A refusal that quotes the value puts a password in a shared log; one that says
+// nothing cannot be diagnosed without decrypting the credential. So this reports
+// structure — which form, which separators, what was missing — and no values
+// whatsoever. It is safe in a log, a ticket and a support bundle.
 //
 // The scheme is named only when it is one we recognise. An unrecognised one is
 // reported as such: text before "://" is only a scheme if the string really is a
@@ -148,7 +146,7 @@ func DescribeConnectionShape(dsn string) string {
 		seen = append(seen, "not recognisable as a connection string")
 	}
 
-	// Where the options start is the distinction that misled a DBA once: options
+	// Where the options start is the distinction that is easily missed: options
 	// appended after "?" are read, options put straight after the host are not
 	// part of any URL and cannot be.
 	if isURL {
@@ -157,10 +155,9 @@ func DescribeConnectionShape(dsn string) string {
 			seen = append(seen, `options separated by semicolons before any "?"`)
 		}
 	}
-	// The description has to name the thing it is hiding. A customer connection
-	// was refused by the driver as "invalid URL format" while every visible part
-	// of it was fine — which left the reader knowing only that the cause was in
-	// the redacted half. These characters are what put it there.
+	// The description has to name the thing it is hiding: a driver refusal of
+	// "invalid URL format" with every visible part fine leaves the reader knowing
+	// only that the cause is in the redacted half. These characters put it there.
 	if isURL {
 		if unusable := charactersNoURLCanCarry(userinfoOf(rest)); unusable != "" {
 			seen = append(seen, "the user or password contains "+unusable+
@@ -188,7 +185,7 @@ func DescribeConnectionShape(dsn string) string {
 	// A Postgres connection with no sslmode does not mean "no TLS preference" —
 	// lib/pq demands TLS by default and fails outright against a server that has
 	// not got it enabled, with an error that says nothing about the connection
-	// string. It cost an evening, so the shape says whether it was set.
+	// string. So the shape says whether it was set.
 	if isURL && scheme != "sqlserver" && !hasKeyword(trimmed, "sslmode") {
 		seen = append(seen, "no sslmode set, so the driver will require TLS "+
 			"and fail against a server without it")

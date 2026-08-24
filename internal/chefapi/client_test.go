@@ -2765,13 +2765,16 @@ func TestNewClient_RespectsSuppliedHTTPClient(t *testing.T) {
 	}
 }
 
+// Ohai attribute shapes vary by platform and Chef version. Windows delivers
+// filesystem.by_mountpoint keyed by drive letter and no by_pair at all, so
+// narrowing the node search to filesystem.by_pair empties the attribute for
+// every Windows node. Keep the whole filesystem attribute.
 func TestNodeSearchAttributes_FilesystemIsNotNarrowed(t *testing.T) {
 	// The filesystem attribute must be requested as a whole subtree.
 	//
 	// Narrowing it to ["filesystem","by_pair"] (v2.18.6) destroyed filesystem
-	// data for every Windows node: 55,488 of 55,489 lost the attribute — and
-	// their disk verdict with it — on the first post-deploy collection, with
-	// no error and no log line.
+	// data for every Windows node — and their disk verdict with it — silently,
+	// with no error and no log line.
 	//
 	// The sections Ohai emits are not the same on every platform. Windows
 	// delivers by_mountpoint keyed by drive letter and no by_pair; see the

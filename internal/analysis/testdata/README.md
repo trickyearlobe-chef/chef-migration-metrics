@@ -1,11 +1,8 @@
 # Cookstyle output fixtures
 
-Real `cookstyle --format json` output, captured 2026-07-30. Only the `path` fields are
-rewritten to be cookbook-relative; everything else is untouched. Do not hand-edit these —
-recapture them if the toolchain changes.
-
-They exist because the `correctable` / `corrected` semantics were previously recorded only
-as prose, which nothing re-validated.
+Real `cookstyle --format json` output. Only the `path` fields are rewritten to be
+cookbook-relative; everything else is untouched. Do not hand-edit these — recapture them
+if the toolchain changes.
 
 ## What they pin
 
@@ -33,8 +30,8 @@ document, which is what distinguishes "reads the flag" from "hardcodes true".
 
 CMM runs `cookstyle --auto-correct` (safe only), never `--auto-correct-all`. Some cops
 report `correctable=true` yet are left untouched because their correction is unsafe.
-Measured across 165 real cookbook files: `--auto-correct` corrected 76 of 77 correctable
-offences; `--auto-correct-all` corrected all 77.
+Across a real cookbook corpus, `--auto-correct` leaves a small share of correctable
+offences untouched that `--auto-correct-all` fixes.
 
 So the static `correctable` flag and "what our preview actually fixed" are **different
 numbers**, and `cookstyle_scan_unsafe_correctable.json` is the minimal case where they

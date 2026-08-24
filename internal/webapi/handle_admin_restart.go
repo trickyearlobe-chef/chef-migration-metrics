@@ -11,7 +11,7 @@ import "net/http"
 
 // handleAdminRestart triggers a graceful restart of the running process so that
 // restart-required configuration changes (listen address/port, TLS, WebSocket,
-// auth) take effect without shell access. See configuration-live-reload.md.
+// auth) take effect without shell access.
 //
 // The handler returns 202 immediately, then signals the restart trigger. The
 // trigger (wired by main via WithRestartTrigger) initiates a graceful shutdown

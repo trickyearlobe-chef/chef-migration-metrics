@@ -18,8 +18,8 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 )
 
-// TestFunctional_AddonCop_LoadedEnabledAndDetected is the end-to-end proof for
-// Chunk D: a real operator addon RuboCop cop placed on disk is resolved,
+// TestFunctional_AddonCop_LoadedEnabledAndDetected is the end-to-end proof that
+// a real operator addon RuboCop cop placed on disk is resolved,
 // require:'d, ENABLED, and actually produces an offence when the live cookstyle
 // binary scans a cookbook that triggers it — keyed by its cop name like any
 // other offence (so classification can later block it).

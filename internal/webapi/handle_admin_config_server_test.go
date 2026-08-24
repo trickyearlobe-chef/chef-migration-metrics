@@ -825,7 +825,7 @@ func acmeCertPEM(t *testing.T, cn string, notAfter time.Time) []byte {
 }
 
 // In ACME mode the GET response surfaces the issued certificate's metadata and
-// the operator status object (tls-acme.md § 3.14).
+// the operator status object.
 func TestAdminConfigServer_GET_ACMEStatusAndCertInfo(t *testing.T) {
 	store := newTestConfigStore(t)
 	ctx := context.Background()
@@ -913,7 +913,7 @@ func getStoredSecretString(t *testing.T, store *configstore.Store, key string) (
 const acmeDNS01CredBody = `{"tls":{"mode":"acme","min_version":"1.3","acme":{"domains":["app.example.com"],"email":"admin@example.com","agree_to_tos":true,"challenge":"dns-01","dns_provider":"route53","dns_provider_config":{"region":"us-east-1","hosted_zone_id":"Z123ABC"},"route53":{"access_key_id":"AKIAEXAMPLE","secret_access_key":"s3cr3t-key-value"}}}}`
 
 // Route 53 DNS-01 credentials submitted under tls.acme.route53 are persisted as
-// encrypted secrets (tls-acme.md § 3.4/§ 3.5), not into the server.tls config
+// encrypted secrets, not into the server.tls config
 // section.
 func TestAdminConfigServer_PUT_PersistsRoute53Creds(t *testing.T) {
 	store := newTestConfigStore(t)
@@ -973,7 +973,7 @@ func TestAdminConfigServer_PUT_EmptyRoute53CredsPreserved(t *testing.T) {
 }
 
 // An ACME config save fires the re-register trigger so the renewer re-asserts
-// hostname registration immediately (tls-acme.md § 3.14); a non-ACME save does
+// hostname registration immediately; a non-ACME save does
 // not.
 func TestAdminConfigServer_PUT_ACMEFiresReRegister(t *testing.T) {
 	store := newTestConfigStore(t)
@@ -1061,7 +1061,7 @@ func TestAdminConfigServer_PUT_PersistsListen(t *testing.T) {
 	}
 }
 
-// The behind-proxy plain-HTTP deployment (tls.md § 9.1) sets server.trusted_proxy
+// The behind-proxy plain-HTTP deployment sets server.trusted_proxy
 // alongside tls.mode off. The handler must persist the dedicated trusted_proxy
 // section, not just the TLS/listen/websocket ones, or the UI value is lost on
 // reload/restart.

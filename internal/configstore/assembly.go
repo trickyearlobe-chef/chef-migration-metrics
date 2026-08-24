@@ -76,7 +76,6 @@ const (
 	KeyTestKitchen                = "analysis_tools.test_kitchen"
 	KeyReadiness                  = "readiness"
 	KeyExports                    = "exports"
-	KeyElasticsearch              = "elasticsearch"
 	KeyServerListen               = "server.listen"
 	KeyServerTLS                  = "server.tls"
 	KeyServerWebSocket            = "server.websocket"
@@ -99,7 +98,7 @@ const (
 	// excluded from AllConfigKeys/ConfigToSections so config assembly never
 	// tries to fold PEM material into a config struct. The certificate is
 	// stored non-secret (public); the private key is stored secret (encrypted,
-	// never returned by any API). See tls-static.md § 2.7.
+	// never returned by any API).7.
 	KeyServerTLSCertificate       = "server.tls.certificate"
 	KeyServerTLSPrivateKey        = "server.tls.private_key"
 	KeyServerTLSPrivateKeyPending = "server.tls.private_key.pending"
@@ -110,7 +109,7 @@ const (
 	// AllConfigKeys/ConfigToSections so config assembly never folds key/cert
 	// material into a config struct. The account key and issued private key are
 	// secret (encrypted, never returned by any API); the issued cert is public.
-	// See tls-acme.md § 3.5.
+	//5.
 	KeyServerTLSACMEAccountKey = "server.tls.acme.account_key"
 	KeyServerTLSACMECert       = "server.tls.acme.cert"
 	KeyServerTLSACMEKey        = "server.tls.acme.key"
@@ -122,13 +121,13 @@ const (
 	// secret (encrypted, never returned by any API); region and hosted zone ID
 	// are public. They are the highest-priority source in the AWS credential and
 	// region/zone resolution order (env vars and the IAM instance role follow).
-	// See tls-acme.md § 3.4 / § 3.5.
+	//4 / § 3.5.
 	KeyServerTLSACMERoute53AccessKeyID     = "server.tls.acme.route53.access_key_id"
 	KeyServerTLSACMERoute53SecretAccessKey = "server.tls.acme.route53.secret_access_key"
 	KeyServerTLSACMERoute53Region          = "server.tls.acme.route53.region"
 	KeyServerTLSACMERoute53HostedZoneID    = "server.tls.acme.route53.hosted_zone_id"
 
-	// ACME operator status (tls-acme.md § 3.14). A standalone, non-secret,
+	// ACME operator status. A standalone, non-secret,
 	// non-key entry written only by the renewer (last renewal time, last
 	// renewal error, last hostname-registration error) and read by the admin
 	// config GET to populate the Server & TLS status panel. Excluded from
@@ -139,7 +138,7 @@ const (
 // ServerListenSection is the JSON/YAML shape of the `server.listen` config
 // store section. It holds the listen address and port, which are DB-managed
 // and UI-editable (the bootstrap YAML keeps a copy only as the bind-failure
-// fallback — see encrypted-config-store.md).
+// fallback —).
 type ServerListenSection struct {
 	ListenAddress string `yaml:"listen_address" json:"listen_address"`
 	Port          int    `yaml:"port" json:"port"`
@@ -148,11 +147,9 @@ type ServerListenSection struct {
 // AnalysisToolsSection is the shape of the `analysis_tools` section: the
 // analysis tool settings WITHOUT Test Kitchen, which keeps a section of its own.
 //
-// They were one section, and two screens wrote it. The Test Kitchen screen read
-// what was there and put its part back; the Analysis Tools screen replaced the
-// whole thing with what it was sent, and had never sent the Test Kitchen part —
-// so changing a CookStyle timeout lost the driver, the images, the credential
-// references and the rate limits, and reported a successful save.
+// Two screens write these settings, and a screen replaces the whole section with
+// what it was sent. Sharing one section therefore lets either screen silently
+// drop everything the other owns, and report a successful save.
 //
 // Kept apart rather than merged on write, because merging makes "not sent" and
 // "cleared" the same thing and a setting can then never be cleared.
@@ -192,7 +189,6 @@ func AllConfigKeys() []string {
 		KeyTestKitchen,
 		KeyReadiness,
 		KeyExports,
-		KeyElasticsearch,
 		KeyServerListen,
 		KeyServerTLS,
 		KeyServerWebSocket,
@@ -366,8 +362,6 @@ func assembleOneField(cfg *config.Config, key string, raw json.RawMessage) error
 		return yamlUnmarshalInto(&cfg.Readiness, raw, key)
 	case KeyExports:
 		return yamlUnmarshalInto(&cfg.Exports, raw, key)
-	case KeyElasticsearch:
-		return yamlUnmarshalInto(&cfg.Elasticsearch, raw, key)
 	case KeyServerListen:
 		var listen ServerListenSection
 		if err := yamlUnmarshalInto(&listen, raw, key); err != nil {
@@ -447,7 +441,6 @@ func ConfigToSections(cfg *config.Config) (map[string]json.RawMessage, error) {
 		KeyTestKitchen:       cfg.AnalysisTools.TestKitchen,
 		KeyReadiness:         cfg.Readiness,
 		KeyExports:           cfg.Exports,
-		KeyElasticsearch:     cfg.Elasticsearch,
 		KeyServerListen: ServerListenSection{
 			ListenAddress: cfg.Server.ListenAddress,
 			Port:          cfg.Server.Port,

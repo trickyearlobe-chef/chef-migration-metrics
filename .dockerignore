@@ -38,7 +38,6 @@ keys/
 .git-deny-patterns
 deploy/docker-compose/keys/
 deploy/docker-compose/.env
-deploy/elk/.env
 .env
 *.key
 *.crt
@@ -57,7 +56,6 @@ deploy/elk/.env
 # Deployment Artifacts (not needed in the image build)
 # =============================================================================
 deploy/docker-compose/
-deploy/elk/
 deploy/pkg/
 
 # =============================================================================
@@ -134,7 +132,6 @@ pgdata/
 cookbook_data/
 exports/
 *.ndjson
-elasticsearch/
 
 # =============================================================================
 # Docker Compose Overrides

@@ -17,7 +17,7 @@ import (
 //
 // The curated seed list lives in code and reaches files with predictable names.
 // It cannot reach a script that only runs because a build job invokes it: that
-// sits at a different path in every customer's repositories. This endpoint is
+// sits at a different path in every set of repositories. This endpoint is
 // the operator's half, and the reason the list is a decision somebody makes and
 // can see rather than a rule inferred. See journeys/scan-trust.md.
 //

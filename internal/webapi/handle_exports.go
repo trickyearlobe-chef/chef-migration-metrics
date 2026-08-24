@@ -77,8 +77,7 @@ func (r *Router) handleExports(w http.ResponseWriter, req *http.Request) {
 	// Always stream the export directly to the response as a download. The
 	// encoder holds only one page in memory, so this works at any size. There is
 	// no async job path — that remains future scaffolding (the export_jobs table
-	// and status/download endpoints are dormant, reserved for pipeline export to
-	// logstash/elasticsearch/observe).
+	// and status/download endpoints are dormant).
 	r.streamExportDownload(w, req, spec, exportType, format)
 }
 

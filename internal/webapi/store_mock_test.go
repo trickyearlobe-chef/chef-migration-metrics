@@ -26,7 +26,6 @@ type mockStore struct {
 	ListOrganisationsFn                                    func(ctx context.Context) ([]datastore.Organisation, error)
 	GetOrganisationByNameFn                                func(ctx context.Context, name string) (datastore.Organisation, error)
 	GetLatestCollectionRunFn                               func(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
-	ListCollectionRunsFn                                   func(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
 	ListCollectionRunsFilteredFn                           func(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error)
 	CountCollectionRunsFilteredFn                          func(ctx context.Context, f datastore.CollectionRunFilter) (int, error)
 	ListNodeSnapshotsByOrganisationFn                      func(ctx context.Context, organisationID string) ([]datastore.NodeSnapshot, error)
@@ -350,13 +349,6 @@ func (m *mockStore) GetLatestCollectionRun(ctx context.Context, organisationID s
 		return m.GetLatestCollectionRunFn(ctx, organisationID)
 	}
 	return datastore.CollectionRun{}, nil
-}
-
-func (m *mockStore) ListCollectionRuns(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error) {
-	if m.ListCollectionRunsFn != nil {
-		return m.ListCollectionRunsFn(ctx, organisationID, limit)
-	}
-	return nil, nil
 }
 
 func (m *mockStore) ListCollectionRunsFiltered(ctx context.Context, f datastore.CollectionRunFilter) ([]datastore.CollectionRunWithOrg, error) {

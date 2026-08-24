@@ -41,8 +41,8 @@ describe("OwnerAliasesCard", () => {
     expect(api.fetchOwnerAliases).toHaveBeenCalledWith("thomas-smith");
   });
 
-  // The whole complaint about the old screen: two owner boxes, one filled and
-  // one not. On the person's own page there is nothing to ask.
+  // On the person's own page there is nothing to ask: a second owner box would
+  // only repeat what the page already is.
   it("has no owner field — the page is already the owner", async () => {
     render(<OwnerAliasesCard ownerName="thomas-smith" canEdit />);
     await screen.findByText("Fat Tommy");

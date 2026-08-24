@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-// Degraded-listener kinds reported by TLSStatus.Kind (tls.md § 6.3).
+// Degraded-listener kinds reported by TLSStatus.Kind.
 const (
 	// DegradedKindSelfSigned is the primary fail-open: HTTPS with an ephemeral
 	// untrusted self-signed certificate, so the recovery UI stays encrypted.
@@ -21,7 +21,7 @@ const (
 // TLSStatus is the public, DB-independent view of the TLS listener health,
 // served by GET /api/v1/server/tls-status. When the TLS listener cannot be built
 // at startup the server falls open to a degraded listener (a self-signed HTTPS
-// cert, or plain HTTP as a last resort — see tls.md § 6.3) and reports
+// cert, or plain HTTP as a last resort —) and reports
 // Degraded=true here so the UI can warn on every page, including before login.
 type TLSStatus struct {
 	Degraded bool `json:"degraded"`

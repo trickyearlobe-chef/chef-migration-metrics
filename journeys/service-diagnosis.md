@@ -4,7 +4,7 @@
 machine I have no access to, gathered by somebody who is not a specialist, and safe to send out
 of their organisation.**
 
-This is the constraint that shapes everything here. The service runs inside a customer's estate.
+This is the constraint that shapes everything here. The service runs inside somebody else's estate.
 I reach it, if at all, through a controlled desktop with no copy and paste and no file transfer.
 The person in front of it can click things and send me a screenshot. "Can you run this command
 and paste the output" is not available, and neither is a support engineer reading a log over
@@ -28,7 +28,7 @@ To read the logs from the interface, filtered, because most questions are answer
 few errors and a screenshot of those is often the whole diagnosis.
 
 To see where the service is spending its time when the complaint is that it is slow, since "slow"
-at a hundred and twenty thousand machines and "slow" in a lab are different problems.
+at estate scale and "slow" in a lab are different problems.
 
 ## The decisions behind it
 
@@ -84,8 +84,8 @@ rather than taking part of the period somebody asked to keep.
 organisation names are absent. Machine names, addresses, repository addresses and user names are
 not covered, and the promise the journey makes is about all of them. Anybody adding a new section
 to the bundle can put identifying data in it and every test here will still pass. This is the most
-consequential untested claim in the product: the failure sends a customer's internal names outside
-their organisation, and it is unrecoverable once sent.
+consequential untested claim in the product: the failure sends an organisation's internal names
+outside it, and it is unrecoverable once sent.
 
 **Nothing proves no secret reaches a log.** Stated in [credentials that never leave the box in the
 clear](service-secrets.md) and repeated here because the log path is where it would happen.

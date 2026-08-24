@@ -26,7 +26,7 @@ func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 	}
 
 	// Should contain --auto-correct, --format json, --config, and the directory.
-	// Chunk E: the autocorrect run is FULL ruleset — no --only narrowing — so its
+	// The autocorrect run is FULL ruleset — no --only narrowing — so its
 	// whole-cookbook diff covers every available fix (including addon-cop fixes).
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--auto-correct") {
@@ -39,7 +39,7 @@ func TestBuildAutocorrectArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 		t.Error("args should contain --config when target version is set")
 	}
 	if strings.Contains(joined, "--only") {
-		t.Error("args should NOT contain --only — the autocorrect preview runs the full ruleset (chunk E)")
+		t.Error("args should NOT contain --only — the autocorrect preview runs the full ruleset")
 	}
 	if args[len(args)-1] != cookbookDir {
 		t.Errorf("last arg = %q, want %s", args[len(args)-1], cookbookDir)
@@ -170,7 +170,7 @@ func TestBuildAutocorrectArgs_AlwaysHasFormatJSON(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Chunk E: addon cops in the autocorrect preview (full ruleset + isolation)
+// Addon cops in the autocorrect preview (full ruleset + isolation)
 // ---------------------------------------------------------------------------
 
 // seqAutocorrectExecutor returns a different canned result per call, cycling

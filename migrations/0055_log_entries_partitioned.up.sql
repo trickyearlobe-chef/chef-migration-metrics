@@ -1,21 +1,19 @@
 -- log_entries: convert to a day-partitioned table so retention is a partition
 -- drop rather than a row-level DELETE.
 --
--- WHY: expiry was `DELETE FROM log_entries WHERE timestamp < cutoff`. On a table
--- measured at 26GB in production that leaves millions of dead tuples for
--- autovacuum to reclaim (observed: 240k dead tuples with autovacuum a day
--- stale), so the mechanism meant to bound the table was itself a source of
--- bloat. Dropping a whole day partition reclaims the space immediately and
+-- WHY: expiry was `DELETE FROM log_entries WHERE timestamp < cutoff`. This table
+-- grows fast enough that the delete leaves dead tuples faster than autovacuum
+-- reclaims them, so the mechanism meant to bound the table was itself a source
+-- of bloat. Dropping a whole day partition reclaims the space immediately and
 -- leaves nothing to vacuum. Mirrors converge_runs (migration 0052).
 --
 -- EXISTING ROWS ARE DISCARDED. Postgres cannot convert a table to a partitioned
 -- one in place, and the alternatives all cost more than this data is worth:
 -- attaching the old table as a historical partition would forbid the primary
 -- key below (Postgres requires the partition key in every unique key) or
--- require building a fresh index across all 26GB while holding an exclusive
--- lock. These are the application's own diagnostic logs, not customer data, and
--- they expire on a 90-day clock anyway. Confirmed with the operator before this
--- migration was written.
+-- require rebuilding the index over the whole table while holding an exclusive
+-- lock. These are the application's own diagnostic logs, not collected estate
+-- data, and they expire on a 90-day clock anyway.
 --
 -- Because the new table starts empty, PRIMARY KEY (id, timestamp) costs nothing
 -- to establish and keeps id uniqueness enforced. The partition key must appear

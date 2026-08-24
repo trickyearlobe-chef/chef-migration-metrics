@@ -48,6 +48,12 @@ func (p *Provisioner) Provision(ctx context.Context, info *samlsp.UserInfo) (dat
 
 	// Derive username: use the extracted username, falling back to a
 	// sanitised form of the SAML subject.
+	//
+	// The fallback exists because users.username is NOT NULL — with no name in
+	// the assertion there is nothing else to store, so one is invented rather
+	// than the sign-in failing. That is the wrong trade: a person coined from an
+	// opaque token has their work hanging off a string nobody chose. A sign-in
+	// carrying no name should be refused, naming the missing claim.
 	username := info.Username
 	if username == "" {
 		username = sanitiseUsername(info.SAMLSubject)

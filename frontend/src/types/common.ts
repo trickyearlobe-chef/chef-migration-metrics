@@ -31,7 +31,7 @@ export interface VersionResponse {
 
 // TLSStatus mirrors GET /api/v1/server/tls-status. When the TLS listener cannot
 // be built at startup the server falls open to a degraded listener — a
-// self-signed HTTPS cert, or plain HTTP as a last resort (tls.md § 6.3) — and
+// self-signed HTTPS cert, or plain HTTP as a last resort — and
 // reports degraded=true so the UI can warn that the certificate is untrusted.
 export interface TLSStatus {
   degraded: boolean;

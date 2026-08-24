@@ -150,7 +150,7 @@ func TestHandleNodeDisks_HappyPath_Linux(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:         "pandora.home.arpa",
+				NodeName:         "node1.example.com",
 				OrganisationName: "org-1",
 				Platform:         "ubuntu",
 				Filesystem:       fsData,
@@ -160,7 +160,7 @@ func TestHandleNodeDisks_HappyPath_Linux(t *testing.T) {
 	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/disks/prod/pandora.home.arpa", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/disks/prod/node1.example.com", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -171,8 +171,8 @@ func TestHandleNodeDisks_HappyPath_Linux(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if body.NodeName != "pandora.home.arpa" {
-		t.Errorf("node_name = %q, want %q", body.NodeName, "pandora.home.arpa")
+	if body.NodeName != "node1.example.com" {
+		t.Errorf("node_name = %q, want %q", body.NodeName, "node1.example.com")
 	}
 	if body.OrganisationName != "prod" {
 		t.Errorf("organisation_name = %q, want %q", body.OrganisationName, "prod")
@@ -268,7 +268,7 @@ func TestHandleNodeDisks_HappyPath_Windows(t *testing.T) {
 		},
 		GetNodeSnapshotByNameFn: func(ctx context.Context, orgID, nodeName string) (datastore.NodeSnapshot, error) {
 			return datastore.NodeSnapshot{
-				NodeName:         "win11-001.home.arpa",
+				NodeName:         "win11-001.example.com",
 				OrganisationName: "org-1",
 				Platform:         "windows",
 				Filesystem:       fsData,
@@ -278,7 +278,7 @@ func TestHandleNodeDisks_HappyPath_Windows(t *testing.T) {
 	}
 	r := newTestRouterWithMock(store)
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/disks/prod/win11-001.home.arpa", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/disks/prod/win11-001.example.com", nil)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
@@ -1143,13 +1143,12 @@ func TestParseFilesystemData_ByPairPrefersMountFieldOverKey(t *testing.T) {
 }
 
 func TestParseFilesystemData_ByPairWindowsDriveLetterKeys(t *testing.T) {
-	// Verbatim shape from a customer Windows node (Ohai version differs from
-	// the lab): by_pair keys are bare drive letters with NO comma and the
-	// entries carry NO "mount" field.
+	// Verbatim shape from a Windows node whose Ohai keys by_pair by bare drive
+	// letter: NO comma, and the entries carry NO "mount" field.
 	//
-	// analysis.findBestMountWindows matches the key against the drive letter,
-	// so these nodes report a disk verdict — while this page rendered nothing
-	// because it required either a "mount" field or a "device,mount" key.
+	// analysis.findBestMountWindows matches the key against the drive letter, so
+	// these nodes report a disk verdict; this page must not require either a
+	// "mount" field or a "device,mount" key.
 	raw := json.RawMessage(`{
 		"C:": {"fs_type": "ntfs", "kb_size": 98782146, "kb_used": 55134618, "drive_type": 3,
 			"volume_name": "System", "kb_available": 43647528, "percent_used": 55,

@@ -1,8 +1,7 @@
 # Connecting to a database that is not mine
 
 **As the administrator setting up an import, I need to see what I am connecting with, because
-when it does not work the only thing an encrypted connection string lets me do is guess — and
-we have already spent days guessing at what was being mangled.**
+when it does not work the only thing an encrypted connection string lets me do is guess.**
 
 The connection belongs to somebody else: their server, their account, their rules. I am handed a
 set of details on a ticket and told to make it work. Anything I cannot see is something I cannot
@@ -30,7 +29,7 @@ something I did not write.
 
 **To be shown what will actually be sent, with the password masked.** This is the thing I have
 been missing. If I can read the composed connection I can see in one glance whether the account,
-the domain or the punctuation came out wrong — which is the entire question we spent days
+the domain or the punctuation came out wrong — which is the entire question I am otherwise left
 guessing at.
 
 **A connection proposed, not imposed.** Show me one that would work for the kind of database I
@@ -97,16 +96,16 @@ Nothing here is built yet. What has to be true is enumerated in
 which is red until it is.
 
 **Nothing proves the escaping is right until it is measured against a real server, and it must
-not be reasoned about.** Working out what a driver accepts by argument is exactly what produced
-the wrong answers before — several of them, confidently, in one evening. There is a SQL Server
-to try it against, and the cases that matter are known: an account with a domain in front of it,
+not be reasoned about.** Working out what a driver accepts by argument produces confident wrong
+answers. There is a SQL Server to try it against, and the cases that matter are known: an account with a domain in front of it,
 and a password with punctuation in it. Anything short of running those two against a server that
 really refuses or really admits them is a guess wearing a test's clothes.
 
 **Nothing here can prove an account with something in front of it works.** The database we try
 these against belongs to nobody's list of people, and it will not let us invent an account that
-looks as though it does. So that is exercised for the first time at the customer, on the account
-they actually use, and the refusal seen here is not the refusal they will get.
+looks as though it does. So that is exercised for the first time in the estate where it is
+deployed, on the account actually used there, and the refusal seen here is not the refusal
+seen there.
 
 **Nothing proves a proposed connection is a good starting point.** A suggestion that is usually
 wrong is worse than none, because it turns setting up a connection into correcting one.

@@ -47,7 +47,7 @@ func newTestApp(t *testing.T) *serverApp {
 	app.cfg.Server.Port = freePort(t)
 	app.setupBootstrapLogger()
 	app.tlsStatus = webapi.NewTLSStatusHolder()
-	// Default the automatic-443 bind (tls.md § 1.5) to "unavailable" so tests run
+	// Default the automatic-443 bind to "unavailable" so tests run
 	// deterministically without attempting a privileged port bind; tests that
 	// exercise the 443 path override this with a free-port listener.
 	app.auto443Listen = func(string) (net.Listener, error) {
@@ -895,8 +895,8 @@ func TestAdoptListenerController_StaticRemoveRedirectAppliesLive(t *testing.T) {
 	waitUnreachable(t, fmt.Sprintf("127.0.0.1:%d", redirectPort)) // redirect drained
 }
 
-// adoptAuto443Boot boots the automatic-HTTPS-on-443 lifeboat topology (tls.md
-// § 1.5): a static-TLS HTTPS listener on a free "443 stand-in" port with the
+// adoptAuto443Boot boots the automatic-HTTPS-on-443 lifeboat topology:
+// a static-TLS HTTPS listener on a free "443 stand-in" port with the
 // configured server.port (and an optional http_redirect_port) redirecting to it,
 // then adopts it into the listener controller with autoHTTPSActive set. It returns
 // the lifeboat HTTPS port. Mirrors the setupAndServeHTTP auto-443 branch without a

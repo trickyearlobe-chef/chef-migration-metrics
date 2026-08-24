@@ -148,8 +148,7 @@ func TestRunSavedImport_ReportsAReadFailureRatherThanAShortRun(t *testing.T) {
 // The run history is a record of what happened, so it has to use the past
 // tense. The report carries the preview vocabulary — a committed row is still
 // labelled "would_create" — and reporting that verbatim would say the run
-// stopped short of writing when it did not. Found by watching a real
-// scheduled run, which reported "8 would create" after creating 8.
+// stopped short of writing when it did not.
 func TestImportRunSummary_ReportsWhatHappenedNotWhatWouldHave(t *testing.T) {
 	summary := ImportRunSummary{
 		RowCount:    11,

@@ -13,25 +13,25 @@ import (
 	"testing"
 )
 
-// P3 scale/EXPLAIN proof.
+// Scale/EXPLAIN proof.
 //
-// At customer scale (~120k node_snapshots) the old COUNT(*) OVER() forced the
-// planner to materialise every matching wide row before LIMIT 50, then top-N
-// sort them (temp spill). This test proves the split fixes both halves:
+// At fleet scale a COUNT(*) OVER() forces the planner to materialise every
+// matching wide row before LIMIT 50, then top-N sort them (temp spill). This
+// test proves the split avoids both halves:
 //   - the default-sort rows query is served by idx_node_snapshots_node_name as
 //     an ordered index scan + LIMIT (no Seq Scan, no Sort, no window), and
 //   - the count query is a lean aggregate with no window.
 //
-// Opt-in: seeding ~120k rows is slow, so the test is skipped unless CMM_TEST_PERF
-// is set. Node count is overridable via CMM_TEST_PERF_NODES (default 120000).
+// Opt-in: seeding that many rows is slow, so the test is skipped unless
+// CMM_TEST_PERF is set. Node count is overridable via CMM_TEST_PERF_NODES.
 func TestFunctional_NodeListCountSplit_ScaleExplain(t *testing.T) {
 	if os.Getenv("CMM_TEST_PERF") == "" {
-		t.Skip("CMM_TEST_PERF not set — skipping ~120k-row scale/EXPLAIN test")
+		t.Skip("CMM_TEST_PERF not set — skipping the scale/EXPLAIN test")
 	}
 	db := testDB(t)
 	ctx := context.Background()
 
-	nodes := 120000
+	nodes := 150000
 	if v := os.Getenv("CMM_TEST_PERF_NODES"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 {

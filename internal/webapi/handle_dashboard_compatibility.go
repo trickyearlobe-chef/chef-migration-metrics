@@ -12,7 +12,7 @@ import (
 
 // rollupBucketForScan maps a CookStyle scan result to one of the 4-state rollup
 // buckets the dashboard summaries report (ready / needs_review / blocked /
-// untested), so every surface shares the cop-classification.md vocabulary. An
+// untested), so every surface shares the vocabulary. An
 // inconclusive scan (error_message set) and a row with no materialised status
 // fall to untested — a scan that produced no verdict. This deliberately ignores
 // the legacy passed boolean: a needs_review result has passed=true but must not
@@ -127,7 +127,7 @@ func (r *Router) handleDashboardCookbookCompatibility(w http.ResponseWriter, req
 
 	targetVersions := r.liveConfig().TargetChefVersionList()
 
-	// CookStyle rollup summary (cop-classification.md 4-state vocabulary). The
+	// CookStyle rollup summary (4-state vocabulary). The
 	// untested segment is sub-split (errored scan / inactive / not-yet-scanned)
 	// for the card tooltip; the three add up to UntestedCookbooks.
 

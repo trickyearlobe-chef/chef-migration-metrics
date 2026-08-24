@@ -16,11 +16,10 @@ import (
 
 // The repository is not the cookbook — see journeys/scan-trust.md.
 //
-// The estate-wide cop view is where a migration lead reads prevalence, and the
-// customer's motivating case is one copied Rakefile making ~95% of cookbooks
-// look broken. So the correction has to land here too: the same cop must be
-// counted separately depending on whether it can block, and neither count may
-// be dropped.
+// The estate-wide cop view is where a migration lead reads prevalence, and one
+// copied Rakefile can make most cookbooks look broken. So the correction has to
+// land here too: the same cop must be counted separately depending on whether
+// it can block, and neither count may be dropped.
 
 // TestCopAggregation_SplitsBlockingFromOutsideCookbookCode builds three
 // cookbooks carrying one cop between them:

@@ -64,9 +64,8 @@ func TestJourney_CompletenessIsADeliberateRequest(t *testing.T) {
 //
 // A missing record and a missing endpoint both answer 404, and only the message
 // tells them apart — asking about a cookbook the empty mock does not hold is
-// "not found", not "there is no way to ask". Treating the two the same would
-// have reported four capabilities as unbuilt when all four exist, which is the
-// kind of red that teaches people to stop reading the list.
+// "not found", not "there is no way to ask". Treating the two the same reports
+// a built capability as unbuilt.
 func journeyRoutes(t *testing.T, path string) bool {
 	t.Helper()
 	w := agentJourneyGet(t, path)

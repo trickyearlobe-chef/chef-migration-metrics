@@ -109,11 +109,11 @@ Proven by [the contract](internal/analysis/semantic_contracts_test.go).
 EOF
 
 # ---- a journey must name a test ------------------------------------------
-# Agreed 2026-08-05. Status is the thing that rots, so it is not written down:
-# a journey names the test that proves it, and a red test says "not proven"
-# without anybody maintaining a sentence that says so. One resolving link
-# satisfies the rule — the parts nothing can prove are stated in prose,
-# because no check can tell an honest admission from a missing one.
+# Status is the thing that rots, so it is not written down: a journey names the
+# test that proves it, and a red test says "not proven" without anybody
+# maintaining a sentence that says so. One resolving link satisfies the rule —
+# the parts nothing can prove are stated in prose, because no check can tell an
+# honest admission from a missing one.
 
 assert block "a journey that names no test" <<'EOF'
 # A journey
@@ -129,11 +129,9 @@ assert block "a journey whose only reference is to code, not to a test" <<'EOF'
 The verdict is decided in [the analyser](internal/analysis/cookstyle_recompute.go).
 EOF
 
-# Agreed 2026-08-10. A journey names tests that prove particular things; a suite
-# enumerates everything the journey says must be in place, so what is OUTSTANDING
-# is a list you can run rather than a paragraph somebody has to keep true. The
-# rule existed as prose for a day and reached one journey in twenty, which is the
-# protocol demonstrating its own thesis at its own expense.
+# A journey names tests that prove particular things; a suite enumerates
+# everything the journey says must be in place, so what is OUTSTANDING is a list
+# you can run rather than a paragraph somebody has to keep true.
 # Checked by taking the suite away rather than by writing a journey without one,
 # so the case cannot pass for the wrong reason once every other rule is satisfied.
 mv "$SUITE_FIXTURE" "$SUITE_FIXTURE.parked"

@@ -14,10 +14,8 @@ import { ErrorAlert, LoadingSpinner } from "../components/Feedback";
 // substitute — it puts the call in the reader's own terminal, where they own
 // what happens.
 //
-// Hand-rolled rather than a renderer library. Measured 2026-08-12, the cheapest
-// of the three real ones added 97 packages to a tree of 371. See
-// plans/todo-documentation.md for the numbers and for what the generator would
-// have to emit before one earns its place.
+// Hand-rolled rather than a renderer library: the cheapest of the real ones
+// adds a large transitive dependency tree.
 
 const METHOD_ORDER = ["get", "post", "put", "patch", "delete", "head", "options"];
 
@@ -306,13 +304,11 @@ function responseSchema(entry: Entry): ApiSchema | undefined {
 
 // describesShape reports whether the panel can say anything about a schema.
 //
-// The panel used to answer this by asking "does it have fields?", which reads
-// every list, every map and every one-of as undescribed — so a body the
-// description genuinely spelled out as a list of strings was reported as
-// unknown, and the reader went to the network tab for something they had
-// already been told. Everything the generator can emit has to have an answer
-// here; ApiDocsPage.contract.test.ts holds that against what the service
-// really emits.
+// Asking only "does it have fields?" reads every list, every map and every
+// one-of as undescribed, so a body the description genuinely spells out as a
+// list of strings reads as unknown. Everything the generator can emit has to
+// have an answer here; ApiDocsPage.contract.test.ts holds that against what the
+// service really emits.
 export function describesShape(
   schema: ApiSchema | undefined,
   schemas: Schemas,

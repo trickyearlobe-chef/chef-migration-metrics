@@ -25,19 +25,17 @@ import (
 //
 // Every escaping rule below was MEASURED against a running server, not read
 // from documentation — see compose_functional_test.go. Reasoning about them
-// produced several confident wrong answers, and one of those wrong answers had
-// already been written into the plan: brace-quoting an ADO password is accepted
-// by the parser, arrives with the braces still attached, and comes back as
-// "login failed" — a wrong password rather than a bad string.
+// does not work: brace-quoting an ADO password is accepted by the parser,
+// arrives with the braces still attached, and comes back as "login failed" — a
+// wrong password rather than a bad string.
 
 // PasswordMarker is where the password goes. The administrator positions it;
 // the proposed starting connection already contains one, so most people never
 // have to think about it.
 //
 // Chosen to survive being passed around, which is not a small thing: these
-// connections get pasted into tickets, scripts, Makefiles and shells on the way
-// to us. Measured rather than assumed, because two earlier spellings did not
-// survive and one of them cost a wrong test run:
+// connections get pasted into scripts, Makefiles and shells on the way to us.
+// Measured rather than assumed, because these spellings do not survive:
 //
 //   - "${password}" is expanded by every shell, silently, to nothing.
 //   - "[password]" is a glob character class — it became "d" in both bash and
@@ -146,15 +144,14 @@ func Compose(driver, connection, password string) (Composed, error) {
 }
 
 // ---------------------------------------------------------------------------
-// The scheme names the database, and nothing used to check it
+// The scheme names the database
 // ---------------------------------------------------------------------------
 
 // DriverNamedByScheme reports which database a URL scheme names, so a screen
 // can derive the database from the connection instead of asking twice.
 //
 // A URL-shaped connection already says which database it is for. Asking again
-// alongside it is not merely redundant — the two can disagree, and until this
-// existed nothing noticed.
+// alongside it is not merely redundant — the two can disagree.
 func DriverNamedByScheme(scheme string) (string, bool) {
 	switch strings.ToLower(scheme) {
 	case "sqlserver":
@@ -169,14 +166,12 @@ func DriverNamedByScheme(scheme string) (string, bool) {
 // database from the one chosen, and one whose scheme names nothing either
 // driver understands.
 //
-// Measured, and this is why it is worth refusing rather than passing on: given
-// a "postgres://" connection the SQL Server driver does not complain about the
-// scheme at all. It quietly falls back to reading the string as keyword pairs,
-// finds no account in it, and the server answers "Login failed for user ''" —
-// which reads as a broken credential. libpq handed a "sqlserver://" connection
-// gets as far as "SSL is not enabled on the server", which reads as a TLS
-// problem. Both send somebody to entirely the wrong person, and neither
-// mentions the database being the wrong kind.
+// Worth refusing rather than passing on, because neither driver says the
+// database is the wrong kind. Given a "postgres://" connection the SQL Server
+// driver reads the string as keyword pairs, finds no account, and the server
+// answers "Login failed for user ''", which reads as a broken credential.
+// libpq handed a "sqlserver://" connection gets as far as "SSL is not enabled
+// on the server", which reads as a TLS problem.
 func schemeAgreesWithDriver(form Form, driver, connection string) error {
 	if form != FormURL {
 		// The keyword spellings carry no scheme, so there is nothing to check
@@ -207,11 +202,10 @@ func schemeAgreesWithDriver(form Form, driver, connection string) error {
 
 // prepareVisibleParts escapes the things that cannot travel as written.
 //
-// Only the account, and only in a URL. A Windows domain login carries a
-// backslash that no URL can hold, and that is the customer's own account. This
-// is not a quiet rewrite: what arrives at the server is the account as typed —
-// measured through the driver's parser — and the composed connection is shown,
-// so the encoding is on screen rather than behind them.
+// Only the account, and only in a URL: a Windows domain login carries a
+// backslash that no URL can hold. This is not a quiet rewrite — what arrives at
+// the server is the account as typed, and the composed connection is shown, so
+// the encoding is on screen rather than behind them.
 func prepareVisibleParts(form Form, connection string) (string, error) {
 	if form != FormURL {
 		// The keyword spellings need nothing encoded: what the administrator
@@ -342,12 +336,11 @@ func escaperFor(form Form, driver string, alreadyQuoted bool) func(string) strin
 // adoEscapeInner doubles a double quote, which is how SQL Server's ";"-separated
 // keyword spelling carries one inside a quoted value.
 //
-// Measured, and this is the rule that was written down backwards. The driver
-// strips one pair of surrounding double quotes and collapses each doubled
-// double quote inside them; braces mean nothing to it, so a brace-quoted
-// password arrives with its braces attached and the server answers "login
-// failed for user" — a wrong credential rather than a bad string, which sends
-// the search to the account instead of the tooling.
+// Measured: the driver strips one pair of surrounding double quotes and
+// collapses each doubled double quote inside them. Braces mean nothing to it,
+// so a brace-quoted password arrives with its braces attached and the server
+// answers "login failed for user" — a wrong credential rather than a bad
+// string, which sends the search to the account instead of the tooling.
 func adoEscapeInner(v string) string { return strings.ReplaceAll(v, `"`, `""`) }
 
 func adoQuote(v string) string { return `"` + adoEscapeInner(v) + `"` }

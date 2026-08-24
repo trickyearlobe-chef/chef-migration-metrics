@@ -172,9 +172,9 @@ func TestFunctional_MergeOwners_SourceNameAlreadyAliasedIsNotAnError(t *testing.
 }
 
 // An audit log records what happened, including kinds of event nobody
-// anticipated when the table was defined. It used to reject an action outside
-// a fixed list — and the caller only logs a failed audit write, so a rejected
-// entry produced an action that looked audited and was not.
+// anticipated when the table was defined. A fixed list of actions rejects the
+// rest, and the caller only logs a failed audit write, so a rejected entry
+// leaves an action that looks audited and is not.
 //
 // A future kind of event must therefore be recordable without a migration.
 func TestFunctional_AuditLogRecordsAnyAction(t *testing.T) {

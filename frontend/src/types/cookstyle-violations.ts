@@ -29,8 +29,8 @@ export interface CopAggregateItem {
   /**
    * Cookbooks carrying it ONLY in files the converge never executes — a helper
    * task, a pipeline, a test suite. Real work, but not what blocks a cookbook.
-   * Shown alongside rather than folded in: one fix repeated across four hundred
-   * repositories is a different conversation from four hundred problems.
+   * Shown alongside rather than folded in: one fix repeated across three thousand
+   * repositories is a different conversation from three thousand problems.
    */
   cookbooks_excluded_only: number;
   total_offences: number;

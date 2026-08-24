@@ -96,8 +96,8 @@ func TestNormalise_Shapes(t *testing.T) {
 
 // runTime must accept both wire encodings: the RFC3339 string a raw
 // run_converge sends, and the protobuf Timestamp object {"seconds":N,"nanos":M}
-// the Automate Data Feed's client_run sends (measured live 2026-07-18 — the
-// prior string-only assumption dropped every real Data Feed record).
+// the Automate Data Feed's client_run sends. A string-only assumption drops
+// every Data Feed record.
 func TestRunTime_UnmarshalJSON(t *testing.T) {
 	want := time.Date(2026, 7, 16, 9, 1, 12, 0, time.UTC)
 	cases := []struct {
@@ -149,10 +149,9 @@ func TestNormalise_DataFeedProtobufTimestamps(t *testing.T) {
 }
 
 // The Automate Data Feed sends client_run.cookbooks as a LIST of names with the
-// versions in versioned_cookbooks; the old map-only decoder failed the whole
-// record on the list (live-found 2026-07-20 — every real Data Feed record
-// dropped). Verify it normalises and cookbook name->version comes from
-// versioned_cookbooks.
+// versions in versioned_cookbooks. A map-only decoder fails the whole record on
+// the list, dropping every Data Feed record. Verify it normalises and cookbook
+// name->version comes from versioned_cookbooks.
 func TestNormalise_DataFeedCookbooksList(t *testing.T) {
 	rec := []byte(`{"node":{"automate_fqdn":"a"},"client_run":{"id":"r1","node_name":"n1",` +
 		`"organization":"o","status":"success","end_time":{"seconds":1784192472},` +

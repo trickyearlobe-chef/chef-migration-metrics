@@ -18,8 +18,8 @@ import (
 
 // HostnameRegistrar publishes and maintains a DNS A record per ACME domain so
 // the server's FQDN resolves to the host, reusing the Route 53 client, hosted
-// zone, and ChangeResourceRecordSets permission of the DNS-01 solver
-// (tls-acme.md § 3.13). It is opt-in (server.tls.acme.register_hostname) and
+// zone, and ChangeResourceRecordSets permission of the DNS-01 solver.
+// It is opt-in (server.tls.acme.register_hostname) and
 // fail-soft: a resolution or Route 53 error is logged on the tls scope but never
 // blocks issuance, renewal, or the fail-open path.
 type HostnameRegistrar struct {
@@ -65,8 +65,8 @@ func (s *Route53Solver) NewHostnameRegistrar(ttl int, literalIP, ifaceName strin
 
 // Register UPSERTs an A record for each domain pointing at the resolved host
 // IPv4, waiting for each change to reach INSYNC. Wildcard domains are skipped
-// with a WARN (an A record cannot be published for a wildcard). It is fail-soft
-// (tls-acme.md § 3.13): a resolution failure or a per-domain Route 53 error is
+// with a WARN (an A record cannot be published for a wildcard). It is fail-soft:
+// a resolution failure or a per-domain Route 53 error is
 // logged on the tls scope and returned, but the caller must never block
 // issuance/renewal on the result. On a resolution failure no Route 53 call is
 // made. The returned error is the first failure encountered (or nil).
@@ -99,7 +99,7 @@ func (r *HostnameRegistrar) Register(ctx context.Context, domains []string) erro
 	return firstErr
 }
 
-// resolveIP picks the A-record target per tls-acme.md § 3.13 (first wins):
+// resolveIP picks the A-record target (first wins):
 // literal hostname_ip, then the named hostname_interface's global-unicast IPv4,
 // then auto-detect (default-route IPv4). An explicit-but-unusable literal or
 // interface is an error with no fall-through to auto-detect.
@@ -175,8 +175,7 @@ func ifaceGlobalUnicastIPv4(name string) (string, error) {
 
 // defaultRouteIPv4 returns the IPv4 address the OS would source off-link traffic
 // from — the interface carrying the default route. A UDP "connection" only makes
-// the kernel select a route and source address; no packets are sent
-// (tls-acme.md § 3.13).
+// the kernel select a route and source address; no packets are sent.
 func defaultRouteIPv4() (string, error) {
 	// 192.0.2.1 is TEST-NET-1 (RFC 5737) — reserved, never routed, used here
 	// only to make the kernel choose a source address.

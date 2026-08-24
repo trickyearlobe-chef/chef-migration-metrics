@@ -54,17 +54,17 @@ INSERT INTO staff (staff_id, full_name, email, team, left_company) VALUES
     (105, N'Unnamed Owner', NULL,                             NULL,          0);
 
 INSERT INTO asset_owner (asset_kind, asset_name, staff_id, recorded_on) VALUES
-    (N'node',     N'homekube001.home.arpa', 101,  '2026-01-15'),
-    (N'node',     N'homekube002.home.arpa', 101,  '2026-01-15'),
-    (N'node',     N'nexus.home.arpa',       102,  '2026-02-01'),
-    (N'node',     N'repo.home.arpa',        102,  '2026-02-01'),
-    (N'node',     N'win11-001.home.arpa',   103,  '2026-03-10'),
-    (N'cookbook', N'nginx',                 101,  '2026-01-20'),
-    (N'cookbook', N'logrotate',             102,  '2026-01-20'),
-    (N'git_repo', N'cron',                  103,  '2026-02-14'),
-    (N'git_repo', N'kubernetes-cluster',    104,  '2026-02-14'),
-    (N'node',     N'orphan-host-01',        NULL, '2026-04-01'),
-    (N'node',     N'unmatched-host-99',     105,  '2026-04-02');
+    (N'node',     N'node1.example.com',  101,  '2026-01-15'),
+    (N'node',     N'node2.example.com',  101,  '2026-01-15'),
+    (N'node',     N'node3.example.com',  102,  '2026-02-01'),
+    (N'node',     N'node4.example.com',  102,  '2026-02-01'),
+    (N'node',     N'node5.example.com',  103,  '2026-03-10'),
+    (N'cookbook', N'nginx',              101,  '2026-01-20'),
+    (N'cookbook', N'logrotate',          102,  '2026-01-20'),
+    (N'git_repo', N'cron',               103,  '2026-02-14'),
+    (N'git_repo', N'kubernetes-cluster', 104,  '2026-02-14'),
+    (N'node',     N'orphan-host-01',     NULL, '2026-04-01'),
+    (N'node',     N'unmatched-host-99',  105,  '2026-04-02');
 GO
 
 -- The query an administrator would write against this, and the one the
@@ -83,9 +83,7 @@ GO
 -- being parsed as a URL: a percent sign, a semicolon, a space and a hash.
 --
 -- It exists so the encoding repair can be proved by connecting rather than
--- asserted. A customer's connection was refused by the driver as "invalid URL
--- format" with every visible part of it legal, and the password could not be
--- retyped because nobody at hand knew it.
+-- asserted: such a password is rejected as "invalid URL format" unencoded.
 --
 -- This is a fixture in a throwaway development container, not a credential. It
 -- is read-only on the sample database and exists nowhere else.

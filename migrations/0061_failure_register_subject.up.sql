@@ -28,7 +28,7 @@ ALTER INDEX idx_failure_register_repo
     RENAME TO idx_failure_register_subject;
 
 -- Uniqueness stays on the name alone, deliberately NOT on (subject_type,
--- subject_name). This customer has one cookbook per repo, so a repo and a
--- cookbook of the same name are the same thing seen from two sides; keying on
--- the pair would allow two standing verdicts about it that could disagree.
--- One standing verdict per thing, however it was picked.
+-- subject_name). Where there is one cookbook per repo, a repo and a cookbook of
+-- the same name are the same thing seen from two sides; keying on the pair would
+-- allow two standing verdicts about it that could disagree. One standing verdict
+-- per thing, however it was picked.

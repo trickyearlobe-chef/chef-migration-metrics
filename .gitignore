@@ -152,7 +152,6 @@ deploy/docker-compose/keys/
 # Environment files with real credentials
 .env
 deploy/docker-compose/.env
-deploy/elk/.env
 
 # TLS certificates and private keys
 *.key
@@ -179,9 +178,6 @@ cookbook_data/
 # Export output files
 exports/
 *.ndjson
-
-# Elasticsearch export staging
-elasticsearch/
 
 # ACME runtime data (if stored outside the acme/ pattern above)
 .lego/

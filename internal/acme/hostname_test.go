@@ -75,7 +75,7 @@ func TestResolveIPInterfaceUsesSeam(t *testing.T) {
 }
 
 // An explicit-but-unusable interface returns an error with no fall-through to
-// auto-detect (tls-acme.md § 3.13).
+// auto-detect.
 func TestResolveIPInterfaceUnusableNoFallthrough(t *testing.T) {
 	r := fastRegistrar(&fakeRoute53{}, "Z")
 	r.ifaceName = "eth9"
@@ -154,7 +154,7 @@ func TestRegisterSkipsWildcardWithWarn(t *testing.T) {
 }
 
 // A Route 53 error on one domain is logged and returned but does not stop the
-// other domains from being attempted (fail-soft, tls-acme.md § 3.13).
+// other domains from being attempted (fail-soft).
 func TestRegisterFailSoftContinuesOnError(t *testing.T) {
 	f := &fakeRoute53{changeErr: errors.New("access denied")}
 	r := fastRegistrar(f, "Z")

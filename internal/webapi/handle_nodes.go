@@ -589,9 +589,9 @@ func (r *Router) handleNodesByCookbook(w http.ResponseWriter, req *http.Request)
 // ---------------------------------------------------------------------------
 
 // nodeSnapshotFilterFromRequest constructs a NodeSnapshotFilter from the
-// query-string parameters of an HTTP request. It maps the same parameters
-// that were previously consumed by export.FilterNodes, so the semantics
-// are identical (case-insensitive substring matching).
+// query-string parameters of an HTTP request. It maps the same parameters the
+// export path consumes, so the semantics are identical (case-insensitive
+// substring matching).
 func nodeSnapshotFilterFromRequest(req *http.Request, orgIDs []string, warningHours, criticalDays int) datastore.NodeSnapshotFilter {
 	return nodeSnapshotFilterFromValues(req.URL.Query(), orgIDs, warningHours, criticalDays)
 }

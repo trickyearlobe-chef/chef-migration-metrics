@@ -645,13 +645,8 @@ func TestIntakePreview_UsesASavedMapping(t *testing.T) {
 }
 
 func TestIntakePreview_RequiresAdmin(t *testing.T) {
-	// This reverses an earlier decision, on the product owner's instruction
-	// (2026-08-06): preview used to be open to any authenticated user on the
-	// grounds that it writes nothing, so the people who own the data could
-	// check an import before an administrator committed it.
-	//
-	// Importing owners is now an administrator function outright. Writing
-	// nothing is not the same as showing nothing: a preview renders the
+	// Importing owners is an administrator function outright, preview included.
+	// Writing nothing is not the same as showing nothing: a preview renders the
 	// contents of a system of record the caller may have no other way to read.
 	r := ownershipRouter(&mockStore{})
 	w := httptest.NewRecorder()
@@ -1376,12 +1371,9 @@ func TestIntakePreview_DoesNotTouchTheStoredFindings(t *testing.T) {
 // The shape note belongs to a connection nobody could read, not to a server
 // that answered.
 //
-// Found at the customer 2026-08-14: a query with SQL Server's syntax written
-// wrongly came back with the server's complaint followed by a paragraph about
-// backslashes in the account and how to percent-encode them. The connection was
-// fine — it had authenticated and listed tables — so every word of that was
-// about something that was not wrong, attached to a failure it had nothing to
-// do with.
+// A server that authenticated and then refused a query has already proved the
+// connection shape is not the problem, so a note about it describes something
+// that is not wrong, attached to a failure it has nothing to do with.
 func TestIntake_TheShapeNoteIsNotAttachedWhenTheServerAnswered(t *testing.T) {
 	// A refusal in the server's own words, as the driver hands it over.
 	answered := mssql.Error{Message: "Incorrect syntax near '50'.", Number: 102, Class: 15}

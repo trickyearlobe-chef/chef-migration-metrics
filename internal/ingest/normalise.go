@@ -19,9 +19,8 @@ import (
 //   - an RFC3339 string ("2026-07-16T09:01:12Z") — raw run_converge (node-direct
 //     and Chef Server proxy), and
 //   - a protobuf Timestamp object {"seconds":N,"nanos":M} — the Chef Automate
-//     Data Feed's client_run (measured live 2026-07-18; the authored fixtures
-//     wrongly used a string, so every real Data Feed record was silently dropped
-//     on the zero-value end_time guard).
+//     Data Feed's client_run. A string-only assumption drops every Data Feed
+//     record silently on the zero-value end_time guard.
 //
 // A bare numeric epoch is also tolerated defensively. null / absent / empty
 // decode to the zero time.
@@ -72,9 +71,9 @@ func (t *runTime) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// maxBacktraceLines bounds a stored backtrace. Customer converge backtraces are
-// typically ~40 lines; the cap guards against a pathological producer without
-// discarding the useful head of the trace.
+// maxBacktraceLines bounds a stored backtrace. Converge backtraces run to tens
+// of lines; the cap guards against a pathological producer without discarding
+// the useful head of the trace.
 const maxBacktraceLines = 100
 
 // ConvergeRun is the extract-and-discard subset of a converge we persist: the run

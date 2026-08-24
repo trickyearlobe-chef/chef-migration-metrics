@@ -39,7 +39,7 @@ type roleCollection struct {
 // collectRoleDetails gathers every role detail needed by BuildRoleDependencies.
 //
 // The search index is the primary path: one request per page instead of one per
-// role, which at customer scale is ~74 requests rather than 73,910. The per-role
+// role, which at a large role count is hundreds of times fewer. The per-role
 // GET remains as the fallback, used two ways — to fill roles the index did not
 // return, and to carry the whole collection if the index fails outright. The
 // index is an optimisation; /roles remains the authority on which roles exist.

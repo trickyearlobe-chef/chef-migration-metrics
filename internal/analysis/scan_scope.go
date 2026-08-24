@@ -143,8 +143,8 @@ type ScanScopeExclusionLister interface {
 // An operator row for a seeded pattern replaces it — including its reason, so a
 // reader sees the justification somebody actually stands behind rather than the
 // prose it replaced. A row recorded as not-excluded removes that pattern from
-// the effective list, which is how somebody disagrees with a default: a
-// customer whose test directory really does ship code that runs must be able to
+// the effective list, which is how somebody disagrees with a default: an
+// operator whose test directory really does ship code that runs must be able to
 // say so and be believed.
 //
 // If the decisions cannot be read, the curated list stands. That direction is

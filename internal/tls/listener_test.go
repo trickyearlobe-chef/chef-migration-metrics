@@ -178,7 +178,7 @@ func TestHSTSMiddleware_SuppressedWhenDisabled(t *testing.T) {
 
 	// Degraded self-signed mode: the live gate returns false, so HSTS must NOT
 	// be sent even though the connection is TLS — pinning it over an untrusted
-	// cert would lock the operator out (tls-static.md § 2.4).
+	// cert would lock the operator out.
 	enabled := false
 	handler := HSTSMiddleware(inner, false, func() bool { return enabled })
 
@@ -653,8 +653,8 @@ func TestNewListener_WithCAPath_mTLS(t *testing.T) {
 }
 
 // A valid cert/key with a ca_path that points at a missing/moved file must make
-// NewListener return an error, so the caller fails open to plain HTTP
-// (tls.md § 2.4). This is the listener half of the mTLS lockout escape hatch:
+// NewListener return an error, so the caller fails open to plain HTTP.
+// This is the listener half of the mTLS lockout escape hatch:
 // moving the CA bundle away on the host recovers a deployment bricked by an
 // mTLS (RequireAndVerifyClientCert) misconfiguration.
 func TestNewListener_MissingCAPath_Errors(t *testing.T) {

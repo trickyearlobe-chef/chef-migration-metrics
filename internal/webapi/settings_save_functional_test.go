@@ -88,7 +88,7 @@ func settingsTestStore(t *testing.T) (*configstore.Store, *datastore.DB) {
 // testdata/frontend_request_fields.json records, with plausible values.
 const (
 	// The Analysis Tools screen. No Test Kitchen part — its own type does not
-	// have one, which is what used to wipe those settings.
+	// have one.
 	frontendAnalysisToolsSave = `{
 		"embedded_bin_dir": "/opt/chef-workstation/embedded/bin",
 		"cookstyle_enabled": true,

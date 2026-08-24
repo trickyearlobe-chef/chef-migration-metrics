@@ -222,6 +222,10 @@ func (s *Scheduler) loop(ctx context.Context) {
 
 		case <-timerCh:
 			// Timer fired — attempt to run collection.
+			// Overlapping ticks are skipped rather than queued, so a collection
+			// interval shorter than a run's duration makes collection the steady
+			// state rather than a periodic peak. Set it no shorter than the
+			// fleet's converge interval; nothing is lost by going slower.
 			if s.collector.IsRunning() {
 				log.Warn("scheduled collection tick skipped — a run is already in progress")
 				continue

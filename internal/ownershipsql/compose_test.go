@@ -14,10 +14,9 @@ import (
 	"github.com/microsoft/go-mssqldb/msdsn"
 )
 
-// What a composed connection has to survive. These are not decorative: the "%"
-// and the ";" are from the customer's own password, the backslash is from their
-// domain login, and the leading and trailing spaces are the ones a keyword
-// parser silently trims.
+// What a composed connection has to survive. These are not decorative: "%" and
+// ";" break a URL, the backslash is what a Windows domain login carries, and
+// the leading and trailing spaces are the ones a keyword parser silently trims.
 var awkwardPasswords = []string{
 	`plain`,
 	`pa%ss;wo rd#7Q!`,
@@ -40,7 +39,7 @@ var awkwardPasswords = []string{
 }
 
 // The account a SQL Server estate actually uses. The backslash is the character
-// that made the customer's connection unparsable.
+// that makes such a connection unparsable as a URL.
 const domainAccount = `EXAMPLECORP\svcaccount`
 
 // Connections as an administrator writes them: everything readable, and the
@@ -443,9 +442,9 @@ func TestComposeRefusesAnUnsupportedDriver(t *testing.T) {
 // The scheme names the database, so choosing a different one is a mistake
 // somebody should be told about rather than sent to the wrong team over.
 //
-// The baseline is the whole point: measured, neither driver complains about a
-// foreign scheme. Given a "postgres://" connection the SQL Server driver reads
-// the string as keyword pairs instead, finds no account, and the server says
+// The baseline is the whole point: neither driver complains about a foreign
+// scheme. Given a "postgres://" connection the SQL Server driver reads the
+// string as keyword pairs instead, finds no account, and the server says
 // "Login failed for user ”" — a broken credential, as far as anyone reading it
 // can tell. So this refusal has to be ours; it cannot be delegated.
 func TestAConnectionWhoseSchemeNamesAnotherDatabaseIsRefused(t *testing.T) {

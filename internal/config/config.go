@@ -35,7 +35,6 @@ type Config struct {
 	AnalysisTools              AnalysisToolsConfig `yaml:"analysis_tools"`
 	Readiness                  ReadinessConfig     `yaml:"readiness"`
 	Exports                    ExportsConfig       `yaml:"exports"`
-	Elasticsearch              ElasticsearchConfig `yaml:"elasticsearch"`
 	Datastore                  DatastoreConfig     `yaml:"datastore"`
 	Server                     ServerConfig        `yaml:"server"`
 	Frontend                   FrontendConfig      `yaml:"frontend"`
@@ -49,8 +48,6 @@ type Config struct {
 
 	// explicitExportsDir tracks whether the user explicitly set exports.output_directory.
 	explicitExportsDir bool
-	// explicitESDir tracks whether the user explicitly set elasticsearch.output_directory.
-	explicitESDir bool
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +193,6 @@ func (a *AnalysisToolsConfig) IsCookstyleEnabled() bool {
 // TestKitchenConfig controls the pluggable driver architecture for Test
 // Kitchen runs. It replaces the hardcoded Docker/dokken assumption with
 // opaque settings bags that work for any driver (vcenter, vra, ec2, etc.).
-// See test-kitchen-drivers.md for the full specification.
 type TestKitchenConfig struct {
 	// Enabled controls whether Test Kitchen testing is active. When set to
 	// false, Test Kitchen is disabled even if the kitchen binary is
@@ -543,8 +539,7 @@ type ReadinessConfig struct {
 	// When that lab is not set up correctly — changed credentials, an empty
 	// DHCP pool, hardware that has gone — every run fails for reasons that
 	// have nothing to do with a cookbook, and each failure blocks every node
-	// running it. Measured on the customer estate on 2026-08-03, 89% of Test
-	// Kitchen failures were of that kind.
+	// running it. In such a lab most Test Kitchen failures are of that kind.
 	//
 	// A pointer so "not set" is distinguishable from "set to false", which is
 	// what lets the default be on. Read it through TKBlocksReadinessValue.
@@ -705,17 +700,6 @@ type ExportsConfig struct {
 }
 
 // ---------------------------------------------------------------------------
-// Elasticsearch NDJSON export
-// ---------------------------------------------------------------------------
-
-// ElasticsearchConfig controls the NDJSON export pipeline for Elasticsearch.
-type ElasticsearchConfig struct {
-	Enabled         bool   `yaml:"enabled"`
-	OutputDirectory string `yaml:"output_directory"`
-	RetentionHours  int    `yaml:"retention_hours"`
-}
-
-// ---------------------------------------------------------------------------
 // Datastore
 // ---------------------------------------------------------------------------
 
@@ -789,12 +773,12 @@ type ACMEConfig struct {
 	DNSProviderConfig map[string]string `yaml:"dns_provider_config"`
 	// StoragePath is deprecated and unused: ACME state (account key, issued
 	// cert/key, Route 53 creds) is stored encrypted in the config store, not on
-	// disk (tls-acme.md § 3.5). Retained only so existing YAML still parses.
+	// disk. Retained only so existing YAML still parses.
 	StoragePath     string `yaml:"storage_path"`
 	RenewBeforeDays int    `yaml:"renew_before_days"`
 	AgreeToTOS      bool   `yaml:"agree_to_tos"`
 	TrustedRoots    string `yaml:"trusted_roots"`
-	// Hostname self-registration (tls-acme.md § 3.13): when RegisterHostname is
+	// Hostname self-registration: when RegisterHostname is
 	// true and dns_provider is route53, the app publishes an A record per
 	// acme.domains entry pointing at the host. Opt-in, off by default.
 	RegisterHostname  bool   `yaml:"register_hostname"`
@@ -949,6 +933,11 @@ func (c *Config) ApplyDefaults() {
 }
 
 func (c *Config) setDefaults() {
+	// This exact string is load-bearing. It names the environment variable
+	// holding the key every stored credential and config-store section is
+	// encrypted with, so changing it — including as a side effect of tidying
+	// duplicated literals — leaves an existing deployment unable to decrypt
+	// anything it has stored, with no way back except restoring the old name.
 	if c.CredentialEncryptionKeyEnv == "" {
 		c.CredentialEncryptionKeyEnv = "CMM_CREDENTIAL_ENCRYPTION_KEY"
 	}
@@ -1100,14 +1089,6 @@ func (c *Config) setDefaults() {
 	}
 	if c.Exports.RetentionHours == 0 {
 		c.Exports.RetentionHours = 24
-	}
-
-	// Elasticsearch
-	if c.Elasticsearch.OutputDirectory == "" {
-		c.Elasticsearch.OutputDirectory = "/var/lib/chef-migration-metrics/elasticsearch"
-	}
-	if c.Elasticsearch.RetentionHours == 0 {
-		c.Elasticsearch.RetentionHours = 48
 	}
 
 	// Datastore
@@ -1328,12 +1309,6 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv("CHEF_MIGRATION_METRICS_SERVER_TLS_ACME_AGREE_TO_TOS"); v != "" {
 		c.Server.TLS.ACME.AgreeToTOS = strings.EqualFold(v, "true")
 	}
-	if v := os.Getenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_ENABLED"); v != "" {
-		c.Elasticsearch.Enabled = strings.EqualFold(v, "true")
-	}
-	if v := os.Getenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_OUTPUT_DIRECTORY"); v != "" {
-		c.Elasticsearch.OutputDirectory = v
-	}
 	if v := os.Getenv("CMM_OWNERSHIP_AUDIT_LOG_RETENTION_DAYS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.Ownership.AuditLog.RetentionDays = n
@@ -1395,7 +1370,6 @@ func (c *Config) Validate() (*Warnings, error) {
 	c.validateConcurrency(ve)
 	c.validateAnalysisTools(ve, w)
 	c.validateExports(ve, w)
-	c.validateElasticsearch(ve, w)
 	c.validateServer(ve, w)
 	c.validateLogging(ve)
 	c.validateAuth(ve)
@@ -1708,22 +1682,6 @@ func (c *Config) validateExports(ve *ValidationError, w *Warnings) {
 	}
 }
 
-func (c *Config) validateElasticsearch(ve *ValidationError, w *Warnings) {
-	if !c.Elasticsearch.Enabled {
-		return
-	}
-	if c.Elasticsearch.RetentionHours < 1 {
-		ve.add("elasticsearch.retention_hours must be >= 1")
-	}
-	// Only validate the output directory if the user explicitly configured it
-	// or if elasticsearch is enabled (user opted in, so the dir matters).
-	if c.explicitESDir {
-		if err := checkDirWritable(c.Elasticsearch.OutputDirectory); err != nil {
-			ve.addf("elasticsearch.output_directory %q: %v", c.Elasticsearch.OutputDirectory, err)
-		}
-	}
-}
-
 func (c *Config) validateServer(ve *ValidationError, w *Warnings) {
 	if c.Server.Port < 1 || c.Server.Port > 65535 {
 		ve.addf("server.port: %d is not a valid port number (1-65535)", c.Server.Port)
@@ -1778,7 +1736,7 @@ func (c *Config) validateServer(ve *ValidationError, w *Warnings) {
 		}
 		// The redirect listener only runs when TLS is active, and it must not
 		// collide with the HTTPS listen port or with 443 — when TLS is active,
-		// automatic HTTPS binds 443 (tls.md § 1.5), and server.port either hosts
+		// automatic HTTPS binds 443, and server.port either hosts
 		// HTTPS or its own redirect-to-443. Any duplicate bind fails at startup.
 		if c.Server.TLS.Mode == "static" || c.Server.TLS.Mode == "acme" {
 			serverPort := c.Server.Port
@@ -1798,22 +1756,22 @@ func (c *Config) validateServer(ve *ValidationError, w *Warnings) {
 // validateTLSStatic performs STRUCTURAL validation only: it checks that the
 // required paths are set, but deliberately does NOT verify that the cert/key/ca
 // files exist, are readable, or parse. File presence/readability/PEM-validity is
-// the TLS listener's concern, which fails open to plain HTTP when a load fails
-// (tls.md § 2.4). Treating a missing file as a fatal validation error here would
+// the TLS listener's concern, which fails open to plain HTTP when a load fails.
+// Treating a missing file as a fatal validation error here would
 // abort startup (YAML load and DB assembly) before that fail-open path runs,
 // turning a single bad/moved file — including an mTLS ca_path — into a total
 // lockout with no on-box recovery. By keeping these checks out of validation,
 // moving the cert/key/ca files away on the host is the supported escape hatch:
 // the deployment falls back to plain HTTP so an operator can reach the UI.
 //
-// Save-time preflight (tls.md § 2.6) independently loads the certificate via
+// Save-time preflight independently loads the certificate via
 // apptls.ValidateStaticPair before persisting a change, so an unusable cert can
 // still never be committed through the admin API.
 //
 // cert_source selects where the cert/key come from. For 'file' (default), the
 // paths are required (structural check above). For 'db' the cert/key live
 // encrypted in the config store and are validated at save/preflight, not at
-// startup (tls-static.md § 2.7) — a missing DB cert fails open to plain HTTP
+// startup — a missing DB cert fails open to plain HTTP
 // exactly like a missing file, so the paths are not required.
 func (c *Config) validateTLSStatic(ve *ValidationError, w *Warnings) {
 	switch c.Server.TLS.CertSource {
@@ -1882,8 +1840,8 @@ func (c *Config) validateTLSACME(ve *ValidationError) {
 	c.validateACMEHostname(ve)
 }
 
-// validateACMEHostname validates the hostname self-registration fields
-// (tls-acme.md § 3.13). Self-registration reuses the Route 53 client, so it is
+// validateACMEHostname validates the hostname self-registration fields.
+// Self-registration reuses the Route 53 client, so it is
 // only meaningful with dns_provider: route53. A literal hostname_ip is checked
 // for IPv4 validity here (a typo is caught at save time); an unusable interface
 // is detected at runtime and skipped with an ERROR (fail-soft, § 3.13).
@@ -1908,7 +1866,7 @@ func (c *Config) validateACMEHostname(ve *ValidationError) {
 // resolve a region and hosted zone. region/hosted_zone_id normally come from
 // dns_provider_config (region may also come from AWS_REGION/AWS_DEFAULT_REGION).
 // When AWS credentials are supplied via the environment (AWS_ACCESS_KEY_ID) — the
-// "supplied via env/role" path of tls-acme.md § 3.10 — these structural checks
+// "supplied via env/role" path.10 — these structural checks
 // are skipped, since region/zone may then resolve from env/role at runtime.
 //
 // Known limitation: region/hosted_zone_id can also be stored in the encrypted
@@ -2146,15 +2104,9 @@ func Parse(data []byte) (*Config, *Warnings, error) {
 
 	// Track which directory fields were explicitly set before defaults fill them in.
 	cfg.explicitExportsDir = cfg.Exports.OutputDirectory != ""
-	cfg.explicitESDir = cfg.Elasticsearch.OutputDirectory != ""
 
 	cfg.setDefaults()
 	cfg.applyEnvOverrides()
-
-	// Environment overrides count as explicit.
-	if os.Getenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_OUTPUT_DIRECTORY") != "" {
-		cfg.explicitESDir = true
-	}
 
 	warnings, err := cfg.Validate()
 	if err != nil {
@@ -2197,7 +2149,6 @@ func ParseRaw(data []byte) (*Config, error) {
 	}
 
 	cfg.explicitExportsDir = cfg.Exports.OutputDirectory != ""
-	cfg.explicitESDir = cfg.Elasticsearch.OutputDirectory != ""
 
 	cfg.setDefaults()
 	cfg.applyEnvOverrides()

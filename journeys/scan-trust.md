@@ -5,10 +5,9 @@ will actually break us from the ones that are just tidying, so that a red mark m
 something and I keep reading them.**
 
 The scanner reports hundreds of things per cookbook and it does not know which of them
-matter for a version change. I have been burned by this before: I chased three reds that
-turned out to be house-style preferences, and after that I stopped opening the list. The
-tool did not become wrong at that point — it became useless, which is the same outcome
-arrived at more slowly.
+matter for a version change. Chase a few reds that turn out to be house-style preferences and
+I stop opening the list. The tool does not become wrong at that point — it becomes useless,
+which is the same outcome arrived at more slowly.
 
 ## What I need
 
@@ -54,8 +53,8 @@ A repository holds more than the cookbook. It holds the pipeline definition, the
 somebody wrote to run the tests, the test suites themselves. Those files never run on a machine
 during a converge — and when the same helper task appears in nearly every repository, one
 finding inside it makes nearly every cookbook look broken. That is not a small inaccuracy. At
-that scale it is the difference between a list I work through and a list I stop believing, and I
-have been shown a number near 95% that was almost entirely this.
+that scale it is the difference between a list I work through and a list I stop believing, and a
+headline figure can be almost entirely this.
 
 **So a cookbook's verdict is about the code that ships and runs.** A finding in a file the
 converge never executes does not block the cookbook.
@@ -64,8 +63,8 @@ converge never executes does not block the cookbook.
 will break on the new Ruby exactly as predicted; they are simply somebody else's problem and a
 different piece of work. So a finding outside the cookbook stays visible on the cookbook, marked
 as not blocking, and it is counted across the estate — because the thing I most need to know
-about it is how widespread it is. One fix repeated across four hundred repositories is a
-different conversation from four hundred separate problems, and I cannot have that conversation
+about it is how widespread it is. One fix repeated across three thousand repositories is a
+different conversation from three thousand separate problems, and I cannot have that conversation
 if the number is buried or missing.
 
 **Which files are excluded is a decision somebody makes and can see, not a rule inferred.** Two

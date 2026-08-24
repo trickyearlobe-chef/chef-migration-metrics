@@ -201,8 +201,8 @@ func buildNodeSnapshotFilterQuery(f NodeSnapshotFilter) (selectQuery string, arg
 
 	// Build the rows query. The total count is computed separately by
 	// buildNodeSnapshotCountQuery — deliberately NOT via COUNT(*) OVER() here,
-	// which would force materialising every matching row before LIMIT (the P3
-	// hotspot). Without the window, the default ORDER BY node_name is servable by
+	// which would force materialising every matching row before LIMIT. Without
+	// the window, the default ORDER BY node_name is servable by
 	// idx_node_snapshots_node_name as an index scan + LIMIT.
 	var sb strings.Builder
 	sb.WriteString(cte)
@@ -687,7 +687,7 @@ func (db *DB) ListDistinctNodeRoles(ctx context.Context, f NodeSnapshotFilter, o
 // common first, ties broken alphabetically). When opts.SearchPrefix is set,
 // only tags starting with that prefix are returned. When opts.Limit > 0,
 // results are capped — the node-tags facet always passes a cap so the response
-// is a bounded, count-ranked page, never the full set (see node-tags.md).
+// is a bounded, count-ranked page, never the full set.
 //
 // Unnests a native text array rather than a JSONB array (cf.
 // ListDistinctNodeRoles). COUNT(*) is the number of matching nodes carrying

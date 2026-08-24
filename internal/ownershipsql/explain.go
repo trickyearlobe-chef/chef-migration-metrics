@@ -14,16 +14,13 @@ import (
 // Making a driver say what it already knows.
 //
 // See journeys/ownership-connection.md: what refused has to reach the person
-// reading, in its own words, because a message tidied into "could not connect"
-// has thrown away the only thing in it worth having. That rule was written
-// about US tidying. This is the same failure committed by the driver.
+// reading, in its own words. A message tidied into "could not connect" has
+// thrown away the only thing in it worth having, and the driver tidies too.
 //
-// Measured 2026-08-14, after a customer read a table and got six words: when
-// SQL Server aborts the process — severity 20 and above — go-mssqldb returns a
-// ServerError whose Error() is the constant "SQL Server had internal error",
-// with the real message wrapped inside where nothing on a screen can reach it.
-// Their whole diagnosis, "Cannot continue the execution because the session is
-// in the kill state", number 596, was one unwrap away.
+// When SQL Server aborts the process — severity 20 and above — go-mssqldb
+// returns a ServerError whose Error() is the constant "SQL Server had internal
+// error", with the real message wrapped inside where nothing on a screen can
+// reach it.
 //
 // So the message is dug out and put back on the end. Nothing is rewritten and
 // nothing is dropped: what we were doing stays, and the server's own words are
@@ -56,9 +53,7 @@ func explainDriverError(err error) error {
 // SQL Server sends a list and the driver reports the last of it. For a killed
 // process the last is "the session is in the kill state", which is what
 // happened AFTER the thing that went wrong — so reporting it alone tells
-// somebody their query stopped and not why. Measured 2026-08-14 against a
-// running server: a terminated process arrived as three errors, the reason
-// first and that consequence last, and a customer read only the consequence.
+// somebody their query stopped and not why.
 //
 // So the whole list goes out, cause first. It is longer than one line and that
 // is the point: the first sentence is the answer, and the rest is what a DBA

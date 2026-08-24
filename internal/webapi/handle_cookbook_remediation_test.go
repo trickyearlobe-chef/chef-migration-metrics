@@ -1425,11 +1425,9 @@ func TestHandleCookbookRemediation_ComplexityError_Graceful(t *testing.T) {
 
 // The cookbook remediation endpoint serves server cookbooks only.
 //
-// It used to carry a git-repo fallback, from when server and git cop analysis
-// shared one table and one page. The Server/Git tab separation gave git repos
-// their own page and their own endpoint (handleGitRepoRemediation), so a name
-// that exists only as a git repo must 404 here rather than be served git data
-// by a second, duplicate copy of the git pipeline.
+// Git repos have their own page and their own endpoint
+// (handleGitRepoRemediation), so a name that exists only as a git repo must 404
+// here rather than be served git data by a second copy of the git pipeline.
 func TestHandleCookbookRemediation_GitOnlyCookbookIsNotFound(t *testing.T) {
 	store := &mockStore{
 		// No server cookbook of this name...

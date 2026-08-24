@@ -143,8 +143,6 @@ skip_content_allowlist() {
     deploy/docker-compose/.env.example) return 0 ;;
     deploy/docker-compose/README.md) return 0 ;;
     deploy/pkg/env-file) return 0 ;; # packaged env template — placeholder DATABASE_URL, not a real secret
-    deploy/elk/.env.example) return 0 ;;
-    deploy/elk/README.md) return 0 ;;
     README.md) return 0 ;;
     *_test.go) return 0 ;;
   esac
@@ -318,10 +316,8 @@ done
 # by an audit nobody runs. Bare paths and symbols in prose stay blocked — they
 # are unresolvable, so nothing can tell you when they stop being true.
 #
-# This is enforced rather than advised because advising it did not work: the
-# warning sat at the top of the journey index and twice in CLAUDE.md, and the
-# the specs drifted anyway. The retired corpus is in the tag
-# specifications-retired-2026-08-04 if the history is ever needed.
+# Enforced rather than advised, because a convention nothing checks drifts. The
+# retired specification corpus is in the tag specifications-retired-2026-08-04.
 JOURNEY_LINE_LIMIT=200
 
 # Report the first few offending lines for a pattern, and block the commit.
@@ -346,10 +342,8 @@ journey_warn() {
 # ---------------------------------------------------------------------------
 # 3b. Plans do not tick things off
 # ---------------------------------------------------------------------------
-# Agreed 2026-08-10. CLAUDE.md has said since the plans were introduced that
-# done-ness is git history plus passing tests and is never re-asserted in prose,
-# because a ticked box is a status claim that nothing re-validates. It was a
-# convention, so it drifted: 80 ticked boxes across the backlog when measured.
+# Done-ness is git history plus passing tests, and is never re-asserted in
+# prose: a ticked box is a status claim that nothing re-validates.
 #
 # Only the TICKED box is blocked. An empty box is a backlog item, which is what
 # a todo file is for; a ticked one says work is finished, and finished work
@@ -388,11 +382,10 @@ for file in "${STAGED_FILES[@]}"; do
   fi
 
   # ---- the journey must name a test ---------------------------------------
-  # Agreed 2026-08-05. Nothing here says built, shipped or proven, because a
-  # status line is the first thing to rot — the stalest line in the best
-  # document we had was its status line. So the journey names the test that
-  # proves it instead, and a red test says "not proven" without anybody
-  # maintaining a sentence that says so.
+  # Nothing here says built, shipped or proven, because a status line is the
+  # first thing to rot. The journey names the test that proves it instead, and a
+  # red test says "not proven" without anybody maintaining a sentence that says
+  # so.
   #
   # One resolving link satisfies the rule. It deliberately does not ask for
   # coverage: roughly a third of what a journey promises cannot carry an
@@ -408,9 +401,9 @@ for file in "${STAGED_FILES[@]}"; do
   fi
 
   # ---- the journey must have a suite --------------------------------------
-  # Agreed 2026-08-10, after measuring: the convention was one test per thing a
-  # journey says must be in place, run outside CI as a todo list that cannot go
-  # stale. It stood at one journey in twenty, because nothing checked it.
+  # The convention is one test per thing a journey says must be in place, run
+  # outside CI as a todo list that cannot go stale. Enforced here because
+  # nothing else checks it.
   #
   # This is a different demand from the link rule above, and does not contradict
   # it. The link rule refuses to ask for a test per claim, because a third of
@@ -420,9 +413,12 @@ for file in "${STAGED_FILES[@]}"; do
   # answered yet. An honest skip is the admission; a missing suite is silence.
   #
   # Scoped to the journey being committed, so it drives the number down as
-  # journeys are touched rather than blocking every commit at once.
+  # journeys are touched rather than blocking every commit at once. The cost of
+  # that scoping: a code change that invalidates an untouched journey passes
+  # here. Closing it needs a check that reads journeys/ directly rather than the
+  # staged set.
   if ! grep -rql "$file" --include='*_journey_test.go' . 2>/dev/null; then
-    block "$file" "journey has no suite — add a *_journey_test.go under the 'journey' build tag naming this file, with one test per thing the journey says must be in place (see plans/journey-suites.md and internal/webapi/ownership_intake_journey_test.go); run it with 'make journey'"
+    block "$file" "journey has no suite — add a *_journey_test.go under the 'journey' build tag naming this file, with one test per thing the journey says must be in place (see internal/webapi/ownership_intake_journey_test.go); run it with 'make journey'"
   fi
 
   # ---- checked references -------------------------------------------------

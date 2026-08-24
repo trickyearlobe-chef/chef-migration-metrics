@@ -5,7 +5,7 @@ exactly what is stopping the ones that are not, so I can work a list instead of
 investigating machines one at a time.**
 
 There are tens of thousands of them. Anything that makes me open a machine to find out why
-it is blocked does not scale — I will not do it forty thousand times, so I will stop
+it is blocked does not scale — I will not do it a hundred and fifty thousand times, so I will stop
 looking, and the ones that matter get lost in the ones that do not.
 
 ## What I need to see
@@ -35,7 +35,7 @@ recent data, say so — do not let absence of evidence render as a pass.
 
 ## How I know it worked
 
-I can go from "forty thousand servers" to "these are the ones I have to deal with this
+I can go from "a hundred and fifty thousand servers" to "these are the ones I have to deal with this
 week, and here is why" without opening a single machine, and the pile I set aside as gone
 does not come back to haunt me next month.
 

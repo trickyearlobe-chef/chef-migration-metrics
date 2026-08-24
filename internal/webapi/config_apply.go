@@ -12,7 +12,7 @@ import "context"
 //
 // Only ReloadProcess requires a full supervisor re-exec; everything below it is
 // applied without dropping the process, so restart_required derives solely from
-// "is the worst granularity process?" (configuration-live-reload.md).
+// "is the worst granularity process?".
 type ReloadGranularity int
 
 const (

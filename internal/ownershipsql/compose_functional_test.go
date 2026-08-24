@@ -149,12 +149,11 @@ func TestFunctional_MSSQL_ComposedODBCConnects(t *testing.T) {
 
 // A visible connection and its password reach the real entry point, not only
 // the helper. A repair applied in one place and forgotten in another leaves the
-// screen still broken, which has happened here before.
+// screen still broken.
 //
-// This is also what caught the composed connection being escaped a second time
-// on its way through: it connected when handed straight to the driver and was
-// refused as a bad login through ListTables, because every "%" had become
-// "%25". That is the failure this journey is about, produced by our own code.
+// It also catches double-escaping: a connection that works handed straight to
+// the driver but is refused as a bad login through ListTables, because every
+// "%" has become "%25".
 func TestFunctional_MSSQL_AVisibleConnectionAndItsPasswordListTables(t *testing.T) {
 	password := nastyPassword(t)
 	visible := visibleConnection(t, "CMM_TEST_MSSQL_VISIBLE_URL")
@@ -239,18 +238,17 @@ func TestFunctional_MSSQL_TheServerQuotesTheAccountBackAsTyped(t *testing.T) {
 
 // A backslash in the account is not a SQL login at all.
 //
-// Measured, and it is worth knowing before anybody tries to test one: whatever
-// stands before the backslash — a domain, a workgroup, the machine's own
-// hostname, or "." — the driver switches to integrated authentication and the
-// password stops being a SQL password. A server that is not in that domain
-// refuses with "the login is from an untrusted domain", and unlike every other
-// refusal it does NOT name the account back.
+// Worth knowing before anybody tries to test one: whatever stands before the
+// backslash — a domain, a workgroup, the machine's own hostname, or "." — the
+// driver switches to integrated authentication and the password stops being a
+// SQL password. A server that is not in that domain refuses with "the login is
+// from an untrusted domain", and unlike every other refusal it does NOT name
+// the account back.
 //
-// So an account of this shape cannot be proven to work anywhere we have. The
-// container is Linux and joined to nothing, and SQL Server will not create a
-// password login whose name contains a backslash — "not a valid name because it
-// contains invalid characters". The customer's own connection is this shape, so
-// what happens when their firewall opens is a path nothing here has exercised.
+// So an account of this shape cannot be proven to work here. The container is
+// Linux and joined to nothing, and SQL Server will not create a password login
+// whose name contains a backslash — "not a valid name because it contains
+// invalid characters". Connecting as a domain account is untested.
 func TestFunctional_MSSQL_ABackslashAccountAsksForIntegratedAuthentication(t *testing.T) {
 	visible := visibleConnection(t, "CMM_TEST_MSSQL_VISIBLE_URL")
 	host := strings.SplitN(strings.TrimPrefix(visible, "sqlserver://"), "@", 2)
@@ -279,7 +277,7 @@ func TestFunctional_MSSQL_ABackslashAccountAsksForIntegratedAuthentication(t *te
 			}
 			if !strings.Contains(err.Error(), "Integrated authentication") {
 				t.Errorf("a backslash account no longer routes to integrated authentication, "+
-					"which changes what the customer's connection will do: %v", err)
+					"which changes what a domain-account connection will do: %v", err)
 			}
 		})
 	}

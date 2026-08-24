@@ -115,8 +115,8 @@ func storedChainSubjects(t *testing.T, store *configstore.Store) []string {
 }
 
 // A misordered but complete bundle (root → intermediate → leaf) is reordered to
-// leaf → intermediate → root before storage, with no warning (tls-static.md
-// § 2.2). The leaf must land first so the key still matches cert[0] at preflight.
+// leaf → intermediate → root before storage, with no warning.
+// The leaf must land first so the key still matches cert[0] at preflight.
 func TestAdminConfigServer_PUT_DBCert_ReordersChain(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)
@@ -146,8 +146,7 @@ func TestAdminConfigServer_PUT_DBCert_ReordersChain(t *testing.T) {
 }
 
 // An incomplete bundle (leaf + root, missing intermediate) is stored anyway with
-// the leaf first and a non-fatal warning in the response — never rejected
-// (tls-static.md § 2.2, fail-open).
+// the leaf first and a non-fatal warning in the response — never rejected.
 func TestAdminConfigServer_PUT_DBCert_IncompleteChainWarns(t *testing.T) {
 	store := newTestConfigStore(t)
 	r := newTestRouterForAdminConfig(nil, store, nil)

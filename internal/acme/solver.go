@@ -12,7 +12,7 @@ import (
 // "ERROR". The acme package does not import the logging package directly (to
 // avoid a dependency cycle) — the caller provides a callback, matching the
 // internal/tls package's LogFunc convention. ERROR/WARN messages emitted by the
-// engine never include key material (tls-acme.md § 3.11).
+// engine never include key material.
 type LogFunc func(level, msg string)
 
 // Challenge is the engine-computed view of a single ACME challenge that a

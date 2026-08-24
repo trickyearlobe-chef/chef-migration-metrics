@@ -2,7 +2,7 @@
 --
 -- Stores platform coverage reports comparing kitchen-tested platforms
 -- against production node platforms. Refreshed after each analysis cycle.
--- See test-kitchen-drivers.md § Platform Coverage Analysis.
+--latform Coverage Analysis.
 
 CREATE TABLE IF NOT EXISTS cookbook_platform_coverage (
     id               UUID        NOT NULL DEFAULT gen_random_uuid(),

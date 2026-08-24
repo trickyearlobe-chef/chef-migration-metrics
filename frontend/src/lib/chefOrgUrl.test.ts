@@ -10,7 +10,7 @@ describe("chefOrgURLError", () => {
   });
 
   it("accepts http and a hostname with a port", () => {
-    expect(chefOrgURLError("http://chef.home.arpa:8443/organizations/thenixons")).toBeNull();
+    expect(chefOrgURLError("http://chef.example.com:8443/organizations/example-corp")).toBeNull();
   });
 
   it("rejects an empty value", () => {

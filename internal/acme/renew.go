@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Renewal timing constants (tls-acme.md § 3.6).
+// Renewal timing constants.
 const (
 	backoffInitial = time.Hour
 	backoffCap     = 24 * time.Hour
@@ -41,7 +41,7 @@ type WarnFunc func(ExpiryWarning)
 
 // Renewer drives certificate renewal: it polls the stored certificate's expiry,
 // renews before the configured window, applies exponential backoff on failure,
-// and emits expiry warnings (tls-acme.md § 3.6). It holds no certificate state
+// and emits expiry warnings. It holds no certificate state
 // itself — the issued material lives in Storage.
 type Renewer struct {
 	storage       *Storage
@@ -74,8 +74,8 @@ func WithCheckInterval(d time.Duration) RenewerOption {
 }
 
 // WithHostnameRegistrar sets a callback invoked at the start of every renewal
-// cycle (and so once at startup) to re-assert the host's A record(s)
-// (tls-acme.md § 3.13). It is fail-soft and orthogonal to certificate issuance:
+// cycle (and so once at startup) to re-assert the host's A record(s).
+// It is fail-soft and orthogonal to certificate issuance:
 // its outcome never affects renewal scheduling or backoff. The returned error is
 // recorded in the operator status (§ 3.14) but otherwise ignored. Re-asserting
 // each cycle corrects a changed DHCP IP automatically.
@@ -107,8 +107,7 @@ func (r *Renewer) Run(ctx context.Context) {
 	backoff := time.Duration(0)
 	for {
 		// Re-assert the host A record(s) before each renewal check. Fail-soft:
-		// the registrar logs its own errors and the outcome never gates renewal
-		// (tls-acme.md § 3.13).
+		// the registrar logs its own errors and the outcome never gates renewal.
 		r.registerHostname(ctx)
 		_, err := r.checkOnce(ctx)
 		sleep := r.checkInterval
@@ -120,7 +119,7 @@ func (r *Renewer) Run(ctx context.Context) {
 		}
 		// A Trigger() (e.g. an ACME config save) wakes the loop immediately so
 		// hostname registration and a renewal check re-run without waiting out
-		// the interval (tls-acme.md § 3.14).
+		// the interval.
 		timer := time.NewTimer(sleep)
 		select {
 		case <-ctx.Done():

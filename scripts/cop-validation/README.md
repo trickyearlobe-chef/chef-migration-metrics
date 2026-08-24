@@ -2,13 +2,10 @@
 
 Empirically validates the curated **Blocker** cops (the `RemovedIn` entries in
 `internal/remediation/copmapping.go`) against a **real** Chef Infra Client, instead
-of trusting hand-curated removal versions. Grew out of the 2026-07-16 lab session
-that found ~23% of the curated Blocker set was over-claiming (constructs that still
-work on CC19).
+of trusting hand-curated removal versions. A curated Blocker whose construct still
+works on the target is an over-claim; the harness finds those automatically.
 
-Status: **spike / proof-of-concept.** It reproduced the manual 26-cop validation
-automatically (15 confirmed blockers, 6 over-claims) and auto-discovered targets the
-hand-curation missed. Not wired into the app.
+Status: **spike / proof-of-concept.** Not wired into the app.
 
 ## What it does
 
@@ -27,8 +24,8 @@ One `chef exec ruby` process:
 
 ## Run it
 
-On a host with the target's Chef Workstation (see `[[cmm-validation-box]]` —
-`cmm.trickyearlobe.com`, Workstation 26 = Chef 19.3.15 + cookstyle):
+On a validation host with the target's Chef Workstation installed
+(Workstation 26 = Chef 19.3.15 + cookstyle):
 
 ```
 scp cop_validator.rb root@<host>:/tmp/
@@ -44,20 +41,19 @@ The viable way to classify a **poly-message** cop (one cop_name, several
 deprecations of differing impact — e.g. `Lint/DeprecatedClassMethods`): read the
 cop's authoritative table from cookstyle (not `RESTRICT_ON_SEND`, which
 over-approximates), then **behaviourally** probe each construct against the live
-Ruby/Chef. Used 2026-07-16 to complete the `DeprecatedClassMethods` variant table
-in `internal/remediation/copmapping.go`, which discovered `ENV.clone`/`dup`/`freeze`
-raise `TypeError` on Ruby 3.4 (Blocker, we were missing them) and `iterator?`/`attr`
-are still present (Review — a false-positive Blocker via fallback until added).
+Ruby/Chef. This is how the `DeprecatedClassMethods` variant table in
+`internal/remediation/copmapping.go` was completed: `ENV.clone`/`dup`/`freeze` raise
+`TypeError` on Ruby 3.4 (Blocker); `iterator?`/`attr` are still present (Review —
+otherwise classified Blocker by the cop-level fallback).
 
-## False-negative sweep (2026-07-16) — hidden-blocker discovery
+## False-negative sweep — hidden-blocker discovery
 
-The prior work validated only **false positives** (curated Blockers that over-claim).
-This sweep hunts the dangerous direction: cops that flag something genuinely
-removed/broken on CC19 but were **not** curated, so they defaulted to Review — a
-hidden blocker (see `journeys/scan-trust.md`, which is where the asymmetry is
-explained).
+The over-claim direction above is only half the problem. This sweep hunts the
+dangerous direction: cops that flag something genuinely removed/broken on CC19 but
+are **not** curated, so they default to Review — a hidden blocker (see
+`journeys/scan-trust.md`, which is where the asymmetry is explained).
 
-Method (scripts, run in order on `cmm.trickyearlobe.com`):
+Method (scripts, run in order on the validation host):
 
 1. `enumerate_cops.rb` — full inventory of `Chef/Deprecations/*`, `Lint/*`,
    `Chef/Correctness/*` from the RuboCop registry (272 cops: 79 / 152 / 41).
@@ -105,20 +101,19 @@ Probed but **left Review** (recorded so they are not re-swept):
 - Windows/Powershell helper cops (`WindowsVersionHelpers`, `PowershellCookbookHelpers`,
   `DeprecatedWindowsVersionCheck`) — can't validate from a Linux host; need Fauxhai.
 - All `Chef/Correctness/*` — advisory correctness/style patterns, no removed API.
-- `InSpec/Deprecations/AttributeHelper` + `AttributeDefault` — surfaced in real
-  customer data (106 each) so probed on the box (`probe_inspec_attribute.rb`): a real
-  `inspec exec` of `attribute('foo', default: 'bar')` on InSpec 7.0.107 **runs and
+- `InSpec/Deprecations/AttributeHelper` + `AttributeDefault` — probed on the
+  validation host (`probe_inspec_attribute.rb`) because they show up in real scans: a
+  real `inspec exec` of `attribute('foo', default: 'bar')` on InSpec 7.0.107 **runs and
   passes** (deprecation warning only). The `attribute` alias and the `default:` option
-  are deprecated, not removed → Review. (The InSpec/Deprecations department is outside
-  the Chef/Deprecations + Lint + Chef/Correctness sweep scope but was checked because it
-  appeared in real scans.)
+  are deprecated, not removed → Review. (The InSpec/Deprecations department is otherwise
+  outside the Chef/Deprecations + Lint + Chef/Correctness sweep scope.)
 
-Scripts added this sweep: `enumerate_cops.rb`, `inspect_candidates.rb`,
+Sweep scripts: `enumerate_cops.rb`, `inspect_candidates.rb`,
 `probe_candidates.rb`, `probe_loose_ends.rb`, `showcops_desc.rb`.
 
 ### Coverage limit — cookstyle does NOT catch all Ruby removals
 
-The sweep also established (lab-verified, CC19.3.15 / Ruby 3.4.8) that cookstyle's
+The sweep also established (verified on CC19.3.15 / Ruby 3.4.8) that cookstyle's
 default scan misses a whole class of Ruby removals: of `URI.escape` (removed Ruby 3.0),
 `String#taint`/`tainted?` (removed Ruby 3.2), and removed default gems
 (`net/telnet`/`xmlrpc`/`sdbm` — `require` → LoadError; note `webrick` is vendored by the
@@ -132,7 +127,7 @@ gap classes, and follow-ups (enable `Lint/UriEscapeUnescape`; custom regex cops)
 `plans/todo-tech-debt.md` (“CookStyle — static coverage of Ruby removals is
 incomplete”).
 
-## Known limitations (spike lessons — see plans/todo-tech-debt.md)
+## Known limitations (see plans/todo-tech-debt.md)
 
 - **Presence ≠ behaviour.** `respond_to?` false-positives on Chef::Node attr methods
   (the `NodeSetUnless` "ghost respond_to"); probe behaviourally (call + catch).

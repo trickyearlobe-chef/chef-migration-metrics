@@ -13,12 +13,10 @@ import (
 
 // Test Kitchen keeps its own stored section.
 //
-// It used to live nested inside the analysis tools section, which two screens
-// both write. The Test Kitchen screen read what was there and put its part
-// back; the Analysis Tools screen replaced the whole section with what it was
-// sent, and had never sent the Test Kitchen part — so changing a CookStyle
-// timeout lost the driver, the images, the credential references and the rate
-// limits, and reported a successful save.
+// Nested inside the analysis tools section it would share a section with a
+// second screen, and a screen replaces the whole section with what it was sent —
+// so changing a CookStyle timeout would drop the driver, the images, the
+// credential references and the rate limits, and report a successful save.
 //
 // Two records instead, the way the server settings are already split, so
 // neither screen can reach the other's. What each screen sends is still exactly

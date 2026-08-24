@@ -680,8 +680,8 @@ func TestRecordFailureVerdict_RejectsAnUnknownSubjectKind(t *testing.T) {
 	}
 }
 
-// One standing verdict per thing, however it was picked. This customer has one
-// cookbook per repo, so a repo and a cookbook of the same name are the same
+// One standing verdict per thing, however it was picked. Where an estate keeps
+// one cookbook per repo, a repo and a cookbook of the same name are the same
 // thing seen from two sides — two standing verdicts about it could disagree.
 func TestRecordFailureVerdict_OneStandingVerdictPerName(t *testing.T) {
 	db := testDB(t)

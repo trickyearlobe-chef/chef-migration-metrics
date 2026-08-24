@@ -259,10 +259,9 @@ func TestFunctional_Postgres_TheConnectionTestSaysWhichOfTheFiveItWas(t *testing
 
 // What SQL Server said when it aborted the process, rather than six fixed words.
 //
-// Measured, and the reason this test exists: a customer read a table and got
-// "SQL Server had internal error" and nothing else. That string is the driver's
-// own rendering of an aborted process — severity 20 and up — and the real
-// message is wrapped inside it, where nothing on a screen can reach it.
+// "SQL Server had internal error" is the driver's own rendering of an aborted
+// process — severity 20 and up — and the real message is wrapped inside it,
+// where nothing on a screen can reach it.
 //
 // A severity-20 error is what aborts a process, so that is what this raises.
 func TestFunctional_MSSQL_AnAbortedProcessSaysWhySQLServerAbortedIt(t *testing.T) {
@@ -293,8 +292,8 @@ func TestFunctional_MSSQL_AnAbortedProcessSaysWhySQLServerAbortedIt(t *testing.T
 	}
 
 	// What the person reading actually gets: the reason first, then what it led
-	// to. The reason is the one the server sent first and the driver reports
-	// last, which is how a customer came to read a consequence and nothing else.
+	// to. The driver reports last the error the server sent first, so without
+	// this they read a consequence and nothing else.
 	if !strings.Contains(err.Error(), "deliberate abort") {
 		t.Errorf("the reason the query failed is missing, so the reader gets what happened "+
 			"afterwards and not why: %v", err)

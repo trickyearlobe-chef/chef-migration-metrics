@@ -8,9 +8,9 @@ const mb = (segs: DiskSegment[], kind: DiskSegment["kind"]) =>
   segs.find((s) => s.kind === kind)?.mb;
 
 describe("computeDiskBars", () => {
-  // homekube001: passes the absolute install size but fails the 20% buffer, so
-  // the requirement bar overflows the volume capacity — the overflow is the
-  // real shortfall (the old "required - available" gave a nonsensical -4148).
+  // A node that passes the absolute install size but fails the 20% buffer: the
+  // requirement bar overflows the volume capacity, and that overflow is the
+  // real shortfall.
   it("models the buffer overflow as a shortfall, not a negative", () => {
     const bars = computeDiskBars({
       totalMB: 28396,

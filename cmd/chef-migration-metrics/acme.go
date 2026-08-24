@@ -51,8 +51,8 @@ func (rt *acmeRuntime) shutdown(ctx context.Context) error {
 // setupACME wires TLS mode: acme. It always brings the server up on HTTPS — the
 // stored issued certificate if one exists in the DB, otherwise an ephemeral
 // self-signed certificate (degraded) — and runs a background renewer that
-// obtains/renews a real certificate and promotes it in place with no restart
-// (tls-acme.md § 3.11). It never returns a fatal error for an unobtainable
+// obtains/renews a real certificate and promotes it in place with no restart.
+// It never returns a fatal error for an unobtainable
 // certificate (ToS not accepted, order failure, unreachable CA): such states
 // fail open so the operator can always reach the UI to fix the configuration.
 //
@@ -104,7 +104,7 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 		solver = httpSolver
 		// The challenge/redirect server is built once the effective HTTPS port is
 		// known (after the auto-443 decision below), so its redirect targets 443
-		// when automatic HTTPS on 443 is in effect (tls.md § 1.5).
+		// when automatic HTTPS on 443 is in effect.
 		challengeHandler = httpSolver.Handler()
 	case "dns-01":
 		if acfg.DNSProvider != "route53" {
@@ -122,8 +122,8 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 		solver = r53
 
 		// Optional hostname self-registration: publish an A record per domain so
-		// the FQDN resolves to this host, reusing the Route 53 client/zone/creds
-		// (tls-acme.md § 3.13). It runs at the start of every renewal cycle (and
+		// the FQDN resolves to this host, reusing the Route 53 client/zone/creds.
+		// It runs at the start of every renewal cycle (and
 		// so once at startup) and is fail-soft — orthogonal to certificate
 		// issuance, never blocks renewal or fail-open.
 		if acfg.RegisterHostname {
@@ -160,7 +160,7 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 		}
 	}
 
-	// Automatic HTTPS on 443 (tls.md § 1.5) applies only when a real certificate
+	// Automatic HTTPS on 443 applies only when a real certificate
 	// is loaded (healthy). The degraded self-signed bootstrap holds server.port,
 	// and is not moved to 443 at runtime if issuance later succeeds in place. In
 	// http-01 the port-80 challenge server is the redirect listener; pass 0 so
@@ -178,7 +178,7 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 
 	// Build the http-01 challenge/redirect server now the effective HTTPS port is
 	// known: ordinary traffic 301s to that port (443 when auto-443 is in effect,
-	// else server.port); the challenge path keeps priority (tls-acme.md § 3.3).
+	// else server.port); the challenge path keeps priority.
 	if challengeHandler != nil {
 		challengeSrv = apptls.NewChallengeRedirectServer(
 			app.cfg.Server.ListenAddress,
@@ -240,7 +240,7 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 	issuer := &promotingIssuer{inner: manager, reload: app.tlsReload, log: app.tlsLog}
 	renewer := acme.NewRenewer(storage, issuer, engineCfg, app.tlsLog, renewerOpts...)
 	// Bind the admin re-register trigger to this renewer so an ACME config save
-	// re-asserts hostname registration / issuance immediately (tls-acme.md § 3.14).
+	// re-asserts hostname registration / issuance immediately.
 	if app.acmeTrigger != nil {
 		app.acmeTrigger.Set(renewer.Trigger)
 	}
@@ -294,8 +294,8 @@ func (app *serverApp) setupACME(handler http.Handler, store acme.SecretStore, sh
 // promotingIssuer wraps an acme.CertObtainer so that a successful issuance is
 // promoted into the running HTTPS listener in place (no restart). The reload
 // holder swaps the live certificate via ReloadFromPEM and, via its onReload
-// callback, clears any degraded self-signed state and resumes HSTS
-// (tls-acme.md § 3.11). A promotion failure is logged but does not fail the
+// callback, clears any degraded self-signed state and resumes HSTS.
+// A promotion failure is logged but does not fail the
 // issuance — the new certificate is persisted and a restart will pick it up.
 type promotingIssuer struct {
 	inner  acme.CertObtainer
@@ -320,8 +320,7 @@ func (p *promotingIssuer) Obtain(ctx context.Context) (certPEM, keyPEM []byte, e
 }
 
 // isACMEStaging reports whether the CA directory URL looks like a staging
-// endpoint (issued certificates are untrusted). Used to WARN at startup
-// (tls-acme.md § 3.8).
+// endpoint (issued certificates are untrusted). Used to WARN at startup.
 func isACMEStaging(caURL string) bool {
 	return strings.Contains(strings.ToLower(caURL), "staging")
 }
@@ -330,7 +329,7 @@ func isACMEStaging(caURL string) bool {
 // config) to the running Renewer's Trigger. It is wired into the router before
 // setupACME builds the renewer — the same chicken-and-egg the tlsReload holder
 // solves — and bound once the renewer exists. Calls before binding, or in
-// non-ACME modes, are no-ops (tls-acme.md § 3.14). Safe for concurrent use.
+// non-ACME modes, are no-ops. Safe for concurrent use.
 type acmeTriggerHolder struct {
 	mu sync.Mutex
 	fn func()

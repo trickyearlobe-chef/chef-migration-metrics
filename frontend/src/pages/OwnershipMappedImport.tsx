@@ -200,8 +200,8 @@ export function OwnershipMappedImport() {
     );
   }
 
-  // Where the rows come from. A file, or a query against a database — the
-  // customer's owner list lives in a system of record, not always a export.
+  // Where the rows come from. A file, or a query against a database — an owner
+  // list often lives in a system of record, not in an export.
   const [sourceKind, setSourceKind] = useState<"file" | "database">("file");
   // The name of a connection set up in the panel below. The connection itself
   // carries which database reads it and where its password is kept, so nothing
@@ -1052,8 +1052,8 @@ function suggestionsFor(rows: IntakeReportRow[], value: string): string {
 // both required, and the guess cannot always find an owner column — which is
 // exactly when this button greys out and nothing says so.
 //
-// It also covers the source, which the disabled state used to ignore: with no
-// file chosen the button looked available and did nothing at all when clicked.
+// It also covers the source: with no file or connection chosen there is
+// nothing to preview.
 // ---------------------------------------------------------------------------
 
 export function previewBlockedReason(opts: {

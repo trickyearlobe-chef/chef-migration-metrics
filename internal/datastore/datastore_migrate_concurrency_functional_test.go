@@ -13,9 +13,9 @@ import (
 	"testing"
 )
 
-// TestFunctional_MigrateUp_ConcurrentCallersSerialize reproduces the failure that
-// broke the CI functional gate: multiple processes (here, independent connection
-// pools) applying migrations to the same fresh database at once. Without the
+// TestFunctional_MigrateUp_ConcurrentCallersSerialize reproduces the failure it
+// guards against: multiple processes (here, independent connection pools)
+// applying migrations to the same fresh database at once. Without the
 // pg_advisory_lock in MigrateUpFS they race on identical DDL and fail with
 // "column ... already exists". With the lock, exactly one caller applies the full
 // set and the rest observe it and no-op.

@@ -70,8 +70,8 @@ func TestResetAllGitRepoCookstyleVerdicts_ClearsStaleVerdicts(t *testing.T) {
 }
 
 // Test Kitchen results are NOT deleted by a cookstyle rescan, so their
-// materialised status must survive. Resetting it would destroy a verdict that
-// is still backed by real data — the mirror image of the bug being fixed.
+// materialised status must survive: resetting it would destroy a verdict that
+// is still backed by real data.
 func TestResetAllGitRepoCookstyleVerdicts_PreservesTestKitchenStatus(t *testing.T) {
 	db := testDB(t)
 	const name = "reset-preserves-tk-probe"

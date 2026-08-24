@@ -14,8 +14,7 @@ import type {
 } from "../types/config";
 
 // Re-export config types so consumers importing from "../api" still find them.
-// ConfigOrganisation is also re-exported as Organisation for backward compat
-// (the old api.ts defined a local Organisation interface for config).
+// ConfigOrganisation is also re-exported as Organisation for backward compat.
 export type {
   CollectionConfig,
   ConcurrencyConfig,
@@ -40,7 +39,7 @@ export interface PutConfigResponse<T> {
   verdictsChanged?: number;
 }
 
-// Request body for the CSR generation endpoint (tls-csr.md § 4.3). All fields
+// Request body for the CSR generation endpoint. All fields
 // except an identifier (common_name or a SAN) are optional.
 export interface GenerateCSRRequest {
   common_name: string;
@@ -53,7 +52,7 @@ export interface GenerateCSRRequest {
 }
 
 // Response from the CSR generation endpoint. The CSR PEM is downloadable; the
-// private key is stored as pending server-side and never returned (tls-csr.md § 4.2).
+// private key is stored as pending server-side and never returned.
 export interface GenerateCSRResponse {
   csr_pem: string;
   key_algorithm: string;
@@ -232,7 +231,7 @@ export function saveAuthConfig(
 // Generate a keypair + CSR for cert_source: db static issuance. The server
 // stores the new private key as pending and returns only the CSR PEM; the
 // operator submits it to their CA and pastes the signed cert back through the
-// server-config save path, which match-and-promotes the pending key (tls-csr.md § 4).
+// server-config save path, which match-and-promotes the pending key.
 export function generateCSR(
   req: GenerateCSRRequest,
 ): Promise<GenerateCSRResponse> {

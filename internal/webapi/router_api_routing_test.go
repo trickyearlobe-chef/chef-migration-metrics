@@ -13,13 +13,10 @@ import (
 	"testing"
 )
 
-// The ownership import's "Browse tables" button reported "Method not allowed."
-// Two separate faults produced that: the path was never registered on the mux,
-// and the frontend fallback that caught it answered on method before it
-// noticed the path was an API path at all. The second is the general one — it
-// made every unrouted non-GET API request report a method error instead of a
-// missing endpoint, which reads as a permissions problem rather than a wiring
-// one.
+// An unrouted API path must answer as a missing endpoint, whatever the method.
+// The frontend fallback has to notice the path is an API path before it answers
+// on method: a method error on an unrouted non-GET request reads as a
+// permissions problem rather than a wiring one.
 
 // TestIntakeListTables_IsRouted drives a POST through the mux and asserts it
 // reaches handleIntakeListTables. The credential complaint is that handler's

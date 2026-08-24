@@ -376,10 +376,9 @@ func credentialToResponse(m *secrets.CredentialMetadata) credentialResponse {
 // "Failed to create credential." and the reason goes only to a log they cannot
 // read — which is the same failure as not saying anything at all.
 //
-// The database connection refusals used to be in this list. They are not a
-// credential's refusals any more: a connection is configuration, checked where
-// it is set up and tested, and the credential beside it holds a password with
-// no shape to check.
+// Database connection refusals do not belong here: a connection is
+// configuration, checked where it is set up and tested, and the credential
+// beside it holds a password with no shape to check.
 func isValidationError(err error) bool {
 	return errors.Is(err, secrets.ErrInvalidCredentialType) ||
 		errors.Is(err, secrets.ErrEmptyValue) ||

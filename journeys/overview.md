@@ -94,8 +94,7 @@ and a contract lives in a test that fails when it stops being true.
   what stops the tests that do exist reading as more than they are.
 
 **No status claims.** Nothing here says built, shipped, planned or proposed. Status written
-in prose is the thing that rots fastest, and the best document we had was wrong on exactly
-that line. Naming a test replaces it: if the test is red the journey is not proven, and that
+in prose is the thing that rots fastest. Naming a test replaces it: if the test is red the journey is not proven, and that
 says so without anybody keeping a sentence up to date.
 
 The one claim this page makes for itself, that there is a single centrally-set target version

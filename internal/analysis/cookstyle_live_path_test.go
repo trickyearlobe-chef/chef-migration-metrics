@@ -14,10 +14,10 @@ import (
 // Which cookstyle runs is decided when a scan runs, not when the scanner is
 // built.
 //
-// Where the Chef tools are is a setting an operator changes on a screen. The
-// resolved path used to be worked out at startup and handed here as a string,
-// so correcting the setting changed nothing until somebody restarted the
-// service — and the screen reported the save as applied.
+// Where the Chef tools are is a setting an operator changes on a screen. A path
+// resolved at startup and handed here as a string would make correcting the
+// setting change nothing until the service restarted, while the screen reported
+// the save as applied.
 
 // toolPrinting builds a directory holding an executable of the given name that
 // prints the given word, so which one ran can be told from its output.

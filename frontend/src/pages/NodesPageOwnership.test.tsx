@@ -41,8 +41,7 @@ vi.mock("../context/AuthContext", () => ({
 // These contexts must hand back the SAME objects every render, as the real
 // ones do. Returning fresh arrays each time makes every memo in the page
 // recompute on every render, which hides a filter that was left out of a
-// dependency list — that is exactly how a broken owner filter shipped while
-// these tests passed.
+// dependency list.
 const orgContext = {
   selectedOrg: "",
   organisations: [],

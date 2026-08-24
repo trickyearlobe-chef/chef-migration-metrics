@@ -78,8 +78,8 @@ func roleNames(roles []*chefapi.RoleDetail) []string {
 // collectRoleDetails
 // ---------------------------------------------------------------------------
 
-// The whole point of the change: when the index answers in full, no per-role
-// request is issued. At customer scale that is 73,910 round trips saved.
+// When the index answers in full, no per-role request is issued — one round trip
+// saved per role.
 func TestCollectRoleDetails_CompleteIndexIssuesNoPerRoleFetch(t *testing.T) {
 	src := &fakeRoleSource{
 		names:      []string{"base", "web", "db"},

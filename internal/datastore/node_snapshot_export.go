@@ -23,7 +23,7 @@ type NodeSnapshotCursor struct {
 // ignores f.Sort/f.SortOrder/f.Limit/f.Offset and f.IncludeHeavyJSON: streamed
 // exports use a fixed unique order with an explicit page limit and never load
 // heavy JSONB. It carries no total_count column — scanFilteredNodeSnapshots
-// scans the light projection only (the P3 count split removed the trailing
+// scans the light projection only (the count split removed the trailing
 // total, so emitting one here would over-supply the scan). A valid cursor
 // restricts to rows strictly after it.
 func buildNodeSnapshotExportQuery(f NodeSnapshotFilter, after NodeSnapshotCursor, limit int) (string, []interface{}) {

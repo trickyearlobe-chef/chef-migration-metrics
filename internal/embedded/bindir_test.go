@@ -65,11 +65,9 @@ func TestBinDir_TheNamedDirectoryIsPreferredToPATH(t *testing.T) {
 // The directory is read when a tool is resolved, not when the resolver is
 // built.
 //
-// It used to be a field, filled in once at startup — which was reasonable when
-// configuration came from a file that could not change while the process ran.
-// It comes from the database now and an operator changes it on a screen, so a
-// resolver that answers with the directory it was born with sends every scan to
-// the old place until somebody restarts the service.
+// The directory comes from the database and an operator changes it on a screen,
+// so a resolver that answers with the directory it was built with sends every
+// scan to the old place until somebody restarts the service.
 func TestBinDir_TheDirectoryIsReadAtResolveTimeNotAtBuildTime(t *testing.T) {
 	first := binDirWithTool(t, "go")
 	second := binDirWithTool(t, "go")

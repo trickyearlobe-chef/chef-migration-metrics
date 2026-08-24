@@ -14,14 +14,12 @@ import (
 // ---------------------------------------------------------------------------
 // A git_repo assignment is keyed by the repo NAME.
 //
-// The product used to disagree with itself: the repo list matched ownership on
-// the name while the owner's page, the cookbook's inherited owner and the
-// committers panel all matched on the git URL. A repo somebody had claimed read
-// as unowned on the list, and the owner's own page showed nothing for it — with
-// the assignment count agreeing with neither.
+// The name is canonical because repo URLs are volatile. Matching on the URL
+// instead — in the owner's page, the cookbook's inherited owner or the
+// committers panel — makes a claimed repo read as unowned on the list, with the
+// assignment count agreeing with neither view.
 //
-// The name is canonical because repo URLs are volatile. These tests hold the
-// three URL-assuming readers to it.
+// These tests hold those three readers to the name.
 // ---------------------------------------------------------------------------
 
 const (

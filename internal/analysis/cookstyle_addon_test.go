@@ -14,8 +14,8 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Chunk D: operator addon cop files — config-driven require injection + load
-// failure isolation.
+// Operator addon cop files — config-driven require injection + load failure
+// isolation.
 // ---------------------------------------------------------------------------
 
 // seqExecutor returns a different canned result per call, cycling through the

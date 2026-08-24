@@ -31,15 +31,18 @@ configuration that would fight ours.
 
 ## The decisions behind it
 
-**A converge result on its own is not a verdict.** It is one signal beside the static
-analysis, and it is the weaker one for trust purposes, because it depends on a lab.
+**A converge failure is only as trustworthy as the lab it ran in.** It is one signal beside
+the static analysis, and it is the weaker one for trust purposes.
 
-**Our lab's failures must never be charged to the cookbook.** This is the whole reason the
-previous approach lost credibility. When credentials change, or the address pool empties, or
-hardware goes away, every run fails for reasons that have nothing to do with any cookbook —
-and each of those failures then blocks every machine running it. Measured on the customer
-estate on 2026-08-03, **89% of converge failures were of that kind**: nine out of ten reds
-were about us, not about the code.
+**A red has three causes, and one of them cannot be detected.** The cookbook genuinely fails
+to converge; or the lab does; or the cookbook's own tests and fixtures are faulty and the
+cookbook is fine. Nothing can tell the third from the first, so overruling it is a person's
+verdict and always will be. Do not build detection for it.
+
+**Our lab's failures must never be charged to the cookbook.** When credentials change, or the
+address pool empties, or hardware goes away, every run fails for reasons that have nothing to
+do with any cookbook — and each of those failures then blocks every machine running it. Most
+converge failures are of that kind: about the lab, not about the code.
 
 **So whether a converge failure can block at all is a switch an administrator controls.** On
 by default, because when the lab is sound a real converge failure is the best evidence there
@@ -54,9 +57,6 @@ something that is not what they ship.
 
 ## What proves it
 
-That a converge result alone never produces a verdict is pinned: with no static analysis to
-go on, the cookbook comes back [as untested rather than
-judged](internal/analysis/readiness_test.go#TestCheckCookbookCompatibility_TKConvergeFailIsUntested).
 A cookbook with no test setup at all is [judged on the static analysis
 alone](internal/analysis/readiness_test.go#TestCheckCookbookCompatibility_CSPass_NoTestSuite)
 rather than being marked failed for the absence.
@@ -86,8 +86,8 @@ resolver](internal/batch/resolver_test.go#TestResolveBatch_HasTestSuiteFalse).
 **Nothing proves the thing the journey is actually for.** No test establishes that a real
 converge on a real machine finds failures the static analysis missed. That is the entire
 premise, and it is confirmed only by having done it. If converge testing never catches
-anything static analysis did not, the 89% figure above says to switch it off and save the
-lab.
+anything static analysis did not, the balance of failures described above says to switch it
+off and save the lab.
 
 **Nothing proves the lab-versus-cookbook distinction is drawn correctly.** The switch makes
 the distinction *available* — it does not classify any individual failure. Deciding that a
@@ -96,5 +96,5 @@ given red was the lab's fault is a human act, recorded elsewhere.
 **The load-bearing assumption:** that a converge that never reached the converge step is
 distinguishable, in what we store, from one that converged and failed. Everything above
 depends on being able to tell those apart. Verify that before designing anything that
-reports on failure causes — if the two look the same in the data, the 89% cannot be measured
-again and the switch is the only defence left.
+reports on failure causes — if the two look the same in the data, that balance cannot be
+measured again and the switch is the only defence left.

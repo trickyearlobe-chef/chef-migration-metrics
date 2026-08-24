@@ -56,7 +56,7 @@ func labRoleClient(t *testing.T) *chefapi.Client {
 
 // A healthy index should answer in full, leaving the per-role fallback idle.
 // If FromFallback is non-zero against a quiet lab server, the index is not
-// returning everything and the customer-scale assumption needs revisiting.
+// returning everything and the at-scale assumption needs revisiting.
 func TestLabCollectRoleDetails_IndexAnswersInFull(t *testing.T) {
 	client := labRoleClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

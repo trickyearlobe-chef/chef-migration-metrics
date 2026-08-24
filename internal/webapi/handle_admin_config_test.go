@@ -1401,7 +1401,7 @@ func TestAdminConfigOrganisations_PUT_422_OrgNameNotDerivable(t *testing.T) {
 
 // A successful org PUT must invoke the organisations-changed hook so the
 // operational organisations table is reconciled and a collection triggered
-// without a restart (configuration-live-reload.md; web-api-organisations.md).
+// without a restart .
 func TestAdminConfigOrganisations_PUT_InvokesOrgChangedHook(t *testing.T) {
 	store := newTestConfigStore(t)
 	var calls int

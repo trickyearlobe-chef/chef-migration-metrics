@@ -323,16 +323,6 @@ func TestDefaults_Exports(t *testing.T) {
 	}
 }
 
-func TestDefaults_Elasticsearch(t *testing.T) {
-	cfg := mustParse(t, minimalValidYAML())
-	if cfg.Elasticsearch.OutputDirectory != "/var/lib/chef-migration-metrics/elasticsearch" {
-		t.Errorf("unexpected elasticsearch output_directory: %q", cfg.Elasticsearch.OutputDirectory)
-	}
-	if cfg.Elasticsearch.RetentionHours != 48 {
-		t.Errorf("expected elasticsearch retention_hours 48, got %d", cfg.Elasticsearch.RetentionHours)
-	}
-}
-
 func TestDefaults_Server(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if cfg.Server.ListenAddress != "0.0.0.0" {
@@ -607,28 +597,6 @@ func TestEnvOverride_ACMEAgreeToTOS_CaseInsensitive(t *testing.T) {
 	cfg := mustParse(t, minimalValidYAML())
 	if !cfg.Server.TLS.ACME.AgreeToTOS {
 		t.Error("acme agree_to_tos env override should be case-insensitive")
-	}
-}
-
-func TestEnvOverride_ElasticsearchEnabled(t *testing.T) {
-	t.Setenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_ENABLED", "true")
-	// Don't call mustParse because elasticsearch validation may fail on
-	// output_directory. Just check the override is applied.
-	var cfg Config
-	cfg.setDefaults()
-	cfg.applyEnvOverrides()
-	if !cfg.Elasticsearch.Enabled {
-		t.Error("elasticsearch.enabled env override not applied")
-	}
-}
-
-func TestEnvOverride_ElasticsearchOutputDirectory(t *testing.T) {
-	t.Setenv("CHEF_MIGRATION_METRICS_ELASTICSEARCH_OUTPUT_DIRECTORY", "/custom/es")
-	var cfg Config
-	cfg.setDefaults()
-	cfg.applyEnvOverrides()
-	if cfg.Elasticsearch.OutputDirectory != "/custom/es" {
-		t.Errorf("elasticsearch output_directory env override not applied: %q", cfg.Elasticsearch.OutputDirectory)
 	}
 }
 
@@ -1044,7 +1012,7 @@ server:
 }
 
 // Missing cert/key files must NOT be a fatal validation error: file presence is
-// the listener's concern, which fails open to plain HTTP (tls.md § 2.4). This is
+// the listener's concern, which fails open to plain HTTP. This is
 // the on-box escape hatch — moving the files away recovers a bricked deployment.
 func TestValidation_TLSStaticCertNotFound_NotFatal(t *testing.T) {
 	yaml := `
@@ -1128,7 +1096,7 @@ server:
 // A missing mTLS CA bundle (ca_path) must NOT be a fatal validation error.
 // Setting ca_path enables RequireAndVerifyClientCert, which can lock out an
 // entire org. Moving the CA file away on the host must fail the deployment open
-// to plain HTTP at the listener (tls.md § 2.4), not abort startup at validation.
+// to plain HTTP at the listener, not abort startup at validation.
 func TestValidation_TLSStaticCAPathNotFound_NotFatal(t *testing.T) {
 	dir := t.TempDir()
 	certFile := filepath.Join(dir, "cert.pem")
@@ -1196,7 +1164,7 @@ server:
 }
 
 // http_redirect_port must differ from 443: automatic HTTPS binds 443 when TLS is
-// active (tls.md § 1.5), so a redirect listener on 443 would collide.
+// active, so a redirect listener on 443 would collide.
 func TestValidation_TLSHTTPRedirectPortCollidesWith443(t *testing.T) {
 	yaml := `
 organisations:
@@ -1878,65 +1846,6 @@ exports:
   output_directory: ` + dir + `
 `
 	mustParse(t, yaml)
-}
-
-// ---------------------------------------------------------------------------
-// Elasticsearch validation
-// ---------------------------------------------------------------------------
-
-func TestValidation_ElasticsearchDisabledSkipsValidation(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-elasticsearch:
-  enabled: false
-  output_directory: /nonexistent/dir
-`
-	mustParse(t, yaml)
-}
-
-func TestValidation_ElasticsearchEnabledBadDir(t *testing.T) {
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-elasticsearch:
-  enabled: true
-  output_directory: /nonexistent/es/dir
-`
-	expectParseError(t, yaml, "elasticsearch.output_directory")
-}
-
-// Note: retention_hours: 0 in YAML is indistinguishable from "not set" for Go
-// int fields, so setDefaults() overwrites it to 48. We cannot test that 0 is
-// rejected — it simply gets defaulted. The spec constraint (>= 1) is
-// effectively enforced by the default. A negative value in YAML would parse as
-// a negative int, so we test that instead.
-func TestValidation_ElasticsearchEnabledRetentionNegative(t *testing.T) {
-	dir := t.TempDir()
-	yaml := `
-organisations:
-  - name: test-org
-    chef_server_url: https://chef.example.com
-    org_name: test-org
-    client_name: test
-    client_key_credential: k
-
-elasticsearch:
-  enabled: true
-  output_directory: ` + dir + `
-  retention_hours: -1
-`
-	expectParseError(t, yaml, "elasticsearch.retention_hours must be >= 1")
 }
 
 // ---------------------------------------------------------------------------
@@ -3239,8 +3148,7 @@ server:
 }
 
 // cert_source: db does NOT require cert_path/key_path — the cert/key live
-// encrypted in the config store, validated at save/preflight not startup
-// (tls-static.md § 2.4/§ 2.7).
+// encrypted in the config store, validated at save/preflight not startup.
 func TestValidation_TLSStaticDBSourceNoPathsOK(t *testing.T) {
 	yaml := `
 organisations:
@@ -3395,8 +3303,7 @@ server:
 }
 
 // Env credentials (AWS_ACCESS_KEY_ID) are the "supplied via env/role" escape:
-// when present, region/hosted_zone need not be in dns_provider_config
-// (tls-acme.md § 3.10).
+// when present, region/hosted_zone need not be in dns_provider_config.
 func TestValidation_ACMEDNS01Route53EnvCredsSkip(t *testing.T) {
 	clearAWSEnv(t)
 	t.Setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
@@ -3423,7 +3330,7 @@ server:
 }
 
 // ---------------------------------------------------------------------------
-// ACME hostname self-registration (Chunk 9a, tls-acme.md § 3.13)
+// ACME hostname self-registration (Chunk 9a)
 // ---------------------------------------------------------------------------
 
 func acmeHostnameYAML(t *testing.T, extra string) string {

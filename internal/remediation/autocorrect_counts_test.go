@@ -11,10 +11,10 @@ import (
 )
 
 // The preview's counts must come from the correcting run's own per-offence
-// flags. They previously came from subtracting the run's summary.offense_count
-// from the scan's — but a correcting run does not shrink its own offense_count,
-// so that difference was always ~0 and every cookbook read as "0 correctable"
-// while the diff beside it showed real changes.
+// flags. Subtracting the correcting run's summary.offense_count from the scan's
+// is always ~0, because a correcting run does not shrink its own offense_count,
+// and every cookbook then reads as "0 correctable" beside a diff showing real
+// changes.
 //
 // Fixtures are real cookstyle output; see internal/analysis/testdata/README.md.
 
@@ -85,9 +85,9 @@ func TestAutocorrectCounts_PlainScanCorrectsNothing(t *testing.T) {
 	}
 }
 
-// The old arithmetic, pinned as a regression guard: subtracting the correcting
-// run's summary from the scan's total yields zero, because the count does not
-// shrink. If someone reinstates it, this documents why it is wrong.
+// Guard on the arithmetic that must not be reinstated: subtracting the
+// correcting run's summary from the scan's total yields zero, because the count
+// does not shrink.
 func TestAutocorrectCounts_SummarySubtractionIsAlwaysZero(t *testing.T) {
 	plain := loadAutocorrectFixture(t, "cookstyle_scan_mixed_plain.json")
 	after := loadAutocorrectFixture(t, "cookstyle_scan_mixed_autocorrected.json")

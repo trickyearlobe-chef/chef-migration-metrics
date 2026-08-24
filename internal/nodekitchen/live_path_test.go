@@ -13,7 +13,7 @@ import (
 
 // Which kitchen runs is decided when a run starts, not when the executor is
 // built — the same reason as cookstyle. Where the Chef tools are is a setting
-// on a screen, and the path used to be resolved once at startup.
+// on a screen, so the path must be resolved per run.
 
 func kitchenPrinting(t *testing.T, word string) string {
 	t.Helper()

@@ -88,6 +88,6 @@ func TestValidateStaticPairBytes_BadCAFile(t *testing.T) {
 }
 
 // CertMetadataFromPEM was removed in favour of ChainMetadataFromPEM (the full
-// per-cert chain surface — tls-static.md § 2.2). Its field-extraction, empty,
+// per-cert chain surface). Its field-extraction, empty,
 // and unparseable cases are covered by the ChainMetadataFromPEM tests in
 // metadata_test.go.

@@ -27,7 +27,7 @@ vi.mock("react-router-dom", () => ({
 
 // readiness is null throughout — the disk card must still render, because the
 // verdict is a version-invariant node-level value (migration 0037), not a
-// per-target readiness row. This is the regression the decouple fixes.
+// per-target readiness row.
 function detail(
   nodeOverrides: Partial<NodeDetailResponse["node"]> = {},
   topOverrides: Partial<NodeDetailResponse> = {},
@@ -120,9 +120,8 @@ describe("NodeDetailPage — Disk Space panel (node-level, no readiness rows)", 
     expect(within(panel).getByText("Unknown")).toBeInTheDocument();
   });
 
-  // The original bug: a node that passes the install size but fails the % buffer
-  // showed a NEGATIVE "short" (required - available). With the total available,
-  // the bars now show a correct positive shortfall (homekube001: 1.5 GB).
+  // A node that passes the install size but fails the % buffer is short by the
+  // buffer overflow, not by "required - available", which would be negative.
   it("renders a positive shortfall via the bars when the % buffer is missed", async () => {
     await renderDetail(
       detail(

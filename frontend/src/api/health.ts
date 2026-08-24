@@ -21,7 +21,7 @@ export function fetchOrganisations(): Promise<OrganisationsResponse> {
 }
 
 // fetchTLSStatus reports whether the server fell back to plain HTTP because the
-// configured static TLS certificate failed to load at startup (tls.md § 2.4).
+// configured static TLS certificate failed to load at startup.
 // Public + DB-independent, so it is safe to poll from a global banner.
 export function fetchTLSStatus(): Promise<TLSStatus> {
   return apiFetch<TLSStatus>(buildUrl("/server/tls-status"));

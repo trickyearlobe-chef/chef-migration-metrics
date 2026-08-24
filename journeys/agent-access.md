@@ -31,20 +31,19 @@ and destroy it the moment I am unsure — pasting credentials into editor toolin
 places than I can track.
 
 Everything the API can answer, described in OpenAPI — Swagger, as most still say it — because
-that is what assistants and client generators read. Our hand-written descriptions have been wrong
-before: paths renamed, and one written up as built that never was. A description I cannot trust
-is worse than none, because I will believe it.
+that is what assistants and client generators read. A hand-written description drifts from what
+is served — paths get renamed, and things get written up as built that never were. A description
+I cannot trust is worse than none, because I will believe it.
 
 To narrow before I fetch, and fetch a page at a time. An assistant's room to think is small
-against a hundred and twenty thousand machines. One unbounded answer fills it, and then it forgets
+against an estate of this size. One unbounded answer fills it, and then it forgets
 the question and starts inventing. So the narrowing I do on screen has to be available to it,
 nothing unbounded by default, and it should be able to ask the shape of a thing — how many,
 grouped how — before pulling what it needs to read closely.
 
 And to tell what it can ask for without being told. What we expose has to name its own
 capabilities well enough that an assistant picks the right one from a long list, and can tell when
-it has used one wrongly rather than reporting the empty answer it got. We have field reports of
-that exact failure on other tools we built.
+it has used one wrongly rather than reporting the empty answer it got.
 
 Diagnosis is reading, and an assistant that only reads is one I can point at production without
 thinking hard. But diagnosis is supposed to end up in the register of failures — so if it cannot
@@ -58,14 +57,14 @@ accept is a note the assistant wrote appearing under my name, worded like someth
 Nothing in that register is overwritten, so the risk is not losing anything — it is signing
 findings I have not read.
 
-It has to work where the service is installed: inside the customer's estate, reached through a
+It has to work where the service is installed: inside somebody else's estate, reached through a
 controlled desktop. A second thing deployed alongside will not happen there.
 
 ## The decisions behind it
 
 **The description is derived from what is served, not written next to it.** A hand-written copy
-starts rotting when it is committed — the failure that killed the document set this replaced. A
-renamed path must break the build, not a customer's client.
+starts rotting when it is committed. A renamed path must break the build, not a client in the
+field.
 
 **A credential is another way into the same account.** My level of access, exactly what I see on
 screen, through something other than the web interface. No second permissions model. An account

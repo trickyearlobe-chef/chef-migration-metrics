@@ -11,11 +11,10 @@ import (
 	"time"
 )
 
-// Node ownership answers "which machines am I on the hook for". It was recorded
-// as blocked on there being no node ownership data at the customer, but the
-// import path has always accepted `node` as an entity type — the gap was data,
-// not code. These tests hold that path down so it cannot rot while the customer
-// has nothing loaded.
+// Node ownership answers "which machines am I on the hook for". The import path
+// accepts `node` as an entity type, so the path exists whether or not any node
+// ownership data has been loaded. These tests hold it down so it cannot rot
+// while nothing is loaded.
 
 func TestFunctional_NodeOwnership_AssignedNodesResolveToTheirOwner(t *testing.T) {
 	db := testDB(t)

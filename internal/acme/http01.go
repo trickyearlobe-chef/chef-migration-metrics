@@ -11,15 +11,15 @@ import (
 )
 
 // ChallengePathPrefix is the well-known HTTP-01 challenge path. The CA fetches
-// http://<domain>/.well-known/acme-challenge/<token> to validate domain control
-// (tls-acme.md § 3.3). The redirect listener checks this prefix to give the
+// http://<domain>/.well-known/acme-challenge/<token> to validate domain control.
+// The redirect listener checks this prefix to give the
 // challenge handler priority over the HTTPS redirect.
 const ChallengePathPrefix = "/.well-known/acme-challenge/"
 
 // HTTP01Solver publishes HTTP-01 challenge proofs in memory and serves them over
 // plain HTTP via Handler(). It satisfies the Solver seam: Present records the
 // token→keyAuth mapping the CA will fetch, CleanUp removes it. The handler is
-// installed on the redirect listener (port 80) by the caller (tls-acme.md § 3.3).
+// installed on the redirect listener (port 80) by the caller.
 // It holds no key material beyond the key authorization the engine computes — it
 // never touches the account key.
 type HTTP01Solver struct {

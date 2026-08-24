@@ -46,9 +46,7 @@ type EnrichedOffense struct {
 	Location OffenseLocation `json:"location"`
 
 	// Correctable is CookStyle's static capability flag for this cop. It is
-	// persisted because the read-side handlers key auto-correctability off
-	// it; before it was carried here they decoded a key that was never
-	// written, so every offense read as not correctable.
+	// persisted because the read-side handlers key auto-correctability off it.
 	Correctable bool `json:"correctable"`
 
 	// Remediation is the migration documentation for this cop, or nil if
@@ -100,9 +98,9 @@ var polyMethodCopVariants = map[string][]copVariant{
 	"Lint/DeprecatedConstants": {
 		{
 			// Net::HTTPServerException is still defined on Ruby 3.4 (an alias of
-			// Net::HTTPClientException) → Review, not Blocker. Lab-verified 2026-07-16
-			// on CC19.3.15. Every other constant this cop flags by default was removed
-			// in Ruby 3.x and falls through to the base Blocker mapping.
+			// Net::HTTPClientException) → Review, not Blocker. Every other constant
+			// this cop flags by default was removed in Ruby 3.x and falls through to
+			// the base Blocker mapping.
 			Token: "Net::HTTPServerException",
 			Mapping: CopMapping{
 				CopName:      "Lint/DeprecatedConstants",
@@ -119,7 +117,7 @@ rescue Net::HTTPClientException`,
 	},
 	"Lint/DeprecatedClassMethods": {
 		{
-			// Removed in Ruby 3.4 (bundled with Chef 19) → Blocker. Lab-verified.
+			// Removed in Ruby 3.4 (bundled with Chef 19) → Blocker.
 			Token: "File.exists?",
 			Mapping: CopMapping{
 				CopName:      "Lint/DeprecatedClassMethods",
@@ -134,7 +132,7 @@ File.exist?(path)`,
 			},
 		},
 		{
-			// Removed in Ruby 3.4 (bundled with Chef 19) → Blocker. Lab-verified.
+			// Removed in Ruby 3.4 (bundled with Chef 19) → Blocker.
 			Token: "Dir.exists?",
 			Mapping: CopMapping{
 				CopName:      "Lint/DeprecatedClassMethods",
@@ -180,7 +178,6 @@ Addrinfo.tcp(ip, port).getnameinfo`,
 		},
 		{
 			// ENV.clone/ENV.dup raise TypeError on Ruby 3 (Chef 19) → Blocker.
-			// Lab-verified 2026-07-16 on CC19.3.15 (Ruby 3.4.8).
 			Token: "ENV.clone",
 			Mapping: CopMapping{
 				CopName:      "Lint/DeprecatedClassMethods",
@@ -341,9 +338,8 @@ var embeddedCopMappings = []CopMapping{
 	// crash on the target Chef Client's bundled Ruby.
 	// -----------------------------------------------------------------------
 	{
-		// RemovedIn 19.0 verified against CC19.3.14 (Ruby 3.4.8) in the lab
-		// 2026-07-16: File.exists?/Dir.exists? raise NoMethodError; present (with a
-		// deprecation warning) on CC18/Ruby 3.1.
+		// File.exists?/Dir.exists? raise NoMethodError on CC19 (Ruby 3.4); present
+		// (with a deprecation warning) on CC18/Ruby 3.1.
 		CopName:      "Lint/DeprecatedClassMethods",
 		Description:  "File.exists? and Dir.exists? were removed in Ruby 3.4 (bundled with Chef Infra Client 19). Calls raise NoMethodError at converge time. Use File.exist? / Dir.exist?.",
 		MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedclassmethods",
@@ -356,11 +352,9 @@ File.exists?(path)
 File.exist?(path)`,
 	},
 	{
-		// Lab-verified 2026-07-16 on CC19.3.15 (Ruby 3.4.8): BigDecimal.new raises
-		// NoMethodError (removed in Ruby 2.7). cookstyle's description says only
-		// "deprecated", but the call is a hard runtime failure on the target →
-		// Blocker (false-negative sweep: was defaulting to Review). Enabled by
-		// default in cookstyle.
+		// BigDecimal.new raises NoMethodError on CC19.3.15 (removed in Ruby 2.7).
+		// cookstyle's description says only "deprecated", but the call is a hard
+		// runtime failure on the target → Blocker. Enabled by default in cookstyle.
 		CopName:      "Lint/BigDecimalNew",
 		Description:  "BigDecimal.new was removed in Ruby 2.7 (the target Chef Infra Client 19 bundles Ruby 3.4). Calls raise NoMethodError at converge time. Use the BigDecimal() conversion function.",
 		MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintbigdecimalnew",
@@ -373,10 +367,9 @@ BigDecimal.new('1.23')
 BigDecimal('1.23')`,
 	},
 	{
-		// Lab-verified 2026-07-16 on CC19.3.15 (Ruby 3.4.8): the Fixnum and Bignum
-		// constants were removed in Ruby 3.2 and raise NameError. Both constants the
-		// cop flags are gone → uniform Blocker (false-negative sweep). Enabled by
-		// default in cookstyle.
+		// The Fixnum and Bignum constants were removed in Ruby 3.2 and raise
+		// NameError on CC19.3.15. Both constants the cop flags are gone → uniform
+		// Blocker. Enabled by default in cookstyle.
 		CopName:      "Lint/UnifiedInteger",
 		Description:  "The Fixnum and Bignum constants were removed in Ruby 3.2 (the target Chef Infra Client 19 bundles Ruby 3.4). References raise NameError. Use Integer.",
 		MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintunifiedinteger",
@@ -389,12 +382,12 @@ value.is_a?(Fixnum)
 value.is_a?(Integer)`,
 	},
 	{
-		// Poly-method cop (see polyMethodCopVariants below). Lab-verified 2026-07-16
-		// on Ruby 3.4.8: of the constants this cop flags by default (NIL, TRUE,
-		// FALSE, Net::HTTPServerException, Random::DEFAULT, Struct::Group,
-		// Struct::Passwd) all but Net::HTTPServerException were removed in Ruby 3.x
-		// and raise NameError. Base mapping is therefore Blocker; the single present
-		// constant (Net::HTTPServerException) is carved out to Review by variant.
+		// Poly-method cop (see polyMethodCopVariants below). Of the constants this
+		// cop flags by default (NIL, TRUE, FALSE, Net::HTTPServerException,
+		// Random::DEFAULT, Struct::Group, Struct::Passwd) all but
+		// Net::HTTPServerException were removed in Ruby 3.x and raise NameError.
+		// Base mapping is therefore Blocker; the single present constant
+		// (Net::HTTPServerException) is carved out to Review by variant.
 		CopName:      "Lint/DeprecatedConstants",
 		Description:  "Flags deprecated Ruby constants. NIL/TRUE/FALSE (removed Ruby 3.0), Random::DEFAULT (removed Ruby 3.0), and Struct::Group/Struct::Passwd (removed Ruby 3.x) raise NameError on the target Chef Infra Client 19 (Ruby 3.4). Use the lowercase literals / documented replacements.",
 		MigrationURL: "https://docs.rubocop.org/rubocop/cops_lint.html#lintdeprecatedconstants",
@@ -412,14 +405,13 @@ r = Random.new`,
 	// Chef/Deprecations
 	// -----------------------------------------------------------------------
 	//
-	// The eight entries below were added by the 2026-07-16 false-negative sweep
-	// (see scripts/cop-validation/README.md): cops that were defaulting to Review
-	// but flag a class/helper/method genuinely removed on CC19.3.15, confirmed by
-	// behavioural probe (call + catch) on the lab box — a hidden blocker, the
-	// dangerous direction per journeys/scan-trust.md.
+	// The eight entries below flag a class/helper/method absent on CC19.3.15, so
+	// each is a Blocker rather than a Review: a hidden blocker is the dangerous
+	// direction per journeys/scan-trust.md. Validation harness:
+	// scripts/cop-validation/README.md.
 	{
-		// Lab-verified 2026-07-16: Chef::REST is undefined on CC19.3.15 (NameError).
-		// cookstyle description states removal in Chef Infra Client 13.
+		// Chef::REST is undefined on CC19.3.15 (NameError). cookstyle description
+		// states removal in Chef Infra Client 13.
 		CopName:      "Chef/Deprecations/UsesChefRESTHelpers",
 		Description:  "Chef::REST was removed in Chef Infra Client 13. Its helpers raise NameError at converge time. Use Chef::ServerAPI for requests to the Chef Infra Server.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_useschefresthelpers",
@@ -432,8 +424,8 @@ Chef::REST.new(url).get_rest(path)
 Chef::ServerAPI.new(url).get(path)`,
 	},
 	{
-		// Lab-verified 2026-07-16: Chef::ShellOut is undefined on CC19.3.15
-		// (NameError). cookstyle description states removal in Chef Infra Client 13.
+		// Chef::ShellOut is undefined on CC19.3.15 (NameError). cookstyle
+		// description states removal in Chef Infra Client 13.
 		CopName:      "Chef/Deprecations/ChefShellout",
 		Description:  "The Chef::ShellOut class was removed in Chef Infra Client 13. References raise NameError at converge time. Use Mixlib::ShellOut, which behaves identically.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_chefshellout",
@@ -446,9 +438,9 @@ Chef::ShellOut.new('command').run_command
 Mixlib::ShellOut.new('command').run_command`,
 	},
 	{
-		// Lab-verified 2026-07-16: Chef::Mixin::Command / ::Language /
-		// ::LanguageIncludeRecipe / ::RecipeDefinitionDSLCore are all undefined on
-		// CC19.3.15 (NameError). cookstyle description states removal in Chef 14.
+		// Chef::Mixin::Command / ::Language / ::LanguageIncludeRecipe /
+		// ::RecipeDefinitionDSLCore are all undefined on CC19.3.15 (NameError).
+		// cookstyle description states removal in Chef 14.
 		CopName:      "Chef/Deprecations/UsesDeprecatedMixins",
 		Description:  "Several Chef mixin modules (e.g. Chef::Mixin::Command, Chef::Mixin::Language, Chef::Mixin::LanguageIncludeRecipe) were removed in Chef Infra Client 14. Including them raises NameError at converge time. Use the current DSL helpers.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_usesdeprecatedmixins",
@@ -461,9 +453,9 @@ include Chef::Mixin::LanguageIncludeRecipe
 # Remove the include — include_recipe/shell_out are available directly.`,
 	},
 	{
-		// Lab-verified 2026-07-16: Chef::Resource does not respond to dsl_name on
-		// CC19.3.15. cookstyle description: "Using dsl_name causes failures in Chef
-		// Infra Client 13 and later."
+		// Chef::Resource does not respond to dsl_name on CC19.3.15. cookstyle
+		// description: "Using dsl_name causes failures in Chef Infra Client 13 and
+		// later."
 		CopName:      "Chef/Deprecations/ResourceUsesDslNameMethod",
 		Description:  "The dsl_name method on resources causes failures in Chef Infra Client 13 and later. Use resource_name (with provides) instead.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_resourceusesdslnamemethod",
@@ -477,10 +469,9 @@ resource_name :my_resource
 provides :my_resource`,
 	},
 	{
-		// Lab-verified 2026-07-16: node['key'] = value (no precedence level) raises
-		// "Node attributes are read-only when you do not specify which precedence
-		// level to use" on CC19.3.15. Chef has required a precedence level since
-		// Chef Infra Client 11.
+		// node['key'] = value (no precedence level) raises "Node attributes are
+		// read-only when you do not specify which precedence level to use" on
+		// CC19.3.15. Chef has required a precedence level since Chef Infra Client 11.
 		CopName:      "Chef/Deprecations/NodeSetWithoutLevel",
 		Description:  "Setting a node attribute without a precedence level (node['key'] = value) raises at converge time on Chef Infra Client 11 and later. Specify node.default / node.normal / node.override.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_nodesetwithoutlevel",
@@ -493,9 +484,9 @@ node['my_app']['port'] = 8080
 node.default['my_app']['port'] = 8080`,
 	},
 	{
-		// Lab-verified 2026-07-16: the Chef::PartialSearch constant is undefined on
-		// CC19.3.15 (NameError). No removal version in the cop description; RemovedIn
-		// is the target on which absence was confirmed.
+		// The Chef::PartialSearch constant is undefined on CC19.3.15 (NameError). No
+		// removal version in the cop description; RemovedIn is the target on which it
+		// is absent.
 		CopName:      "Chef/Deprecations/PartialSearchClassUsage",
 		Description:  "The legacy Chef::PartialSearch class is undefined on Chef Infra Client 19; direct use raises NameError at converge time. Use the built-in search helper with the :filter_result option.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_partialsearchclassusage",
@@ -508,9 +499,9 @@ Chef::PartialSearch.new.search(:node, 'role:web', keys: { 'name' => ['name'] })
 search(:node, 'role:web', filter_result: { 'name' => ['name'] })`,
 	},
 	{
-		// Lab-verified 2026-07-16: partial_search is not defined on Chef::DSL::Recipe
-		// (nor Universal) on CC19.3.15; a call raises NoMethodError at converge time.
-		// No removal version in the cop description; RemovedIn is the confirmed target.
+		// partial_search is not defined on Chef::DSL::Recipe (nor Universal) on
+		// CC19.3.15; a call raises NoMethodError at converge time. No removal version
+		// in the cop description; RemovedIn is the target on which it is absent.
 		CopName:      "Chef/Deprecations/PartialSearchHelperUsage",
 		Description:  "The legacy partial_search helper is not available on Chef Infra Client 19; a call raises NoMethodError at converge time. Use the built-in search helper with the :filter_result option.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_partialsearchhelperusage",
@@ -523,9 +514,9 @@ partial_search(:node, 'role:web', keys: { 'name' => ['name'] })
 search(:node, 'role:web', filter_result: { 'name' => ['name'] })`,
 	},
 	{
-		// Lab-verified 2026-07-16: epic_fail is not defined on Chef::DSL::Recipe on
-		// CC19.3.15; a call raises NoMethodError at converge time. No removal version
-		// in the cop description; RemovedIn is the confirmed target.
+		// epic_fail is not defined on Chef::DSL::Recipe on CC19.3.15; a call raises
+		// NoMethodError at converge time. No removal version in the cop description;
+		// RemovedIn is the target on which it is absent.
 		CopName:      "Chef/Deprecations/EpicFail",
 		Description:  "The epic_fail helper is not available on Chef Infra Client 19; a call raises NoMethodError at converge time. Use the ignore_failure property on the resource instead.",
 		MigrationURL: "https://docs.chef.io/workstation/cookstyle/chef_deprecations_epicfail",
@@ -635,10 +626,9 @@ depends 'poise-service'
 # Rewrite using custom resources with unified_mode true`,
 	},
 	{
-		// Lab-verified 2026-07-16 on CC19.3.15: the four methods this cop flags —
-		// Chef::Platform.provider_for_resource / find_provider /
-		// find_provider_for_node / set — are all absent on Chef::Platform (calls
-		// raise NoMethodError). Confirmed Blocker (the prior sweep left it :na).
+		// The four methods this cop flags — Chef::Platform.provider_for_resource /
+		// find_provider / find_provider_for_node / set — are all absent on
+		// Chef::Platform on CC19.3.15 (calls raise NoMethodError) → Blocker.
 		CopName:      "Chef/Deprecations/DeprecatedPlatformMethods",
 		Description:  "The legacy Chef::Platform provider-resolution methods (provider_for_resource, find_provider, find_provider_for_node, set) were removed in Chef Infra Client 15. Calls raise NoMethodError at converge time. Use the resource/provider DSL (provides) instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
@@ -682,9 +672,8 @@ if Gem::Version.new(node['platform_version']) >= Gem::Version.new('6.3')`,
 		Description:  "The :add and :remove actions for yum_repository were replaced by :create and :delete.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.14",
-		// No RemovedIn: lab-verified 2026-07-16 that yum_repository still allows
-		// action :add on CC19.3.14 (in allowed_actions; why-run converge ran) —
-		// deprecated, not removed.
+		// No RemovedIn: yum_repository still allows action :add on CC19 (in
+		// allowed_actions) — deprecated, not removed.
 		RemovedIn: "",
 		ReplacementPattern: `# Before:
 yum_repository 'epel' do
@@ -892,8 +881,8 @@ provides :my_resource, platform: 'ubuntu'`,
 		Description:  "Using Chef::Provider::LWRPBase as a base class for providers is deprecated. Convert to a custom resource.",
 		MigrationURL: "https://docs.chef.io/custom_resources/",
 		IntroducedIn: "12.0",
-		// No RemovedIn: lab-verified 2026-07-16 that Chef::Provider::LWRPBase is
-		// still defined and subclassable on CC19.3.14 — deprecated, not removed.
+		// No RemovedIn: Chef::Provider::LWRPBase is still defined and subclassable
+		// on CC19 — deprecated, not removed.
 		RemovedIn: "",
 		ReplacementPattern: `# Before:
 class Chef::Provider::MyProvider < Chef::Provider::LWRPBase
@@ -923,9 +912,8 @@ provides :my_resource`,
 		Description:  "The :create action for ruby_block is deprecated. Use :run instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
-		// No RemovedIn: lab-verified 2026-07-16 that ruby_block still accepts
-		// action :create on CC19.3.14 (converges without raising) — deprecated, not
-		// removed, so Review not Blocker.
+		// No RemovedIn: ruby_block still accepts action :create on CC19 (converges
+		// without raising) — deprecated, not removed, so Review not Blocker.
 		RemovedIn: "",
 		ReplacementPattern: `# Before:
 ruby_block 'my_block' do
@@ -948,8 +936,8 @@ end`,
 		Description:  "Positional parameters in search() calls are deprecated. Use named parameters instead.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
-		// No RemovedIn: lab-verified 2026-07-16 that Chef::Search::Query#search
-		// still accepts positional args on CC19.3.14 — deprecated, not removed.
+		// No RemovedIn: Chef::Search::Query#search still accepts positional args on
+		// CC19 — deprecated, not removed.
 		RemovedIn: "",
 		ReplacementPattern: `# Before:
 search(:node, 'role:web', 'name', 0, 1000)
@@ -962,8 +950,8 @@ search(:node, 'role:web', filter_result: { 'name' => ['name'] })`,
 		Description:  "use_inline_resources is now the default in Chef 13+ and should be removed from LWRP/HWRP providers.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "12.0",
-		// No RemovedIn: lab-verified 2026-07-16 that use_inline_resources is still
-		// callable on CC19.3.14 (no-op default) — a cleanup item, not a blocker.
+		// No RemovedIn: use_inline_resources is still callable on CC19 (no-op
+		// default) — a cleanup item, not a blocker.
 		RemovedIn: "",
 		ReplacementPattern: `# Before:
 use_inline_resources
@@ -1004,7 +992,7 @@ windows_feature 'IIS' do
 end`,
 	},
 	{
-		// Renamed upstream from WindowsPackageInstallerType (2026-07-16 registry audit).
+		// Renamed upstream from WindowsPackageInstallerType.
 		CopName:      "Chef/Deprecations/WindowsPackageInstallerTypeString",
 		Description:  "The :installer_type property for windows_package is deprecated in favour of the :source property's auto-detection.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
@@ -1026,9 +1014,8 @@ end`,
 		Description:  "The :change action for windows_task is deprecated. Use :create which now supports updating existing tasks.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
 		IntroducedIn: "13.0",
-		// No RemovedIn: lab-verified 2026-07-16 that windows_task still accepts
-		// action :change on CC19.3.15 (in allowed_actions, accepted at build) —
-		// deprecated, not removed.
+		// No RemovedIn: windows_task still accepts action :change on CC19.3.15 (in
+		// allowed_actions, accepted at build) — deprecated, not removed.
 		RemovedIn: "",
 		ReplacementPattern: `# Before:
 windows_task 'my_task' do
@@ -1043,8 +1030,7 @@ windows_task 'my_task' do
 end`,
 	},
 	{
-		// Lives in the Chef/Sharing department, not Chef/Deprecations (2026-07-16
-		// registry audit corrected the stale name).
+		// Lives in the Chef/Sharing department, not Chef/Deprecations.
 		CopName:      "Chef/Sharing/DefaultMetadataMaintainer",
 		Description:  "The default metadata.rb maintainer and maintainer_email values should be updated from the template defaults.",
 		MigrationURL: "https://docs.chef.io/deprecations/",
@@ -1222,7 +1208,7 @@ include_recipe 'yum::dnf_yum_compat'
 # Remove the include_recipe line.`,
 	},
 	{
-		// Renamed upstream from IncludingXMLRubyCookbook (2026-07-16 registry audit).
+		// Renamed upstream from IncludingXMLRubyCookbook.
 		CopName:      "Chef/Deprecations/IncludingXMLRubyRecipe",
 		Description:  "The xml::ruby recipe is no longer needed. The nokogiri gem is included in Chef Infra Client.",
 		MigrationURL: "https://docs.chef.io/deprecations/",

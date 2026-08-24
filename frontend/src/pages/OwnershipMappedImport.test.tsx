@@ -295,9 +295,9 @@ describe("OwnershipImportPage tabs", () => {
 // ---------------------------------------------------------------------------
 // Importing from a database
 //
-// The customer's owner list lives in a system of record, not always in an
-// export somebody remembered to take. The mapping flow after the source is
-// unchanged — only where the rows come from differs.
+// An owner list often lives in a system of record, not in an export somebody
+// remembered to take. The mapping flow after the source is unchanged — only
+// where the rows come from differs.
 // ---------------------------------------------------------------------------
 
 describe("importing owners from a database", () => {
@@ -389,7 +389,7 @@ describe("importing owners from a database", () => {
   });
 });
 
-// Whoever sets the import up often cannot inspect the customer's database, so
+// Whoever sets the import up often cannot inspect the source database, so
 // writing SQL blind is the thing to avoid: the first anyone would learn of a
 // wrong query is when the import runs.
 describe("browsing the database", () => {
@@ -562,9 +562,8 @@ describe("scheduling a database import", () => {
   });
 });
 
-// Snagging, found on the running instance 2026-08-13: the delimiter input was
-// correctly hidden under a database source and the advice about it was not, so
-// the screen explained a control that was not there.
+// The screen must not explain a control that is not there: under a database
+// source the delimiter input is hidden, so the advice about it is too.
 it("says nothing about the delimiter when the source is a database", async () => {
   const user = userEvent.setup();
   mockUseAuth.mockReturnValue({

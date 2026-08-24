@@ -19,11 +19,10 @@ import type { Owner } from "../types";
 // "no such person" for anybody who did not make the first page.
 //
 // The selection is shown as chips, but by `OwnerFilterChips` and not by this
-// control: hung under the button they widened it, and with seven owners picked
-// they pushed CookStyle, TK and Clone off to the right. The count on the button
-// is not a substitute — it cannot say who is selected or take one person off —
-// so the chips get a full-width row of their own beneath the filter bar, where
-// they wrap without moving anything.
+// control: hung under the button they widen it and push the controls beside it
+// off to the right. The count on the button is not a substitute — it cannot say
+// who is selected or take one person off — so the chips get a full-width row of
+// their own beneath the filter bar, where they wrap without moving anything.
 // ---------------------------------------------------------------------------
 
 /** The whole selection, so the two mutually exclusive halves move together. */

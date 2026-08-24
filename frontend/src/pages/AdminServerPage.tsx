@@ -41,8 +41,8 @@ const CERT_ROLE_LABEL: Record<CertMetadata["role"], string> = {
 };
 
 // Renders the operator-safe metadata for every certificate in an installed
-// bundle, leaf → intermediate(s) → root, one card per cert with its chain role
-// (tls-static.md § 2.2). Order reflects what the server returns; the private key
+// bundle, leaf → intermediate(s) → root, one card per cert with its chain role.
+// Order reflects what the server returns; the private key
 // is never present.
 function CertChainPanel({ chain }: { chain: CertMetadata[] }) {
   return (
@@ -183,12 +183,12 @@ export function AdminServerPage() {
   const [newDomain, setNewDomain] = useState("");
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
-  // ACME hostname IP source (tls-acme.md § 3.13). Null means "derive from which
+  // ACME hostname IP source. Null means "derive from which
   // of hostname_ip / hostname_interface is set"; an explicit choice lets the
   // operator pick "auto" (clears both) even before typing a value.
   const [ipSourceOverride, setIpSourceOverride] = useState<"auto" | "interface" | "manual" | null>(null);
 
-  // CSR generation (tls-csr.md § 4). Subject + SANs + key algorithm; on success
+  // CSR generation. Subject + SANs + key algorithm; on success
   // the server stores the private key as pending and returns the CSR PEM, which
   // the operator submits to their CA. Only relevant for cert_source: db.
   const [csrCommonName, setCsrCommonName] = useState("");
@@ -264,7 +264,7 @@ export function AdminServerPage() {
   }
 
   // Route 53 credentials are write-only: held under acme.route53 and sent on
-  // save, routed server-side to encrypted secret keys (tls-acme.md § 3.4).
+  // save, routed server-side to encrypted secret keys.
   function setRoute53Cred(key: "access_key_id" | "secret_access_key", value: string) {
     setConfig((prev) =>
       prev
@@ -299,7 +299,7 @@ export function AdminServerPage() {
     setSuccess(false);
   }
 
-  // Behind-proxy plain-HTTP deployment (tls.md § 9.1). Enabling forces tls.mode
+  // Behind-proxy plain-HTTP deployment. Enabling forces tls.mode
   // off (local listener serves plain HTTP) and trusts X-Forwarded-Proto for HSTS
   // / scheme detection; disabling only clears trusted_proxy and leaves the mode.
   function setBehindProxy(enabled: boolean) {
@@ -426,7 +426,7 @@ export function AdminServerPage() {
   // AND X-Forwarded-Proto trusted.
   const behindProxy = tlsMode === "off" && config.trusted_proxy;
 
-  // ACME-derived view state (tls-acme.md § 3.4/§ 3.13/§ 3.14).
+  // ACME-derived view state.
   const acme = config.tls.acme;
   const isStagingCA = acme.ca_url.toLowerCase().includes("staging");
   const isRoute53Dns01 = acme.challenge === "dns-01" && acme.dns_provider === "route53";
@@ -447,7 +447,7 @@ export function AdminServerPage() {
       </div>
 
       {/* Insecure-TLS fallback warning, surfaced inline beside the cert fields
-          the operator needs to fix (tls.md § 2.4). */}
+          the operator needs to fix. */}
       <div className="overflow-hidden rounded-lg">
         <TLSDegradedBanner />
       </div>
@@ -494,7 +494,7 @@ export function AdminServerPage() {
           </select>
         </FieldRow>
 
-        {/* Behind-proxy plain-HTTP deployment (tls.md § 9.1). A reverse proxy
+        {/* Behind-proxy plain-HTTP deployment. A reverse proxy
             terminates TLS; the app serves plain HTTP and trusts
             X-Forwarded-Proto. Enabling forces mode off. */}
         <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
@@ -661,7 +661,7 @@ export function AdminServerPage() {
                   />
                 </FieldRow>
 
-                {/* CSR generation (tls-csr.md § 4) — generate a key + CSR here,
+                {/* CSR generation — generate a key + CSR here,
                     submit it to the CA, then install the signed cert via the
                     Certificate (PEM) field above (match-and-promote). */}
                 <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50/60 p-3">
@@ -985,7 +985,7 @@ export function AdminServerPage() {
                       />
                     </FieldRow>
 
-                    {/* Hostname self-registration (tls-acme.md § 3.13) */}
+                    {/* Hostname self-registration */}
                     <label className="flex cursor-pointer items-center gap-3">
                       <div
                         className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 ${config.tls.acme.register_hostname ? "bg-blue-600" : "bg-gray-200"}`}
@@ -1093,7 +1093,7 @@ export function AdminServerPage() {
               <span className="text-sm text-gray-700">I agree to the Terms of Service</span>
             </label>
 
-            {/* ACME status panel (tls-acme.md § 3.14) */}
+            {/* ACME status panel */}
             {(acmeCertChain.length > 0 || acmeStatus) && (
               <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-700">
                 <p className="mb-2 font-semibold text-gray-900">ACME status</p>

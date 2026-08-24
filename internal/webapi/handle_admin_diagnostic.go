@@ -44,7 +44,12 @@ func (r *Router) handleDiagnosticBundle(w http.ResponseWriter, req *http.Request
 	errs := make(map[string]string)
 
 	// --- bundle_info.json ---
-	host := hostname()
+	// The hostname is a name from inside the estate, so it travels only when
+	// identifiers were asked for.
+	host := ""
+	if params.includeIdentifiers {
+		host = hostname()
+	}
 	if err := writeZipJSON(zw, "bundle_info.json", map[string]any{
 		"timestamp":           time.Now().UTC(),
 		"app_version":         r.version,
@@ -439,9 +444,14 @@ func anonymiseCollectionRuns(runs []datastore.CollectionRunWithOrg, orgKeyMap ma
 		if !ok {
 			key = "org-?"
 		}
+		// The nested run carries its own organisation_name. Replacing only the
+		// outer one leaves the real name in the same object, so the copy is
+		// keyed too before it is nested.
+		anonymised := run.Run
+		anonymised.OrganisationName = key
 		result[i] = map[string]any{
 			"organisation_name": key,
-			"run":               run.Run,
+			"run":               anonymised,
 		}
 	}
 	return result

@@ -40,6 +40,18 @@ on that would create a new user, with no work attached, every time somebody logg
 username is the thing that persists, and it is also what ownership is keyed on — see [one
 person, many names](ownership-identity.md).
 
+**A sign-in must carry a name to sign in as, or it is refused.** With no name the only thing
+left is the opaque token, and taking it would coin a person out of something that is not a name.
+Refusing is the whole of the fix: it removes the possibility rather than detecting it afterwards.
+Say which claim is missing, because the fix belongs with whoever configures the provider.
+
+**An email address is not required.** Somebody arriving without one signs in and works
+normally — it only means there is less to match them to the commits they wrote, and their
+sign-in name can do that job on its own. Do not turn this into a second reason to refuse.
+
+Refusing is safe only because there is always a local administrator: that is what local
+accounts are for, and it is why they are not optional.
+
 **Anybody arriving without an explicit level of access gets the lowest one.** Never the highest,
 never nothing, and not a failure — the safe default is "can look, cannot change".
 
@@ -59,18 +71,18 @@ already exists [is recognised rather than
 duplicated](internal/auth/jit/provisioner_test.go#TestProvision_ExistingUser), and a first-time
 arrival [becomes a user](internal/auth/jit/provisioner_test.go#TestProvision_NewUser). Somebody
 arriving with no level of access stated [becomes the lowest
-one](internal/auth/jit/provisioner_test.go#TestProvision_DefaultsRoleToViewer), and where the
-provider does not supply a username [a fallback is
-derived](internal/auth/jit/provisioner_test.go#TestProvision_FallbackUsername) rather than the
-sign-in failing. Names are [made safe before being
+one](internal/auth/jit/provisioner_test.go#TestProvision_DefaultsRoleToViewer), Where the provider
+supplies no username, what happens instead is pinned twice — [a name is derived from what did
+arrive](internal/auth/jit/provisioner_test.go#TestProvision_FallbackUsername) and [the opaque
+identifier stands in when the attributes are
+absent](internal/auth/samlsp/provider_test.go#TestExtractUserInfo_FallbackToNameID). Names are
+[made safe before being
 stored](internal/auth/jit/provisioner_test.go#TestSanitiseUsername).
 
 How the provider's answer becomes a level of access is pinned by [role
 resolution](internal/auth/samlsp/provider_test.go#TestResolveRole), with the details of a
 sign-in [read out of the
-assertion](internal/auth/samlsp/provider_test.go#TestExtractUserInfo) and [falling back to the
-identifier when the attributes are
-absent](internal/auth/samlsp/provider_test.go#TestExtractUserInfo_FallbackToNameID).
+assertion](internal/auth/samlsp/provider_test.go#TestExtractUserInfo).
 
 The anti-lockout behaviour is pinned at the point it matters: a configuration naming a
 certificate file that does not exist [is not treated as
@@ -87,6 +99,11 @@ reached](internal/auth/local_test.go#TestAuthenticateTriggersLockout) and [beyon
 it](internal/auth/local_test.go#TestAuthenticateLockoutExceedsThreshold), and a failure of the
 lockout machinery itself [does not become a way
 in](internal/auth/local_test.go#TestAuthenticateLockoutLockUserFails).
+
+**Nothing proves that a person is never coined out of an opaque token.** The decision above
+says a first sign-in with nothing to anchor on is refused; what is pinned is the opposite, and
+the two tests naming it say so plainly. Until that changes, somebody can still arrive as a
+string that is not a name, and their work will hang off it.
 
 **Nothing proves the fallback ladder end to end.** That a missing certificate is tolerated is
 asserted; that the service then actually binds a self-signed listener and, failing that, an

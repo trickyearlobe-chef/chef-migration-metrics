@@ -23,7 +23,7 @@ import (
 
 // route53API is the subset of the AWS SDK Route 53 client the DNS-01 solver
 // drives. *route53.Client satisfies it structurally; tests supply a fake so the
-// UPSERT/poll/DELETE flow is exercised without any AWS access (tls-acme.md § 3.4).
+// UPSERT/poll/DELETE flow is exercised without any AWS access.
 type route53API interface {
 	ChangeResourceRecordSets(ctx context.Context, in *route53.ChangeResourceRecordSetsInput, optFns ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error)
 	GetChange(ctx context.Context, in *route53.GetChangeInput, optFns ...func(*route53.Options)) (*route53.GetChangeOutput, error)
@@ -33,7 +33,7 @@ type route53API interface {
 // Route 53 hosted zone. Present UPSERTs the `_acme-challenge.<domain>` TXT record
 // and blocks until the change set reaches INSYNC before the CA validates;
 // CleanUp removes it. It satisfies the Solver seam and holds no key material —
-// the engine computes the TXT value from the account key (tls-acme.md § 3.3/3.4).
+// the engine computes the TXT value from the account key.
 type Route53Solver struct {
 	api          route53API
 	hostedZoneID string
@@ -70,7 +70,7 @@ func newRoute53Solver(api route53API, hostedZoneID string, log LogFunc) *Route53
 // route53Settings is the resolved AWS configuration for the solver: the region
 // and hosted zone, plus optional static credentials sourced from the encrypted
 // config store. Empty credentials mean "let the AWS default chain (env vars,
-// IAM instance role) resolve them" (tls-acme.md § 3.4).
+// IAM instance role) resolve them".
 type route53Settings struct {
 	region          string
 	hostedZoneID    string
@@ -80,7 +80,7 @@ type route53Settings struct {
 
 // NewRoute53Solver resolves AWS settings (region, hosted zone, credentials) from
 // dns_provider_config and the encrypted config store, builds a Route 53 client,
-// and returns a solver. Credential resolution order (tls-acme.md § 3.4):
+// and returns a solver. Credential resolution order:
 // config-store secrets → AWS_* env vars → IAM instance role. Region/zone come
 // from dns_provider_config, falling back to the config-store. It performs no
 // network I/O — the AWS default credential chain resolves lazily on first call.

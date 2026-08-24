@@ -272,8 +272,8 @@ describe("FailureEntryDialog — editing an entry", () => {
 
     await user.selectOptions(screen.getByLabelText(/Who is on it/i), "");
 
-    // Choosing "Nobody yet" takes the reference with it — leaving it behind
-    // kept the old kind alive and silently discarded the unassignment.
+    // Choosing "Nobody yet" takes the reference with it: left behind, it keeps
+    // the old kind alive and silently discards the unassignment.
     expect(screen.getByLabelText(/^Reference/i)).toHaveValue("");
 
     await user.click(screen.getByRole("button", { name: /^Save$/i }));

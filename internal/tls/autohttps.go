@@ -4,7 +4,7 @@
 package tls
 
 // AutoHTTPSPlan is the resolved listening layout for the automatic HTTPS-on-443
-// behaviour (tls.md § 1.5): which port the HTTPS listener binds, and which ports
+// behaviour: which port the HTTPS listener binds, and which ports
 // run 301-redirects to it.
 type AutoHTTPSPlan struct {
 	// HTTPSPort is the port the HTTPS listener binds.
@@ -16,7 +16,7 @@ type AutoHTTPSPlan struct {
 }
 
 // ResolveAutoHTTPS decides the HTTPS + redirect port layout for a *healthy* TLS
-// listener at startup (tls.md § 1.5). It is pure; the caller supplies the
+// listener at startup. It is pure; the caller supplies the
 // 443-bind decision via can443 so the policy can be unit-tested and the real
 // bind kept at the edge.
 //

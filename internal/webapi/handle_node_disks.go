@@ -329,8 +329,8 @@ func byMountFromPairs(pairs map[string]map[string]interface{}) map[string]map[st
 // Some Ohai versions omit the redundant "mount" field from by_pair entries.
 // analysis.EvaluateDisk tolerates that because findBestMountWindows matches
 // the map key before falling back to entry.Mount, so such nodes report a disk
-// verdict while this page — which used to require the field — rendered nothing.
-// Deriving from the key keeps the two views consistent.
+// verdict. Deriving from the key keeps this page consistent with that rather
+// than requiring the field.
 //
 // The key is normally "<device>,<mount>" and a device name may itself contain
 // a comma (e.g. "weird,device,/data"), hence the split on the LAST comma; an

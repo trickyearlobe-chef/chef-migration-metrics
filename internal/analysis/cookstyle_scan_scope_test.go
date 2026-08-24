@@ -33,10 +33,10 @@ func storedOffences(t *testing.T, offences ...remediation.EnrichedOffense) []byt
 	return data
 }
 
-// fileExistsOffence is the customer's actual case: File.exists?, a curated
-// Blocker at 19.0, carried by a cop whose severity is a mere warning. It is
-// near-identical in ~95% of the customer's repositories because it sits in a
-// copied Rakefile, not in cookbook code.
+// fileExistsOffence is File.exists?, a curated Blocker at 19.0, carried by a cop
+// whose severity is a mere warning. The same offence repeats across nearly every
+// repository in a fleet because it sits in a copied Rakefile, not in cookbook
+// code.
 func fileExistsOffence(path string) remediation.EnrichedOffense {
 	return remediation.EnrichedOffense{
 		CopName:  "Lint/DeprecatedClassMethods",
