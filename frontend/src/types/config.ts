@@ -92,7 +92,7 @@ export interface ACMEConfig {
   storage_path: string;
   renew_before_days: number;
   agree_to_tos: boolean;
-  // Hostname self-registration (tls-acme.md § 3.13): publish an A record per
+  // Hostname self-registration: publish an A record per
   // domain pointing at the host. Opt-in, only meaningful with dns_provider:
   // route53. IP source precedence: hostname_ip > hostname_interface > auto.
   register_hostname: boolean;
@@ -102,7 +102,7 @@ export interface ACMEConfig {
   // Write-only Route 53 DNS-01 credentials. Sent under tls.acme.route53 on save
   // and routed server-side to encrypted secret keys; never returned by GET (so
   // they stay undefined after load). region/hosted_zone_id are non-secret and
-  // travel in dns_provider_config. See tls-acme.md § 3.4/§ 3.5.
+  // travel in dns_provider_config.4/§ 3.5.
   route53?: {
     access_key_id?: string;
     secret_access_key?: string;
@@ -110,7 +110,7 @@ export interface ACMEConfig {
 }
 
 // Operator-facing ACME health, returned read-only by GET /admin/config/server
-// as `acme_status` when tls.mode is 'acme' (tls-acme.md § 3.14). All times are
+// as `acme_status` when tls.mode is 'acme'. All times are
 // RFC 3339 strings; a field is empty/absent when not yet applicable.
 export interface AcmeStatus {
   last_renewal?: string;
@@ -121,7 +121,7 @@ export interface AcmeStatus {
 // Operator-safe metadata for one certificate in the installed bundle. Returned
 // read-only by GET /admin/config/server inside the `tls_certificate_info` chain;
 // the private key is never included. `role` is the structurally-derived chain
-// position: 'leaf', 'intermediate', or 'root' (tls-static.md § 2.2).
+// position: 'leaf', 'intermediate', or 'root'.
 export interface CertMetadata {
   subject: string;
   issuer: string;
@@ -167,14 +167,14 @@ export interface ServerConfig {
   graceful_shutdown_seconds: number;
   // True when a trusted reverse proxy terminates TLS in front of the app: the
   // local listener serves plain HTTP (tls.mode off) and X-Forwarded-Proto is
-  // trusted for HSTS/scheme detection (tls.md § 9.1). Default false.
+  // trusted for HSTS/scheme detection. Default false.
   trusted_proxy: boolean;
   // Read-only metadata for the installed certificate chain (cert_source: db, or
   // the issued ACME cert when mode is 'acme'), leaf → intermediate(s) → root,
   // attached by GET. Never sent on save.
   tls_certificate_info?: CertMetadata[];
-  // Read-only ACME operator status, attached by GET when mode is 'acme'
-  // (tls-acme.md § 3.14). Never sent on save.
+  // Read-only ACME operator status, attached by GET when mode is 'acme'.
+  // Never sent on save.
   acme_status?: AcmeStatus;
 }
 

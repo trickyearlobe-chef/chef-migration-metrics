@@ -20,7 +20,7 @@ import (
 )
 
 // ErrTOSNotAccepted is returned (and the issuance skipped) when agree_to_tos is
-// not true. Per tls-acme.md § 3.7 the caller treats this as fail-open, not fatal.
+// not true. The caller treats this as fail-open, not fatal.
 var ErrTOSNotAccepted = errors.New("acme: agree_to_tos must be true")
 
 // Manager performs ACME account registration and the order/challenge flow,
@@ -64,7 +64,7 @@ func NewManager(storage *Storage, solver Solver, cfg Config, opts ...ManagerOpti
 // cert/key to storage. It returns the issued leaf+chain PEM and key PEM.
 //
 // agree_to_tos must be true; otherwise it logs ERROR and returns
-// ErrTOSNotAccepted so the caller falls open to plain HTTP (tls-acme.md § 3.11).
+// ErrTOSNotAccepted so the caller falls open to plain HTTP.
 func (m *Manager) Obtain(ctx context.Context) (certPEM, keyPEM []byte, err error) {
 	if len(m.cfg.Domains) == 0 {
 		return nil, nil, errors.New("acme: no domains configured")
@@ -227,7 +227,7 @@ func pickChallenge(chals []*xacme.Challenge, typ string) *xacme.Challenge {
 }
 
 // newECKey generates a fresh ECDSA P-256 private key (the default key algorithm,
-// matching the CSR path in tls-csr.md § 4.4).
+// matching the CSR path.4).
 func newECKey() (*ecdsa.PrivateKey, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

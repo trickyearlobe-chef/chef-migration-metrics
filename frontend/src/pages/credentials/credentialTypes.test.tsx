@@ -5,9 +5,7 @@ import { describe, it, expect } from "vitest";
 import { CREDENTIAL_TYPES, typeLabel, BADGE_LABELS, BADGE_STYLES } from "./constants";
 
 // A credential type the server validates but the screen never offers is a type
-// nobody can use. That is what shipped in v2.21.1: database connections were
-// checked on the way in, and the picker only knew about Chef keys and generic
-// values, so the check could never fire. Found by the owner opening the dialog.
+// nobody can use.
 //
 // The pairing is the thing to hold: every type the server accepts must be
 // choosable, and every choosable type must be labelled wherever credentials are

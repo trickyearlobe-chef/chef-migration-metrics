@@ -76,7 +76,7 @@ func TestLookupCopForOffense_DeprecatedClassMethods_DeprecationOnly(t *testing.T
 	}
 }
 
-// Real customer data spells the method with namespace qualifiers (::File.exists?,
+// Cookstyle messages spell the method with namespace qualifiers (::File.exists?,
 // ::File::exists?, ::Socket.gethostbyname). Every spelling must resolve to the
 // same variant as its bare form, not fall through to the base mapping.
 func TestLookupCopForOffense_NamespaceQualifiedVariants(t *testing.T) {
@@ -108,9 +108,9 @@ func TestLookupCopForOffense_NamespaceQualifiedVariants(t *testing.T) {
 	}
 }
 
-// The full DeprecatedClassMethods surface (from the cop's PREFERRED_METHODS table,
-// behaviourally probed on CC19.3.15/Ruby 3.4.8): ENV.clone/dup/freeze raise
-// TypeError (Blocker); iterator?/attr are still present (Review). Guidance per cop.
+// The full DeprecatedClassMethods surface (from the cop's PREFERRED_METHODS
+// table) on CC19.3.15: ENV.clone/dup/freeze raise TypeError (Blocker);
+// iterator?/attr are still present (Review). Guidance per cop.
 func TestLookupCopForOffense_DeprecatedClassMethods_EnvAndKernel(t *testing.T) {
 	cases := []struct {
 		name      string

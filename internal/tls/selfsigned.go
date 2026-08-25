@@ -21,7 +21,7 @@ import (
 const selfSignedValidity = 365 * 24 * time.Hour
 
 // GenerateSelfSigned builds an ephemeral self-signed certificate/key pair used as
-// the degraded fail-open listener (tls-static.md § 2.4, tls-acme.md § 3.11). It
+// the degraded fail-open listener . It
 // keeps the admin/recovery UI on an encrypted channel (the operator's browser
 // shows an untrusted-cert warning and proceeds) rather than dropping to cleartext
 // HTTP.

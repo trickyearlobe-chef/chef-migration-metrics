@@ -55,9 +55,8 @@ func TestValidateCuratedRemovals_FlagsStaleEntry(t *testing.T) {
 	}
 }
 
-// A Review-level entry (empty RemovedIn) whose cop the binary no longer emits is
-// now flagged stale too — closing the blind spot the 2026-07-16 audit found (8
-// stale Review mappings that the RemovedIn-only check had skipped).
+// A Review-level entry (empty RemovedIn) whose cop the binary no longer emits
+// must be flagged stale too — a RemovedIn-only check skips it.
 func TestValidateCuratedRemovals_FlagsStaleReviewEntry(t *testing.T) {
 	mappings := []remediation.CopMapping{
 		{CopName: "Chef/Deprecations/RenamedAway", RemovedIn: ""}, // Review-level, no removal claim

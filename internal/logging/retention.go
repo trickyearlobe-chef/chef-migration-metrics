@@ -20,12 +20,11 @@ type RetentionStore interface {
 // a restart. It purges once immediately, then every interval, and returns a
 // stop func. Mirrors ingest.StartRetentionTicker.
 //
-// Expiry previously ran only as the last step of a collection run, which made
-// it conditional on collection reaching that point: a failed run, a run skipped
-// because the previous one overran its tick, or an early return on an empty
-// organisation list all meant logs were never expired. That is how a log table
-// reaches 26GB. Retention is a property of the data, not of the collector, so
-// it runs on its own clock.
+// Expiry must not be conditional on a collection run reaching its last step: a
+// failed run, a run skipped because the previous one overran its tick, or an
+// early return on an empty organisation list would each mean logs are never
+// expired and the table grows without bound. Retention is a property of the
+// data, not of the collector, so it runs on its own clock.
 //
 // A retention of zero or less means "keep everything" and purges nothing. The
 // alternative — falling back to a default, as the ingest ticker does — would

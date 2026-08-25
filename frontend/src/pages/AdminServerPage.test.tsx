@@ -449,7 +449,7 @@ describe("AdminServerPage", () => {
     ).toBeInTheDocument();
   });
 
-  // --- Behind-proxy plain-HTTP toggle (Chunk 8d — tls.md § 9.1) ---
+  // --- Behind-proxy plain-HTTP toggle (Chunk 8d) ---
 
   it("shows the behind-proxy plain-HTTP toggle", async () => {
     render(<AdminServerPage />);

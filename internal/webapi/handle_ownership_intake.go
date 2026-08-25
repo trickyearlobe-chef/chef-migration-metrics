@@ -28,10 +28,9 @@ import (
 // ---------------------------------------------------------------------------
 // Discovery-driven ownership intake — /api/v1/ownership/import/*
 //
-// The one way ownership comes in from a source. A second, fixed-header import
-// used to sit at /api/v1/ownership/import: it required the file to already be
-// in CMM's shape, which no source has ever supplied, and it admitted operators
-// where this admits only administrators. See journeys/ownership-intake.md.
+// The one way ownership comes in from a source: the file is mapped to CMM's
+// shape here rather than being required to arrive in it, and only
+// administrators may use it. See journeys/ownership-intake.md.
 // ---------------------------------------------------------------------------
 
 // intakeMaxUploadBytes is the in-memory threshold for a multipart upload, NOT
@@ -40,10 +39,8 @@ import (
 // It is passed to ParseMultipartForm as maxMemory: anything larger spills to a
 // temporary file on disk and the upload still succeeds. So raising it does not
 // admit bigger files — it only makes CMM hold more of one in RAM before
-// spilling, per concurrent request. It was briefly raised to 128MB on the
-// mistaken belief that it capped upload size; a 74MB spreadsheet exporting to
-// several hundred megabytes of CSV is exactly the case it must NOT try to hold
-// in memory.
+// spilling, per concurrent request. A spreadsheet export running to hundreds of
+// megabytes of CSV is exactly the case it must NOT try to hold in memory.
 //
 // The real bound on an import is intakeMaxRows.
 const intakeMaxUploadBytes = 10 << 20
@@ -52,14 +49,13 @@ const intakeMaxUploadBytes = 10 << 20
 // source, so an unbounded file would be an unbounded allocation.
 //
 // Counted against rows *kept* — a filtered import reads the whole file and
-// keeps only what matches, which is what lets a 270,000-row export through
-// when 19,000 of its rows are wanted. Still a backstop rather than a target:
-// a bound that cannot be exceeded by accident is worth more than the few
-// imports it inconveniences.
+// keeps only what matches, so a much larger export passes when only a fraction
+// of its rows are wanted. Still a backstop rather than a target: a bound that
+// cannot be exceeded by accident is worth more than the few imports it
+// inconveniences.
 //
-// Raised to 250,000 so the customer's source loads in one go — theirs is about
-// 130,000 and growing, and splitting it is the thing journeys/ownership-intake.md
-// says must not be necessary.
+// Sized so a whole source loads in one go; journeys/ownership-intake.md says
+// splitting one must not be necessary.
 //
 // This is one constant, and it is NOT the whole of that requirement. A commit
 // is a single synchronous request with nothing transactional about it, so at
@@ -1192,10 +1188,8 @@ const intakeSourceDatabase = "database"
 //
 // Once the SERVER has answered, none of that applies. It read the connection,
 // authenticated, and refused what it was asked — so the shape describes
-// something that is demonstrably not wrong. Found at the customer 2026-08-14:
-// a query with SQL Server's syntax written wrongly came back with the server's
-// own complaint followed by advice about percent-encoding the backslash in
-// their account, which had just worked.
+// something that is demonstrably not wrong, and a note about it attaches to a
+// failure it has nothing to do with.
 func shapeWorthShowing(err error) bool {
 	var fromSQLServer mssql.Error
 	if errors.As(err, &fromSQLServer) {

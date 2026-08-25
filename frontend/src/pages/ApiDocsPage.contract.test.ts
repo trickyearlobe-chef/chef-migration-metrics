@@ -9,13 +9,8 @@ import type { ApiSchema } from "../types/auth";
 
 // The contract between the description and the page that renders it.
 //
-// Nothing checked that the page could say anything about the shapes the
-// generator emits, and it could not: every list, map and one-of read as
-// "not described", so a body the service spells out as a list of strings was
-// reported as unknown and whoever read it went to the browser's network tab
-// for something they had already been told. A gap in the page is
-// indistinguishable from a gap in the description, and the wrong one gets
-// fixed.
+// A gap in the page is indistinguishable from a gap in the description, and
+// the wrong one gets fixed.
 //
 // So this reads what the service really emits — the recording the Go build
 // keeps true, in internal/webapi/testdata/response_shapes.json — and fails

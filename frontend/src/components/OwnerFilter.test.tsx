@@ -115,9 +115,8 @@ describe("OwnerFilter", () => {
     expect(screen.getByRole("checkbox", { name: /Alice Brown/ })).toBeDisabled();
   });
 
-  // The chips used to hang off the bottom of the control, which widened it and
-  // pushed CookStyle, TK and Clone off to the right once a few owners were
-  // picked. The control now stays a fixed-width button and the chips get a row
+  // The control stays a fixed-width button whatever is selected, so the
+  // controls beside it are never pushed off to the right; the chips get a row
   // of their own — see OwnerFilterChips.
   it("stays a fixed-width button however many owners are chosen", () => {
     renderControl({

@@ -82,8 +82,8 @@ Those need a real database and run under their own build tag rather than in the 
 **A measured gap nothing here can fix.** Runs that fail while working out which cookbooks to
 use — an unresolvable dependency, a cookbook that is not there — arrive without the error
 detail that a failed converge carries. For that class the history will show a machine failing
-and not say why. This was established by watching real traffic, and it is a property of what
-the sending system chooses to include, so no test on our side can assert it away. Expect the
+and not say why. It is a property of what the sending system chooses to include, so no test on
+our side can assert it away. Expect the
 "actual error" promise above to be unmet for exactly those cases.
 
 **Nothing proves the volume is survivable.** A cap exists and drops beyond it, and retention

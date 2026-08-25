@@ -9,7 +9,7 @@ they get a role, which pulls in cookbooks and often other roles. So one broken c
 sitting inside a base role that nearly everything includes is not one problem, it is the
 whole fleet's problem, and it is also the single cheapest thing I will fix all month.
 
-Working from the machine list alone hides this completely. Forty thousand blocked servers
+Working from the machine list alone hides this completely. A hundred and fifty thousand blocked servers
 can be four cookbooks.
 
 ## What I need to see

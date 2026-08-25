@@ -93,7 +93,7 @@ func TestPlanAutoHTTPS_443Unavailable_FallsBack(t *testing.T) {
 }
 
 // A healthy ACME setup with 443 available binds the HTTPS lifeboat on 443 and
-// adds a server.port → 443 redirect listener (tls.md § 1.5).
+// adds a server.port → 443 redirect listener.
 func TestSetupACME_Healthy_BindsAuto443Redirect(t *testing.T) {
 	app := newACMEApp(t)
 	app.cfg.Server.TLS.ACME.Domains = []string{"metrics.example.com"}

@@ -14,7 +14,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// P3 count-split parity suite.
+// Count-split parity suite.
 //
 // The node list now runs two statements — a lean COUNT(*) query and a
 // windowless rows query — that share buildNodeSnapshotFilterParts. This suite

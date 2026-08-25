@@ -19,11 +19,10 @@ import (
 )
 
 // TestFunctional_FullRuleset_DeprecatedClassMethodsBlocks is the end-to-end
-// proof that Chunk A closed the gap: with the --only narrowing dropped, a real
-// cookstyle scan of a cookbook using File.exists? at target >= 18 actually
-// PRODUCES the Lint/DeprecatedClassMethods offence (curated Blocker), which
-// lives outside Chef/Deprecations,Chef/Correctness and so was previously
-// hidden. Classification then drives the rollup to blocked.
+// proof that without --only narrowing, a real cookstyle scan of a cookbook using
+// File.exists? at target >= 18 PRODUCES the Lint/DeprecatedClassMethods offence
+// (curated Blocker), which lives outside Chef/Deprecations,Chef/Correctness.
+// Classification then drives the rollup to blocked.
 //
 // This exercises the whole pipeline against the live cookstyle binary:
 // buildCookstyleArgs (no --only) -> real cookstyle -> JSON parse ->
@@ -80,7 +79,7 @@ func TestFunctional_FullRuleset_DeprecatedClassMethodsBlocks(t *testing.T) {
 		t.Fatalf("scan recorded a cookstyle error: %s", sr.ErrorMessage)
 	}
 
-	// The full-ruleset scan must have produced the previously-hidden offence.
+	// The full-ruleset scan must have produced the out-of-department offence.
 	var found bool
 	for _, off := range sr.Offenses {
 		if off.CopName == "Lint/DeprecatedClassMethods" {

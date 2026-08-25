@@ -14,8 +14,7 @@ import (
 // GET /api/v1/cookbooks/:name/platform-coverage
 //
 // Returns the platform coverage analysis for a cookbook — comparing
-// kitchen-tested platforms against production node platforms. See
-// test-kitchen-drivers.md § Platform Coverage Analysis.
+// kitchen-tested platforms against production node platforms.
 // ---------------------------------------------------------------------------
 
 // coverageAPIResponse is the wire format for the platform coverage endpoint.

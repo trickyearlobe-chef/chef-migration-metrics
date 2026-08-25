@@ -4,7 +4,7 @@
 -- unified encrypted key-value store. All values are AES-256-GCM encrypted
 -- at the application layer.
 --
--- See encrypted-config-store.md specification.
+--specification.
 
 CREATE TABLE IF NOT EXISTS config_store (
     key              TEXT        NOT NULL,

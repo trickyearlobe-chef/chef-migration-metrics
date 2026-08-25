@@ -329,12 +329,12 @@ func TestJourney_WhoHasCommittedIsEvidenceNotAVerdict(t *testing.T) {
 // Addresses change ... If ownership is keyed on the address then a routine
 // infrastructure change quietly un-owns work that somebody had claimed."
 //
-// The two readers that used to get this wrong are held by
+// The two readers are held by
 // internal/datastore/ownership_git_repo_key_functional_test.go
 // #TestFunctional_OwnerGitRepoSummary_ResolvesByRepoName and
 // #TestFunctional_CookbookInheritsRepoOwnerByName. What is asserted here is the
-// list, which is where the fault showed: a repo claimed under its name is that
-// person's, and one claimed under its address is not found by any screen.
+// list: a repo claimed under its name is that person's, and one claimed under
+// its address is not found by any screen.
 func TestJourney_ARepositoryIsIdentifiedByItsNameNotWhereItIsHosted(t *testing.T) {
 	byName := gitRepoOwnershipStore([]datastore.OwnershipAssignment{
 		{OwnerName: "alice.brown", EntityType: "git_repo", EntityKey: "acme-apache"},
@@ -379,9 +379,8 @@ func TestJourney_NothingProvesAnOwnersCookbookVerdict(t *testing.T) {
 // record, and absence is exactly what a wrong join produces as well."
 func TestJourney_NothingProvesTheUnownedPileIsComplete(t *testing.T) {
 	t.Skip("Deliberate and structural: a repo owned but keyed wrongly and one with no " +
-		"owner at all look identical on the screen, which is what made the " +
-		"address-versus-name fault invisible for as long as it was. No test of the " +
-		"unowned list can distinguish them; only the keying contracts above can.")
+		"owner at all look identical on the screen. No test of the unowned list can " +
+		"distinguish them; only the keying contracts above can.")
 }
 
 // "The load-bearing assumption: that every place ownership is read resolves it

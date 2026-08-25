@@ -25,13 +25,13 @@ type CertMetadata struct {
 	NotBefore   time.Time `json:"not_before"`
 	NotAfter    time.Time `json:"not_after"`
 	// Role is the cert's position in the chain, derived structurally (not from
-	// bundle order): "leaf", "intermediate", or "root". See tls-static.md § 2.2.
+	// bundle order): "leaf", "intermediate", or "root".2.
 	Role string `json:"role"`
 }
 
 // ChainMetadataFromPEM parses every certificate in a PEM bundle and returns
 // operator-safe metadata for each, in the order supplied, with a structurally
-// derived chain role (tls-static.md § 2.2). Non-certificate blocks (e.g. a
+// derived chain role. Non-certificate blocks (e.g. a
 // private key) are skipped — key material is never parsed or returned. The
 // returned order reflects the bundle as stored; reordering is a separate
 // save-time concern (W1-B). An error is returned only when the bundle contains
@@ -93,7 +93,7 @@ func metaFromCert(cert *x509.Certificate) CertMetadata {
 }
 
 // deriveRole classifies a certificate's position in the bundle structurally,
-// not by its order (tls-static.md § 2.2):
+// not by its order:
 //   - root: self-signed (subject == issuer);
 //   - leaf: its subject does not issue any other cert in the bundle;
 //   - intermediate: it signs another cert but is not self-signed.

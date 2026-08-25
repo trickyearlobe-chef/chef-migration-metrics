@@ -27,8 +27,8 @@ function asRole(role: "admin" | "operator") {
   });
 }
 
-// Importing owners and reconciling duplicate people became administrator
-// functions on 2026-08-06. The page has to stop offering them to everybody
+// Importing owners and reconciling duplicate people are administrator
+// functions. The page must not offer them to anybody
 // else: a button that bounces you back to the dashboard is worse than no
 // button, because it reads as a fault in the product rather than as a
 // permission you do not have.

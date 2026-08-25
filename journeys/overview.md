@@ -56,25 +56,23 @@ set centrally.
 | [Not losing it](service-continuity.md) | Can I restore, and can I upgrade without loss? |
 | [Working all day](working-all-day.md) | Can I just get on with it for eight hours? |
 
-All 48 routes in the application map to a journey above, checked by listing them against this
-table rather than assumed. [Working all day](working-all-day.md) has no route of its own — it is
+Every route in the application maps to a journey above. [Working all day](working-all-day.md)
+has no route of its own — it is
 the journey that holds what must be true on **every** screen, so a rule binding all of them has
 somewhere to live other than an arbitrary one.
 
-**Six capabilities have no route at all**, and are covered only in prose inside these journeys:
+**Some capabilities have no route at all**, and are covered only in prose inside these journeys:
 certificates renewing themselves, collection running on a schedule, receiving pushed telemetry,
 retention and purge, installation and upgrade, and the fallback that stops a bad setting locking
-everybody out. Those are the requirements everybody held self-evident, so no walk through the
-navigation would ever have found them — which is why route coverage is a floor and not the
-measure.
+everybody out. No walk through the navigation would find them, which is why route coverage is a
+floor and not the measure.
 
 ## How to read a specification here
 
 Every file is a journey: who the person is, what they are trying to get done, what has to be
 true for them to succeed, and how they would know it worked — in their words.
 
-Two things a journey also carries, because leaving them out is what let earlier documents
-rot:
+Two things a journey also carries:
 
 - **The decisions that bind.** Stated as decisions, so they are not silently re-litigated by
   the next person who finds them inconvenient.
@@ -94,8 +92,7 @@ and a contract lives in a test that fails when it stops being true.
   what stops the tests that do exist reading as more than they are.
 
 **No status claims.** Nothing here says built, shipped, planned or proposed. Status written
-in prose is the thing that rots fastest, and the best document we had was wrong on exactly
-that line. Naming a test replaces it: if the test is red the journey is not proven, and that
+in prose is the thing that rots fastest. Naming a test replaces it: if the test is red the journey is not proven, and that
 says so without anybody keeping a sentence up to date.
 
 The one claim this page makes for itself, that there is a single centrally-set target version

@@ -43,8 +43,8 @@ func fixtureOffenses(t *testing.T, name string) []CookstyleOffense {
 	return offs
 }
 
-// The scan struct must decode `correctable`. Before this fix it declared only
-// `corrected`, so the capability was dropped at the very first hop.
+// The scan struct must decode `correctable` as well as `corrected`, or the
+// capability is dropped at the very first hop.
 func TestCookstyleOffense_DecodesCorrectable(t *testing.T) {
 	offs := fixtureOffenses(t, "cookstyle_scan_mixed_plain.json")
 	if len(offs) != 6 {
@@ -131,10 +131,10 @@ func TestCookstyleOffense_NonCorrectableDecodesFalse(t *testing.T) {
 	}
 }
 
-// The persisted shape is where the bug lived: enrichOffenses dropped the field
-// entirely, so every read-side handler decoded a key that was never written.
-// This asserts the marshalled bytes, not a round-trip through the same struct —
-// a round-trip cannot detect a field that is missing from both sides.
+// The persisted shape is what has to hold: the read-side handlers decode the
+// correctable key, so enrichOffenses must write it. This asserts the marshalled
+// bytes, not a round-trip through the same struct — a round-trip cannot detect a
+// field that is missing from both sides.
 func TestEnrichOffenses_PersistsCorrectableInMarshalledJSON(t *testing.T) {
 	offs := fixtureOffenses(t, "cookstyle_scan_mixed_plain.json")
 

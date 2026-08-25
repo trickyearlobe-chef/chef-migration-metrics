@@ -97,9 +97,9 @@ describe("DeploymentStatusCard", () => {
   });
 
   it("links staged/activated to the RAW migration_state values, not the display labels", async () => {
-    // Regression: the drill-down must send migration_state=hab_dormant (the stored
-    // value), not "Staged" (the label) — otherwise the Nodes list matches nothing
-    // while the dashboard counts thousands.
+    // The drill-down must send migration_state=hab_dormant (the stored value),
+    // not "Staged" (the label), or the Nodes list matches nothing while the
+    // dashboard shows a count.
     vi.mocked(api.fetchDeploymentStatus).mockResolvedValue(statusResponse);
     renderWithRouter(<DeploymentStatusCard />);
 

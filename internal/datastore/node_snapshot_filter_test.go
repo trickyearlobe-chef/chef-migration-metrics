@@ -30,8 +30,8 @@ func TestBuildNodeSnapshotFilterQuery_NoFilters(t *testing.T) {
 		t.Error("query missing CTE")
 	}
 	// The rows query must NOT compute the total via COUNT(*) OVER() — the window
-	// materialises every matching row before LIMIT (P3 hotspot). The exact total
-	// now comes from the separate count query (buildNodeSnapshotCountQuery).
+	// materialises every matching row before LIMIT. The exact total now comes
+	// from the separate count query (buildNodeSnapshotCountQuery).
 	if strings.Contains(q, "COUNT(*) OVER") {
 		t.Error("rows query should not contain COUNT(*) OVER() — total comes from the count query")
 	}

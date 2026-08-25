@@ -3,8 +3,7 @@
 
 // Package serverctl owns the process's live HTTP(S) listener and rebinds it in
 // place when the server configuration changes (server.listen_address/port, and
-// the off↔static TLS mode transition), without restarting the process
-// (configuration-live-reload.md, listener-rebind).
+// the off↔static TLS mode transition), without restarting the process.
 //
 // The rebind protocol is bind-new-first / keep-old / rollback: the new listener
 // is bound and serving before the old one is retired, so a failed build (e.g. the

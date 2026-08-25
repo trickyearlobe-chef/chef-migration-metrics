@@ -9,11 +9,10 @@
 --   pq: index row size 3360 exceeds btree version 4 maximum 2704
 --       for index "idx_node_readiness_target_name_eval" (54000)
 --
--- Measured at customer scale: 22,043 rejected writes in six hours, 10,605 nodes
--- left with readiness older than their own snapshot and 89 with none at all.
--- The failure is loud in the log but invisible in the UI, and it self-selects
--- for the nodes with the most blocking cookbooks — precisely the ones a
--- migration assessment cares about.
+-- Rejected writes leave nodes carrying readiness older than their own snapshot,
+-- or none at all. The failure is loud in the log but invisible in the UI, and it
+-- self-selects for the nodes with the most blocking cookbooks — precisely the
+-- ones a migration assessment cares about.
 --
 -- The key columns are unchanged, so the index serves the same lookups. Dropping
 -- blocking_cookbooks from INCLUDE costs a heap fetch for queries that need it,

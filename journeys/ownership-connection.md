@@ -1,36 +1,32 @@
 # Connecting to a database that is not mine
 
 **As the administrator setting up an import, I need to see what I am connecting with, because
-when it does not work the only thing an encrypted connection string lets me do is guess — and
-we have already spent days guessing at what was being mangled.**
+when it does not work the only thing an encrypted connection string lets me do is guess.**
 
 The connection belongs to somebody else: their server, their account, their rules. I am handed a
 set of details on a ticket and told to make it work. Anything I cannot see is something I cannot
-check, and every one of those comes back as another afternoon spent trying one more variation of
-the same string.
+check.
 
 ## What I need
 
 **Only the password out of sight.** The address, the database, the account and the domain in
 plain view, and editable. When a connection fails I have to be able to read what was actually
-sent. Hiding all of it to protect one part of it is what made the last round of failures
-unreadable.
+sent. Hiding all of it to protect one part of it makes every failure unreadable.
 
 **The password, and only the password, put in for me — correctly.** It is the one value I never
 see, so it is the one I can never check. Everything else, including the account and the domain
 in front of it, sits in the string where I can read it and fix it myself. Punctuation in a
-password is what broke this before, and it broke invisibly.
+password fails invisibly.
 
 **I say where it goes, and the screen tells me how to say it.** I mark the spot myself, because
-a connection can want its password somewhere nobody could have guessed, and I have pasted enough
-of these from other people's tooling to know they do not all look alike. But a marker I am
+a connection can want its password somewhere nobody could have guessed. But a marker I am
 expected to know about and can read nowhere is just a new thing to get wrong — the screen has to
 show me how to write it. If I leave it out, refuse me and say so. Do not decide for me and send
 something I did not write.
 
-**To be shown what will actually be sent, with the password masked.** This is the thing I have
-been missing. If I can read the composed connection I can see in one glance whether the account,
-the domain or the punctuation came out wrong — which is the entire question we spent days
+**To be shown what will actually be sent, with the password masked.** If I can read the composed
+connection I can see in one glance whether the account,
+the domain or the punctuation came out wrong — which is the entire question I am otherwise left
 guessing at.
 
 **A connection proposed, not imposed.** Show me one that would work for the kind of database I
@@ -57,15 +53,15 @@ having. Two different things can refuse me — the thing that reads the string, 
 and I want to hear from both, as they put it — **except for my password, which must never come
 back to me in a message.** Whatever refused me may well quote the whole connection in its
 complaint, and everything I am shown ends up somewhere I did not choose: a screenshot, a support
-bundle, a log that half the organisation can read. The one value that was hidden everywhere else
+bundle, a log. The one value that was hidden everywhere else
 must not reappear in the one place I am reading carefully.
 
 ## The decisions behind it
 
 **The password is the only secret.** A host name, a database name and an account name are
 configuration: they appear in tickets, in runbooks and in the logs of everything else that talks
-to that server. Treating them as secret buys nothing and costs an afternoon every time somebody
-has to work out what was sent.
+to that server. Treating them as secret buys nothing and costs time every time somebody has to
+work out what was sent.
 
 **Escaping is owed only where seeing is impossible.** The tool escapes the password because
 nobody can inspect it. It must not quietly rewrite anything the administrator can see: typing an
@@ -74,7 +70,7 @@ account one way and sending it another is the same unreadable failure in a new p
 **How to escape depends on the form of the string, and getting that backwards fails silently.**
 The two shapes these connections come in want different treatment for the same punctuation, so
 the tool has to recognise which it was handed. Applying one form's rule to the other produces a
-string that looks right and is refused — the exact failure this journey exists to end.
+string that looks right and is refused.
 
 **Testing is a separate act from using.** A test that happens as a side effect of asking for
 something else cannot say what failed, because it was not trying to find out.
@@ -85,10 +81,10 @@ dialled and the complaint comes back immediately — but hand the same driver a 
 connection, or use PostgreSQL at all, and nothing is checked until it tries to connect. So their
 words are the best available and must be passed through with nothing tidied away — save the
 password, which is taken out of them wherever it appears, however it appears, because a driver
-quoting the string it was handed does not know which part of it was a secret. Meanwhile the
-checks this tool needs — that a database is named, above — cannot be delegated to them. Even the useful complaint
-is thin: it says the string could not be read, never which character defeated it, which is
-precisely why seeing the composed string matters more than the message does.
+quoting the string it was handed does not know which part of it was a secret. The checks this
+tool needs of its own — that a database is named — cannot be delegated to them. Even the useful
+complaint is thin: it says the string could not be read, never which character defeated it, which
+is why seeing the composed string matters more than the message does.
 
 ## What proves it
 
@@ -97,21 +93,21 @@ Nothing here is built yet. What has to be true is enumerated in
 which is red until it is.
 
 **Nothing proves the escaping is right until it is measured against a real server, and it must
-not be reasoned about.** Working out what a driver accepts by argument is exactly what produced
-the wrong answers before — several of them, confidently, in one evening. There is a SQL Server
-to try it against, and the cases that matter are known: an account with a domain in front of it,
+not be reasoned about.** Working out what a driver accepts by argument produces confident wrong
+answers. There is a SQL Server to try it against, and the cases that matter are known: an account with a domain in front of it,
 and a password with punctuation in it. Anything short of running those two against a server that
 really refuses or really admits them is a guess wearing a test's clothes.
 
 **Nothing here can prove an account with something in front of it works.** The database we try
 these against belongs to nobody's list of people, and it will not let us invent an account that
-looks as though it does. So that is exercised for the first time at the customer, on the account
-they actually use, and the refusal seen here is not the refusal they will get.
+looks as though it does. So that is exercised for the first time in the estate where it is
+deployed, on the account actually used there, and the refusal seen here is not the refusal
+seen there.
 
 **Nothing proves a proposed connection is a good starting point.** A suggestion that is usually
 wrong is worse than none, because it turns setting up a connection into correcting one.
 
 **The load-bearing assumption:** that the account can reach the server from where this tool runs
-at all. Their database sits behind one name answering on several addresses across subnets, and
-from here one address refuses and another times out. Until that is opened, every failure above
-looks the same as a firewall, and no amount of getting the string right will change it.
+at all. One name can answer on several addresses, where some refuse and some time out. Until the
+route is open, every failure above looks the same as a firewall, and no amount of getting the
+string right will change it.

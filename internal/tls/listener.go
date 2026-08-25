@@ -26,7 +26,7 @@ type ListenerConfig struct {
 
 	// CertSource selects where the certificate/key come from: "file" (default,
 	// uses CertPath/KeyPath) or "db" (uses CertPEM/KeyPEM, fetched from the
-	// encrypted config store). See tls-static.md § 2.7.
+	// encrypted config store).7.
 	CertSource string
 
 	// CertPath is the path to the PEM-encoded certificate file (chain).
@@ -55,7 +55,7 @@ type ListenerConfig struct {
 
 	// RedirectPorts is an additional set of ports that each run a secondary HTTP
 	// listener 301-redirecting to HTTPS on Port. It generalises HTTPRedirectPort
-	// for automatic HTTPS on 443 (tls.md § 1.5), where both the previous
+	// for automatic HTTPS on 443, where both the previous
 	// server.port and an explicit http_redirect_port redirect to 443. Ports that
 	// are zero, duplicated, or equal to Port are ignored. HTTPRedirectPort is
 	// folded in, so callers may set either or both.
@@ -82,8 +82,8 @@ type ListenerConfig struct {
 
 	// HSTSEnabled, when non-nil, is consulted live on every response to decide
 	// whether to emit the Strict-Transport-Security header. It exists so a
-	// degraded self-signed fallback listener can suppress HSTS (tls-static.md
-	// § 2.4) — pinning HSTS over an untrusted cert would block the browser
+	// degraded self-signed fallback listener can suppress HSTS
+	// — pinning HSTS over an untrusted cert would block the browser
 	// click-through and lock the operator out — and resume it the moment a real
 	// cert is promoted in place. Nil means HSTS is always emitted on TLS.
 	HSTSEnabled func() bool
@@ -205,7 +205,7 @@ func NewListener(handler http.Handler, cfg ListenerConfig, log LogFunc) (*Listen
 }
 
 // SetHTTPSListener supplies a pre-bound TCP listener for the HTTPS server. It
-// lets the caller decide the 443-vs-fallback bind (tls.md § 1.5) and hand the
+// lets the caller decide the 443-vs-fallback bind and hand the
 // successfully-bound listener in, so a 443 bind failure is handled before Serve
 // rather than surfacing asynchronously. When unset, Serve binds the configured
 // address itself.
@@ -322,7 +322,7 @@ func (l *Listener) Addr() string {
 
 // RedirectAddr returns the first HTTP redirect server's listen address, or an
 // empty string if no redirect listener is configured. Use RedirectAddrs for the
-// full set when automatic HTTPS on 443 runs more than one (tls.md § 1.5).
+// full set when automatic HTTPS on 443 runs more than one.
 func (l *Listener) RedirectAddr() string {
 	if len(l.redirectSrvs) == 0 {
 		return ""
@@ -386,8 +386,8 @@ const acmeChallengePrefix = "/.well-known/acme-challenge/"
 // NewChallengeRedirectServer builds the port-80 server used in ACME http-01
 // mode. It serves the injected challenge handler for requests under
 // /.well-known/acme-challenge/ and 301-redirects everything else to HTTPS on
-// httpsPort. The challenge path takes priority over the redirect (tls-acme.md
-// § 3.3), so the CA can validate domain control over plain HTTP while ordinary
+// httpsPort. The challenge path takes priority over the redirect,
+// so the CA can validate domain control over plain HTTP while ordinary
 // traffic is still pushed to TLS.
 //
 // In http-01 mode this server owns the redirect port for the whole process
@@ -431,8 +431,8 @@ func NewChallengeRedirectServer(listenAddr string, redirectPort, httpsPort int, 
 //
 // enabled, when non-nil, is consulted live per request: if it returns false the
 // HSTS header is suppressed even on a secure connection. This lets a degraded
-// self-signed fallback listener avoid pinning HSTS over an untrusted cert
-// (tls-static.md § 2.4), resuming it automatically once a real cert is promoted.
+// self-signed fallback listener avoid pinning HSTS over an untrusted cert,
+// resuming it automatically once a real cert is promoted.
 // A nil enabled means HSTS is always emitted on secure connections.
 func HSTSMiddleware(next http.Handler, trustedProxy bool, enabled func() bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

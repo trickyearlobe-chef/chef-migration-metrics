@@ -11,13 +11,12 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Chunk A: full-ruleset scanning — the scan must NOT pass --only.
+// Full-ruleset scanning — the scan must NOT pass --only.
 //
-// The --only Chef/Deprecations,Chef/Correctness narrowing predated the
-// classification system and silently hid every Blocker-classified cop that
-// lives outside those two departments (e.g. the curated default
-// Lint/DeprecatedClassMethods). With classification driving the verdict, the
-// scan now runs the full ruleset and lets classification decide.
+// Narrowing to --only Chef/Deprecations,Chef/Correctness silently hides every
+// Blocker-classified cop that lives outside those two departments (e.g. the
+// curated default Lint/DeprecatedClassMethods). Classification drives the
+// verdict, so the scan runs the full ruleset.
 // ---------------------------------------------------------------------------
 
 // TestBuildCookstyleArgs_DropsOnly_FullRuleset proves the scan no longer
@@ -71,7 +70,7 @@ func TestDeriveStatus_BlockerOutsideDepartments_Blocked(t *testing.T) {
 
 // TestDeriveStatus_CosmeticStyleCop_Ready proves widening the ruleset does not
 // turn cookbooks red: a cosmetic generic Style cop seeds to Noise via the
-// Chunk B department-prefix default, is non-failing under the default rules,
+// department-prefix default, is non-failing under the default rules,
 // and yields Ready.
 func TestDeriveStatus_CosmeticStyleCop_Ready(t *testing.T) {
 	offenses := []CookstyleOffense{

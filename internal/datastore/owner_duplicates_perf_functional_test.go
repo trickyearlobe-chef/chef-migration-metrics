@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-// The scan has to stay bounded on a catalogue the size the customer actually
-// has, and owner names cluster: people share surnames, and committer-derived
-// names are email localparts, so a large share of any real catalogue is
-// mutually similar. Comparing everything with everything took minutes on data
-// this shape, which is why the scan takes only the nearest few per row.
+// The scan has to stay bounded on a real-sized catalogue, and owner names
+// cluster: people share surnames, and committer-derived names are email
+// localparts, so a large share of any real catalogue is mutually similar.
+// Comparing everything with everything does not finish quickly on data this
+// shape, which is why the scan takes only the nearest few per row.
 //
 // This test seeds a deliberately dense catalogue — every name has dozens of
 // near-twins — and fails if a scan of it stops being quick.

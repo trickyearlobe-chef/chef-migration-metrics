@@ -8,21 +8,18 @@ import "strings"
 // A password is not a URL, and whoever typed it should not have to know that it
 // is about to be treated as one.
 //
-// A customer connection was refused by the SQL Server driver as "invalid URL
-// format". Every visible part of it was legal — measured against the driver's own
-// parser — so the cause was a character in the user or password that no URL can
-// carry unescaped. Retyping it in another form was not possible: the password is
-// encrypted, and the person who knew it had gone home. So it is encoded on the
-// way to the driver, which is the one repair available from this side.
+// A character in the user or password that no URL can carry unescaped makes the
+// SQL Server driver refuse the whole connection as "invalid URL format", with
+// every visible part of it legal. A stored password cannot be retyped, so it is
+// encoded on the way to the driver — the one repair available from this side.
 //
 // This is a patch on a seam, not a design. The seam disappears when a connection
-// is held as its parts rather than as a string to be parsed — see
-// plans/database-connection-as-parts.md.
+// is held as its parts rather than as a string to be parsed.
 
 // mayAppearInACredential reports whether a byte can sit in a URL's userinfo as
 // it stands. Written as what is allowed rather than what is not: a list of
-// forbidden characters is a list somebody can leave something off, and a
-// password with a "£" in it found exactly that hole.
+// forbidden characters is a list somebody can leave something off — a non-ASCII
+// character in a password is exactly what falls through it.
 //
 // These are the unreserved and sub-delimiter characters of RFC 3986, plus ":",
 // which separates the user from the password. Everything else — including every

@@ -64,7 +64,7 @@ type Router struct {
 	duplicateScanRunning atomic.Bool
 
 	// tlsStatus reports whether the server fell back to plain HTTP because the
-	// configured static TLS listener could not be started (see tls.md § 2.4).
+	// configured static TLS listener could not be started.
 	// nil on plain-HTTP/ACME deployments — the status endpoint then reports
 	// healthy. Set via WithTLSStatus.
 	tlsStatus *TLSStatusHolder
@@ -189,14 +189,14 @@ type Router struct {
 
 	// tlsReload triggers an in-place swap of the running static-TLS
 	// certificate when a new cert_source: db pair is saved, so the listener
-	// serves it without a restart (tls-static.md § 2.3). Nil on plain-HTTP
+	// serves it without a restart. Nil on plain-HTTP
 	// deployments or when the running listener is not a DB source — the save
 	// still persists and a restart applies it. Set via WithTLSReload.
 	tlsReload *TLSReloadHolder
 
 	// listenerRebind rebinds the running HTTP/TLS listener in place when a
 	// changed server.listen_address/port is saved, so the change applies without
-	// a restart (configuration-live-reload.md listener-rebind H2). Nil/unset on
+	// a restart (listener-rebind H2). Nil/unset on
 	// deployments where no rebinder is wired (tests, active auto-443, ACME, or a
 	// degraded fallback) — the save then reports restart_required. Set via
 	// WithListenerRebinder.
@@ -204,15 +204,15 @@ type Router struct {
 
 	// acmeReRegister, when set, is called after an ACME config save to wake the
 	// renewer so hostname registration and an issuance check re-run immediately
-	// rather than waiting out the renewal interval (tls-acme.md § 3.14). Nil in
+	// rather than waiting out the renewal interval. Nil in
 	// non-ACME deployments. Non-blocking. Set via WithACMETrigger.
 	acmeReRegister func()
 
 	// onOrganisationsChanged, when set, is called after a successful write to
 	// the organisations config section. It reconciles the operational
 	// `organisations` table from live config and triggers a collection, so a
-	// newly added org takes effect without a restart (configuration-live-reload.md;
-	// web-api-organisations.md). An error fails the PUT (500). Nil when not wired.
+	// newly added org takes effect without a restart.
+	// An error fails the PUT (500). Nil when not wired.
 	onOrganisationsChanged func(context.Context) error
 
 	// hypervisor provides template discovery, VM inventory, and orphan
@@ -551,8 +551,8 @@ func WithRestartTrigger(fn func()) RouterOption {
 
 // WithACMETrigger wires the function called after a successful ACME config save
 // to wake the renewal loop immediately, so hostname registration and an
-// issuance check re-run without waiting out the renewal interval (tls-acme.md
-// § 3.14). Typically the running Renewer's Trigger method. Must be non-blocking;
+// issuance check re-run without waiting out the renewal interval.
+// Typically the running Renewer's Trigger method. Must be non-blocking;
 // nil disables the immediate re-assert (the next scheduled cycle still picks up
 // the change).
 func WithACMETrigger(fn func()) RouterOption {
@@ -1384,8 +1384,8 @@ func (r *Router) registerRoutes() {
 // webSocketOpts builds the WebSocketHandler options from the loaded config.
 func (r *Router) webSocketOpts() []WebSocketHandlerOption {
 	// Pull timeouts live so a server.websocket.* save applies to connections
-	// opened afterwards without a restart (configuration-live-reload.md:
-	// subsystem). secondsToDuration maps an unset (0) field to the default.
+	// opened afterwards without a restart.
+	// secondsToDuration maps an unset (0) field to the default.
 	opts := []WebSocketHandlerOption{
 		WithWebSocketConfigFunc(func() WebSocketConfig {
 			ws := r.liveConfig().Server.WebSocket

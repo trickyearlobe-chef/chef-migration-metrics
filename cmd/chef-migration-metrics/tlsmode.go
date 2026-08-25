@@ -15,7 +15,7 @@ import (
 )
 
 // `tls mode <off|static|acme>` is the deliberate-deployment counterpart to the
-// recovery-framed `tls reset` (tls.md behind-proxy deployment note). It sets
+// recovery-framed `tls reset` . It sets
 // server.tls.mode in the DB; `mode off` plus `--trusted-proxy` puts the app in
 // plain-HTTP-behind-a-TLS-terminating-proxy mode by also setting
 // server.trusted_proxy so HSTS / scheme detection honour X-Forwarded-Proto.

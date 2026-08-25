@@ -1,6 +1,6 @@
-# Probe the InSpec/Deprecations/Attribute* cops surfaced in real customer data
-# (106 each). Are `attribute`/`attributes` REMOVED in the target InSpec, or just a
-# deprecated alias of `input`? Introspect the cop MSG + behaviourally check the DSL.
+# Probe the InSpec/Deprecations/Attribute* cops. Are `attribute`/`attributes`
+# REMOVED in the target InSpec, or just a deprecated alias of `input`?
+# Introspect the cop MSG + behaviourally check the DSL.
 # Run: chef exec ruby probe_inspec_attribute.rb
 require "cookstyle"
 

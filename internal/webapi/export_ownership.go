@@ -45,9 +45,8 @@ func newOwnershipExportSource(ctx context.Context, r *Router, req *http.Request)
 
 // ownershipExportSource pages through every assignment. Paged rather than
 // materialised because this is the one ownership export whose size follows the
-// estate — a fleet with six figures of nodes has an assignment row per owned
-// thing, and holding all of them to write a file is the kind of export that
-// works in the lab and takes the service down at the customer.
+// estate — one assignment row per owned thing, so on a large fleet holding all
+// of them to write a file would take the service down.
 type ownershipExportSource struct {
 	r      *Router
 	offset int

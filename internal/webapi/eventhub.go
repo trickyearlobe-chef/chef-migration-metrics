@@ -330,8 +330,8 @@ func NewEventHub(opts ...EventHubOption) *EventHub {
 }
 
 // Reconfigure applies new WebSocket hub limits live, without dropping existing
-// connections (configuration-live-reload.md: server.websocket.* is a subsystem
-// rebuild). maxConnections takes effect on the next registration — existing
+// connections.
+// maxConnections takes effect on the next registration — existing
 // clients are never evicted when the limit is lowered; new clients are simply
 // rejected until the count falls back below the new ceiling. sendBufferSize
 // sizes the send channel of clients registered after this call; existing

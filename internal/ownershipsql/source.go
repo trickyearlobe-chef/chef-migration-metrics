@@ -306,9 +306,9 @@ func asText(v any) string {
 // ---------------------------------------------------------------------------
 // Browsing what is there
 //
-// An administrator setting this up may not know the database — ours certainly
-// does not know the customer's. Listing the tables lets them point at one
-// rather than write SQL against a schema nobody present can see.
+// An administrator setting this up may not know the database's schema. Listing
+// the tables lets them point at one rather than write SQL against a schema
+// nobody present can see.
 // ---------------------------------------------------------------------------
 
 // Table is one table or view the connection can see.

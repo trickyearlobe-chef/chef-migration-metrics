@@ -33,8 +33,8 @@ type putConfigResponse struct {
 	// (handlers that do not yet flow through the applier path).
 	Reload string `json:"reload,omitempty"`
 	// Warnings carries non-fatal advisories about a save that was accepted and
-	// stored anyway (e.g. an incomplete TLS certificate chain — tls-static.md
-	// § 2.2). Omitted when empty.
+	// stored anyway.
+	// Omitted when empty.
 	Warnings []string `json:"warnings,omitempty"`
 	// VerdictsChanged reports how many cookstyle verdicts were flipped by the
 	// re-score a config save triggers (the active target moves the
@@ -534,7 +534,7 @@ func decodeAdminConfigBody(w http.ResponseWriter, req *http.Request, target any)
 // reload granularity it actually needed, and the worst one decides the flag
 // (true iff "process"). A section that registers no applier defaults
 // pessimistically to "process" — honest about the fact that nothing has been
-// taught to apply the change live yet (configuration-live-reload.md).
+// taught to apply the change live yet.
 //
 // An applier runs after the section is persisted and the holder has reloaded;
 // an applier error fails the request with 500 (the section is already

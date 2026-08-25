@@ -101,10 +101,6 @@ If the default port conflicts with a service already running on your machine, ch
 POSTGRES_PORT=15432
 ```
 
-## Connecting to the ELK Stack
-
-To run the Elasticsearch + Logstash + Kibana testing stack alongside this Compose stack, see [`../elk/README.md`](../elk/README.md).
-
 ## Troubleshooting
 
 ### `POSTGRES_PASSWORD` error on `docker compose up`

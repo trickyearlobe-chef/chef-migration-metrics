@@ -8,7 +8,7 @@ import type { TLSStatus } from "../types";
 /**
  * Prominent global banner shown when the server fell back to a degraded TLS
  * listener at startup — an untrusted self-signed certificate, or plain HTTP as a
- * last resort (tls.md § 6.3). Polls GET /api/v1/server/tls-status — a public,
+ * last resort. Polls GET /api/v1/server/tls-status — a public,
  * DB-independent endpoint — so the warning renders on every page. Renders nothing
  * when TLS is healthy or the poll fails.
  */

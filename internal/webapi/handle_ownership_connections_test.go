@@ -19,12 +19,11 @@ import (
 // The endpoints an administrator sets a connection up through. See
 // journeys/ownership-connection.md.
 //
-// The order these support is the one the product owner described: somebody
-// stores the password, somebody composes the connection round a marker,
-// somebody tests it, and only then is it stored and used. So testing works on a
-// connection that has never been saved, and saving does not require a passing
-// test — the customer's own server is unreachable from here today, and a save
-// that demanded a green test could not record their connection at all.
+// The order these support: somebody stores the password, somebody composes the
+// connection round a marker, somebody tests it, and only then is it stored and
+// used. So testing works on a connection that has never been saved, and saving
+// does not require a passing test — the server may be unreachable from here, and
+// a save that demanded a green test could not record the connection at all.
 
 const (
 	testConnectionPath = "/api/v1/ownership/import/test-connection"

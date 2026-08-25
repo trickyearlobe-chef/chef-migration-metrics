@@ -20,8 +20,7 @@ const (
 	// the binary no longer emits (removed or renamed upstream). Its mapping is
 	// dead until corrected: a real offence from the correctly-named cop gets no
 	// remediation doc. Checked for every entry so Review-level mappings can't rot
-	// silently (the 2026-07-16 audit found 8 stale Review entries this guard now
-	// catches).
+	// silently.
 	CurationStale = "stale"
 	// CurationRemovalDisagreement — the shipped cop description states an
 	// explicit removal version that disagrees with the curated RemovedIn.
@@ -45,8 +44,7 @@ type CopDescriptionLister interface {
 // descriptionRemovalRe extracts an explicit *removal* version from a cop
 // description, e.g. "removed in Chef 14", "will be removed in Chef Infra Client
 // 15", "removed in 16.0". It is deliberately anchored on "removed in" so it does
-// not trip on "deprecated in"/"introduced in" versions (the deprecation-vs-
-// removal trap noted in the 2026-07-03 --show-cops parseability spike).
+// not trip on "deprecated in"/"introduced in" versions.
 var descriptionRemovalRe = regexp.MustCompile(`(?i)removed in (?:chef(?: infra)?(?: client)?\s+)?(\d+)`)
 
 // ValidateCuratedRemovals cross-checks every curated mapping entry against the
@@ -54,9 +52,9 @@ var descriptionRemovalRe = regexp.MustCompile(`(?i)removed in (?:chef(?: infra)?
 //
 //   - stale: the cop is absent from the binary (removed or renamed upstream).
 //     Checked for EVERY entry — a dead cop name means the mapping never matches a
-//     real offence, so its remediation doc silently never shows. (Review-level
-//     entries, with an empty RemovedIn, were previously exempt and rotted
-//     undetected; the 2026-07-16 audit found 8.)
+//     real offence, so its remediation doc silently never shows. Review-level
+//     entries, with an empty RemovedIn, are included: a RemovedIn-only check
+//     lets them rot undetected.
 //   - removal_disagreement: the shipped description states a removal version
 //     whose major disagrees with the curated RemovedIn. Only meaningful for a
 //     verified-removal claim, so it is checked only when RemovedIn is set.

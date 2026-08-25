@@ -34,13 +34,7 @@ actually break, and after the second false alarm I stop reading. The list must d
 that call was made, because I will be asked to defend it.
 
 **A blocked list I stop trusting is worse than no list.** Once I believe the list is padded,
-I work around it, and then I miss the real one. Everything above is in service of that.
-
-**Verify before designing against this:** the ranking assumes each broken thing carries the
-verdicts of every source that had an opinion on it, tagged with which source, and a rule
-deciding which wins. That structure is what lets a human verdict overrule a scan without
-building a second list. It was true when this was written and the tree moves — if it is not
-true now, stop and say so rather than quietly ranking some other way.
+I work around it, and then I miss the real one.
 
 ## How I know it worked
 
@@ -71,6 +65,7 @@ sensible order, and none could — "sensible" is the engineer's judgement, and t
 own success test is a feeling about the first page. What is protected is the input to the
 ranking, on the reasoning that a wrong order recovers but a padded list does not.
 
-**Verify before designing against this:** the assumption stated above — that each finding
-carries every source's verdict, tagged with its source, and a rule deciding which wins — is
-not covered by anything linked here. Check it in the tree before building on it.
+**Verify before designing against this:** the ranking assumes each broken thing carries the
+verdicts of every source that had an opinion on it, tagged with which source, and a rule
+deciding which wins — which is what lets a human verdict overrule a scan without building a
+second list. Nothing linked here covers it. Check it in the tree before building on it.

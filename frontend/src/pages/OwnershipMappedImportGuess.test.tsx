@@ -35,8 +35,8 @@ describe("guessMapping", () => {
   });
 
   it("leaves the owner unmapped rather than guessing wrongly", () => {
-    // The customer's table: nothing here names an owner in words the guess
-    // knows, so it must say so rather than pick the nearest column.
+    // Nothing here names an owner in words the guess knows, so it must say so
+    // rather than pick the nearest column.
     const guess = guessMapping(profileWith("asset_name", "asset_id", "cost_centre"));
     expect(guess.owner).toBeUndefined();
     expect(guess.entity_key?.column).toBe("asset_name");
@@ -58,9 +58,7 @@ describe("guessMapping", () => {
 });
 
 // A disabled button with no reason is the same fault as an import that drops
-// rows silently: the screen knows something the person does not. Reported by
-// the owner testing against a customer database, where the guess could not find
-// an owner column and Preview greyed out saying nothing.
+// rows silently: the screen knows something the person does not.
 describe("previewBlockedReason", () => {
   const ready = {
     sourceKind: "database" as const,

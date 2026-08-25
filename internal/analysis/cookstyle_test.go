@@ -302,7 +302,7 @@ func TestBuildCookstyleArgs_WithTargetVersion_NoCookbookConfig(t *testing.T) {
 	}
 
 	// The scan runs the full ruleset — classification, not a department filter,
-	// decides the verdict. --only must not be present (see Chunk A).
+	// decides the verdict. --only must not be present.
 	for _, a := range args {
 		if a == "--only" {
 			t.Error("--only should not be present — the scan runs the full ruleset")
@@ -1048,11 +1048,11 @@ func TestExecutor_CookbookDirIsLastArg(t *testing.T) {
 	}
 }
 
-// TestExecutor_RunsWithCookbookDirAsWorkingDir guards the fix for the offence
-// path chop: cookstyle must run with its working directory set to the scanned
-// cookbook dir. RuboCop reports paths relative to the process CWD, so when the
-// service runs from "/" (systemd default) an unset working dir makes it strip
-// the leading two characters off every absolute path (/var/lib → ar/lib).
+// TestExecutor_RunsWithCookbookDirAsWorkingDir pins the working directory:
+// cookstyle must run with it set to the scanned cookbook dir. RuboCop reports
+// paths relative to the process CWD, so when the service runs from "/" (systemd
+// default) an unset working dir makes it strip the leading two characters off
+// every absolute path (/var/lib → ar/lib).
 // Pinning the working dir to the cookbook root keeps reported paths anchored so
 // relativeCookstylePath can strip them cleanly.
 func TestExecutor_RunsWithCookbookDirAsWorkingDir(t *testing.T) {

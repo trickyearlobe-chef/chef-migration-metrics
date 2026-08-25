@@ -106,10 +106,11 @@ func TestComputeCookstyleComplexity_UnclassifiedNoDoubleCount(t *testing.T) {
 	}
 }
 
-// TestComputeCookstyleComplexity_CosmeticStyleWeightZero proves Chunk A's
-// safety property: dropping --only floods the scan with the generic cosmetic
-// tail (Style/, Layout/), but an unclassified Style cop at convention severity
-// contributes 0 — widening the ruleset does not inflate complexity scores.
+// TestComputeCookstyleComplexity_CosmeticStyleWeightZero proves the safety
+// property of the full ruleset: dropping --only floods the scan with the
+// generic cosmetic tail (Style/, Layout/), but an unclassified Style cop at
+// convention severity contributes 0 — widening the ruleset does not inflate
+// complexity scores.
 func TestComputeCookstyleComplexity_CosmeticStyleWeightZero(t *testing.T) {
 	offenses := []ClassifiedOffense{
 		{CopName: "Style/StringLiterals", Severity: "convention", Classification: classUnclassified},

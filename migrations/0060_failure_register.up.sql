@@ -40,8 +40,7 @@ CREATE TABLE failure_register_entries (
     --
     -- Unbounded text. Storing it is not a problem; a btree entry is capped at
     -- roughly a third of a page, which a few tens of lines of trace already
-    -- exceeds, and the failure mode is a hard write error rather than
-    -- slowness. This has caused a production outage in this project before.
+    -- exceeds, and the failure mode is a hard write error rather than slowness.
     -- NEVER add an index or a unique constraint over this column. If repeat
     -- occurrences ever need recognising as the same failure, hash a bounded,
     -- canonicalised projection and index that instead.

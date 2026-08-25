@@ -2,7 +2,6 @@
 --
 -- Stores configuration overrides that can be managed through the admin UI.
 -- Settings stored here take precedence over config.yml values.
--- See test-kitchen-config-ui.md.
 
 CREATE TABLE IF NOT EXISTS runtime_settings (
     key         TEXT        NOT NULL,

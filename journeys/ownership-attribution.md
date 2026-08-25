@@ -5,9 +5,8 @@ that the programme is a set of assignments people can be held to rather than one
 I am personally responsible for.**
 
 The technical answer to "what is stopping us" was never the hard part. The hard part is that a
-list of four thousand broken cookbooks belongs to nobody, so it belongs to me, and I cannot fix
-four thousand cookbooks. Until each one has a name against it there is no programme, only a
-report.
+list of thousands of broken cookbooks belongs to nobody, so it belongs to me, and I cannot fix
+them all. Until each one has a name against it there is no programme, only a report.
 
 ## What I need
 
@@ -36,29 +35,26 @@ and everything here loses its authority.
 **A repository is identified by its name, not by where it is hosted.** Addresses change: a
 server is renamed, a project moves between organisations, the protocol changes. If ownership is
 keyed on the address then a routine infrastructure change quietly un-owns work that somebody
-had claimed. This is not hypothetical — the product previously disagreed with itself about
-this, matching on the name in one place and the address in another, so a repository somebody
-had claimed showed as unowned in the list while the owner's own page showed nothing for it, and
-the count agreed with neither.
+had claimed. Keying on the address also makes the product disagree with itself when one place
+matches on the name and another on the address: a claimed repository shows as unowned in the
+list, the owner's own page shows nothing for it, and the count agrees with neither.
 
 **Who has committed to something is evidence, not a verdict.** It suggests who to ask. Making
 it an automatic assignment would attribute work to whoever last fixed a typo.
 
 ## What proves it
 
-The keying decision is pinned against the readers that used to get it wrong: an owner's own
+The keying decision is pinned on the readers that must resolve by name: an owner's own
 summary [resolves their repositories by
 name](internal/datastore/ownership_git_repo_key_functional_test.go#TestFunctional_OwnerGitRepoSummary_ResolvesByRepoName),
 and a cookbook [inherits its repository's owner by name
 too](internal/datastore/ownership_git_repo_key_functional_test.go#TestFunctional_CookbookInheritsRepoOwnerByName).
-Those two are the paths that previously matched on the address, which is why they carry tests
+Those two are the paths where address-matching would bite, which is why they carry tests
 rather than the rule being written down once. Both need a real database and run under their own
 build tag rather than in the gating suite.
 
 That an owner filter reaches the export as well as the screen is covered for one view by [the
-parity contract](internal/datastore/node_snapshot_export_functional_test.go#TestFunctional_NodeExport_FilterParity),
-and the cohort journey it shares that behaviour with is [naming a slice of the
-estate](named-cohorts.md).
+parity contract](internal/datastore/node_snapshot_export_functional_test.go#TestFunctional_NodeExport_FilterParity).
 
 **Nothing proves an owner's cookbook verdict.** The compatible, incompatible and untested
 counts on an owner's page are not asserted anywhere, and they are derived rather than stored —
@@ -67,8 +63,7 @@ quietly wrong. Establish what they actually return before quoting them to anybod
 
 **Nothing proves the unowned pile is complete.** "Unowned" is the absence of a record, and
 absence is exactly what a wrong join produces as well. A repository that is owned but keyed
-wrongly, and one that genuinely has no owner, look identical on the screen — which is what made
-the address-versus-name fault above invisible for as long as it was.
+wrongly, and one that genuinely has no owner, look identical on the screen.
 
 **The load-bearing assumption:** that every place ownership is read resolves it the same way.
 There is no single reader to point at, so this cannot be pinned by one test — it is a property

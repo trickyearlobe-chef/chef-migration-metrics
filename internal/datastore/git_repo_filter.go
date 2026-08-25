@@ -79,9 +79,9 @@ type GitRepoFilterRow struct {
 // gitRepoFilterWheres builds the WHERE clauses and their args for a git repo
 // filter, starting placeholder numbering from startArg.
 //
-// Shared by the page query and the count query deliberately: they were
-// byte-for-byte duplicates, and a filter added to one and not the other makes
-// the reported total disagree with the rows on the page.
+// Shared by the page query and the count query deliberately: a filter added to
+// one and not the other makes the reported total disagree with the rows on the
+// page.
 func gitRepoFilterWheres(f GitRepoFilter, startArg int) (wheres []string, args []interface{}) {
 	argN := startArg
 	nextArg := func() string {

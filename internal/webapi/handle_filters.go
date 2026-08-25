@@ -100,7 +100,7 @@ func (r *Router) handleFilterRoles(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleFilterTags handles GET /api/v1/filters/tags. Unlike roles, the tags
-// facet is always bounded and count-ranked (see node-tags.md): a server cap is
+// facet is always bounded and count-ranked: a server cap is
 // applied whether or not a prefix is supplied, so a fleet with thousands of
 // distinct tags never degrades the filter UI.
 func (r *Router) handleFilterTags(w http.ResponseWriter, req *http.Request) {

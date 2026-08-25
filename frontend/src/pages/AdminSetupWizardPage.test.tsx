@@ -55,8 +55,8 @@ describe("AdminSetupWizardPage — completion clears setup mode without a restar
     vi.restoreAllMocks();
   });
 
-  // Regression for issue #1: after saving the first org, "Go to Dashboard" must
-  // do a full-page load, not a soft client-side navigate. SetupModeGuard's
+  // After saving the first org, "Go to Dashboard" must do a full-page load, not
+  // a soft client-side navigate. SetupModeGuard's
   // useSetupRequired runs once on mount and stays mounted across SPA route
   // changes, so a soft navigate to "/" is bounced straight back to the wizard
   // (its setupRequired state is still stale). A full load re-initialises the
@@ -104,10 +104,9 @@ describe("AdminSetupWizardPage — inline credential creation (issue #2)", () =>
     vi.restoreAllMocks();
   });
 
-  // Regression for issue #2: the credentials step used to open /admin/credentials
-  // in a new tab, forcing the user to leave the wizard, create a credential, and
-  // manually return. The credential is now created inline; on success the wizard
-  // advances to the org step with the new credential preselected.
+  // The credential is created inline rather than in another screen: on success
+  // the wizard advances to the org step with the new credential preselected, so
+  // nobody has to leave the wizard part-way through.
   it("creates a credential inline and preselects it on the org step", async () => {
     const user = userEvent.setup();
     vi.mocked(api.createCredential).mockResolvedValue({

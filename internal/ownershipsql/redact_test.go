@@ -151,11 +151,10 @@ func TestRedactErrNilStaysNil(t *testing.T) {
 // The driver hides its own message behind a fixed string, and we printed the
 // fixed string.
 //
-// Measured against a running server 2026-08-14, after a customer read a table
-// and got "SQL Server had internal error" and nothing else: when SQL Server
-// aborts the process — severity 20 and up — go-mssqldb returns a ServerError
-// whose Error() is that constant, with the real message wrapped inside it. The
-// customer's whole diagnosis was one unwrap away and unreachable from a screen.
+// When SQL Server aborts the process — severity 20 and up — go-mssqldb returns
+// a ServerError whose Error() is the constant "SQL Server had internal error",
+// with the real message wrapped inside it, one unwrap away and unreachable from
+// a screen.
 //
 // The baseline is asserted first: the fixed string really is all the driver's
 // own rendering gives, so this cannot pass because the wrapper started saying
@@ -214,12 +213,9 @@ func TestTheHiddenMessageIsRedactedToo(t *testing.T) {
 
 // The cause, not only the consequence.
 //
-// Measured against a running server 2026-08-14, after a customer's read was
-// killed: SQL Server sent three errors and the driver reports the last, which
-// says the session is in the kill state. That is what happened AFTER the thing
-// that went wrong. The reason is the first, and it was being thrown away — so
-// the customer read a fixed string, then a consequence, and still did not know
-// why.
+// A killed session arrives as several errors and the driver reports the last,
+// which says the session is in the kill state. That is what happened AFTER the
+// thing that went wrong; the reason is the first, so all of them are carried.
 func TestEveryThingTheServerSaidIsCarried(t *testing.T) {
 	killed := serverErrorCarryingAll(
 		mssql.Error{Number: 1222, Class: 16, Message: "Lock request time out period exceeded."},

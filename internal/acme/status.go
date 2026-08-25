@@ -12,7 +12,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/configstore"
 )
 
-// Status is the operator-facing ACME health surface (tls-acme.md § 3.14),
+// Status is the operator-facing ACME health surface,
 // persisted non-secret at server.tls.acme.status and read by the admin config
 // GET to populate the Server & TLS status panel. All times are RFC 3339 strings
 // so the value serialises cleanly to the frontend and an unset field is empty.

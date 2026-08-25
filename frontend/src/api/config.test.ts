@@ -8,12 +8,9 @@ import type { ServerConfig } from "../types";
 //
 // The screen loads the whole section, including the certificate chain and the
 // ACME status, which are read-only things the service attaches on the way out.
-// It then hands the same object back on save. The service used to drop what it
-// did not recognise without a word; now it refuses the call, so a save would
-// fail outright.
-//
-// The types have said "never sent on save" since they were written and nothing
-// made it true. This is what makes it true, and these are what hold it.
+// It then hands the same object back on save. The service refuses a call
+// carrying anything it does not recognise, so those fields must be stripped
+// first — these tests hold that.
 
 function serverConfigAsLoaded(): ServerConfig {
   return {

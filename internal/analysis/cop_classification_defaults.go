@@ -12,8 +12,8 @@ import "strings"
 // compiled RemovedIn mapping (internal/remediation/copmapping.go), not here.
 
 // customCopPrefix marks cops hand-defined in a migration tool. Their offences
-// are stored with a cop_name prefixed "Custom/" (see cop-classification.md,
-// Custom Cop Scanning), and they resolve as Blocker by intent.
+// are stored with a cop_name prefixed "Custom/",
+// and they resolve as Blocker by intent.
 const customCopPrefix = "Custom/"
 
 // isCustomCop reports whether a cop is a hand-defined custom/manual cop.

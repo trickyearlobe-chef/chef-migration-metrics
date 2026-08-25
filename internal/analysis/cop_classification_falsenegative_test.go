@@ -5,10 +5,10 @@ package analysis
 
 import "testing"
 
-// Resolver-level coverage for the 2026-07-16 false-negative sweep: each newly
-// curated removal must resolve to Blocker/verified_removal against the single
-// active target (CC19), and the DeprecatedConstants poly cop must split into a
-// Blocker (removed constants) and a Review (Net::HTTPServerException, present).
+// Resolver-level coverage for the curated removals: each must resolve to
+// Blocker/verified_removal against the single active target (CC19), and the
+// DeprecatedConstants poly cop must split into a Blocker (removed constants) and
+// a Review (Net::HTTPServerException, present).
 
 func TestFalseNegativeSweep_NewCopsResolveBlocker(t *testing.T) {
 	r := &CopClassificationResolver{OperatorOverrides: map[string]string{}, TargetChefVersion: "19.3.15"}

@@ -15,7 +15,7 @@ import (
 // now by opening and immediately closing a TCP listener. It is used as a
 // save-time preflight so an operator cannot persist a listen_address/port the
 // server cannot bind — which would otherwise force the bind-failure fallback
-// and degraded mode on the next restart (encrypted-config-store.md).
+// and degraded mode on the next restart.
 //
 // An empty address is treated as 0.0.0.0 and a zero port as 8080, matching the
 // listener defaults.

@@ -15,7 +15,7 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/secrets"
 )
 
-// Repair CLI — host-side TLS lockout recovery (tls.md § 6.3). Once TLS material
+// Repair CLI — host-side TLS lockout recovery. Once TLS material
 // lives in the DB (cert_source: db, ACME state, or ca_path) the old "move the
 // file on the host" recovery no longer applies; these subcommands are the
 // escape hatch. They need the same host-side access as before: DATABASE_URL and

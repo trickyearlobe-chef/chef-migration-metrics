@@ -30,11 +30,10 @@ func testConfigWithTargetVersions(version string) *config.Config {
 // GET /api/v1/cookstyle/cops — basic aggregation
 // ---------------------------------------------------------------------------
 
-// These tests fabricate the stored offence JSON. They previously injected a
-// "corrected" key, which the pipeline never wrote — that is how the
-// auto-correctable-always-zero bug stayed green in CI. The canonical persisted
-// key is "correctable"; the contract test in the analysis package pins the
-// marshalled shape against what these handlers decode.
+// These tests fabricate the stored offence JSON, so the key they inject must be
+// the one the pipeline writes: "correctable". Any other key counts zero
+// auto-correctable offences and still passes. The contract test in the analysis
+// package pins the marshalled shape against what these handlers decode.
 
 func TestHandleCookstyleCops_BasicAggregation(t *testing.T) {
 	offences := mustMarshalCops(t, []map[string]any{

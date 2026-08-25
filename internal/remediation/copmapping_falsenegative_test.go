@@ -8,11 +8,9 @@ import (
 	"testing"
 )
 
-// These cover the 2026-07-16 false-negative sweep additions: cops that were
-// defaulting to Review but flag a class/helper/method/constant genuinely removed
-// or broken on CC19.3.15, confirmed by behavioural probe on the lab box (see
-// scripts/cop-validation/README.md). Each must now carry a RemovedIn ≤ 19 so it
-// resolves as a Blocker — a hidden blocker closed.
+// These cover cops that flag a class/helper/method/constant absent or broken on
+// CC19.3.15. Each must carry a RemovedIn ≤ 19 so it resolves as a Blocker rather
+// than a Review. Validation harness: scripts/cop-validation/README.md.
 
 func TestFalseNegativeSweep_NewBlockersHaveRemovedIn(t *testing.T) {
 	// cop → expected RemovedIn (majors that the curation linter cross-checks

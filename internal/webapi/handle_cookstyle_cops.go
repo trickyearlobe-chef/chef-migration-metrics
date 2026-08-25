@@ -36,8 +36,8 @@ type copAggregateItem struct {
 	// work is real and will break on the new Ruby exactly as predicted, but it
 	// belongs to whoever owns the pipeline. It is reported alongside rather than
 	// folded in or dropped, because how widespread it is the most useful thing
-	// about it: one fix repeated across four hundred repositories is a different
-	// conversation from four hundred separate problems.
+	// about it: one fix repeated across three thousand repositories is a different
+	// conversation from three thousand separate problems.
 	CookbooksAffected     int     `json:"cookbooks_affected"`
 	CookbooksExcludedOnly int     `json:"cookbooks_excluded_only"`
 	TotalOffences         int     `json:"total_offences"`

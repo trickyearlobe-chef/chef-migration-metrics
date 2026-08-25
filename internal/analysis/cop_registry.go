@@ -29,7 +29,7 @@ type CopRegistryEntry struct {
 	// Description is the free-text description, folded to a single line.
 	Description string
 	// VersionAdded is the gem version the cop was added in (NOT the Chef-Client
-	// removal version — that is curated separately; see cop-classification.md).
+	// removal version — that is curated separately;).
 	VersionAdded string
 }
 

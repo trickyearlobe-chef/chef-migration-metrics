@@ -215,9 +215,8 @@ func TestDeduplicateSnapshotParams_DuplicateCountAccuracy(t *testing.T) {
 }
 
 func TestDeduplicateSnapshotParams_LargeBatchWithDuplicates(t *testing.T) {
-	// Simulate the scenario that caused the production failure:
-	// a batch of 1000 nodes where one node appears twice due to
-	// Chef Server search pagination overlap.
+	// A batch of 1000 nodes where one node appears twice because Chef Server
+	// search pagination overlaps.
 	params := make([]datastore.InsertNodeSnapshotParams, 1001)
 	for i := 0; i < 1000; i++ {
 		params[i] = makeSnapshotParam("org-1", fmt.Sprintf("node-%04d", i), "18.0")

@@ -240,10 +240,9 @@ func (r *Router) putAdminConfigTestKitchen(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	// Its own record. It used to be written back inside the analysis tools
-	// section, which the Analysis Tools screen replaces wholesale — so
-	// whichever of the two screens was saved last won, and that screen has
-	// never carried these settings.
+	// Its own record. Nested inside the analysis tools section it would be lost:
+	// the Analysis Tools screen replaces that record wholesale and has never
+	// carried these settings.
 	value, err := configstore.SerializeValue(input)
 	if err != nil {
 		r.logf("ERROR", "admin/config/test-kitchen: serialise: %v", err)

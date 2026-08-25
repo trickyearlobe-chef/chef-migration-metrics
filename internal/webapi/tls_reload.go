@@ -50,7 +50,7 @@ func (h *TLSReloadHolder) Set(r CertReloader) {
 // SetOnReload registers a callback invoked after every successful in-place
 // reload. main.go wires it to clear the degraded TLS status, so promoting a real
 // certificate over a degraded self-signed listener (an admin save, or ACME
-// issuance) resumes the healthy banner and HSTS without a restart (tls.md § 6.3).
+// issuance) resumes the healthy banner and HSTS without a restart.
 func (h *TLSReloadHolder) SetOnReload(fn func()) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

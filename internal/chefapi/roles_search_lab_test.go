@@ -97,10 +97,10 @@ func TestLabCollectAllRoles_MatchesTheRoleList(t *testing.T) {
 	t.Logf("roles: %d listed, %d from the index", len(names), len(roles))
 }
 
-// Pagination must survive a page size far below the role count. This is the
-// path that runs at customer scale, where 73,910 roles do not fit in one page.
+// Pagination must survive a page size far below the role count — the path that
+// runs wherever the roles do not fit in one page.
 //
-// Measured 2026-07-30 against chef-server 15.10: the index returns the same
+// Measured against chef-server 15.10: the index returns the same
 // *set* at every page size but in a *different order* each time — it applies no
 // stable sort. This passes because CollectAllRoles sorts by name; without that
 // it would fail, and it must not be "fixed" by relaxing to a set comparison.
@@ -213,10 +213,9 @@ func TestLabCollectAllRoles_NestedShapesSurvivePartialSearch(t *testing.T) {
 	}
 }
 
-// The measured claim behind the change: the index costs a fraction of the
-// per-role fetch. This does not assert a threshold — lab and customer scale
-// differ by three orders of magnitude — but it records both timings so a
-// regression is visible.
+// The index costs a fraction of the per-role fetch. This asserts no threshold —
+// lab and production scale differ by orders of magnitude — but it records both
+// timings so a regression is visible.
 func TestLabCollectAllRoles_IsFasterThanPerRoleFetch(t *testing.T) {
 	client := labClient(t)
 	ctx, cancel := labCtx(t)

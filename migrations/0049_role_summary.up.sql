@@ -5,12 +5,12 @@
 -- sort and filter by derived fields (node_count, incompatible_cookbook_count,
 -- compatibility_status, tk_status) with indexed reads and SQL pagination,
 -- instead of recomputing a recursive transitive-dependency CTE over ALL roles
--- on every request (measured p50 ~12.6 s at customer scale).
+-- on every request, which is far too slow to serve a page from.
 --
 -- Grain: (organisation_name, role_name) — the authoritative per-org role
 -- registry, mirroring role_dependencies. The list rolls these rows up across
--- organisations (orgs <= 3, so rollup is free). Mirrors the proven git_repos
--- materialised-column pattern (migration 0032).
+-- organisations (few enough that the rollup is free). Mirrors the proven
+-- git_repos materialised-column pattern (migration 0032).
 --
 -- Columns split into version-independent (node_count, cookbook counts) and
 -- active-target (compat + tk) groups, matching git_repos.

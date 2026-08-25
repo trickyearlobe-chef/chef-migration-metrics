@@ -24,7 +24,7 @@ type Config struct {
 
 // acmeClient is the subset of golang.org/x/crypto/acme.Client the engine drives.
 // *xacme.Client satisfies it structurally; tests supply a fake so the order flow
-// is exercised without any network (tls-acme.md § 3.1 test note).
+// is exercised without any network .
 type acmeClient interface {
 	Register(ctx context.Context, acct *xacme.Account, prompt func(tosURL string) bool) (*xacme.Account, error)
 	AuthorizeOrder(ctx context.Context, id []xacme.AuthzID, opt ...xacme.OrderOption) (*xacme.Order, error)

@@ -394,7 +394,7 @@ export function AppLayout() {
 
       {/* Main content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Global insecure-TLS banner (tls.md § 2.4 fail-open fallback) */}
+        {/* Global insecure-TLS banner  */}
         <TLSDegradedBanner />
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">

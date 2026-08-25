@@ -147,7 +147,7 @@ After installing, edit the configuration and start the service:
 
 ```
 sudo vim /etc/chef-migration-metrics/config.yml
-sudo vim /etc/sysconfig/chef-migration-metrics   # set DATABASE_URL, etc.
+sudo vim /etc/sysconfig/chef-migration-metrics   # set the encryption key — see below
 sudo systemctl start chef-migration-metrics
 sudo systemctl status chef-migration-metrics
 ```
@@ -168,10 +168,24 @@ The DEB installs the same filesystem layout as the RPM, with the environment fil
 
 ```
 sudo vim /etc/chef-migration-metrics/config.yml
-sudo vim /etc/default/chef-migration-metrics   # set DATABASE_URL, etc.
+sudo vim /etc/default/chef-migration-metrics   # set the encryption key — see below
 sudo systemctl start chef-migration-metrics
 sudo systemctl status chef-migration-metrics
 ```
+
+### Setting the encryption key
+
+The service will not start without `CMM_CREDENTIAL_ENCRYPTION_KEY`. It encrypts every
+credential held in the database, so losing it means re-entering all of them.
+
+```
+openssl rand -base64 32
+```
+
+Set it in the environment file — `/etc/sysconfig/chef-migration-metrics` on RPM,
+`/etc/default/chef-migration-metrics` on DEB. Both ship mode `0640` owned `root:root`; keep
+them that way. Nowhere else: a key set anywhere but this file is readable by any user on the
+host.
 
 ### Option 3: Docker Compose (Local / Evaluation)
 
@@ -534,7 +548,7 @@ For details on how the application manages credentials at runtime (encrypted sto
 
 ## Roadmap
 
-The following features are defined in the specifications but not yet implemented:
+The following features are defined in the configuration schema but not yet implemented:
 
 | Feature | Status |
 |---------|--------|
@@ -552,10 +566,8 @@ Start at **[journeys/overview.md](journeys/overview.md)** — the routing index,
 lists every journey and the question it answers. There is deliberately no second index here,
 because two indexes means one of them is out of date.
 
-The 128 component specifications this replaced were deleted, and the directory renamed from
-`specifications/` so the old habit has no home to return to: they asserted tables, endpoints and
-configuration flags that did not exist. They are recoverable from the tag
-`specifications-retired-2026-08-04` if the history is ever needed.
+The component specifications that `journeys/` replaced were removed. They are recoverable from
+the tag `specifications-retired-2026-08-04` if the history is ever needed.
 
 ## License
 

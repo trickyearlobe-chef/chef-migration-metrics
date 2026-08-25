@@ -38,12 +38,12 @@ func RoleSearchAttributes() PartialSearchQuery {
 //
 // The same measurement is why the caller's per-role gap fill is load-bearing
 // rather than belt-and-braces: an index with no stable sort can shift under a
-// paginated walk, and at 74k roles that walk spans many requests.
+// paginated walk, and at a large role count that walk spans many requests.
 //
 // The Chef API has no bulk role-detail endpoint, so the alternative is one
-// GET /roles/<name> per role — measured at customer scale as 73,910 requests
-// and ~7m16s per collection cycle, 26% of the run. Partial search replaces that
-// with roughly one request per page.
+// GET /roles/<name> per role, which at a large role count dominates the
+// collection cycle. Partial search replaces that with roughly one request per
+// page.
 //
 // Two properties of the role index are unverified at scale, so both are handled
 // defensively:

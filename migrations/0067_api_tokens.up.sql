@@ -25,8 +25,7 @@ CREATE TABLE api_tokens (
 
     -- The account this is another way into. Not a foreign key, matching
     -- sessions: a person authenticated by an identity provider need not have a
-    -- local row, and refusing them a credential would exclude everybody at the
-    -- customer site.
+    -- local row, and refusing them a credential would exclude every such person.
     username     TEXT        NOT NULL,
 
     -- What its owner called it, so a listing can be read and one of them

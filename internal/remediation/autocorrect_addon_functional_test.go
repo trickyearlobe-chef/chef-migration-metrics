@@ -17,8 +17,8 @@ import (
 	"github.com/trickyearlobe-chef/chef-migration-metrics/internal/remediation"
 )
 
-// TestFunctional_AddonCopAutocorrect_AppearsInDiff is the end-to-end proof for
-// Chunk E: an operator addon RuboCop cop that defines an AutoCorrector is
+// TestFunctional_AddonCopAutocorrect_AppearsInDiff is the end-to-end proof that
+// an operator addon RuboCop cop that defines an AutoCorrector is
 // resolved, require:'d and ENABLED into the shared full-ruleset autocorrect
 // invocation, and its fix is actually applied by the live cookstyle binary —
 // so it would appear in the whole-cookbook diff. Addon cops have no embedded

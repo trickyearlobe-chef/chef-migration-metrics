@@ -13,8 +13,8 @@ import (
 
 // Importing owners and resolving duplicate people are administrator functions,
 // not everyday ones: an import rewrites who is accountable for the estate, and
-// folding two people together is a change to the record of who exists. Both
-// moved behind the admin role on 2026-08-06 at the product owner's instruction.
+// folding two people together is a change to the record of who exists. Both are
+// behind the admin role.
 //
 // The role check has to live in the handler, not only in the route table. The
 // test router is built without auth middleware, so a registration-time gate

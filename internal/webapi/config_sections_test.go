@@ -16,15 +16,13 @@ import (
 
 // Neither settings screen can reach the other's settings.
 //
-// They used to share one stored record, with Test Kitchen nested inside the
-// analysis tools. The Test Kitchen screen read what was there and put its part
-// back; the Analysis Tools screen replaced the whole record with what it was
-// sent, and has never carried the Test Kitchen part. So an operator changing a
-// CookStyle timeout lost the driver, the images, the credential references and
-// the rate limits, and was told the save succeeded.
+// Test Kitchen and the analysis tools are two stored records. The Analysis Tools
+// screen replaces its record wholesale and does not carry the Test Kitchen part,
+// so nesting one inside the other loses the driver, the images, the credential
+// references and the rate limits while reporting a successful save.
 //
-// Two records now. This is in the gating suite rather than held as debt,
-// because silently losing somebody's settings is not something to ship again.
+// In the gating suite rather than held as debt: silently losing somebody's
+// settings must not ship.
 
 // Saving the Analysis Tools screen leaves the Test Kitchen settings alone.
 func TestSettings_SavingAnalysisToolsKeepsTheTestKitchenSettings(t *testing.T) {
@@ -65,8 +63,7 @@ func TestSettings_SavingAnalysisToolsKeepsTheTestKitchenSettings(t *testing.T) {
 	}
 }
 
-// And the other way round, which was never broken but is the half that would
-// break if somebody fixed this by merging instead.
+// And the other way round — the half that a merge-based fix would break.
 func TestSettings_SavingTestKitchenKeepsTheAnalysisToolsSettings(t *testing.T) {
 	ctx := context.Background()
 	store := newTestConfigStore(t)

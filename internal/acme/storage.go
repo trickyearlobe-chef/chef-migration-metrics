@@ -8,8 +8,7 @@
 // listener/mode wiring live in sibling files/chunks behind the Solver seam.
 //
 // No higher-level ACME library is used: the engine owns account/order/challenge/
-// renewal orchestration directly to keep the dependency/lockfile surface minimal
-// (tls-acme.md § 3.1).
+// renewal orchestration directly to keep the dependency/lockfile surface minimal.
 package acme
 
 import (
@@ -40,7 +39,7 @@ type SecretStore interface {
 }
 
 // Storage persists ACME state — the account key, issued certificate, and issued
-// private key — to the encrypted config store (tls-acme.md § 3.5). PEM material
+// private key — to the encrypted config store. PEM material
 // is stored as a JSON-encoded string, matching the static cert_source: db path.
 // The account key and issued private key are secret (secret: true); the issued
 // certificate is public (secret: false). Private keys are never returned by any
@@ -80,7 +79,7 @@ func (s *Storage) SetAccountKey(ctx context.Context, key crypto.Signer) error {
 // Certificate returns the persisted issued certificate (leaf + chain) PEM and
 // its private key PEM. It returns ErrNotStored unless BOTH are present — a half
 // pair is treated as no usable certificate so the listener falls open
-// (tls-acme.md § 3.11) rather than serving a cert without its key.
+// rather than serving a cert without its key.
 func (s *Storage) Certificate(ctx context.Context) (certPEM, keyPEM []byte, err error) {
 	certPEM, err = s.getPEM(ctx, configstore.KeyServerTLSACMECert)
 	if err != nil {

@@ -11,12 +11,10 @@ import (
 
 // A Windows domain login, which is what a SQL Server estate actually uses.
 //
-// This is the case that cost a day. The customer's script connects with
-// user="DOMAIN\" + username, because that is how their database expects to be
-// told who is connecting. Written into a URL, the backslash makes the whole
-// string unparsable — net/url calls it "invalid userinfo" — and the driver
-// reports "unable to parse connection string: invalid URL format", which names
-// neither the character nor the field.
+// Such an account is written user="DOMAIN\" + username. Written into a URL, the
+// backslash makes the whole string unparsable — net/url calls it "invalid
+// userinfo" — and the driver reports "unable to parse connection string:
+// invalid URL format", which names neither the character nor the field.
 //
 // Checked through the driver's own parser rather than ours, because what matters
 // is not that we produce a URL but that the driver reads the domain user back

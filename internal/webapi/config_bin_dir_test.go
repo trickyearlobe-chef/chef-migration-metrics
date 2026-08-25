@@ -64,11 +64,9 @@ func TestBinDir_TheSavedPathIsKeptAndAnsweredBack(t *testing.T) {
 // Changing where the tools are applies straight away, and must not send
 // anybody off to restart the service.
 //
-// It used to be read once at startup and handed to the scanner as a resolved
-// string, which is what a file-based configuration allowed. It comes from the
-// database now, and both executors work out where their binary is when they
-// run — so the next scan uses the corrected directory and there is nothing to
-// restart for.
+// It comes from the database, and both executors work out where their binary is
+// when they run — so the next scan uses the corrected directory and there is
+// nothing to restart for.
 func TestBinDir_ChangingItAppliesWithoutARestart(t *testing.T) {
 	// The baseline first: a save that changes nothing resolved at startup
 	// reports no restart. Without it, a handler that had stopped reporting

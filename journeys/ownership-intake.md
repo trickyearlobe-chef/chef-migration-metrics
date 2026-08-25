@@ -1,14 +1,13 @@
 # Getting ownership in from where it is already written down
 
 **As the administrator setting this up, I need to load ownership from the system that already
-holds it, because nobody is going to assign four thousand repositories by hand and an
+holds it, because nobody is going to assign thousands of repositories by hand and an
 ownership record that is entered twice is a record that will be wrong in one of the two
 places.**
 
-This organisation already knows who owns what. It is in an asset database, or a spreadsheet
-somebody maintains, or an export from a service catalogue. What it is not in is this tool. The
-job is to get it across and keep getting it across, not to become a second place where the
-truth is typed.
+The organisation already knows who owns what — in an asset database, a spreadsheet somebody
+maintains, an export from a service catalogue. The job is to keep getting it across from
+there.
 
 ## What I need
 
@@ -19,14 +18,11 @@ way, and writing a query blind against a schema you cannot see is guesswork.
 
 ### Finding my way around a database I have never seen
 
-The connection comes from somebody else, and so does the password inside it. From that point I
-am working blind in somebody else's system, and every step I cannot check is one I will have to
-undo in front of people.
+The connection comes from somebody else, and so does the password inside it. I am working blind
+in somebody else's system.
 
-**The connection has to name its database, and I would rather it did.** My instinct was to ask
-what the account can see and pick from a list, but an account that can enumerate every database
-on a server is a broader grant than the job needs, and I would have to defend it. Naming one
-database is the same thing said more narrowly, and whoever composed the connection already knew
+**The connection has to name its database.** An account that can enumerate every database on a
+server is a broader grant than the job needs, and whoever composed the connection already knew
 which one they meant. If I need two, that is two connections.
 
 **Then the tables in it, and the views as well.** In a system of record the thing I want is
@@ -35,8 +31,7 @@ and rebuild it badly.
 
 **Then the fields, with sample data in them.** Names lie. A column called owner might hold a
 team, a person, a login, or nothing at all in nine rows out of ten, and the name will not tell
-me which. Seeing what is actually in there is how I judge where the data I need sits. This is
-the whole of the work; everything after it is mechanical.
+me which. Seeing what is actually in there is how I judge where the data I need sits.
 
 **Something guessing the field names for me**, which already helps — as long as I can see what
 it chose and change it. A guess I cannot override is worse than no guess.
@@ -48,7 +43,7 @@ To tidy values on the way in without editing the source: strip a mail domain, pu
 out of a longer string. The source belongs to somebody else and I cannot make them change it.
 
 **To see what it will do before it does it.** A preview of what would be created and changed,
-against real rows. I will not point an import at four thousand assignments on trust.
+against real rows. I will not point an import at thousands of assignments on trust.
 
 To have the rows it could not use handed back to me as a worklist — which row, and what was
 wrong with it — so I can get the source fixed rather than silently importing three quarters of
@@ -58,14 +53,14 @@ it.
 one consolidated list with a column saying whether a row is a node, a repository, or something I
 do not care about. I want to apply that filter and see what comes back — the right things, and
 roughly the right number of them. Committing first and inspecting afterwards is the wrong way
-round, and it is how the wrong import below happened.
+round.
 
 To be able to run it again on a schedule once I trust it, and to see whether the source is
 getting better or worse. **That decision turns on having watched it run once, including how long
 it took** — a job that takes forty minutes is a different proposition from one that takes four.
 
-**To load the whole thing in one go.** Their source runs to about a hundred and thirty thousand
-records and it is one list. Splitting it — by hand, or by writing filters that between them are
+**To load the whole thing in one go.** The source is one list, and it can run to a hundred and
+fifty thousand records or more. Splitting it — by hand, or by writing filters that between them are
 supposed to cover everything exactly once — is a job with no way to check it was done right, and
 it has to be redone every time the source is refreshed. A cap I have to work around is a cap
 that will eventually be worked around wrongly.
@@ -89,13 +84,10 @@ to chase; one clearing the other's findings would lose work.
 **The preview and the commit go through the same path.** The point of a preview is that it
 tells you what the commit will do, and it can only do that if it is the same code answering.
 
-**Typing my own query is what I need today, and it will not survive the security team.** No
-listing of tables survives contact with a real system of record, and sometimes asking for what I
-want directly is the only way to get it. But it is query text entered through a screen and run
-against a database whose credentials belong to somebody else, and neither the text nor where it
-came from is anything I would call trustworthy. That argument is coming and it should. Whatever
-replaces it has to leave me able to reach data no table listing exposes, or it moves the problem
-into a ticket queue and I am blind again.
+**Typing my own query is what I need today, and it is not what should be there in the end.** It
+is query text entered through a screen and run against a database whose credentials belong to
+somebody else. But whatever replaces it has to leave me able to reach data no table listing
+exposes, or it moves the problem into a ticket queue and I am blind again.
 
 ## What proves it
 
@@ -130,11 +122,11 @@ guessing](internal/ownershipimport/transform_test.go#TestRegexExtract_EmptyOnNoM
 and stripping a mail domain [leaves an address literal
 alone](internal/ownershipimport/transform_test.go#TestStripDomain_LeavesIPLiteralsUnchanged).
 
-**A known gap, and it has already caused a wrong import.** What kind of thing is being imported
+**A known gap.** What kind of thing is being imported
 is chosen once for the whole run, not read from a column. A source table holding several kinds
 of asset has to be imported once per kind, using a row filter to select each — and nothing on
-screen says so. Getting it wrong writes assignments against the wrong kind of thing, which
-happened on 2026-08-03. No test covers this because the behaviour is not wrong, only silent.
+screen says so. Getting it wrong writes assignments against the wrong kind of thing. No test
+covers this because the behaviour is not wrong, only silent.
 
 That a connection has to name its database is pinned where the connection is set up, so the
 refusal reaches whoever composed it: a connection [naming no
@@ -145,8 +137,7 @@ open](internal/secrets/database_url_test.go#TestDatabaseURL_RejectsADriverWeCann
 accepted](internal/secrets/database_url_test.go#TestDatabaseURL_AcceptsTheFormsTheImportScreenDocuments).
 The refusal [never quotes the connection
 back](internal/secrets/database_url_test.go#TestDatabaseURL_RefusalNeverQuotesTheValue), which
-matters because one often arrives with a password already written into it — pasted in from
-somebody else's tooling — and this estate's logs are widely readable. The same refusal is
+matters because one often arrives with a password already written into it. The same refusal is
 repeated [at the point of
 use](internal/ownershipsql/dsn_database_test.go#TestEntryPointsRefuseAConnectionWithoutADatabase),
 so a connection set up before this existed cannot slip through.

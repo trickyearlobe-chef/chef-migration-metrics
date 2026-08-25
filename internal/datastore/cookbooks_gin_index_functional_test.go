@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// TestFunctional_ProductionPlatformsQuery_UsesGINIndex proves the P1 fix: the
+// TestFunctional_ProductionPlatformsQuery_UsesGINIndex proves the fix: the
 // `cookbooks ? $1` coverage query is served by the GIN index
 // idx_node_snapshots_cookbooks_gin (default jsonb_ops opclass, which — unlike
 // jsonb_path_ops — indexes the `?` key-existence operator) rather than a

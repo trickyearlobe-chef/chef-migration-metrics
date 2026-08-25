@@ -751,8 +751,8 @@ describe("ApiDocsPage", () => {
     render(<ApiDocsPage />);
     await waitFor(() => screen.getByRole("button", { name: /^cookbooks \(/i }));
 
-    // The groups are there; what is under them is not, until asked for. 245
-    // addresses in one scroll is the thing being fixed.
+    // The groups are there; what is under them is not, until asked for — every
+    // address in one scroll is what this avoids.
     expect(screen.queryByText("/api/v1/cookbooks")).not.toBeInTheDocument();
     // The count is on the group, so the index still says how much is in there.
     expect(screen.getByRole("button", { name: /^cookbooks \(1\)/i })).toBeInTheDocument();

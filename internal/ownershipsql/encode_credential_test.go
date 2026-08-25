@@ -12,12 +12,10 @@ import (
 // A password is not a URL, and the person who typed it should not have to know
 // that it is about to be treated as one.
 //
-// A customer's connection was refused by the driver as "invalid URL format".
-// Everything visible in it was legal — proved against the driver's own parser —
-// so the cause was a character in the user or password that a URL cannot carry
-// unescaped. The password is encrypted and nobody at hand knows it, so it cannot
-// be retyped in another form. The only fix available is to encode it on the way
-// to the driver.
+// A character in the user or password that a URL cannot carry unescaped makes
+// the driver refuse the connection as "invalid URL format", with everything
+// visible in it legal. A stored password cannot be retyped, so the only fix
+// available is to encode it on the way to the driver.
 //
 // Only the userinfo is touched. It is a bounded region with a known meaning; the
 // host, the database and the vendor options are left exactly as written.

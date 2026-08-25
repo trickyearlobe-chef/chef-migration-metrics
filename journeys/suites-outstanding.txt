@@ -6,20 +6,6 @@
 # until it is removed from here, and it can never be added back.
 #
 # The number only goes down. Removing a line is the point.
-journeys/converge-testing.md
-journeys/cookbook-compatibility.md
 journeys/estate-progress.md
 journeys/human-verdict.md
-journeys/named-cohorts.md
-journeys/node-readiness.md
-journeys/remediation-priority.md
-journeys/role-impact.md
-journeys/run-history.md
-journeys/scan-trust.md
-journeys/service-access.md
 journeys/service-collection.md
-journeys/service-configuration.md
-journeys/service-continuity.md
-journeys/service-diagnosis.md
-journeys/service-secrets.md
-journeys/working-all-day.md

@@ -63,7 +63,7 @@ type WebSocketHandler struct {
 	// cfgFn, when set, is a live accessor for the connection configuration.
 	// Each new connection resolves its timeouts through it, so a saved
 	// server.websocket.* change applies to connections opened afterwards
-	// (configuration-live-reload.md: subsystem). It takes precedence over cfg.
+	// (subsystem). It takes precedence over cfg.
 	cfgFn func() WebSocketConfig
 
 	// logger is an optional callback for logging WebSocket lifecycle events.

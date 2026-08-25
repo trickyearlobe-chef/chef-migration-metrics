@@ -100,9 +100,9 @@ describe("GitReposPage — the team verdict filter", () => {
     expect(markers[0]).toHaveTextContent(/person says broken/i);
   });
 
-  // The bug this test exists for: selecting the filter updated the chip and
-  // the count but never reached the request, so the list stayed unfiltered
-  // while appearing to be filtered — the worst of both.
+  // The chosen verdict has to reach the request, not just the chip and the
+  // count: a list that stays unfiltered while appearing filtered is the worst
+  // of both.
   it("sends the chosen verdict to the API", async () => {
     const user = userEvent.setup();
     render(<GitReposPage />, { wrapper: Wrapper });
@@ -173,8 +173,8 @@ describe("GitReposPage — the team verdict filter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The ownership filter. The backend has answered "what's mine" and "what has
-// nobody" since 2026-08-02; until now no screen could ask either question.
+// The ownership filter: the screen asks the backend "what's mine" and "what
+// has nobody".
 // ---------------------------------------------------------------------------
 
 describe("GitReposPage — the ownership filter", () => {

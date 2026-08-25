@@ -12,8 +12,8 @@ import (
 	apptls "github.com/trickyearlobe-chef/chef-migration-metrics/internal/tls"
 )
 
-// generateCSRRequest is the JSON body for the generate-csr endpoint (tls-csr.md
-// § 4.3). All fields except an identifier (common_name or a SAN) are optional.
+// generateCSRRequest is the JSON body for the generate-csr endpoint.
+// All fields except an identifier (common_name or a SAN) are optional.
 type generateCSRRequest struct {
 	CommonName         string   `json:"common_name"`
 	Organization       string   `json:"organization"`
@@ -32,7 +32,7 @@ type generateCSRResponse struct {
 // handleAdminConfigServerGenerateCSR generates a keypair and a CSR for static
 // (cert_source: db) certificate issuance. The private key is stored as a pending
 // secret (server.tls.private_key.pending) and the CSR PEM is returned for the
-// operator to submit to their CA. The key is never returned (tls-csr.md § 4).
+// operator to submit to their CA. The key is never returned.
 func (r *Router) handleAdminConfigServerGenerateCSR(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		WriteError(w, http.StatusMethodNotAllowed, ErrCodeMethodNotAllowed,
@@ -76,7 +76,7 @@ func (r *Router) handleAdminConfigServerGenerateCSR(w http.ResponseWriter, req *
 	}
 
 	// Persist the new private key as pending (secret, encrypted at rest),
-	// overwriting any prior pending key (tls-csr.md § 4.5). The active cert/key
+	// overwriting any prior pending key. The active cert/key
 	// are untouched, so the listener keeps serving the current certificate.
 	keyJSON, _ := json.Marshal(string(keyPEM))
 	if err := r.configStore.Set(req.Context(), configstore.KeyServerTLSPrivateKeyPending, keyJSON, true, "admin"); err != nil {

@@ -76,12 +76,11 @@ uses](internal/configstore/credential_adapter_test.go#TestCredentialAdapter_Full
 
 That a diagnostic bundle does not carry identifying information out is pinned by [the
 anonymisation
-contract](internal/webapi/handle_admin_diagnostic_test.go#TestHandleDiagnosticBundle_OrgAnonymisation) —
-see [proving what went wrong on a box I cannot reach](service-diagnosis.md).
+contract](internal/webapi/handle_admin_diagnostic_test.go#TestHandleDiagnosticBundle_OrgAnonymisation).
 
 **Nothing proves a secret never reaches a log.** The store will not hand one back, but a value in
 memory can be printed by any code holding it. No test asserts the absence of a secret from log
-output, and this deployment ships its logs somewhere many people can read — so a single careless
+output, and logs are routinely shipped somewhere a lot of people can read — so a single careless
 line would expose a credential widely and quietly. This is the most serious untested claim in
 this journey.
 

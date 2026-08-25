@@ -12,7 +12,7 @@ import (
 
 // server.trusted_proxy round-trips through ConfigToSections → AssembleConfigRaw
 // so a CLI- or UI-set value is read back at startup/reload (behind-proxy
-// plain-HTTP deployment, tls-static.md). Before this wiring the value lived only
+// plain-HTTP deployment). Before this wiring the value lived only
 // in YAML and was lost on migration to the DB.
 func TestServerTrustedProxy_RoundTrip(t *testing.T) {
 	cfg := &config.Config{}

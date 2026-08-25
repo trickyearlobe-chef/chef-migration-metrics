@@ -14,14 +14,13 @@ import (
 // ChainIncompleteWarning is the non-fatal warning recorded when a submitted
 // bundle cannot be linked into a single complete leaf → root chain (a missing
 // intermediate, or unrelated certificates). It is operator-safe — it names no
-// key material — and never blocks a save (tls-static.md § 2.2: warn and store,
-// never reject).
+// key material — and never blocks a save.
 const ChainIncompleteWarning = "certificate chain is incomplete or contains certificates that do not chain together; stored in best-effort order"
 
 // ReorderChainPEM sorts the certificates in an operator-supplied static PEM
 // bundle into leaf → intermediate(s) → root order before storing, by matching
-// each certificate's issuer to the next certificate's subject (tls-static.md
-// § 2.2). It does not trust the submitted order.
+// each certificate's issuer to the next certificate's subject.
+// It does not trust the submitted order.
 //
 // The true (non-self-signed) leaf is placed first so it survives as cert[0],
 // which the key-pair preflight (tls.X509KeyPair) matches the private key

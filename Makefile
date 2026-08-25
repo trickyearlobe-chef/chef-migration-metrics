@@ -20,11 +20,9 @@ SHELL := /bin/bash
 # ---------------------------------------------------------------------------
 # Version — derived from the most recent git tag (vX.Y.Z format)
 # ---------------------------------------------------------------------------
-# --match 'v[0-9]*' is load-bearing. Without it any tag reachable from HEAD can
-# shadow the real version — a docs tag named `specifications-retired-2026-08-04`
-# did exactly that on 2026-08-08, and `make bump-minor-push` cheerfully derived
-# and PUSHED a tag called `vspecifications-retired-2026-08-04.1.0`. The version
-# tags were fine; nothing was reading them.
+# --match 'v[0-9]*' is load-bearing: without it any non-version tag reachable
+# from HEAD shadows the real version, and the bump targets derive and push a
+# tag from whatever this resolves to.
 GIT_TAG       := $(shell git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "v0.0.0")
 GIT_COMMIT    := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 GIT_COMMIT_SHORT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -284,7 +282,7 @@ journey-status: ## One line: how much of the journeys is proven, and how much is
 # journey-suite-check is the CI counterpart of the pre-commit rule: journeys
 # CHANGED in this push must have a suite. Scoped to the diff on purpose — a
 # repo-wide check would be red from the day it was added and would be disabled
-# within a week, which is how the rule got lost in the first place.
+# within a week.
 #
 # BASE defaults to the previous commit; CI passes the base of the push or PR.
 # It exists so the rule survives `git commit --no-verify`, which is the only way
@@ -306,7 +304,8 @@ journey-suite-check: ## Fail if a journey changed since BASE has no journey suit
 		printf "$(RED)Journeys changed here with no suite:$(RESET)\n"; \
 		printf "$$missing"; \
 		printf "$(YELLOW)Add a *_journey_test.go under the 'journey' build tag naming the journey,$(RESET)\n"; \
-		printf "$(YELLOW)with one test per thing it says must be in place. See plans/journey-suites.md.$(RESET)\n"; \
+		printf "$(YELLOW)with one test per thing it says must be in place. See$(RESET)\n"; \
+		printf "$(YELLOW)internal/webapi/ownership_intake_journey_test.go.$(RESET)\n"; \
 		exit 1; \
 	fi; \
 	printf "$(GREEN)Every journey changed here has a suite.$(RESET)\n"
@@ -347,7 +346,8 @@ journey-ratchet: ## Fail if any journey outside the grandfathered list has no su
 		printf "$(RED)These journeys have no suite and are not grandfathered:$(RESET)\n"; \
 		printf "%s\n" "$$added" | sed 's/^/  /'; \
 		printf "$(YELLOW)Write the whole suite before implementing any of it — every doneness$(RESET)\n"; \
-		printf "$(YELLOW)test the journey implies, all red. See plans/journey-suites.md.$(RESET)\n"; \
+		printf "$(YELLOW)test the journey implies, all red. See$(RESET)\n"; \
+		printf "$(YELLOW)internal/webapi/ownership_intake_journey_test.go.$(RESET)\n"; \
 		rc=1; \
 	fi; \
 	if [ -n "$$fixed" ]; then \
@@ -695,51 +695,41 @@ vuln-go: ## Scan Go module + reachable code for known vulnerabilities (govulnche
 # ---------------------------------------------------------------------------
 # Trivy vulnerability-database refresh
 # ---------------------------------------------------------------------------
-# The scan is reliable; refreshing the database is not, and that has been
-# rediscovered and hand-fixed several times without the reason being written
-# down. This is the write-down. Everything below was measured against Trivy
-# 0.71.0 on 2026-08-09; the "verified" notes say how.
+# The scan is reliable; refreshing the database is not. The behaviour below is
+# measured against Trivy 0.71.0.
 #
-# Trivy pulls its 104 MiB database from an OCI registry, defaulting to
-# mirror.gcr.io with ghcr.io listed second. Intermittently the mirror ACCEPTS
-# the connection and then sends nothing. Observed: zero bytes in 21 minutes,
-# taking the whole gate down; an identical rerun a minute later fetched the same
-# artifact in under 3 seconds. Three separate things turn that stall into an
+# Trivy pulls its database from an OCI registry, defaulting to mirror.gcr.io
+# with ghcr.io listed second. The mirror intermittently ACCEPTS the connection
+# and then sends nothing. Three separate things turn that stall into an
 # unbounded hang:
 #
 #  1. Trivy's own --timeout does NOT bound it. The registry request is not made
 #     with the timeout context and nothing sets a read/response deadline, so a
-#     connection that stalls after being established is unbounded. Verified
-#     against a socket that accepts and never replies: `trivy --timeout 15s` was
-#     still running 7 minutes later. Trivy's advice on the eventual failure is
-#     to RAISE --timeout, which would only lengthen the hang.
+#     connection that stalls after being established is unbounded. Trivy's
+#     advice on the eventual failure is to RAISE --timeout, which only
+#     lengthens the hang.
 #  2. Trivy does NOT fail over to the second registry. Failover only triggers on
-#     a registry-API error. Verified: with a stalled primary it never reached
-#     ghcr.io at all, and with a primary refusing connections outright it failed
-#     rather than trying ghcr.io. So the fallback below has to be explicit.
+#     a registry-API error, so the fallback below has to be explicit.
 #  3. Trivy catches SIGTERM and only shuts down "gracefully", which cannot
-#     interrupt the stalled read — so it keeps hanging after the signal.
-#     Verified: plain `timeout 10 trivy ...` left trivy alive 25s later, 2 of 2
-#     runs; with -k (SIGTERM then SIGKILL) it died at 15s, 3 of 3. The -k is
-#     load-bearing — a bare `timeout N` does not end this hang.
+#     interrupt the stalled read, so it keeps hanging after the signal. The -k
+#     below (SIGTERM then SIGKILL) is load-bearing — a bare `timeout N` does not
+#     end this hang.
 #
 # So the refresh is separated from the scan: bounded by an external timeout that
 # escalates to SIGKILL, then retried explicitly against the fallback registry.
 # The scans then run with --skip-db-update and cannot touch the network at all.
-# A stalled mirror now costs TRIVY_DB_TIMEOUT seconds and recovers by itself.
+# A stalled mirror costs TRIVY_DB_TIMEOUT seconds and recovers by itself.
 # (--download-db-only and --skip-db-update are mutually exclusive — trivy
 # refuses to start if both are given, which is why these are separate steps.)
 #
-# The database is only refreshed once it expires (every 24h), which is why this
-# shows up at random and never reproduces on the rerun that investigates it.
+# The database is only refreshed once it expires (every 24h), so a stall appears
+# at random and does not reproduce on the rerun that investigates it.
 #
-# Not the cause, though it has been blamed: there is no lock file, and nothing
-# is left behind that wedges the next run. Verified: killed mid-download with
-# SIGKILL, the immediate rerun succeeded in 3.5s. What an interrupted `make`
-# DOES leave is trivy itself, still alive and still holding the stalled
-# connection, because of (3) — worth killing, but a symptom, not the cause.
+# There is no lock file, and an interrupted run leaves nothing behind that
+# wedges the next one. What it does leave is trivy itself, still alive and still
+# holding the stalled connection, because of (3).
 #
-# If trivy hangs again despite this: `pkill -9 trivy`, then delete the DB cache
+# If trivy hangs despite this: `pkill -9 trivy`, then delete the DB cache
 # (~/Library/Caches/trivy/db on macOS, ~/.cache/trivy/db on Linux) and re-run.
 # Do not raise the timeout.
 TRIVY_DB_TIMEOUT ?= 120
@@ -803,9 +793,8 @@ security: vuln-go trivy-npm ## Run the blocking supply-chain gates (govulncheck 
 # fails on HIGH/CRITICAL, so a red here is a local early warning, not a broken
 # CI gate. Check `gh run list` before treating one as a release blocker.
 #
-# It reads .trivyignore.yaml like the CI gates do. Without that it re-reported
-# vulnerabilities already waived with a dated, reasoned entry — which teaches
-# people to ignore the output, the one thing a security scan cannot survive.
+# It reads .trivyignore.yaml like the CI gates do; without that it re-reports
+# vulnerabilities already waived there.
 .PHONY: scan-trivy
 scan-trivy: _trivy-db ## Filesystem scan (vuln + secret + misconfig) with Trivy — stricter than CI
 	@if command -v trivy >/dev/null 2>&1; then \
@@ -836,9 +825,7 @@ _check-nfpm:
 	fi
 
 # An RPM or DEB carries a Linux binary whatever machine builds it, so every
-# package target cross-compiles rather than using the host build. Packaging
-# from Windows against the host build read as a packaging fault: the host
-# binary is chef-migration-metrics.exe, and nfpm reported its source missing.
+# package target cross-compiles rather than using the host build.
 #
 # The architecture cannot be a variable inside nfpm.yaml: nfpm expands
 # ${ARCH} in the arch field but not in a contents source — measured, with both
@@ -1246,22 +1233,6 @@ compose-logs: ## Tail logs from the Docker Compose stack
 .PHONY: compose-ps
 compose-ps: ## Show status of Docker Compose services
 	docker compose -f $(COMPOSE_FILE) ps
-
-# ---------------------------------------------------------------------------
-# ELK Testing Stack
-# ---------------------------------------------------------------------------
-
-.PHONY: elk-up
-elk-up: ## Start the ELK testing stack
-	docker compose -f deploy/elk/docker-compose.yml up -d
-
-.PHONY: elk-down
-elk-down: ## Stop the ELK testing stack
-	docker compose -f deploy/elk/docker-compose.yml down
-
-.PHONY: elk-down-volumes
-elk-down-volumes: ## Stop the ELK stack and remove all volumes
-	docker compose -f deploy/elk/docker-compose.yml down -v
 
 # =============================================================================
 # Clean

@@ -41,10 +41,6 @@ type DataStore interface {
 	// given organisation. Returns datastore.ErrNotFound if none exist.
 	GetLatestCollectionRun(ctx context.Context, organisationID string) (datastore.CollectionRun, error)
 
-	// ListCollectionRuns returns collection runs for an organisation ordered
-	// by started_at descending. If limit > 0 at most limit rows are returned.
-	ListCollectionRuns(ctx context.Context, organisationID string, limit int) ([]datastore.CollectionRun, error)
-
 	// ListCollectionRunsFiltered returns collection runs across all
 	// organisations matching the given filter, joined with org name,
 	// ordered by started_at descending.

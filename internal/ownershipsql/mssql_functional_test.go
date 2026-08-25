@@ -11,10 +11,9 @@ import (
 	"testing"
 )
 
-// SQL Server for real, not by analogy with PostgreSQL. The customer's owner
-// list lives in one, and the things that differ — the driver, the connection
-// string, NVARCHAR, BIT, DATE, and how NULL comes back — are exactly the things
-// a PostgreSQL test cannot tell you about.
+// SQL Server for real, not by analogy with PostgreSQL: the driver, the
+// connection string, NVARCHAR, BIT, DATE, and how NULL comes back are exactly
+// the things a PostgreSQL test cannot tell you about.
 //
 // Start the database with:
 //
@@ -82,7 +81,7 @@ func TestFunctional_MSSQL_ReadsAJoinedOwnerQuery(t *testing.T) {
 	if first["owner_name"] != "priya.raman@example-corp.com" {
 		t.Errorf("owner_name = %q, want the email from the joined staff row", first["owner_name"])
 	}
-	if first["entity_type"] != "node" || first["entity_key"] != "homekube001.home.arpa" {
+	if first["entity_type"] != "node" || first["entity_key"] != "node1.example.com" {
 		t.Errorf("first row = %v, want the first node", first)
 	}
 	// NVARCHAR must come back as text, not as bytes rendered with %v.

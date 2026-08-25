@@ -16,9 +16,9 @@ import (
 // status (completed, cancelled, failed) and the pre-run draft status can be
 // deleted, while in-flight batches (preparing, previewing, running) cannot.
 //
-// Regression: a "failed" batch — a terminal status set by failBatch — was not
-// in the deletable set, so the UI's Delete action returned "not found or not in
-// a deletable status."
+// "failed" is a terminal status set by failBatch, so it must be in the
+// deletable set; leaving it out makes Delete return "not found or not in a
+// deletable status".
 func TestDeleteKitchenBatch_DeletableStatuses(t *testing.T) {
 	db := testDB(t)
 	ctx := context.Background()

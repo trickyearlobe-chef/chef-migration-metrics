@@ -99,8 +99,7 @@ func TestEvaluateDisk_Windows(t *testing.T) {
 //
 // The node partial search requests ["filesystem","by_pair"] rather than the
 // whole filesystem subtree, because by_device/by_mountpoint roughly triple the
-// payload for no benefit (measured on a real Ohai 18 Linux node: by_pair 4496
-// bytes, by_mountpoint 3498, by_device 3246).
+// payload for no benefit.
 //
 // by_pair is the only section that can be used: its entries carry a "mount"
 // field, which findBestMountLinux requires and skips entries without. Real

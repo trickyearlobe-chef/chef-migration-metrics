@@ -673,8 +673,8 @@ func (c *Client) GetRole(ctx context.Context, name string) (*RoleDetail, error) 
 //
 // The Chef API has no bulk role-detail endpoint, so this is one request per
 // role. Fetching them serially is the single largest contributor to collection
-// run duration at customer scale — 31,958 roles at one ~55ms round-trip each is
-// over 29 minutes of pure network wait per organisation.
+// run duration: at a large role count, one round-trip each is tens of minutes of
+// pure network wait per organisation.
 //
 // Roles that fail to fetch are omitted from the returned slice and reported in
 // the error slice; a partial graph is more useful than none, matching the

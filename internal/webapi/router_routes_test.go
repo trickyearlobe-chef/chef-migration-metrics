@@ -18,7 +18,7 @@ import (
 // set of addresses this service actually serves, recorded as they are
 // registered rather than written down beside them. Every claim the description
 // makes is checked against it, in both directions, so a renamed path breaks a
-// build here instead of a customer's client.
+// build here instead of somebody's client.
 
 func TestRoutes_AreRecordedAsTheyAreRegistered(t *testing.T) {
 	routes := newTestRouterWithMockAndConfig(&mockStore{},
@@ -99,11 +99,10 @@ func TestRoutes_EveryDeclaredSubPathLandsOnItsSubtree(t *testing.T) {
 	}
 }
 
-// The recording only holds if every registration goes through it. Public routes
-// used to be registered straight onto the mux, so a route added that way would
-// be served and undescribed — which is the failure this whole mechanism exists
-// to make impossible. Reading the source is the only way to check the funnel is
-// the only door.
+// The recording only holds if every registration goes through it: a route
+// registered straight onto the mux would be served and undescribed, which is the
+// failure this whole mechanism exists to make impossible. Reading the source is
+// the only way to check the funnel is the only door.
 func TestRoutes_RegistrationGoesOnlyThroughTheFunnel(t *testing.T) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "router.go", nil, 0)
@@ -151,7 +150,7 @@ func findRoute(routes []Route, pattern string) (Route, bool) {
 // The point of generating the description: the set it claims and the set the
 // service serves cannot drift apart, because they are computed from the same
 // record. These two tests are what turn a rename into a red build here rather
-// than a broken client at a customer.
+// than a broken client in the field.
 
 func TestOpenAPI_DescribesEveryServedAddress(t *testing.T) {
 	router := newTestRouterWithMockAndConfig(&mockStore{}, testConfigWithTargetVersions("19.0"))

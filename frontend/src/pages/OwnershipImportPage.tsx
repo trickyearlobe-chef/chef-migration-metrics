@@ -9,10 +9,9 @@ import { ImportRejections } from "../components/ImportRejections";
 // Ownership Import page — bulk import ownership assignments. Requires the
 // admin role.
 //
-// One way in: read the source, map its columns, preview, then commit. A second
-// tab used to take a file already in CMM's column order, which no source has
-// ever supplied — every export arrives in somebody else's shape, so choosing
-// the columns is the job rather than a fallback for awkward cases.
+// One way in: read the source, map its columns, preview, then commit. Every
+// export arrives in somebody else's shape, so choosing the columns is the job
+// rather than a fallback for awkward cases.
 // ---------------------------------------------------------------------------
 
 type ImportTab = "mapped" | "scheduled" | "rejections";
@@ -50,9 +49,8 @@ export function OwnershipImportPage() {
     });
   }
 
-  // Role gate — importing owners is an administrator function. It used to
-  // admit operators; that was narrowed on 2026-08-06 at the product owner's
-  // instruction, and the route guard and the API were narrowed with it.
+  // Role gate — importing owners is an administrator function. The route guard
+  // and the API enforce the same rule.
   const allowed = user?.role === "admin";
 
   if (!allowed) {

@@ -86,8 +86,7 @@ export function fetchCookstyleServerCopCookbooks(
 
 /**
  * A classification is ours, not a version's: the service stores one per cop and
- * reads no version from this call. It used to be sent anyway and silently
- * dropped, which is why it is not here.
+ * reads no version from this call, so none is sent.
  */
 export function setCopClassification(
   copName: string,

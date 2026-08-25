@@ -50,8 +50,8 @@ type SourceProfile struct {
 	//
 	// Beside the row count it is a throughput, and that is what decides
 	// whether a source of a given size can be read across a given link at all.
-	// A customer whose read was killed part-way could not answer that question
-	// from anything on screen, and it is the question that comes first.
+	// A read killed part-way leaves nothing on screen that answers it, and it
+	// is the question that comes first.
 	DurationMS    int64    `json:"duration_ms"`
 	MalformedRows int      `json:"malformed_rows"`
 	Warnings      []string `json:"warnings"`

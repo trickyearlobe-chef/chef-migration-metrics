@@ -1,6 +1,6 @@
-# Specifications — user journeys only
+# User journeys
 
-A specification here answers four questions, in the words the person would use:
+A journey here answers four questions, in the words the person would use:
 
 - Who is this person and what are they trying to get done?
 - What must be true for them to succeed?
@@ -32,17 +32,16 @@ what replaces a status line. Nothing here says built or shipped — the journey 
 that proves it, and if that test is red the journey is not proven, which is visible without
 anybody maintaining a sentence that claims otherwise.
 
-**Name a test that already exists, next to the code it pins, wherever one does.** Every
-journey here does, and those tests run in the ordinary suite and are green. Nothing separate
-was built, because nothing needed building — a contract belongs next to its code, and moving
-it somewhere labelled "journeys" would be a second home for the same assertion.
+**Name a test that already exists, next to the code it pins, wherever one does.** A contract
+belongs beside its code, and moving it somewhere labelled "journeys" would be a second home for
+the same assertion.
 
-The case that needs a different answer is a property with **no** test: the journey should be
-able to name a red one and have that mean "not proven yet" rather than a broken build. That
-would need its own build tag and make target, following the pattern the database-backed tests
-already use. It has not been needed yet, so it has not been built — if you are writing a
-journey whose central property nothing asserts, that is the point to build it rather than to
-link the closest passing test and let it read as proof.
+A property with **no** test needs the other answer: a journey names a red one, and red means
+"not proven yet" rather than a broken build. That is what a journey suite is for — one per
+journey, under its own build tag, outside the gating suite, one test per thing the journey says
+must be in place. Running it recomputes the todo list instead of asking anybody to keep one
+true. Writing a journey whose central property nothing asserts is the point to add a red test
+there, not to link the closest passing one and let it read as proof.
 
 **One resolving link satisfies the rule.** It is deliberately not a coverage rule: much of
 what a journey promises cannot carry an assertion, and a rule demanding a test per claim gets
@@ -64,10 +63,9 @@ Two rules explain the rest:
   that starts rotting immediately, and a rotten copy is worse than no copy because it reads
   as authoritative.
 
-The 128 specifications these replaced were deleted deliberately. They are recoverable from
-the tag `specifications-retired-2026-08-04`, and that is the only way to reach them — a
-browsable copy gets read and believed, which is what the tag is protecting against. They
-asserted tables, endpoints and config flags that did not exist, and one of them still carried
-"specified, not built" for a feature that had shipped.
+The specifications these replaced were deleted deliberately, and are recoverable only from the
+tag `specifications-retired-2026-08-04`. A browsable copy gets read and believed, which is what
+the tag is protecting against: they asserted tables, endpoints and config flags that did not
+exist, and carried status claims nothing re-validated.
 
 Go, database and frontend conventions are in `docs/project-conventions.md`.

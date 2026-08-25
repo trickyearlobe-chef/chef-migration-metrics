@@ -35,11 +35,9 @@ func TestDatabaseURL_AcceptsTheFormsTheImportScreenDocuments(t *testing.T) {
 }
 
 // libpq's own spelling separates its pairs with spaces rather than with
-// semicolons, and it names the database "dbname". Measured 2026-08-13: a
-// connection in that form was refused as naming no database while naming one in
-// plain sight — the refusal even printed "dbname=cmdb" back in its description
-// of the shape. It is the form a PostgreSQL DBA hands over, and it is one of the
-// two shapes journeys/ownership-connection.md says have to be recognised.
+// semicolons, and it names the database "dbname". It is the form a PostgreSQL
+// DBA hands over, and it is one of the two shapes
+// journeys/ownership-connection.md says have to be recognised.
 //
 // The baseline is asserted first: the same connection with no dbname is still
 // refused, so this cannot go green by the check being switched off.
@@ -80,8 +78,8 @@ func TestDatabaseURL_RejectsSomethingThatIsNotAConnectionAtAll(t *testing.T) {
 
 // A connection carries a password often enough — somebody pastes one in from
 // another tool, and the refusal is the moment they are told not to. An error
-// that quotes it is the shortest path from a password to a shared log, and this
-// estate ships its logs to a Splunk a great many people can read.
+// that quotes it is the shortest path from a password to a shared log, and logs
+// are widely readable.
 func TestDatabaseURL_RefusalNeverQuotesTheValue(t *testing.T) {
 	const secret = "hunter2"
 	err := ValidateDatabaseURL("postgres://svc:" + secret + "@host:5432")
@@ -101,15 +99,14 @@ func TestDatabaseURL_RejectsADriverWeCannotUse(t *testing.T) {
 	}
 }
 
-// The shapes a real SQL Server estate hands over. Every one of these was
-// refused by the first version and blocked a customer mid-session, so they are
-// pinned by the exact text rather than by a paraphrase of it.
+// The shapes a real SQL Server estate hands over, pinned by exact text rather
+// than by a paraphrase of it.
 //
-// Two separate faults. Go's url.Query() silently drops any parameter separated
-// by a semicolon, which is how SQL Server connection strings routinely carry
-// their options — so the database was there and unseen. And the keyword-value
-// form was recognised only by "server=", while "Data Source=" is at least as
-// common and is what their DBA supplied.
+// Two separate faults to guard. Go's url.Query() silently drops any parameter
+// separated by a semicolon, which is how SQL Server connection strings routinely
+// carry their options — so the database is there and unseen. And the
+// keyword-value form is easily recognised only by "server=", while
+// "Data Source=" is at least as common.
 func TestDatabaseURL_AcceptsTheOptionsARealEstateCarries(t *testing.T) {
 	accepted := []string{
 		"sqlserver://svc:pw@host:1433?database=cmdb;ApplicationIntent=ReadOnly;MultiSubnetFailover=True",
@@ -121,7 +118,7 @@ func TestDatabaseURL_AcceptsTheOptionsARealEstateCarries(t *testing.T) {
 	}
 	for _, dsn := range accepted {
 		if err := ValidateDatabaseURL(dsn); err != nil {
-			t.Errorf("refused a connection a customer actually uses: %v\n  shape: %s",
+			t.Errorf("refused a connection a real estate uses: %v\n  shape: %s",
 				err, redactForTest(dsn))
 		}
 	}
@@ -143,13 +140,13 @@ func TestDatabaseURL_StillRefusesAConnectionWithNoDatabaseAmongItsOptions(t *tes
 }
 
 // The shapes URL parsing cannot represent, which a SQL Server estate uses as a
-// matter of course. Every one was refused as "not a database connection for a
-// supported driver" — naming the driver, when the scheme was right and the real
-// cause was net/url declining to parse the string. That message sent a DBA
-// looking in entirely the wrong place.
+// matter of course. Refusing these as "not a database connection for a supported
+// driver" names the driver when the scheme is right and the real cause is
+// net/url declining to parse the string, which sends the reader to the wrong
+// place.
 //
-// Pinned by literal text rather than by a paraphrase, because a paraphrase is
-// what let the previous version of this through.
+// Pinned by literal text rather than by a paraphrase; a paraphrase does not
+// catch it.
 func TestDatabaseURL_AcceptsTheShapesURLParsingCannotHandle(t *testing.T) {
 	accepted := []string{
 		// Options separated by semicolons with no "?" at all — the ADO habit.
@@ -208,11 +205,10 @@ func TestDatabaseURL_KeywordValueStringCarryingAURLIsStillKeywordValue(t *testin
 
 // A refusal nobody can diagnose is barely better than no refusal.
 //
-// The value is encrypted at rest and never logged, both deliberately — this
-// estate's logs are widely readable. The cost showed up the first time somebody
-// was refused: neither they nor we could tell which rule had fired without
-// decrypting the credential, and the customer is reachable only through a VDI
-// and a screenshot. So the refusal says what SHAPE it saw, and no values at all.
+// The value is encrypted at rest and never logged, both deliberately — logs are
+// widely readable. A refusal that names no shape cannot be told from any other
+// without decrypting the credential, and the reader may have only a screenshot.
+// So the refusal says what SHAPE it saw, and no values at all.
 func TestDatabaseURL_RefusalSaysWhatShapeItSaw(t *testing.T) {
 	cases := []struct {
 		dsn  string
@@ -270,8 +266,8 @@ func TestDatabaseURL_RefusalsStayIdentifiableOnceDescribed(t *testing.T) {
 
 // lib/pq requires TLS when no sslmode is given, and against a server without it
 // the connection fails with an error that says nothing about the connection
-// string. That cost an evening's debugging, so the shape reports it — and the
-// shape is the only thing that reaches a log, since the value never does.
+// string. So the shape reports it — and the shape is the only thing that reaches
+// a log, since the value never does.
 func TestConnectionShape_SaysWhenNoSSLModeIsSet(t *testing.T) {
 	cases := []struct {
 		dsn      string
@@ -321,10 +317,10 @@ func TestConnectionShape_NeverCarriesTheCredential(t *testing.T) {
 // When a connection is used, it should describe itself — everything except who
 // is connecting and with what secret.
 //
-// The first version reported structure only, which said a connection was wrong
-// without saying which machine or database it was pointed at. Those are the facts
-// that turn a driver's complaint into a diagnosis, and neither is a credential.
-// The user and the password are, so they are the only things withheld.
+// Structure alone says a connection is wrong without saying which machine or
+// database it was pointed at. Those are the facts that turn a driver's complaint
+// into a diagnosis, and neither is a credential. The user and the password are,
+// so they are the only things withheld.
 func TestConnectionShape_KeepsWhatDiagnosesAndDropsTheCredential(t *testing.T) {
 	const (
 		user = "svcaccount"
@@ -365,11 +361,10 @@ func TestConnectionShape_KeepsWhatDiagnosesAndDropsTheCredential(t *testing.T) {
 
 // The description has to name the thing it is hiding.
 //
-// A customer connection was refused by the SQL Server driver as "invalid URL
-// format". The description proved every visible part was fine — scheme, host,
-// database, options — which narrowed the cause to the user or the password, and
-// then stopped. Those are the parts that are redacted, so the reader was left
-// where they started.
+// A SQL Server driver refusal of "invalid URL format" narrows to the user or the
+// password once the description proves scheme, host, database and options are
+// fine — and those are the redacted parts, so the reader is left where they
+// started.
 //
 // Measured against the driver's own parser: %, a space, #, / and ? in a password,
 // and a backslash in a username, each make a URL unparsable. ":" and "@" do not.

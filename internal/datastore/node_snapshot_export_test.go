@@ -31,7 +31,7 @@ func TestBuildNodeSnapshotExportQuery_FixedKeysetOrder(t *testing.T) {
 
 func TestBuildNodeSnapshotExportQuery_NoTrailingCount(t *testing.T) {
 	// Streaming must not pay for COUNT(*) OVER() on every page, and — since the
-	// P3 count split removed the trailing total from scanFilteredNodeSnapshots —
+	// count split removed the trailing total from scanFilteredNodeSnapshots —
 	// must not emit any total_count column either (over-supplying the scan).
 	q, _ := buildNodeSnapshotExportQuery(NodeSnapshotFilter{}, NodeSnapshotCursor{}, 500)
 	if strings.Contains(q, "COUNT(*) OVER") {

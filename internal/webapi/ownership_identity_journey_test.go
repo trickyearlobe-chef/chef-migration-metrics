@@ -488,7 +488,7 @@ func TestJourney_NothingProvesAMergeCanBeUndone(t *testing.T) {
 // reissued. If the directory ever recycles one, work silently transfers to a
 // different human being, and nothing here would detect it."
 func TestJourney_SignInNamesAreNeverReissued(t *testing.T) {
-	t.Skip("Not answerable from this product at all — it is a property of the customer's " +
-		"directory. Verify it in the organisation before relying on the anchor; if it is " +
+	t.Skip("Not answerable from this product at all — it is a property of the directory " +
+		"itself. Verify it in the organisation before relying on the anchor; if it is " +
 		"false, every list here is confidently wrong and nothing in the code would say so.")
 }

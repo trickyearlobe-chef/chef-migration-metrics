@@ -17,9 +17,9 @@ import (
 //
 // The curated list reaches files with predictable names. It cannot reach a
 // script that only runs because a build job invokes it: that sits at a
-// different path in every customer's repositories, and nothing in the file says
-// what runs it. For that case the operator's list IS the feature, so these
-// pin the merge rather than the seed.
+// different path in every repository, and nothing in the file says what runs it.
+// For that case the operator's list IS the feature, so these pin the merge
+// rather than the seed.
 
 type fakeExclusionStore struct {
 	rows []datastore.ScanScopeExclusion
@@ -55,7 +55,7 @@ func TestOperatorCanExcludeAFileTheSeedListCannotName(t *testing.T) {
 }
 
 // TestOperatorCanDisagreeWithACuratedExclusion is the other direction, and the
-// more important one: a customer whose test directory really does ship code
+// more important one: an operator whose test directory really does ship code
 // that runs must be able to say so, and be believed.
 func TestOperatorCanDisagreeWithACuratedExclusion(t *testing.T) {
 	const inTestDir = "test/helpers/shared.rb"
@@ -86,7 +86,7 @@ func TestOperatorCanDisagreeWithACuratedExclusion(t *testing.T) {
 func TestOperatorReasonReplacesTheCuratedOne(t *testing.T) {
 	scope := NewScanScopeFromStore(context.Background(), fakeExclusionStore{
 		rows: []datastore.ScanScopeExclusion{
-			{Pattern: "Rakefile", Excluded: true, Reason: "Checked with the platform team on 2026-08-09."},
+			{Pattern: "Rakefile", Excluded: true, Reason: "Checked with the platform team."},
 		},
 	})
 
@@ -94,7 +94,7 @@ func TestOperatorReasonReplacesTheCuratedOne(t *testing.T) {
 	if !excluded {
 		t.Fatal("Rakefile must remain excluded")
 	}
-	if ex.Reason != "Checked with the platform team on 2026-08-09." {
+	if ex.Reason != "Checked with the platform team." {
 		t.Errorf("the operator's reason must be the one shown, got %q", ex.Reason)
 	}
 }

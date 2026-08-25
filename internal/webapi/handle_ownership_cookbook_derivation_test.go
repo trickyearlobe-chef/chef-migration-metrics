@@ -14,10 +14,9 @@ import (
 // code; a server cookbook is the deployed artefact, and a fix is made in the
 // repo. People say "cookbook" in standup and mean the repo.
 //
-// Reported by the customer 2026-08-03: filtering by a person matched on the git
-// repo list and matched nothing on the cookbook list, because ownership had
-// only ever been recorded against repos. Recording it twice would be two
-// truths that can disagree, so the cookbook side is derived here instead.
+// Ownership is recorded against repos only, so filtering by a person on the
+// cookbook list has to derive it. Recording it twice would be two truths that
+// can disagree.
 
 func ownershipTestRouter(assignments map[string][]string, ownedByType map[string]map[string]bool) *Router {
 	store := &mockStore{

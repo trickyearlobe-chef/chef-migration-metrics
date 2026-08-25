@@ -624,17 +624,14 @@ func agentJourneyTemplateToPath(template string) string {
 }
 
 // ---------------------------------------------------------------------------
-// "nothing unbounded by default" — measured against a real deployment
+// "nothing unbounded by default"
 // ---------------------------------------------------------------------------
 //
-// Found by asking a running instance for one cookbook through the surface, on
-// a lab estate holding thirty. The answer was 61,582 characters — under this
-// surface's own 96KB ceiling, so it was not refused, and far past what an
-// assistant can hold. The customer estate is four thousand times the size.
+// An answer can sit under this surface's own size ceiling — so it is not
+// refused — and still be far past what an assistant can hold.
 //
-// TestJourney_NoAnswerIsUnboundedByDefault is green and stays green: it holds
-// the paging machinery, which is right. These hold the one tool that does not
-// use it. That gap is why a measurement found this and the suite did not.
+// TestJourney_NoAnswerIsUnboundedByDefault holds the paging machinery. These
+// hold the one tool that does not use it.
 
 // "nothing unbounded by default, and it should be able to ask the shape of a
 // thing — how many, grouped how — before pulling what it needs to read
@@ -671,19 +668,18 @@ func TestJourney_TheDetailToolCanBeAskedForLess(t *testing.T) {
 	args := mcpToolArgNames(detail)
 	if len(args) <= 1 {
 		t.Errorf("the one tool that answers in full takes only %v, so there is no way to ask "+
-			"it for less. Measured against a running instance, one cookbook answered 61,582 "+
-			"characters on an estate of thirty; past the ceiling the call is refused and the "+
-			"refusal says to narrow, which this tool gives no way to do", args)
+			"it for less; past the ceiling the call is refused and the refusal says to "+
+			"narrow, which this tool gives no way to do", args)
 	}
 }
 
 // "One unbounded answer fills it, and then it forgets the question and starts
 // inventing."
 //
-// Of those 61,582 characters, 16,721 were the scanning tool's own stdout —
-// which the assistant cannot use, and which repeats the findings that are
-// already in the answer beside it. The database layer already treats this
-// field as heavy and leaves it out when reading results back for a verdict.
+// Much of an unbounded answer is the scanning tool's own stdout — which the
+// assistant cannot use, and which repeats the findings that are already in the
+// answer beside it. The database layer already treats this field as heavy and
+// leaves it out when reading results back for a verdict.
 func TestJourney_AnAnswerCarriesNoRawToolOutput(t *testing.T) {
 	for _, shape := range []any{
 		datastore.GitRepoCookstyleResult{},

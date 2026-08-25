@@ -4,9 +4,8 @@
 with gaps for lunch and meetings, without having to think about my session or wonder whether
 what I am looking at is still true.**
 
-This is not a feature. It is the difference between a tool I keep open all day and one I avoid.
-Everything here is invisible when it works, which is why it never gets written down and why it
-was missing.
+This is not a feature. It is the difference between a tool I keep open all day and one I avoid,
+and it is invisible when it works.
 
 ## What I need
 
@@ -29,11 +28,10 @@ To be able to tell the difference between "there is nothing to show", "we cannot
 ## The decisions behind it
 
 **Nothing shows stale data as though it were current.** This binds every screen, not one of
-them. The same rule has already been written down three times in this product from three
-different directions — a saved selection the server cannot understand must not silently return
-the whole estate, a machine we have not heard from must not read as healthy, and now a screen
-whose session has ended must not keep displaying its last answer. It is one rule and it belongs
-here rather than being restated in each journey that trips over it.
+them: a saved selection the server cannot understand must not silently return the whole estate,
+a machine we have not heard from must not read as healthy, a screen whose session has ended must
+not keep displaying its last answer. One rule, stated here rather than in each journey that
+trips over it.
 
 **An ended session is detected in one place, not in each screen.** If every screen has to notice
 independently, then coverage is only as good as the newest screen, and the newest screen is
@@ -70,16 +68,18 @@ check](internal/auth/middleware_test.go#TestAdminOnlyCombinedExpiredToken). A se
 existed [is refused too](internal/auth/middleware_test.go#TestRequireAdminNoSession), so the
 refusal is not an artefact of expiry handling.
 
-**Nothing proves any of the part this journey is actually about.** The server correctly refuses
-an expired session; what happens in front of the person is unimplemented and untested. Two tests
-have to be written, and the second is the one that stops coverage rotting:
+**Nothing proves the part in front of the person.** The server correctly refuses an expired
+session; what a screen then does about it is unimplemented, and [that it becomes an
+application-wide condition rather than something each page opts
+into](internal/webapi/working_all_day_journey_test.go#TestJourney_TheEndedSessionStateIsPresentedStructurally)
+cannot be asked from the server side.
 
-- An ended session becomes an application-wide condition from the single place requests pass
-  through — one test, one code path, no per-screen coverage to maintain.
-- **No part of the application reaches the network except through that place.** This is
-  enumerable from the source rather than reviewed by hand, so it fails the commit that
-  introduces a bypass. Four bypasses exist today, and one of them serves the front page — which
-  is why the symptom shows up as charts that will not draw.
+**No part of the application reaches the network except through the one place an ended session
+is noticed.** This is [enumerated from the
+source](internal/webapi/working_all_day_journey_test.go#TestJourney_NothingReachesTheNetworkExceptThroughOnePlace)
+rather than reviewed by hand, so it fails the commit that introduces a bypass — which is what
+stops the coverage above rotting as screens are added. It is red: bypasses exist today, and it
+names them, including one serving the front page.
 
 **Nothing proves the lunch break.** That a session survives a normal working day with normal
 gaps in it is a property of a real day, and nobody has sat in front of it for eight hours.

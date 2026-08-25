@@ -25,7 +25,7 @@ import (
 // buildNodeSnapshotFilterQuery, and the lifted SQL consts) so an explained plan is
 // exactly what the app runs and cannot drift across migrations. Parameters are
 // resolved from live values (all orgs, a sample node/cookbook, the default target)
-// so no customer identifiers are hardcoded in source; all params are bound ($N),
+// so no environment identifiers are hardcoded in source; all params are bound ($N),
 // so plan text shows placeholders, never the resolved values.
 
 // ErrExplainUnavailable is returned by ResolveCatalogExplain when a catalog entry

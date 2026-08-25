@@ -108,7 +108,7 @@ type serverApp struct {
 	// Bootstrap listen target (from the bootstrap YAML / env). listen_address
 	// and port are normally sourced from the DB (server.listen section); these
 	// are retained as the bind-failure fallback so a bad DB-sourced value can
-	// never permanently lock out the UI (encrypted-config-store.md).
+	// never permanently lock out the UI.
 	bootstrapListenAddr string
 	bootstrapPort       int
 
@@ -173,7 +173,7 @@ type serverApp struct {
 	stopOrphanSweep         func()
 
 	// tlsStatus records whether static TLS failed at startup and the server
-	// fell open to plain HTTP (tls.md § 2.4). Shared with the webapi router so
+	// fell open to plain HTTP. Shared with the webapi router so
 	// the /api/v1/server/tls-status endpoint and UI banner can report it.
 	tlsStatus *webapi.TLSStatusHolder
 
@@ -187,7 +187,7 @@ type serverApp struct {
 	// up front; populated by setupAndServeHTTP with a serverctl.Controller for
 	// plain-HTTP and healthy static-TLS modes. Left unset (so the no-rebinder
 	// fallback applies → restart_required) for active auto-443, ACME, and the
-	// degraded fallbacks until H4. See configuration-live-reload.md.
+	// degraded fallbacks until H4.
 	listenerRebind *webapi.ListenerRebindHolder
 
 	// listenerController owns the live HTTP(S) listener for the rebind-capable
@@ -198,7 +198,7 @@ type serverApp struct {
 	listenerController *serverctl.Controller
 
 	// acmeTrigger forwards an admin ACME config save to the running renewer so
-	// hostname registration / issuance re-run immediately (tls-acme.md § 3.14).
+	// hostname registration / issuance re-run immediately.
 	// Bound to the renewer once setupACME builds it; a no-op before then.
 	acmeTrigger *acmeTriggerHolder
 
@@ -206,19 +206,19 @@ type serverApp struct {
 	// /api/v1/admin/restart). awaitShutdown selects on it, drains gracefully,
 	// and returns a non-zero restart exit code so the supervisor
 	// (systemd Restart=on-failure) starts a fresh process that re-reads config.
-	// See configuration-live-reload.md § Apply & Restart.
+	//pply & Restart.
 	restartCh chan struct{}
 
 	// auto443Listen binds the standard HTTPS lifeboat port (443) for automatic
-	// HTTPS (tls.md § 1.5). It is a field so tests can simulate "443
+	// HTTPS. It is a field so tests can simulate "443
 	// available/unavailable" deterministically without needing privilege. Nil ⇒
 	// a real bind on 443.
 	auto443Listen func(listenAddr string) (net.Listener, error)
 
-	// autoHTTPSActive records that boot bound the automatic-443 lifeboat (tls.md
-	// § 1.5: HTTPS on a separate 443 listener with the configured port redirecting
-	// to it). When set, the listener controller re-plans that topology in place on a
-	// same-mode static change (H4b-3) rather than collapsing to a single HTTPS
+	// autoHTTPSActive records that boot bound the automatic-443 lifeboat: HTTPS on
+	// a separate 443 listener with the configured port redirecting to it. When set,
+	// the listener controller re-plans that topology in place on a same-mode static
+	// change (H4b-3) rather than collapsing to a single HTTPS
 	// listener on the configured port. autoHTTPSPort is the actual bound lifeboat
 	// port (443 in production; a free port via the auto443Listen test seam), used as
 	// the live HTTPS bind target so a rebind reclaims it. Both are read-only after
@@ -1448,8 +1448,8 @@ func (app *serverApp) setupExports() error {
 	app.startup.Info("converge_runs retention ticker started (interval: 1h)")
 
 	// Log retention: expire log_entries older than logging.retention_days (read
-	// live). This used to run only at the tail of a collection run, so a failed
-	// or skipped run meant no expiry at all.
+	// live). On its own clock rather than at the tail of a collection run, so a
+	// failed or skipped run still expires logs.
 	logRetentionLog := func(level, msg string) {
 		scoped := app.logger.WithScope(logging.ScopeStartup)
 		switch level {
@@ -1590,7 +1590,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 		}),
 		// After an organisations config save, reconcile the operational org
 		// table from live config and trigger a collection — so a newly added
-		// org takes effect without a restart (configuration-live-reload.md).
+		// org takes effect without a restart.
 		webapi.WithOrganisationsChanged(func(ctx context.Context) error {
 			if err := app.syncOrganisations(ctx); err != nil {
 				return err
@@ -1623,19 +1623,19 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 	routerOpts = append(routerOpts, webapi.WithTLSReload(app.tlsReload))
 	// Promoting a real certificate in place over a degraded self-signed listener
 	// (an admin save, or ACME issuance) must clear the degraded banner and resume
-	// HSTS without a restart (tls.md § 6.3).
+	// HSTS without a restart.
 	app.tlsReload.SetOnReload(app.tlsStatus.SetHealthy)
 
 	// Holder for the ACME renewer's immediate re-assert trigger. Wired up front
-	// like tlsReload; setupACME binds it to the renewer once built (tls-acme.md
-	// § 3.14). A no-op in non-ACME modes or before binding.
+	// like tlsReload; setupACME binds it to the renewer once built.
+	// A no-op in non-ACME modes or before binding.
 	app.acmeTrigger = &acmeTriggerHolder{}
 	routerOpts = append(routerOpts, webapi.WithACMETrigger(app.acmeTrigger.Trigger))
 
 	// Holder for the in-place listener rebinder. Wired up front like tlsReload;
 	// the serve switch below adopts a serverctl.Controller into it for the modes
-	// that support live listen_address/port rebind (configuration-live-reload.md
-	// listener-rebind H2). Unset modes fall back to restart-required.
+	// that support live listen_address/port rebind.
+	// Unset modes fall back to restart-required.
 	app.listenerRebind = webapi.NewListenerRebindHolder()
 	routerOpts = append(routerOpts, webapi.WithListenerRebinder(app.listenerRebind))
 
@@ -2071,7 +2071,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			app.startup.Info("TLS certificate source: db (encrypted config store)")
 			certPEM, keyPEM, loadErr := app.loadDBCertKey(context.Background())
 			if loadErr != nil {
-				// Fail open (tls-static.md § 2.4): a missing or unreadable DB
+				// Fail open: a missing or unreadable DB
 				// certificate falls open to a self-signed HTTPS listener exactly
 				// like a missing file, so it can never lock the operator out.
 				return app.degradeToSelfSigned(apiRouter, nil, loadErr), nil
@@ -2080,7 +2080,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 			lcfg.KeyPEM = keyPEM
 		}
 
-		// Automatic HTTPS on 443 (tls.md § 1.5): only when TLS is healthy at
+		// Automatic HTTPS on 443: only when TLS is healthy at
 		// startup. The configured port is redirected to 443; on a 443 bind failure
 		// we fall back to serving HTTPS on the configured port with no redirect.
 		var https443Ln net.Listener
@@ -2091,7 +2091,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 
 		tlsListener, tlsErr := apptls.NewListener(apiRouter, lcfg, tlsLog)
 		if tlsErr != nil {
-			// Fail open (tls-static.md § 2.4): a bad certificate must never
+			// Fail open: a bad certificate must never
 			// prevent reaching the UI to fix it. Record degraded state and serve
 			// a self-signed cert (encrypted) instead of exiting.
 			if https443Ln != nil {
@@ -2111,7 +2111,7 @@ func (app *serverApp) setupAndServeHTTP() (serverResult, error) {
 
 		// File source: poll for on-disk changes (no-op for the db source).
 		// DB source: register the CertManager so the admin save path can swap
-		// the certificate in place on a config change (tls-static.md § 2.3).
+		// the certificate in place on a config change.
 		tlsListener.CertManager().WatchForChanges(30 * time.Second)
 		if app.tlsReload != nil {
 			app.tlsReload.Set(tlsListener.CertManager())
@@ -2582,8 +2582,8 @@ func (app *serverApp) loadDBCertKey(ctx context.Context) (certPEM, keyPEM []byte
 }
 
 // tlsHealthy reports whether the static-mode certificate material loads cleanly
-// — the same check the listener performs at startup (tls-static.md § 2.4/§ 2.6).
-// Automatic HTTPS on 443 (tls.md § 1.5) is gated on this: 443 is bound only when
+// — the same check the listener performs at startup.
+// Automatic HTTPS on 443 is gated on this: 443 is bound only when
 // TLS is healthy, never on the fail-open self-signed path.
 func (app *serverApp) tlsHealthy(lcfg apptls.ListenerConfig) bool {
 	if lcfg.CertSource == "db" {
@@ -2593,7 +2593,7 @@ func (app *serverApp) tlsHealthy(lcfg apptls.ListenerConfig) bool {
 }
 
 // planAutoHTTPS resolves the automatic-443 listening layout for a healthy TLS
-// listener (tls.md § 1.5) and pre-binds 443 when it applies, so a 443 bind
+// listener and pre-binds 443 when it applies, so a 443 bind
 // failure falls back to the configured port synchronously rather than surfacing
 // asynchronously after the listener has started. It returns the effective HTTPS
 // port, the redirect ports that 301 to it, and the pre-bound 443 listener (nil
@@ -2759,7 +2759,7 @@ func (app *serverApp) tlsLog(level, msg string) {
 
 // hstsEnabledFn returns the live predicate a listener consults before emitting
 // HSTS: enabled whenever TLS is healthy, suppressed while the listener is in a
-// degraded self-signed fallback (tls-static.md § 2.4). It resumes automatically
+// degraded self-signed fallback. It resumes automatically
 // once a real certificate is promoted in place (which clears the degraded state).
 func (app *serverApp) hstsEnabledFn() func() bool {
 	return func() bool {
@@ -2769,7 +2769,7 @@ func (app *serverApp) hstsEnabledFn() func() bool {
 
 // degradeToSelfSigned records the degraded TLS state and serves an ephemeral
 // self-signed certificate over HTTPS, keeping the recovery UI on an encrypted
-// channel rather than cleartext (tls-static.md § 2.4, tls-acme.md § 3.11). HSTS is
+// channel rather than cleartext . HSTS is
 // suppressed while the self-signed cert is in use. The self-signed CertManager is
 // registered for in-place reload so a later valid certificate (an admin save or
 // ACME issuance) promotes it without a restart. If the self-signed listener
@@ -2824,7 +2824,7 @@ func (app *serverApp) degradeToSelfSigned(handler http.Handler, hosts []string, 
 }
 
 // degradeToPlainHTTP records the degraded TLS state and starts a plain HTTP
-// listener as a last-resort fallback (tls.md § 6.3), used only when even the
+// listener as a last-resort fallback, used only when even the
 // self-signed degraded listener cannot be brought up. The operator-facing reason
 // never includes private key material — it is the listener-setup error, which
 // reports file paths and parse failures only.
@@ -2978,7 +2978,7 @@ func (app *serverApp) awaitShutdown(srv serverResult) int {
 
 func run() int {
 	// Repair subcommands are dispatched before flag parsing: `tls reset` /
-	// `tls clear-ca` are host-side lockout recovery (tls.md § 6.3) and do not
+	// `tls clear-ca` are host-side lockout recovery and do not
 	// share the server's flag set.
 	if len(os.Args) > 1 && os.Args[1] == "tls" {
 		return runTLSCommand(os.Args[2:])

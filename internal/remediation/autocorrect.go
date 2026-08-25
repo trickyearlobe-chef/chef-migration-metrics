@@ -390,13 +390,12 @@ func (g *AutocorrectGenerator) generateOne(
 	// Step 9: compute statistics from the correcting run's own per-offence
 	// flags.
 	//
-	// This used to subtract the run's summary.offense_count from the scan's
-	// total. That is always ~0: a correcting run reports every offence it
-	// found, flagging the ones it fixed, and does NOT shrink its own
-	// offense_count. Measured on Cookstyle 8.6.10 and 8.7.6 alike — see
-	// internal/analysis/testdata/README.md. The subtraction is also a
-	// universe mismatch, because csResult.OffenseCount includes custom-cop
-	// offences that never appear in cookstyle's output at all.
+	// Never subtract the run's summary.offense_count from the scan's total: a
+	// correcting run reports every offence it found, flagging the ones it
+	// fixed, and does NOT shrink its own offense_count, so the difference is
+	// always ~0. It is also a universe mismatch, because csResult.OffenseCount
+	// includes custom-cop offences that never appear in cookstyle's output at
+	// all.
 	correctableCount := afterOutput.correctedCount()
 	if correctableCount > csResult.OffenseCount {
 		correctableCount = csResult.OffenseCount
@@ -600,9 +599,8 @@ type autocorrectJSONOutput struct {
 	Summary autocorrectSummary `json:"summary"`
 }
 
-// autocorrectFile carries the per-offence flags. Only `summary` used to be
-// parsed, which is why the corrected count was unavailable and had to be
-// (wrongly) inferred by subtraction.
+// autocorrectFile carries the per-offence flags the corrected count is
+// computed from; `summary` alone cannot supply it.
 type autocorrectFile struct {
 	Path     string                `json:"path"`
 	Offenses []autocorrectOffense2 `json:"offenses"`

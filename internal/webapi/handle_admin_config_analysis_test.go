@@ -325,10 +325,8 @@ func TestAdminConfigTestKitchen_PUT_Success(t *testing.T) {
 
 // Test Kitchen writes its own record and leaves the analysis tools alone.
 //
-// This used to check the opposite: that saving Test Kitchen merged its part
-// back into the shared analysis tools record. That merge was the safe half of
-// an arrangement whose other half silently wiped these settings, so the two
-// are separate records now and neither writes the other's.
+// Two separate records, and neither screen writes the other's — merging them
+// back into one is what silently wipes a screen's settings.
 func TestAdminConfigTestKitchen_PUT_LeavesTheAnalysisToolsRecordAlone(t *testing.T) {
 	store := newTestConfigStore(t)
 	cfg := testConfig()
