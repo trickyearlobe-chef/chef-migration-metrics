@@ -145,3 +145,7 @@ tools/
 # API probe output — a generated capture, never part of a build.
 tools/api-probe/*.json
 probe*.json
+
+# Fixtures the journey-check hook test writes and removes as it runs.
+journeys/_journey_check_fixture.md
+.githooks/_journey_check_fixture_journey_test.go

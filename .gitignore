@@ -220,3 +220,10 @@ events.db-wal
 # committed.
 tools/api-probe/*.json
 probe*.json
+
+# Fixtures the journey-check hook test writes and removes as it runs. Left
+# behind only when a run is interrupted, and then a `git add -A` either commits
+# them or stages them into the next run — which makes the hook test report
+# failures that are nothing to do with the hook.
+journeys/_journey_check_fixture.md
+.githooks/_journey_check_fixture_journey_test.go
