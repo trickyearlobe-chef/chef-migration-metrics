@@ -94,6 +94,38 @@ func TestJourney_AFailureAtTargetAloneDoesNotRaise(t *testing.T) {
 		"TestJourney_APairRaisesABlockerByItself until that goes green.")
 }
 
+// "To see the cookbooks already failing at the version the estate is on now,
+// kept apart from the ones that break at the target. They are still worth
+// fixing — but they are an existing problem rather than evidence about the
+// upgrade."
+func TestJourney_AlreadyBrokenCookbooksAreReportedSeparately(t *testing.T) {
+	t.Skip("Cannot be answered until observed converges reach the decision at all: with no " +
+		"path in, there is no set of already-failing cookbooks to keep apart from anything. " +
+		"Held by TestJourney_APairRaisesABlockerByItself until that goes green.")
+}
+
+// "A cookbook already failing at the current version is reported, and does not
+// block the upgrade. It is real work and somebody should fix it, but it says
+// nothing about the version we are moving to."
+func TestJourney_AlreadyBrokenDoesNotBlockTheUpgrade(t *testing.T) {
+	t.Skip("Cannot be answered until observed converges reach the decision at all: nothing " +
+		"can be shown not to block when nothing reaches the verdict. Held by " +
+		"TestJourney_APairRaisesABlockerByItself until that goes green.")
+}
+
+// "It also cannot say anything: until it converges cleanly today there is no
+// pairing to be had, so its migration verdict is unknown rather than good."
+//
+// The blind spot, which is the part most likely to be lost. Reporting the work
+// and calling the cookbook fine are two different answers, and a cookbook that
+// has never converged cleanly at the current version has earned neither a pass
+// nor a blocker — it has earned "we cannot tell yet".
+func TestJourney_AlreadyBrokenReadsAsUnknownNotGood(t *testing.T) {
+	t.Skip("Cannot be answered until observed converges reach the decision at all: with no " +
+		"path in, every cookbook's observed verdict is absent rather than unknown. Held by " +
+		"TestJourney_APairRaisesABlockerByItself until that goes green.")
+}
+
 // "To overrule it myself ... and when I mark it good, for that to stand over the
 // scan and the lab both."
 func TestJourney_MarkingItGoodStandsOverTheScanAndTheLab(t *testing.T) {

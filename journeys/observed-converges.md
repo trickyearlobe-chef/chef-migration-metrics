@@ -14,6 +14,11 @@ estate is on now and fails at the target version. That pairing is the whole case
 cookbook works today and stops working at the target, seen on real machines — and somebody
 transcribing it by hand is the part I want back.
 
+To see the cookbooks already failing at the version the estate is on now, kept apart from
+the ones that break at the target. They are still worth fixing — but they are an existing
+problem rather than evidence about the upgrade, and putting them in the same list would make
+the migration worklist longer and less true.
+
 To overrule it myself, exactly as I overrule anything else in the register — and when I
 mark it good, for that to stand over the scan and the lab both, with the screen saying a
 person decided rather than quietly showing a clean result.
@@ -31,6 +36,13 @@ and ask it on a schedule. I should not be able to tell which by looking at the a
 **Only the pairing raises a blocker.** A failure at the target version on its own could be a
 cookbook that has been broken for a year. Clean at the current version and failing at the
 target is what makes it evidence about the version.
+
+**A cookbook already failing at the current version is reported, and does not block the
+upgrade.** It is real work and somebody should fix it, but it says nothing about the version
+we are moving to. It also cannot say anything: until it converges cleanly today there is no
+pairing to be had, so its migration verdict is unknown rather than good. Counting it as a
+migration blocker would pad the list with work that was already broken; leaving it out would
+hide both the work and the fact that we cannot yet judge it.
 
 **An observed failure cannot be blamed on our lab.** There is no lab. That is why this is
 worth more than a converge we ran ourselves, and why it needs no judgement about whether the
