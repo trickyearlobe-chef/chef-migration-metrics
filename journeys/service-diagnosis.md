@@ -4,8 +4,7 @@
 machine I have no access to, gathered by somebody who is not a specialist, and safe to send out
 of their organisation.**
 
-This is the constraint that shapes everything here. The service runs inside somebody else's estate.
-I reach it, if at all, through a controlled desktop with no copy and paste and no file transfer.
+The service runs inside somebody else's estate. I reach it, if at all, through a controlled desktop with no copy and paste and no file transfer.
 The person in front of it can click things and send me a screenshot. "Can you run this command
 and paste the output" is not available, and neither is a support engineer reading a log over
 somebody's shoulder for an afternoon.
@@ -45,9 +44,9 @@ when it is needed.
 **Logs are readable through the interface, not only on the host.** Requiring host access to read
 a log means the diagnosis cannot happen.
 
-**Assume what we log is widely readable.** This deployment ships its logs to a shared system that
-many people in the organisation can read. Anything written to a log should be treated as published
-inside that organisation, which is a reason to log carefully rather than a reason to log less.
+**Assume what we log is widely readable.** Logs are routinely shipped to a shared system a lot of
+people can read. Anything written to one should be treated as published inside that organisation,
+which is a reason to log carefully rather than a reason to log less.
 
 ## What proves it
 
@@ -87,8 +86,7 @@ to the bundle can put identifying data in it and every test here will still pass
 consequential untested claim in the product: the failure sends an organisation's internal names
 outside it, and it is unrecoverable once sent.
 
-**Nothing proves no secret reaches a log.** Stated in [credentials that never leave the box in the
-clear](service-secrets.md) and repeated here because the log path is where it would happen.
+**Nothing proves no secret reaches a log**, and the log path is where it would happen.
 
 **Nothing proves the bundle is sufficient.** Whether it actually answers a real support question
 without a second round trip is only established by using it in anger, and it is the thing the whole

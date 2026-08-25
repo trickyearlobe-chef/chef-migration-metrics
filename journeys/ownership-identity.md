@@ -1,4 +1,4 @@
-# One person, written down five different ways
+# One person, many names
 
 **As the administrator keeping the ownership record honest, I need the same person recognised
 however they were written down, because otherwise one engineer becomes four owners, each

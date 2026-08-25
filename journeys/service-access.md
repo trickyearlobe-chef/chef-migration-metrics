@@ -1,13 +1,10 @@
 # Getting in, and never being locked out
 
 **As the administrator running this service, I need people signed in through the company's
-identity provider with the right level of access, and I need to be certain that I myself can
-always get back in — because this runs on a machine I may not be able to reach.**
+identity provider with the right level of access**
 
-The second half is the part nobody writes down until it has happened. This is installed inside
-somebody else's estate, reached through a controlled desktop, sometimes with no console access
-at all. A configuration mistake that makes the service refuse to start is not an inconvenience
-there; it is an outage I cannot fix.
+**As the administrator running this service, I need to be certain that I myself can
+always get back in — because getting CLI access is bureaucratic and time-consuming**
 
 ## What I need
 
@@ -71,7 +68,7 @@ already exists [is recognised rather than
 duplicated](internal/auth/jit/provisioner_test.go#TestProvision_ExistingUser), and a first-time
 arrival [becomes a user](internal/auth/jit/provisioner_test.go#TestProvision_NewUser). Somebody
 arriving with no level of access stated [becomes the lowest
-one](internal/auth/jit/provisioner_test.go#TestProvision_DefaultsRoleToViewer), Where the provider
+one](internal/auth/jit/provisioner_test.go#TestProvision_DefaultsRoleToViewer). Where the provider
 supplies no username, what happens instead is pinned twice — [a name is derived from what did
 arrive](internal/auth/jit/provisioner_test.go#TestProvision_FallbackUsername) and [the opaque
 identifier stands in when the attributes are
@@ -107,8 +104,7 @@ string that is not a name, and their work will hang off it.
 
 **Nothing proves the fallback ladder end to end.** That a missing certificate is tolerated is
 asserted; that the service then actually binds a self-signed listener and, failing that, an
-unencrypted one, is not. The ladder is the whole anti-lockout promise and it is the least
-tested thing in this journey. It has been exercised by hand, not by a test.
+unencrypted one, is not. It has been exercised by hand, not by a test.
 
 **Nothing proves a real identity provider works.** Assertions are parsed from fixtures. Every
 provider is differently wrong in practice — clock skew, attribute naming, how sign-out is

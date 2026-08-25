@@ -30,32 +30,24 @@ A credential from my own record, without raising a ticket. I want to see when it
 and destroy it the moment I am unsure — pasting credentials into editor tooling puts them in more
 places than I can track.
 
-Everything the API can answer, described in OpenAPI — Swagger, as most still say it — because
-that is what assistants and client generators read. A hand-written description drifts from what
-is served — paths get renamed, and things get written up as built that never were. A description
-I cannot trust is worse than none, because I will believe it.
+Everything the API can answer, described in OpenAPI, because that is what assistants and client
+generators read. A description I cannot trust is worse than none, because I will believe it.
 
-To narrow before I fetch, and fetch a page at a time. An assistant's room to think is small
-against an estate of this size. One unbounded answer fills it, and then it forgets
-the question and starts inventing. So the narrowing I do on screen has to be available to it,
-nothing unbounded by default, and it should be able to ask the shape of a thing — how many,
-grouped how — before pulling what it needs to read closely.
+To narrow before I fetch, and fetch a page at a time — the same narrowing I do on screen,
+nothing unbounded by default. And to ask the shape of a thing, how many and grouped how,
+before pulling what it needs to read closely.
 
 And to tell what it can ask for without being told. What we expose has to name its own
 capabilities well enough that an assistant picks the right one from a long list, and can tell when
 it has used one wrongly rather than reporting the empty answer it got.
 
 Diagnosis is reading, and an assistant that only reads is one I can point at production without
-thinking hard. But diagnosis is supposed to end up in the register of failures — so if it cannot
-write there, I read its answer and retype it, which is the copying I set out to stop. And where an
-entry is carried by a ticket, the reference is already in the entry: an assistant that also reaches
-our ticketing system can keep both sides saying the same thing.
+thinking hard. But diagnosis is supposed to end up in the register of failures, and if it cannot
+write there I read its answer and retype it, which is the copying I set out to stop.
 
-So I choose, when I make a credential, whether it can also write. Most will be read-only. Working
-through a batch of failures I will make one that writes, and I will know I did. What I will not
-accept is a note the assistant wrote appearing under my name, worded like something I decided.
-Nothing in that register is overwritten, so the risk is not losing anything — it is signing
-findings I have not read.
+So I choose, when I make a credential, whether it can also write. Most will be read-only. What I
+will not accept is a note the assistant wrote appearing under my name, worded like something I
+decided.
 
 It has to work where the service is installed: inside somebody else's estate, reached through a
 controlled desktop. A second thing deployed alongside will not happen there.
@@ -85,8 +77,7 @@ who said what. So allowing writing and recording what made the entry are one dec
 anything, so nothing it says about itself is worth recording. What is worth recording is what I
 made on purpose — signing in at a screen, or a credential I created and named — and the service
 attaches that, never the caller. Which means it tells apart a screen from a credential, and one
-credential from another, but not two things sharing one credential. That is honest: it says what I
-did.
+credential from another, but not two things sharing one credential.
 
 **Shown once, destroyable instantly.** No recovering an old one. Immediate, because the reason to
 destroy one is believing somebody else has it.

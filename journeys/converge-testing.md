@@ -91,7 +91,7 @@ off and save the lab.
 
 **Nothing proves the lab-versus-cookbook distinction is drawn correctly.** The switch makes
 the distinction *available* — it does not classify any individual failure. Deciding that a
-given red was the lab's fault is a human act, recorded elsewhere.
+given red was the lab's fault is a human act.
 
 **The load-bearing assumption:** that a converge that never reached the converge step is
 distinguishable, in what we store, from one that converged and failed. Everything above

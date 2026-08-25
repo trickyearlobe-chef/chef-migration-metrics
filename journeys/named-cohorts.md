@@ -30,9 +30,8 @@ in not rebuilding it.
 **A selection the server does not understand must fail loudly, not quietly.** If a saved
 cohort carries something the server will not accept, it has to say so. A filter that is
 silently dropped returns the unfiltered estate, and an unfiltered result looks exactly like
-a legitimate answer — I will read a hundred and fifty thousand machines as "everything matched" and act on
-it. This has already caused real faults more than once, and it is the single most important
-property here.
+a legitimate answer — I will read a hundred and fifty thousand machines as "everything matched"
+and act on it. It is the single most important property here.
 
 ## How I know it worked
 

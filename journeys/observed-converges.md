@@ -4,9 +4,8 @@
 real machine at the target version, because a rule and a lab are both predictions and this
 is the event.**
 
-Every other signal is somebody's guess about what will happen. A static rule is a guess
-written before the fact. A lab run is a guess in a place we built. A converge that already
-happened on a real machine is the thing itself.
+A static rule is a guess written before the fact, and a lab run is a guess in a place we
+built. A converge that already happened on a real machine is the thing itself.
 
 ## What I need
 
@@ -37,12 +36,10 @@ target is what makes it evidence about the version.
 worth more than a converge we ran ourselves, and why it needs no judgement about whether the
 lab can be trusted today.
 
-**How long a stretch is depends on how often the estate converges.** A machine here runs
-once a day at the target version, so a day sees each of them about once. Somewhere converging
-every half hour, or once a week, needs a different span — so it is set, not fixed. What must
-hold is that it covers at least one full cycle: a window shorter than that sees whichever
-handful of machines happened to run, and a clean sweep of three nodes out of hundreds is not
-worth interrupting anybody for.
+**How long a stretch is depends on how often the estate converges**, so it is set, not fixed.
+What must hold is that it covers at least one full cycle: a window shorter than that sees
+whichever handful of machines happened to run, and a clean sweep of three nodes out of hundreds
+is not worth interrupting anybody for.
 
 **Nothing unblocks itself.** A quiet day is not a fixed cookbook — a cookbook nobody ran
 looks exactly like one that started working. So a clean day raises a flag for somebody to

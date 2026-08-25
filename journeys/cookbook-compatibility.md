@@ -32,13 +32,12 @@ is telling me something is safe when nobody has actually looked.
 because the lab could not build a machine, or could not get it an address, or could not log
 in, that is our problem and not the cookbook's. Counting it against the cookbook produces a
 blocked list full of things that are not broken, and a list I stop believing is worse than
-no list — I will work around it, and then I will miss the real one.
+no list.
 
 **Nor by files that are not the cookbook.** A repository carries pipelines, helper tasks and test
 suites that never run during a converge. A finding in one of those is not this cookbook breaking,
 and when the same helper task sits in nearly every repository it makes nearly the whole estate
-look broken. Same principle as the paragraph above, one level out — see [trusting what the scan
-says](scan-trust.md), which holds the decisions.
+look broken. The decisions are in [trusting what the scan says](scan-trust.md).
 
 **A person can overrule the machine.** If I have watched a cookbook converge successfully,
 my verdict wins, and it is recorded as mine. The reverse too: if it passed here and broke in

@@ -45,9 +45,8 @@ delete an estate is a different engagement from fuzzing one that cannot.
 ## The decisions behind it
 
 **The description is generated from what is served, so testing against it is testing against
-the product.** This is the whole reason an assessment driven from it is worth anything. A
-hand-written document would make my coverage a measure of somebody's diligence rather than of
-the software — see [building against this from the outside](api-integration.md).
+the product.** A hand-written document would make my coverage a measure of somebody's diligence
+rather than of the software — see [building against this from the outside](api-integration.md).
 
 **The access level is folded in from both places it is enforced.** A route's wrapper covers
 every call on it; a handler can require more for one method than another. A document showing
@@ -55,8 +54,7 @@ only the first understates more than fifty calls, and every one of those is a fa
 would have to withdraw.
 
 **A credential carries its account's level and no more**, so a low-privileged test account
-stays low-privileged when a program uses it — see [building against this from the
-outside](api-integration.md).
+stays low-privileged when a program uses it.
 
 **What the description says a call accepts is what the service reads.** A document that lists
 fields the service ignores sends me hunting for an injection into something that was never
@@ -99,8 +97,7 @@ on.
 
 **Nothing proves an error gives nothing away.** Failures are a consistent shape, which is not
 the same as being free of internals. No test asserts the absence of a path, a query fragment or
-a hostname from a failure — and this deployment ships its logs somewhere widely readable, so
-what a failure says is not the only place it says it.
+a hostname from a failure, and what a failure says is not the only place it says it.
 
 **Nothing proves the description lists only fields the service reads.** Some calls are
 described by reflecting the whole internal type, which can advertise fields the service never

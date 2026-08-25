@@ -6,8 +6,7 @@ of this that cannot be recreated.**
 
 Everything the service collects it could collect again. What it cannot recreate is the part people
 put in by hand — who owns what, which findings were judged harmless, which cookbooks somebody has
-personally watched run — and the history that makes a trend a trend. That is months of human
-judgement and it exists in exactly one place.
+personally watched run — and the history that makes a trend a trend.
 
 ## What I need
 

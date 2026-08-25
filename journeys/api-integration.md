@@ -11,8 +11,8 @@ moved since I wrote the code.
 
 ## What I need
 
-The whole surface written down, in OpenAPI — Swagger, as most still call it — because that is
-what generates a client and what my colleagues can read. Not a curated subset, not a hand-kept
+The whole surface written down, in OpenAPI, because that is what generates a client and what my
+colleagues can read. Not a curated subset, not a hand-kept
 page. A capability missing from that document does not exist for me, and I will go
 reverse-engineering it out of the browser's network tab, which is where wrong assumptions start.
 
@@ -20,11 +20,11 @@ List, then ask about one. The organisations, machines, cookbooks and repositorie
 then everything we hold on any single one: what the static check said, what happened when it last
 ran on a real machine. That pair is the whole shape, and it is already how the screens work.
 
-Room for purposes nobody here has discussed. The ask arrived with no use cases: the steer was
-anything useful from the existing API, and a batch load into another platform is one example
-somebody offered, not the brief. So describe what is there, completely, and let whoever turns up
-work out what they need. A surface fitted to today's example needs extending every time anyone has
-an idea, and each of those is a conversation, a release and a wait.
+Room for purposes nobody here has discussed. There are no use cases; a batch load into another
+platform is one example somebody offered, not the brief. So describe what is there, completely,
+and let whoever turns up work out what they need. A surface fitted to today's example needs
+extending every time anyone has an idea, and each of those is a conversation, a release and a
+wait.
 
 States I can tell apart. If a cookbook has no repository, say so — do not send me the same blank
 I would get for a question nobody has answered yet. A field that vanishes when it is empty is the
@@ -89,9 +89,7 @@ The rest is this journey's suite, and most of it is red.
 
 **Nothing proves this suits a purpose nobody has described.** Unfalsifiable by construction — the
 test is somebody outside building something we did not anticipate without asking us anything. The
-temptation to resist is inventing the missing use cases and designing for them: the first draft of
-this journey asked for incremental extraction, which nobody requested and which came from reading
-one offered example as the brief.
+temptation to resist is inventing the missing use cases and designing for them.
 
 **Nothing proves the shape holds across an upgrade.** No test fails when a field changes meaning,
 and a generated description will describe the new meaning as confidently as the old. Generating it

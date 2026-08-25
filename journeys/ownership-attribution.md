@@ -54,9 +54,7 @@ rather than the rule being written down once. Both need a real database and run 
 build tag rather than in the gating suite.
 
 That an owner filter reaches the export as well as the screen is covered for one view by [the
-parity contract](internal/datastore/node_snapshot_export_functional_test.go#TestFunctional_NodeExport_FilterParity),
-and the cohort journey it shares that behaviour with is [naming a slice of the
-estate](named-cohorts.md).
+parity contract](internal/datastore/node_snapshot_export_functional_test.go#TestFunctional_NodeExport_FilterParity).
 
 **Nothing proves an owner's cookbook verdict.** The compatible, incompatible and untested
 counts on an owner's page are not asserted anywhere, and they are derived rather than stored —
@@ -65,8 +63,7 @@ quietly wrong. Establish what they actually return before quoting them to anybod
 
 **Nothing proves the unowned pile is complete.** "Unowned" is the absence of a record, and
 absence is exactly what a wrong join produces as well. A repository that is owned but keyed
-wrongly, and one that genuinely has no owner, look identical on the screen — which is what made
-the address-versus-name fault above invisible for as long as it was.
+wrongly, and one that genuinely has no owner, look identical on the screen.
 
 **The load-bearing assumption:** that every place ownership is read resolves it the same way.
 There is no single reader to point at, so this cannot be pinned by one test — it is a property

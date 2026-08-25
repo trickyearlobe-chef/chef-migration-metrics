@@ -78,9 +78,7 @@ silently never firing.
 **Nothing proves every setting is actually reachable.** This is the gap most likely to bite. The
 model says all of it is editable from the interface; what is asserted is that the mechanism works
 for the settings that have tests. A field that exists in the code, is declared as configurable
-and is wired to nothing would pass everything here and simply do nothing when set. That is not a
-hypothetical failure mode — it is the reason the rule above says a declaration in code is not
-evidence.
+and is wired to nothing would pass everything here and simply do nothing when set.
 
 **Nothing proves a change reaches every component live.** The mechanism is proven; each
 component's use of it is not. A component that took a copy at construction time would pass all

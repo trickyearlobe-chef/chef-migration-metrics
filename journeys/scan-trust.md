@@ -6,8 +6,7 @@ something and I keep reading them.**
 
 The scanner reports hundreds of things per cookbook and it does not know which of them
 matter for a version change. Chase a few reds that turn out to be house-style preferences and
-I stop opening the list. The tool does not become wrong at that point — it becomes useless,
-which is the same outcome arrived at more slowly.
+I stop opening the list.
 
 ## What I need
 
@@ -38,11 +37,10 @@ replace, not a shortcut to fall back on when nothing better is available.
 costs somebody a wasted afternoon, and they tell me, and I fix it. A wrong "this is
 harmless" hides a real blocker until production finds it, and nobody tells me because
 nothing looked wrong. So harmless needs the stronger evidence, and **anything uncertain
-becomes somebody has to decide — never harmless.** Every unproven case sitting in a worklist
-is the honest outcome, even though it makes the list longer.
+becomes somebody has to decide — never harmless.**
 
 **A person's decision outranks everything the tool worked out**, including its own confident
-reds. The alternative is arguing with a machine that cannot hear me.
+reds.
 
 **One target version at a time.** Findings are judged per finding, not per version, because
 there is only one version we are moving to. A per-version matrix was tried and removed.
@@ -52,9 +50,8 @@ there is only one version we are moving to. A per-version matrix was tried and r
 A repository holds more than the cookbook. It holds the pipeline definition, the helper tasks
 somebody wrote to run the tests, the test suites themselves. Those files never run on a machine
 during a converge — and when the same helper task appears in nearly every repository, one
-finding inside it makes nearly every cookbook look broken. That is not a small inaccuracy. At
-that scale it is the difference between a list I work through and a list I stop believing, and a
-headline figure can be almost entirely this.
+finding inside it makes nearly every cookbook look broken. A headline figure can be almost
+entirely this.
 
 **So a cookbook's verdict is about the code that ships and runs.** A finding in a file the
 converge never executes does not block the cookbook.
@@ -81,7 +78,7 @@ notices, so reading it would import somebody else's mistake and present it as ou
 
 **And every exclusion needs a reason recorded against it**, for the same reason a finding called
 harmless does. Without that, this becomes the mechanism by which the blocked list is made to
-look good, which is the failure the rest of this journey exists to prevent.
+look good.
 
 ## What proves it
 
@@ -133,8 +130,7 @@ where it is simply wrong for us. Nothing takes effect [without a reason recorded
 it](internal/webapi/handle_cookstyle_scan_scope_test.go#TestScanScopePut_RequiresAReason), and [the
 whole list is
 readable](internal/webapi/handle_cookstyle_scan_scope_test.go#TestScanScopeList_ShowsCuratedAndOperatorEntriesTogether),
-shipped entries beside local ones — being judged by a list I cannot see is the thing this exists to
-prevent.
+shipped entries beside local ones.
 
 **Nothing proves the list of files we ignore is the right list.** Every entry [carries a recorded
 reason](internal/analysis/cookstyle_scan_scope_test.go#TestScanScopeExclusionsAllCarryReasons) so
@@ -157,4 +153,4 @@ nothing.
 
 **The load-bearing assumption:** that every finding reaching a person carries the reason for
 its classification with it. Strip that provenance in some future change and this journey
-collapses back to "the tool says so", which is where it started.
+collapses back to "the tool says so".
