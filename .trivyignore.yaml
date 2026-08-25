@@ -8,51 +8,7 @@
 # .github/workflows/{ci,release}.yml and via --ignorefile in the Makefile's
 # trivy-npm target, so a local scan and CI agree about what is being waived.
 
-vulnerabilities:
-  - id: CVE-2026-67213
-    # Deliberately no `paths:` filter. Trivy matches it against the target as
-    # *it* names the file, which is "package-lock.json" — not the
-    # "frontend/package-lock.json" that was passed in. A path that looks right
-    # and silently matches nothing gives a waiver that does not waive, which is
-    # the worst of both: the scan still fails and the entry says it should not.
-    # Verified by running the scan both ways.
-    #
-    # 2026-08-08. Reviewed by tracing the call, not by triaging the severity.
-    statement: >-
-      nanoid infinite loop in customAlphabet (HIGH), fixed in 3.3.17.
-
-      NOT REACHABLE HERE, and not upgradeable.
-
-      Not reachable: postcss is the only thing that pulls nanoid, and it imports
-      the `nanoid/non-secure` entry point (postcss/lib/input.js:3) to call
-      `nanoid(6)` once, labelling an input that has no filename
-      (postcss/lib/input.js:80). The vulnerable customAlphabet lives in the main
-      entry point and routes through customRandom; postcss never imports it. The
-      non-secure customAlphabet is a bounded `while (i--)` loop that cannot spin.
-      Nothing else in the dependency tree calls customAlphabet.
-
-      Not upgradeable *yet*: the org's Harness npm proxy quarantines newly
-      published versions for 14 days, and 3.3.17 was published 2026-08-03. The
-      rule predicts every observation made on 2026-08-08:
-
-        3.3.16  published 2026-07-12  (27 days)  -> 302, served
-        3.3.17  published 2026-08-03  ( 5 days)  -> 403, quarantined
-        3.3.18  published 2026-08-07  ( 1 day )  -> 403, quarantined
-
-      So 3.3.16 is the newest the proxy will serve today, and 3.3.17 becomes
-      available around 2026-08-17. Unquarantining early is not available to this
-      team — waiting is the mechanism.
-
-      Blast radius: nanoid is a build-time-only transitive dependency (postcss is
-      a devDependency, and Vite requires it regardless). It is never served to a
-      browser and never runs in the product.
-
-      To clear this: from 2026-08-17, drop the `nanoid` override in
-      frontend/package.json, `npm install`, and delete this entry. postcss's
-      ^3.3.16 range will then pick up a fixed version on its own.
-    # A week after the quarantine lapses, not a quarter. The expiry exists to
-    # force the revisit, so it belongs just past the date the fix becomes
-    # installable — long enough to leave a working week to act in, short enough
-    # that nobody forgets. When it passes, this waiver stops applying and the
-    # build goes red on purpose.
-    expired_at: 2026-08-24
+# Empty on purpose. Nothing is being waived: the nanoid entry that lived here
+# was cleared on 2026-08-25 when its fixed version left the proxy's quarantine
+# and the override it needed was dropped.
+vulnerabilities: []
